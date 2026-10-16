@@ -177,7 +177,10 @@ function transformGitHubActivity(data: unknown): Partial<MetricResult> {
     totalRecent += weekCount;
   }
   return {
-    sparkline: recent8Weeks.length > 0 ? recent8Weeks : DEFAULT_ACTIVITY_SPARKLINE,
+    special: {
+      type: 'sparkline',
+      values: recent8Weeks.length > 0 ? recent8Weeks : DEFAULT_ACTIVITY_SPARKLINE,
+    },
     value: `${formatCompactNumber(totalRecent)}/8w`,
   };
 }
@@ -220,37 +223,16 @@ function transformPyPiDownloads(data: unknown): Partial<MetricResult> {
 
 /**
  * Declarative Status Dot Mapping.
- * Maps status preset aliases (or API return values) to dot state, default label, and theme color.
+ * Maps canonical status preset names to their dot state, default label, and theme color.
  */
 export const STATUS_PRESET_MAP: Record<string, StatusPreset> = {
-  amber: { color: 'amber', defaultLabel: 'status', dot: 'amber' },
   beta: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
-  blue: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
-  building: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
   degraded: { color: 'amber', defaultLabel: 'status', dot: 'amber' },
-  deploying: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
-  down: { color: 'rose', defaultLabel: 'status', dot: 'red' },
-  experimental: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
-  green: { color: 'emerald', defaultLabel: 'status', dot: 'green' },
-  healthy: { color: 'emerald', defaultLabel: 'status', dot: 'green' },
-  idle: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
   incident: { color: 'orange', defaultLabel: 'status', dot: 'orange' },
   maintenance: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
   offline: { color: 'rose', defaultLabel: 'status', dot: 'red' },
   online: { color: 'emerald', defaultLabel: 'status', dot: 'green' },
-  orange: { color: 'orange', defaultLabel: 'status', dot: 'orange' },
-  overloaded: { color: 'orange', defaultLabel: 'status', dot: 'orange' },
-  paused: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
-  preview: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
-  purple: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
-  red: { color: 'rose', defaultLabel: 'status', dot: 'red' },
-  slate: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
-  sleeping: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
-  staging: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
   standby: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
-  syncing: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
-  up: { color: 'emerald', defaultLabel: 'status', dot: 'green' },
-  warn: { color: 'amber', defaultLabel: 'status', dot: 'amber' },
 };
 
 /** Declarative external service preset configurations. */

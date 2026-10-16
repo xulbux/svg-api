@@ -42,32 +42,40 @@ describe('helpers', () => {
     expect(resolveColor(undefined, 'amber')).toBe('amber');
   });
 
-  it('resolves both compact and readable badge/button variant names', () => {
-    expect(resolveVariant('b2', '1')).toBe('b2');
+  it('resolves canonical badge/button variant names and falls back on unknown inputs', () => {
+    expect(resolveVariant('1', '2')).toBe('1');
+    expect(resolveVariant('2', '1')).toBe('2');
     expect(resolveVariant('3', '1')).toBe('3');
-    expect(resolveVariant('primary', '2')).toBe('1');
-    expect(resolveVariant('secondary', '1')).toBe('2');
-    expect(resolveVariant('tertiary', '1')).toBe('3');
-    expect(resolveVariant('button', '1')).toBe('b1');
-    expect(resolveVariant('button-secondary', '1')).toBe('b2');
-    expect(resolveVariant('button-tertiary', '1')).toBe('b3');
+    expect(resolveVariant('b1', '1')).toBe('b1');
+    expect(resolveVariant('b2', '1')).toBe('b2');
+    expect(resolveVariant('b3', '1')).toBe('b3');
     expect(resolveVariant('invalid', 'b1')).toBe('b1');
   });
 
-  it('resolves animation modes and aliases cleanly', () => {
+  it('resolves canonical animation modes and falls back to auto', () => {
     expect(resolveAnimationMode('sheen')).toBe('sheen');
-    expect(resolveAnimationMode('glint')).toBe('sheen');
     expect(resolveAnimationMode('spin')).toBe('spin');
-    expect(resolveAnimationMode('wiggle')).toBe('shake');
-    expect(resolveAnimationMode('off')).toBe('none');
+    expect(resolveAnimationMode('shake')).toBe('shake');
+    expect(resolveAnimationMode('nudge')).toBe('nudge');
+    expect(resolveAnimationMode('none')).toBe('none');
     expect(resolveAnimationMode('unknown')).toBe('auto');
   });
 
   it('parses unified special=<type>:<payload> strings across all 5 widget types', () => {
-    expect(parseSpecialParam('bar:94.5%')).toEqual({ type: 'bar', value: 94.5 });
-    expect(parseSpecialParam('ring:80')).toEqual({ type: 'ring', value: 80 });
-    expect(parseSpecialParam('strip:1120')).toEqual({
-      states: ['up', 'up', 'warn', 'down'],
+    expect(parseSpecialParam('bar:94.5%')).toEqual({
+      hasPulse: undefined,
+      type: 'bar',
+      value: 94.5,
+    });
+    expect(parseSpecialParam('bar:94.5:static')).toEqual({
+      hasPulse: false,
+      type: 'bar',
+      value: 94.5,
+    });
+    expect(parseSpecialParam('ring:80')).toEqual({ hasPulse: undefined, type: 'ring', value: 80 });
+    expect(parseSpecialParam('ring:80:pulse')).toEqual({ hasPulse: true, type: 'ring', value: 80 });
+    expect(parseSpecialParam('strip:9940')).toEqual({
+      states: ['9', '9', '4', '0'],
       type: 'strip',
     });
     expect(parseSpecialParam('delta:+12.4%')).toEqual({ type: 'delta', value: '+12.4%' });
@@ -111,9 +119,9 @@ describe('Hono routes', () => {
     expect(body).toContain('badge.xul.is — SSOT Live Preview');
   });
 
-  it('renders 2-segment static badge with both compact and readable query params and special widgets', async () => {
+  it('renders 2-segment static badge with canonical query params and special widgets', async () => {
     const response = await app.request(
-      '/coverage/99.4%25?color=emerald&variant=secondary&icon=shield-check&special=bar:99.4',
+      '/coverage/99.4%25?color=emerald&variant=2&icon=shield-check&special=bar:99.4',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
@@ -125,7 +133,7 @@ describe('Hono routes', () => {
     expect(svg).toContain('width="32" height="6" rx="3"');
   });
 
-  it('renders 1-segment micro-button defaulting to v=b1 and redirects on document navigation via ?redirect= or ?r=', async () => {
+  it('renders 1-segment micro-button defaulting to variant=b1 and redirects on document navigation via ?redirect=', async () => {
     const imgResponse = await app.request(
       '/Documentation?color=indigo&icon=book-open&anim=sheen&redirect=https://docs.xul.is',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
@@ -146,9 +154,9 @@ describe('Hono routes', () => {
     expect(docResponse.headers.get('Location')).toBe('https://docs.xul.is');
   });
 
-  it('renders /status/:state/:text preset with outward radar ripple dot', async () => {
+  it('renders /status/:state/:text preset with outward radar ripple dot and 10-stage strip', async () => {
     const response = await app.request(
-      '/status/green/API+Online?special=strip:11112111',
+      '/status/online/API+Online?special=strip:99994999',
       {},
       TEST_ENV
     );

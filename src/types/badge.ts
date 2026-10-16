@@ -29,23 +29,9 @@ export interface ResolvedIcon {
 export type AnimationMode = 'auto' | 'nudge' | 'none' | 'shake' | 'sheen' | 'spin';
 
 /**
- * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/red through `'9'` = optimal/emerald,
- * plus semantic aliases `'down'`, `'warn'`, and `'up'`).
+ * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald).
  */
-export type StripTickState =
-  | '0'
-  | '1'
-  | '2'
-  | '3'
-  | '4'
-  | '5'
-  | '6'
-  | '7'
-  | '8'
-  | '9'
-  | 'down'
-  | 'up'
-  | 'warn';
+export type StripTickState = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 
 /** Unified right-compartment special data visualization element. */
 export type BadgeSpecialElement =
@@ -58,9 +44,9 @@ export type BadgeSpecialElement =
       value: number;
     }
   | {
-      /** Trend direction and optional label (e.g., `'+14%'`, `'-3.2%'`, `'up'`, `'down'`). */
+      /** Trend delta readout (e.g., `'+14%'`, `'-3.2%'`, `'0%'`). */
       type: 'delta';
-      /** Delta string or direction keyword. */
+      /** Formatted delta string. */
       value: string;
     }
   | {
@@ -78,7 +64,7 @@ export type BadgeSpecialElement =
       values: number[];
     }
   | {
-      /** Segmented uptime/health history strip (up to 10 vertical status ticks). */
+      /** Segmented uptime/health history strip (up to 10 vertical status ticks from `'0'` to `'9'`). */
       states: StripTickState[];
       /** Segmented health strip indicator. */
       type: 'strip';
@@ -88,26 +74,16 @@ export type BadgeSpecialElement =
 export interface BadgeRenderOptions {
   /** Optional micro-animation control mode (defaults to `'auto'`). */
   anim?: AnimationMode;
-  /** Optional shorthand percentage (`0`–`100`) for an inline horizontal progress bar. */
-  bar?: number;
   /** Named theme color token. */
   color: ThemeColorName;
-  /** Optional shorthand trend delta string (e.g., `'+12%'`, `'-3%'`, `'up'`, `'down'`). */
-  delta?: string;
   /** Optional pulsing status indicator state. */
   dot?: DotState;
   /** Optional icon slug (Lucide or Simple Icons) or `'none'` to suppress default icons. */
   icon?: string;
   /** Left-hand label text (or button text for 1-segment badges). */
   label: string;
-  /** Optional shorthand percentage (`0`–`100`) for an inline circular ring gauge. */
-  ring?: number;
-  /** Optional array of numeric data points for an inline sparkline trend graph. */
-  sparkline?: number[];
-  /** Optional unified right-hand special element (overrides individual shorthand fields if set). */
+  /** Optional right-hand special data visualization element (`bar`, `ring`, `strip`, `delta`, or `sparkline`). */
   special?: BadgeSpecialElement;
-  /** Optional shorthand array of health states for a segmented uptime strip. */
-  strip?: StripTickState[];
   /** Right-hand value text (omitted on 1-segment buttons). */
   value?: string;
   /** Visual variant (`1`..`3` for badges, `b1`..`b3` for buttons). */

@@ -175,9 +175,6 @@ const STRIP_DARK_COLORS: Readonly<Record<StripTickState, string>> = {
   '7': '#52e339',
   '8': '#05df72',
   '9': '#00d294',
-  down: '#ff637e',
-  up: '#00d294',
-  warn: '#ffb900',
 };
 
 /** 10-stage high-contrast light tint palette for solid primary (`v=1`, `v=b1`) strip capsules. */
@@ -192,9 +189,6 @@ const STRIP_SOLID_COLORS: Readonly<Record<StripTickState, string>> = {
   '7': '#bbf7d0',
   '8': '#dcfce7',
   '9': '#ffffff',
-  down: '#fecdd3',
-  up: '#ffffff',
-  warn: '#fde68a',
 };
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -226,39 +220,6 @@ function escapeXml(unsafe: string): string {
     .replace(APOS_RX, '&#039;');
 }
 
-/**
- * Normalize `BadgeRenderOptions` into a single active right-compartment `BadgeSpecialElement` (if any).
- */
-export function resolveSpecialElement(
-  options: BadgeRenderOptions
-): BadgeSpecialElement | undefined {
-  if (options.special) {
-    return options.special;
-  }
-  if (Array.isArray(options.sparkline) && options.sparkline.length >= 2) {
-    return { type: 'sparkline', values: options.sparkline };
-  }
-  if (typeof options.bar === 'number' && Number.isFinite(options.bar)) {
-    return { type: 'bar', value: options.bar };
-  }
-  if (typeof options.ring === 'number' && Number.isFinite(options.ring)) {
-    return { type: 'ring', value: options.ring };
-  }
-  if (Array.isArray(options.strip) && options.strip.length > 0) {
-    return { states: options.strip, type: 'strip' };
-  }
-  if (typeof options.delta === 'string' && options.delta.trim().length > 0) {
-    return { type: 'delta', value: options.delta.trim() };
-  }
-  return undefined;
-}
-
-/** Check whether a delta string is a bare direction keyword without a numeric label. */
-function isDirectionKeywordOnly(deltaValue: string): boolean {
-  const lower = deltaValue.toLowerCase();
-  return lower === 'up' || lower === 'down' || lower === 'flat';
-}
-
 /** Measure the horizontal width in pixels required by the active special element. */
 function measureSpecialElementWidth(
   special: BadgeSpecialElement | undefined,
@@ -282,9 +243,7 @@ function measureSpecialElementWidth(
       return Math.ceil(tickCount * 2.5 + (tickCount - 1) * 2);
     }
     case 'delta': {
-      return isDirectionKeywordOnly(special.value)
-        ? 10
-        : 13 + measureTextWidth(special.value, fontSize - 0.5, true);
+      return 13 + measureTextWidth(special.value, fontSize - 0.5, true);
     }
     default: {
       return 0;
@@ -576,7 +535,7 @@ function renderStripWidgetMarkup(
   return ticksMarkup;
 }
 
-/** Render an inline trend delta arrow and optional delta label. */
+/** Render an inline trend delta arrow and delta readout. */
 function renderDeltaWidgetMarkup(
   rawValue: string,
   isSolidCapsule: boolean,
@@ -587,9 +546,8 @@ function renderDeltaWidgetMarkup(
   specialWidth: number
 ): string {
   const rawDelta = rawValue.trim();
-  const lower = rawDelta.toLowerCase();
-  const isNegative = rawDelta.startsWith('-') || lower === 'down';
-  const isFlat = rawDelta === '0' || rawDelta === '0%' || lower === 'flat';
+  const isNegative = rawDelta.startsWith('-');
+  const isFlat = rawDelta === '0' || rawDelta === '0%' || rawDelta === '+0%';
 
   let deltaColor = isSolidCapsule ? '#ffffff' : THEMES.emerald.accentText;
   let arrowPath = 'M2.5 7.5L7.5 2.5M4 2.5H7.5V6';
@@ -603,9 +561,6 @@ function renderDeltaWidgetMarkup(
 
   const arrowY = (height - 10) / 2;
   const arrowMarkup = `<g transform="translate(${specialX}, ${arrowY})" fill="none" stroke="${deltaColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${arrowPath}" /></g>`;
-  if (isDirectionKeywordOnly(rawDelta)) {
-    return arrowMarkup;
-  }
   const textWidth = specialWidth - 13;
   const textCenterX = Number((specialX + 13 + textWidth / 2).toFixed(2));
   const deltaFontSize = fontSize - 0.5;
@@ -732,8 +687,8 @@ function buildTopCrescentPath(
 }
 
 /**
- * Render all background fills, upper-edge 3D Kumo crescents (on `v=b1`, `v=b2`, and the colored
- * part of `v=1`), and outer border rings for the active variant and split state.
+ * Render all background fills, upper-edge 3D Kumo crescents (on `v=b1`, `v=b2`, `v=b3`, and the
+ * colored part of `v=1`), and outer border rings for the active variant and split state.
  */
 function renderSurfaceAndBorderLayers(
   variant: BadgeVariant,
@@ -930,7 +885,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
 
   const iconData = resolveIcon(options.icon);
   const dotMarkup = renderDotMarkup(options.dot, padX + 3.5, height / 2, animMode);
-  const specialElement = resolveSpecialElement(options);
+  const specialElement = options.special;
   const specialWidth = measureSpecialElementWidth(specialElement, fontSize);
 
   const layout = computeBadgeLayout(

@@ -121,7 +121,7 @@ describe('renderBadge', () => {
       color: 'emerald',
       icon: 'activity',
       label: 'commits',
-      sparkline: [2, 14],
+      special: { type: 'sparkline', values: [2, 14] },
       value: '44/8w',
       variant: '2',
     });
@@ -223,7 +223,7 @@ describe('renderBadge', () => {
     expect(noIconButton).toContain(`x="${totalWidth / 2}" y="17" text-anchor="middle"`);
   });
 
-  it('applies tapering Kumo upper-edge crescent on all 3 button variants (b1, b2, b3) and colored v=1 capsules, and uses muted gray text on both v=3 and v=b3', () => {
+  it('applies tapering Kumo upper-edge crescent on all 3 button variants (b1, b2, b3) and colored variant=1 capsules, and uses muted gray text on both variant=3 and variant=b3', () => {
     const primaryButton = renderBadge({ color: 'blue', label: 'Change', variant: 'b1' });
     // Tapering elliptical return arc (A 6 5) for the 1px upper-edge crescent.
     expect(primaryButton).toContain('A 6 5 0 0 0');
@@ -268,7 +268,7 @@ describe('renderBadge', () => {
       label: 'Report Issue',
       variant: 'b3',
     });
-    // Both tertiary badges (v=3) and tertiary buttons (v=b3) use muted gray text (#9ca3af), and v=b3 gets the subtle 3D top crescent.
+    // Both tertiary badges (variant=3) and tertiary buttons (variant=b3) use muted gray text (#9ca3af), and variant=b3 gets the subtle 3D top crescent.
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
     expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
     expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
@@ -281,8 +281,8 @@ describe('renderPreviewHtml', () => {
   it('renders the complete SSOT preview studio HTML containing all 6 variants and structural use cases', () => {
     const html = renderPreviewHtml();
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('v=1 · Primary Badge');
-    expect(html).toContain('v=b3 · Tertiary Button');
+    expect(html).toContain('variant=1 · Primary Badge');
+    expect(html).toContain('variant=b3 · Tertiary Button');
     expect(html).toContain('Special Data Widgets');
     expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
   });

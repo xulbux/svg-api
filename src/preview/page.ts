@@ -35,28 +35,32 @@ const VARIANT_DESCRIPTORS: VariantDescriptor[] = [
   {
     desc: 'Flat dark slate label + Kumo 3D gradient value capsule',
     id: '1',
-    title: 'v=1 · Primary Badge',
+    title: 'variant=1 · Primary Badge',
   },
-  { desc: 'Colored border + 16% tinted value capsule', id: '2', title: 'v=2 · Secondary Badge' },
+  {
+    desc: 'Colored border + 16% tinted value capsule',
+    id: '2',
+    title: 'variant=2 · Secondary Badge',
+  },
   {
     desc: 'Minimal neutral border + muted label + accent value',
     id: '3',
-    title: 'v=3 · Tertiary Badge',
+    title: 'variant=3 · Tertiary Badge',
   },
   {
     desc: 'Kumo 3D full-bleed gradient CTA pill (26px height)',
     id: 'b1',
-    title: 'v=b1 · Primary Button',
+    title: 'variant=b1 · Primary Button',
   },
   {
     desc: 'Kumo 3D tinted dark button with glowing border (26px height)',
     id: 'b2',
-    title: 'v=b2 · Secondary Button',
+    title: 'variant=b2 · Secondary Button',
   },
   {
     desc: 'Kumo 3D subtle utility button with muted label (26px height)',
     id: 'b3',
-    title: 'v=b3 · Tertiary Button',
+    title: 'variant=b3 · Tertiary Button',
   },
 ];
 
@@ -83,7 +87,7 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'rose', label: 'Experimental', variant: '1' },
       { color: 'slate', label: 'MIT Licensed', variant: '3' },
     ],
-    desc: '22px badges (v=1, v=2, v=3) with only a single compartment',
+    desc: '22px badges (variant=1, variant=2, variant=3) with only a single compartment',
     title: 'Single-Part Badges (No Split Side)',
   },
   {
@@ -174,7 +178,7 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
         dot: 'green',
         icon: 'zap',
         label: 'edge latency',
-        sparkline: [19, 16, 18, 15, 14, 15, 12, 11],
+        special: { type: 'sparkline', values: [19, 16, 18, 15, 14, 15, 12, 11] },
         value: '11ms',
         variant: '2',
       },
@@ -322,7 +326,7 @@ export function renderPreviewHtml(): string {
       color: 'emerald',
       icon: 'activity',
       label: 'commits',
-      sparkline: [3, 7, 5, 12, 9, 15, 11, 19],
+      special: { type: 'sparkline', values: [3, 7, 5, 12, 9, 15, 11, 19] },
       value: '84/8w',
       variant: '2',
     }),
@@ -330,7 +334,7 @@ export function renderPreviewHtml(): string {
       color: 'indigo',
       icon: 'download',
       label: 'downloads',
-      sparkline: [12, 18, 15, 24, 29, 35, 42],
+      special: { type: 'sparkline', values: [12, 18, 15, 24, 29, 35, 42] },
       value: '42.1k/mo',
       variant: '1',
     }),
@@ -450,7 +454,7 @@ export function renderPreviewHtml(): string {
       <div class="badge-row">${specialSamples}</div>
     </div>
 
-    <h2>3. Tailwind v4 Color Tokens (?color= / ?c=)</h2>
+    <h2>3. Tailwind v4 Color Tokens (?color=)</h2>
     <div class="card">
       <div class="badge-row">${paletteSwatches}</div>
     </div>

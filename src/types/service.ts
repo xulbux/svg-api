@@ -2,6 +2,7 @@
  * Service preset configuration, Cloudflare Worker environment, and metric result types.
  */
 
+import type { BadgeSpecialElement } from './badge';
 import type { DotState, ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -34,8 +35,8 @@ export interface MetricResult {
   label: string;
   /** Destination URL when the badge URL is navigated to as a document. */
   redirectUrl: string;
-  /** Optional time-series points for an inline sparkline. */
-  sparkline?: number[];
+  /** Optional right-hand special data visualization element. */
+  special?: BadgeSpecialElement;
   /** Right-side formatted metric value. */
   value?: string;
 }
@@ -58,11 +59,11 @@ export interface ServiceMetricConfig {
   buildRedirectUrl: (owner: string, target: string) => string;
   /** Optional Tier-1 JSON cache TTL in seconds (defaults to `600`). */
   cacheTtlSeconds?: number;
-  /** Default theme color token when `?c=` is not provided. */
+  /** Default theme color token when `?color=` is not provided. */
   defaultColor: ThemeColorName;
-  /** Default icon slug when `?i=` is not provided. */
+  /** Default icon slug when `?icon=` is not provided. */
   defaultIcon: string;
-  /** Default left-side label when `?l=` is not provided. */
+  /** Default left-side label when `?label=` is not provided. */
   defaultLabel: string;
   /** Transforms the raw upstream JSON payload into badge properties. */
   transform: (data: unknown, owner: string, target: string) => Partial<MetricResult>;

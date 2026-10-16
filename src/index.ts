@@ -34,8 +34,8 @@ interface RouteBadgeDefaults {
   label: string;
   /** Default redirect destination URL on document navigation. */
   redirectUrl?: string;
-  /** Default right-hand special element (or sparkline array). */
-  sparkline?: number[];
+  /** Default right-hand special element. */
+  special?: BadgeSpecialElement;
   /** Default right-hand value text. */
   value?: string;
   /** Default badge or button variant. */
@@ -47,69 +47,32 @@ interface RouteBadgeDefaults {
 /** Default redirect destination for root navigation. */
 const ROOT_REDIRECT_URL = 'https://xul.is';
 
-/** Map of canonical and readable variant identifiers to `BadgeVariant`. */
-const VARIANT_ALIASES: Readonly<Record<string, BadgeVariant>> = {
-  '1': '1',
-  '2': '2',
-  '3': '3',
-  b1: 'b1',
-  b2: 'b2',
-  b3: 'b3',
-  button: 'b1',
-  'button-primary': 'b1',
-  'button-secondary': 'b2',
-  'button-tertiary': 'b3',
-  primary: '1',
-  secondary: '2',
-  tertiary: '3',
-};
+/** Set of valid badge and button variant identifiers. */
+const VALID_VARIANTS: ReadonlySet<BadgeVariant> = new Set(['1', '2', '3', 'b1', 'b2', 'b3']);
 
-/** Map of animation query parameter values to `AnimationMode`. */
-const ANIMATION_ALIASES: Readonly<Record<string, AnimationMode>> = {
-  auto: 'auto',
-  false: 'none',
-  glint: 'sheen',
-  none: 'none',
-  nudge: 'nudge',
-  off: 'none',
-  shake: 'shake',
-  sheen: 'sheen',
-  spin: 'spin',
-  wiggle: 'shake',
-};
+/** Set of valid animation mode identifiers. */
+const VALID_ANIMATION_MODES: ReadonlySet<AnimationMode> = new Set([
+  'auto',
+  'none',
+  'nudge',
+  'shake',
+  'sheen',
+  'spin',
+]);
 
-/** Map of named and 10-stage (`0`–`9`) strip tokens to `StripTickState`. */
-const STRIP_TOKEN_MAP: Readonly<Record<string, StripTickState>> = {
-  '0': '0',
-  '1': '1',
-  '2': '2',
-  '3': '3',
-  '4': '4',
-  '5': '5',
-  '6': '6',
-  '7': '7',
-  '8': '8',
-  '9': '9',
-  amber: 'warn',
-  degraded: 'warn',
-  down: 'down',
-  emerald: '9',
-  err: 'down',
-  fail: 'down',
-  good: '7',
-  green: '8',
-  lime: '6',
-  offline: 'down',
-  ok: 'up',
-  orange: '2',
-  pass: 'up',
-  red: '1',
-  rose: '0',
-  slow: '3',
-  up: 'up',
-  warn: 'warn',
-  yellow: '4',
-};
+/** Set of valid 10-stage (`'0'`–`'9'`) strip tick characters. */
+const VALID_STRIP_STAGES: ReadonlySet<StripTickState> = new Set([
+  '0',
+  '1',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+]);
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -122,9 +85,6 @@ const LIST_SEPARATOR_RX = /[,\s]+/;
 /** Matches trailing `%` sign on percentage strings. */
 const TRAILING_PERCENT_RX = /%$/;
 
-/** Matches a compact ternary strip payload consisting only of `'0'`, `'1'`, and `'2'` digits (e.g., `'11112111'`). */
-const LEGACY_TERNARY_STRIP_RX = /^[012,\s]+$/;
-
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Safely decode a URL segment, converting `+` into spaces and handling already-decoded `%` characters. */
@@ -135,20 +95,6 @@ function decodeSegment(raw: string): string {
   } catch {
     return withSpaces;
   }
-}
-
-/** Read the first defined query parameter from a priority list of parameter names. */
-function getFirstQueryParam(
-  context: Context<{ Bindings: Env }>,
-  names: readonly string[]
-): string | undefined {
-  for (const name of names) {
-    const val = context.req.query(name);
-    if (val !== undefined) {
-      return val;
-    }
-  }
-  return undefined;
 }
 
 /** Parse a comma-separated list of numbers for a sparkline. */
@@ -166,38 +112,20 @@ function parseSparklineNumbers(rawPayload: string): number[] | undefined {
   return values.length >= 2 ? values : undefined;
 }
 
-/** Map a legacy ternary digit (`'0'`, `'1'`, `'2'`) to `'down'`, `'up'`, or `'warn'`. */
-function toLegacyTernaryStripState(token: string): StripTickState | undefined {
-  if (token === '1') {
-    return 'up';
-  }
-  if (token === '2') {
-    return 'warn';
-  }
-  if (token === '0') {
-    return 'down';
-  }
-  return undefined;
-}
-
 /**
- * Parse a strip payload into `StripTickState[]`.
- * Supports 10-stage smooth heat levels (`0`–`9`, e.g., `9876425789`), named colors/states
- * (`up,warn,orange,down`), and legacy ternary strings (`11112111` where `1=up, 2=warn, 0=down`).
+ * Parse a 10-stage strip payload (`'0'`–`'9'`, e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]`.
  */
 function parseStripStates(rawPayload: string): StripTickState[] | undefined {
   const trimmed = rawPayload.trim();
   if (!trimmed) {
     return undefined;
   }
-  const isLegacyTernary = LEGACY_TERNARY_STRIP_RX.test(trimmed) && trimmed.includes('1');
   const tokens = LIST_SEPARATOR_RX.test(trimmed) ? trimmed.split(LIST_SEPARATOR_RX) : [...trimmed];
   const states: StripTickState[] = [];
   for (const token of tokens) {
-    const clean = token.trim().toLowerCase();
-    const mapped = isLegacyTernary ? toLegacyTernaryStripState(clean) : STRIP_TOKEN_MAP[clean];
-    if (mapped) {
-      states.push(mapped);
+    const clean = token.trim() as StripTickState;
+    if (VALID_STRIP_STAGES.has(clean)) {
+      states.push(clean);
     }
   }
   return states.length > 0 ? states.slice(0, 10) : undefined;
@@ -225,9 +153,9 @@ function parsePercentageAndPulse(
     return undefined;
   }
   let hasPulse: boolean | undefined = undefined;
-  if (modifierPart === 'pulse' || modifierPart === 'shimmer' || modifierPart === 'anim') {
+  if (modifierPart === 'pulse') {
     hasPulse = true;
-  } else if (modifierPart === 'static' || modifierPart === 'none' || modifierPart === 'off') {
+  } else if (modifierPart === 'static') {
     hasPulse = false;
   }
   return { hasPulse, value: num };
@@ -238,69 +166,49 @@ function parseSpecialKindAndPayload(
   kind: string,
   payload: string
 ): BadgeSpecialElement | undefined {
-  if (kind === 'sparkline' || kind === 'spark') {
-    const values = parseSparklineNumbers(payload);
-    return values ? { type: 'sparkline', values } : undefined;
-  }
-  if (kind === 'bar' || kind === 'progress') {
-    const parsed = parsePercentageAndPulse(payload);
-    return parsed ? { hasPulse: parsed.hasPulse, type: 'bar', value: parsed.value } : undefined;
-  }
-  if (kind === 'ring' || kind === 'donut' || kind === 'gauge') {
-    const parsed = parsePercentageAndPulse(payload);
-    return parsed ? { hasPulse: parsed.hasPulse, type: 'ring', value: parsed.value } : undefined;
-  }
-  if (kind === 'strip' || kind === 'uptime' || kind === 'health') {
-    const states = parseStripStates(payload);
-    return states ? { states, type: 'strip' } : undefined;
-  }
-  if (kind === 'delta' || kind === 'trend') {
-    return payload.length > 0 ? { type: 'delta', value: payload } : undefined;
-  }
-  return undefined;
-}
-
-/** Check direct shorthand query parameters (`?bar=`, `?ring=`, `?strip=`, `?delta=`, `?sparkline=`). */
-function parseShorthandSpecialFromContext(
-  context: Context<{ Bindings: Env }>
-): BadgeSpecialElement | undefined {
-  const shorthandKinds = ['bar', 'ring', 'strip', 'delta', 'sparkline', 'spark'] as const;
-  for (const kind of shorthandKinds) {
-    const rawVal = context.req.query(kind);
-    if (rawVal !== undefined) {
-      const parsed = parseSpecialKindAndPayload(kind, rawVal.trim());
-      if (parsed) {
-        return parsed;
-      }
+  switch (kind) {
+    case 'sparkline': {
+      const values = parseSparklineNumbers(payload);
+      return values ? { type: 'sparkline', values } : undefined;
+    }
+    case 'bar': {
+      const parsed = parsePercentageAndPulse(payload);
+      return parsed ? { hasPulse: parsed.hasPulse, type: 'bar', value: parsed.value } : undefined;
+    }
+    case 'ring': {
+      const parsed = parsePercentageAndPulse(payload);
+      return parsed ? { hasPulse: parsed.hasPulse, type: 'ring', value: parsed.value } : undefined;
+    }
+    case 'strip': {
+      const states = parseStripStates(payload);
+      return states ? { states, type: 'strip' } : undefined;
+    }
+    case 'delta': {
+      return payload.length > 0 ? { type: 'delta', value: payload } : undefined;
+    }
+    default: {
+      return undefined;
     }
   }
-  return undefined;
 }
 
 /**
- * Parse a unified `?special=<type>:<payload>` query parameter (or shorthand special query params)
- * into a structured `BadgeSpecialElement`.
- * @param specialRaw   Raw `?special=` or `?s=` query parameter (e.g., `'bar:99.4'`, `'strip:11112111'`).
- * @param context      Optional Hono request context to check shorthand fallback params (`?bar=`, `?ring=`, etc.).
+ * Parse the unified `?special=<type>:<payload>` query parameter into a structured `BadgeSpecialElement`.
+ * @param specialRaw   Raw `?special=` query parameter (e.g., `'bar:82'`, `'strip:9876425789'`).
  * @returns Parsed `BadgeSpecialElement`, or `undefined` if none is specified or valid.
  */
-export function parseSpecialParam(
-  specialRaw?: string,
-  context?: Context<{ Bindings: Env }>
-): BadgeSpecialElement | undefined {
-  if (specialRaw && specialRaw.trim().length > 0) {
-    const trimmed = specialRaw.trim();
-    const colonIndex = trimmed.indexOf(':');
-    if (colonIndex > 0) {
-      const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
-      const payload = trimmed.slice(colonIndex + 1).trim();
-      const parsed = parseSpecialKindAndPayload(kind, payload);
-      if (parsed) {
-        return parsed;
-      }
-    }
+export function parseSpecialParam(specialRaw?: string): BadgeSpecialElement | undefined {
+  if (!specialRaw) {
+    return undefined;
   }
-  return context ? parseShorthandSpecialFromContext(context) : undefined;
+  const trimmed = specialRaw.trim();
+  const colonIndex = trimmed.indexOf(':');
+  if (colonIndex <= 0) {
+    return undefined;
+  }
+  const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
+  const payload = trimmed.slice(colonIndex + 1).trim();
+  return parseSpecialKindAndPayload(kind, payload);
 }
 
 /**
@@ -322,9 +230,8 @@ export function isDocumentNavigation(request: Request): boolean {
 }
 
 /**
- * Resolve the requested `?variant=` / `?v=` query parameter to a valid `BadgeVariant`.
- * Supports both compact (`1`, `b1`) and readable (`primary`, `button-secondary`) names.
- * @param input      Raw `?variant=` or `?v=` query parameter value.
+ * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant`.
+ * @param input      Raw `?variant=` query parameter value (`1`, `2`, `3`, `b1`, `b2`, `b3`).
  * @param fallback   Default variant when `input` is omitted or invalid.
  * @returns Validated `BadgeVariant`.
  */
@@ -332,13 +239,13 @@ export function resolveVariant(input?: string, fallback: BadgeVariant = '1'): Ba
   if (!input) {
     return fallback;
   }
-  const mapped = VARIANT_ALIASES[input.trim().toLowerCase()];
-  return mapped ?? fallback;
+  const candidate = input.trim().toLowerCase() as BadgeVariant;
+  return VALID_VARIANTS.has(candidate) ? candidate : fallback;
 }
 
 /**
- * Resolve the requested `?anim=` / `?animate=` / `?a=` query parameter to a valid `AnimationMode`.
- * @param input      Raw animation query parameter value.
+ * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
+ * @param input      Raw `?anim=` query parameter value (`auto`, `sheen`, `spin`, `shake`, `nudge`, `none`).
  * @param fallback   Default animation mode when `input` is omitted or invalid.
  * @returns Validated `AnimationMode`.
  */
@@ -349,17 +256,17 @@ export function resolveAnimationMode(
   if (!input) {
     return fallback;
   }
-  const mapped = ANIMATION_ALIASES[input.trim().toLowerCase()];
-  return mapped ?? fallback;
+  const candidate = input.trim().toLowerCase() as AnimationMode;
+  return VALID_ANIMATION_MODES.has(candidate) ? candidate : fallback;
 }
 
-/** Resolve a raw `?dot=` / `?d=` query parameter (color name or status alias like `'maintenance'`, `'standby'`, `'online'`). */
+/** Resolve a raw `?dot=` query parameter (color name or status preset name like `'online'`, `'maintenance'`, `'standby'`). */
 function resolveDotState(input?: string, fallback?: DotState): DotState | undefined {
   if (!input) {
     return fallback;
   }
   const clean = input.trim().toLowerCase();
-  if (clean === 'none' || clean === 'off' || clean === 'false') {
+  if (clean === 'none') {
     return undefined;
   }
   const preset = STATUS_PRESET_MAP[clean];
@@ -369,31 +276,26 @@ function resolveDotState(input?: string, fallback?: DotState): DotState | undefi
   return clean as DotState;
 }
 
-/** Render a badge SVG by merging route defaults with readable and compact URL query overrides. */
+/** Render a badge SVG by merging route defaults with canonical URL query overrides. */
 function renderBadgeWithQueryOverrides(
   context: Context<{ Bindings: Env }>,
   defaults: RouteBadgeDefaults
 ): string {
-  const colorParam = getFirstQueryParam(context, ['color', 'c']);
-  const variantParam = getFirstQueryParam(context, ['variant', 'v']);
-  const iconParam = getFirstQueryParam(context, ['icon', 'i']);
-  const labelParam = getFirstQueryParam(context, ['label', 'l']);
-  const dotParam = getFirstQueryParam(context, ['dot', 'd']);
-  const animParam = getFirstQueryParam(context, ['anim', 'animate', 'a']);
-  const sheenParam = context.req.query('sheen');
-  const specialParam = getFirstQueryParam(context, ['special', 's']);
-
-  const resolvedAnim =
-    sheenParam === 'true' || sheenParam === '1' ? 'sheen' : resolveAnimationMode(animParam, 'auto');
+  const colorParam = context.req.query('color');
+  const variantParam = context.req.query('variant');
+  const iconParam = context.req.query('icon');
+  const labelParam = context.req.query('label');
+  const dotParam = context.req.query('dot');
+  const animParam = context.req.query('anim');
+  const specialParam = context.req.query('special');
 
   return renderBadge({
-    anim: resolvedAnim,
+    anim: resolveAnimationMode(animParam, 'auto'),
     color: resolveColor(colorParam, defaults.color),
     dot: resolveDotState(dotParam, defaults.dot),
     icon: iconParam ?? defaults.icon,
     label: labelParam !== undefined ? decodeSegment(labelParam) : defaults.label,
-    sparkline: defaults.sparkline,
-    special: parseSpecialParam(specialParam, context),
+    special: parseSpecialParam(specialParam) ?? defaults.special,
     value: defaults.value,
     variant: resolveVariant(variantParam, defaults.variant),
   });
@@ -451,7 +353,7 @@ async function handleServicePreset(
     executionCtx
   );
 
-  const redirectOverride = getFirstQueryParam(context, ['redirect', 'r']);
+  const redirectOverride = context.req.query('redirect');
   const finalRedirect = redirectOverride || result.redirectUrl;
   if (isDocumentNavigation(context.req.raw) && finalRedirect) {
     return context.redirect(finalRedirect, 302);
@@ -472,7 +374,7 @@ async function handleServicePreset(
     dot: result.dot,
     icon: result.icon,
     label: result.label,
-    sparkline: result.sparkline,
+    special: result.special,
     value: result.value,
     variant: '1',
   });
@@ -506,13 +408,13 @@ function handlePreviewRoute(context: Context<{ Bindings: Env }>): Response {
 function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
   const stateKey = (context.req.param('state') ?? '').toLowerCase();
   const text = decodeSegment(context.req.param('text') ?? '');
-  const redirectParam = getFirstQueryParam(context, ['redirect', 'r']);
+  const redirectParam = context.req.query('redirect');
 
   if (redirectParam && isDocumentNavigation(context.req.raw)) {
     return context.redirect(redirectParam, 302);
   }
 
-  const preset = STATUS_PRESET_MAP[stateKey] || STATUS_PRESET_MAP.green;
+  const preset = STATUS_PRESET_MAP[stateKey] || STATUS_PRESET_MAP.online;
   const svg = renderBadgeWithQueryOverrides(context, {
     color: preset.color,
     dot: preset.dot,
@@ -548,7 +450,7 @@ function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): P
 
 /** Handle generic static 2-segment badge route `/:label/:value`. */
 function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
-  const redirectParam = getFirstQueryParam(context, ['redirect', 'r']);
+  const redirectParam = context.req.query('redirect');
   if (redirectParam && isDocumentNavigation(context.req.raw)) {
     return context.redirect(redirectParam, 302);
   }
@@ -565,7 +467,7 @@ function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Respon
 
 /** Handle generic static 1-segment button/badge route `/:label`. */
 function handleSingleSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
-  const redirectParam = getFirstQueryParam(context, ['redirect', 'r']);
+  const redirectParam = context.req.query('redirect');
   if (redirectParam && isDocumentNavigation(context.req.raw)) {
     return context.redirect(redirectParam, 302);
   }

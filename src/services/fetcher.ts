@@ -209,7 +209,7 @@ export async function resolveServiceMetric(
       icon: transformed.icon ?? metric.defaultIcon,
       label: transformed.label ?? metric.defaultLabel,
       redirectUrl,
-      sparkline: transformed.sparkline,
+      special: transformed.special,
       value: transformed.value ?? 'n/a',
     },
     status: 200,
