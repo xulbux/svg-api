@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "pedantic": "off",
+    "perf": "warn",
+    "restriction": "warn",
+    "style": "warn",
+    "suspicious": "warn"
+  },
+  "env": { "builtin": true, "node": true },
+  "globals": { "caches": "readonly" },
+  "ignorePatterns": [
+    ".wrangler/**",
+    "dist/**",
+    "*.md",
+    "package.json",
+    "preview.html",
+    "wrangler.jsonc"
+  ],
+  "plugins": ["eslint", "oxc", "typescript", "unicorn"],
+  "rules": {
+    "capitalized-comments": "off",
+    "eslint/no-ternary": "off",
+    "func-style": ["error", "declaration"],
+    "id-length": "off",
+    "import/no-nodejs-modules": ["error", { "allow": ["node:fs", "node:path"] }],
+    "import/unambiguous": "off",
+    "max-params": "off",
+    "max-statements": "off",
+    "no-duplicate-imports": "off",
+    "no-magic-numbers": "off",
+    "no-undefined": "off",
+    "one-var": "off",
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "sort-imports": "off",
+    "typescript/consistent-type-definitions": "error",
+    "typescript/explicit-function-return-type": "off",
+    "typescript/explicit-module-boundary-types": "off",
+    "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+    "unicorn/filename-case": ["error", { "cases": { "camelCase": true, "pascalCase": true } }],
+    "unicorn/number-literal-case": "off"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "xul-badge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-15",
+  "upload_source_maps": true,
+  "workers_dev": false,
+  "routes": [
+    {
+      "pattern": "badge.xul.is",
+      "custom_domain": true
+    },
+    {
+      "pattern": "b.xul.is",
+      "custom_domain": true
+    }
+  ],
+  "vars": {
+    "DEFAULT_GH_OWNER": "xulbux",
+    "ALLOW_PREVIEW_IN_PROD": "true"
+  }
+}
+
