@@ -33,7 +33,7 @@ interface UseCaseGroup {
 /** Showcase definitions for all 6 badge and micro-button variants. */
 const VARIANT_DESCRIPTORS: VariantDescriptor[] = [
   {
-    desc: 'Dark slate label + vibrant gradient value capsule',
+    desc: 'Flat dark slate label + Kumo 3D gradient value capsule',
     id: '1',
     title: 'v=1 · Primary Badge',
   },
@@ -43,14 +43,18 @@ const VARIANT_DESCRIPTORS: VariantDescriptor[] = [
     id: '3',
     title: 'v=3 · Tertiary Badge',
   },
-  { desc: 'Full-bleed gradient CTA pill (26px height)', id: 'b1', title: 'v=b1 · Primary Button' },
   {
-    desc: 'Tinted dark button with glowing border (26px height)',
+    desc: 'Kumo 3D full-bleed gradient CTA pill (26px height)',
+    id: 'b1',
+    title: 'v=b1 · Primary Button',
+  },
+  {
+    desc: 'Kumo 3D tinted dark button with glowing border (26px height)',
     id: 'b2',
     title: 'v=b2 · Secondary Button',
   },
   {
-    desc: 'Understated utility button with colored icon (26px height)',
+    desc: 'Understated flat utility button with muted label (26px height)',
     id: 'b3',
     title: 'v=b3 · Tertiary Button',
   },
@@ -67,7 +71,7 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'amber', label: 'Get Started', variant: 'b1' },
       { color: 'sky', label: 'View Changelog', variant: 'b2' },
     ],
-    desc: 'Pure typography without icons (or with ?i=none)',
+    desc: 'Pure typography without icons (or with ?icon=none)',
     title: 'No-Icon Badges & Buttons',
   },
   {
@@ -92,7 +96,7 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'sky', icon: 'terminal', label: '', variant: 'b2' },
       { color: 'rose', icon: 'heart', label: '', variant: 'b3' },
     ],
-    desc: 'Symmetrically padded icon-only and status-dot-only micro-pills (?l=)',
+    desc: 'Symmetrically padded icon-only and status-dot-only micro-pills (?label=)',
     title: 'Icon-Only & Dot-Only Pills',
   },
   {
@@ -103,55 +107,67 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'emerald', dot: 'green', label: '', value: '99.99%', variant: '2' },
       { color: 'amber', dot: 'amber', label: '', value: '180ms', variant: '3' },
     ],
-    desc: 'Icon or pulsing dot on the left + value capsule on the right (?l=)',
+    desc: 'Icon or pulsing dot on the left + value capsule on the right (?label=)',
     title: 'Compact Icon / Dot + Value (No Label Text)',
   },
   {
     badges: [
       {
         color: 'emerald',
-        icon: 'activity',
-        label: 'activity',
-        sparkline: [4, 9, 6, 14, 11, 18, 15, 22],
+        icon: 'shield-check',
+        label: 'coverage',
+        special: { type: 'bar', value: 94.8 },
+        value: '94.8%',
         variant: '2',
       },
       {
         color: 'indigo',
-        icon: 'trending-up',
-        label: 'trend',
-        sparkline: [10, 14, 12, 19, 25, 22, 31],
+        icon: 'cpu',
+        label: 'memory',
+        special: { type: 'ring', value: 78 },
+        value: '78%',
         variant: '1',
       },
       {
-        color: 'cyan',
-        icon: 'cpu',
-        label: '',
-        sparkline: [8, 12, 7, 15, 19, 14, 21, 18],
+        color: 'emerald',
+        dot: 'green',
+        label: 'uptime',
+        special: { states: ['up', 'up', 'up', 'up', 'warn', 'up', 'up', 'up'], type: 'strip' },
+        value: '99.98%',
         variant: '2',
       },
-      { color: 'violet', label: '', sparkline: [5, 11, 8, 16, 13, 21, 19, 26], variant: '2' },
+      {
+        color: 'cyan',
+        icon: 'trending-up',
+        label: 'weekly dl',
+        special: { type: 'delta', value: '+18.4%' },
+        value: '142k',
+        variant: '2',
+      },
       {
         color: 'rose',
         icon: 'flame',
-        label: 'load',
-        sparkline: [18, 15, 22, 19, 26, 21, 14, 9],
-        value: '32%',
+        label: 'p99 latency',
+        special: { type: 'delta', value: '-12%' },
+        value: '14ms',
         variant: '3',
       },
     ],
-    desc: 'Graph-only right capsules, icon + graph, standalone graph pill, and v=3 graph',
-    title: 'Sparkline Area Combinations',
+    desc: 'Unified ?special= widgets: bar:<pct>, ring:<pct>, strip:<states>, and delta:<val>',
+    title: 'Special Data Widgets (Bar, Ring, Strip & Delta)',
   },
   {
     badges: [
-      { color: 'indigo', icon: 'rocket', label: 'Deploy', value: 'Production', variant: 'b1' },
       {
-        color: 'emerald',
-        icon: 'message-circle',
-        label: 'Discord',
-        value: '1.4k online',
-        variant: 'b2',
+        anim: 'sheen',
+        color: 'blue',
+        icon: 'rocket',
+        label: 'Deploy',
+        value: 'Production',
+        variant: 'b1',
       },
+      { color: 'teal', icon: 'refresh-cw', label: 'Syncing Edge', variant: 'b2' },
+      { color: 'purple', icon: 'sparkles', label: 'AI Assisted', variant: 'b2' },
       { color: 'rose', icon: 'heart', label: 'Sponsor', value: '$5/mo', variant: 'b3' },
       {
         color: 'cyan',
@@ -163,8 +179,8 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
         variant: '2',
       },
     ],
-    desc: '26px split micro-buttons with values + full dot/icon/label/sparkline/value badge',
-    title: 'Split Micro-Buttons & Kitchen-Sink Badge',
+    desc: 'Optional ?anim=sheen button glint, auto spin/shake/nudge icons, and kitchen-sink badge',
+    title: 'Micro-Animations & Split Micro-Buttons',
   },
 ];
 
@@ -292,12 +308,36 @@ export function renderPreviewHtml(): string {
       variant: '1',
     }),
     renderBadge({
-      color: 'cyan',
-      icon: 'zap',
-      label: 'requests',
-      sparkline: [22, 19, 27, 24, 34, 31, 45, 41],
-      value: '1.2M/d',
+      color: 'emerald',
+      icon: 'shield-check',
+      label: 'coverage',
+      special: { type: 'bar', value: 99.4 },
+      value: '99.4%',
+      variant: '2',
+    }),
+    renderBadge({
+      color: 'sky',
+      icon: 'cpu',
+      label: 'kv quota',
+      special: { type: 'ring', value: 72 },
+      value: '72%',
+      variant: '2',
+    }),
+    renderBadge({
+      color: 'emerald',
+      dot: 'green',
+      label: 'edge health',
+      special: { states: ['up', 'up', 'up', 'up', 'warn', 'up', 'up', 'up'], type: 'strip' },
+      value: '99.9%',
       variant: '3',
+    }),
+    renderBadge({
+      color: 'violet',
+      icon: 'trending-up',
+      label: 'requests',
+      special: { type: 'delta', value: '+24%' },
+      value: '1.2M/d',
+      variant: '2',
     }),
   ].join('\n');
 
@@ -378,17 +418,17 @@ export function renderPreviewHtml(): string {
     <h2>1. The 6 Badge & Button Variants</h2>
     <div class="grid">${variantCards}</div>
 
-    <h2>2. Special Elements (Pulsing Status Dots & Mini-Sparklines)</h2>
+    <h2>2. Special Elements (?special=sparkline | bar | ring | strip | delta)</h2>
     <div class="card">
       <div class="badge-row">${specialSamples}</div>
     </div>
 
-    <h2>3. Curated Color Tokens (?c=)</h2>
+    <h2>3. Tailwind v4 Color Tokens (?color= / ?c=)</h2>
     <div class="card">
       <div class="badge-row">${paletteSwatches}</div>
     </div>
 
-    <h2>4. Structural Combinations & Edge Cases</h2>
+    <h2>4. Structural Combinations, Micro-Animations & Edge Cases</h2>
     <div class="grid">${useCaseCards}</div>
   </div>
 </body>
