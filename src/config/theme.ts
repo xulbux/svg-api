@@ -199,8 +199,31 @@ const TAILWIND_V4_SCALES: Record<ThemeColorName, TailwindFamilyScale> = {
   },
 };
 
-/** All supported theme color names in alphabetical order. */
-const THEME_COLOR_NAMES = Object.keys(TAILWIND_V4_SCALES) as ThemeColorName[];
+/** All 22 Tailwind v4 theme color names in canonical rainbow + neutral order. */
+export const THEME_COLOR_NAMES: readonly ThemeColorName[] = [
+  'red',
+  'orange',
+  'amber',
+  'yellow',
+  'lime',
+  'green',
+  'emerald',
+  'teal',
+  'cyan',
+  'sky',
+  'blue',
+  'indigo',
+  'violet',
+  'purple',
+  'fuchsia',
+  'pink',
+  'rose',
+  'slate',
+  'gray',
+  'zinc',
+  'neutral',
+  'stone',
+];
 
 /** Internal cache for lazily computed theme palettes. */
 const PALETTE_CACHE: Partial<Record<ThemeColorName, ThemePalette>> = {};

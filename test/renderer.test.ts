@@ -63,6 +63,24 @@ describe('renderBadge', () => {
     });
     expect(redDotSvg).toContain('values="2.6;7.2"');
     expect(redDotSvg).toContain('dur="1.15s"');
+
+    const maintenanceDotSvg = renderBadge({
+      color: 'sky',
+      dot: 'sky',
+      label: 'status',
+      value: 'maintenance',
+      variant: '2',
+    });
+    expect(maintenanceDotSvg).toContain('values="2.4;3.2;2.4"');
+
+    const standbyDotSvg = renderBadge({
+      color: 'slate',
+      dot: 'slate',
+      label: 'status',
+      value: 'standby',
+      variant: '3',
+    });
+    expect(standbyDotSvg).toContain('values="0.9;0.32;0.9" dur="3.4s"');
   });
 
   it('renders contextual icon micro-animations automatically and respects anim overrides', () => {
@@ -83,6 +101,8 @@ describe('renderBadge', () => {
 
     const sheenSvg = renderBadge({ anim: 'sheen', color: 'blue', label: 'Deploy', variant: 'b1' });
     expect(sheenSvg).toContain('clipPath id="sheen-clip-');
+    expect(sheenSvg).toContain('linearGradient id="sheen-grad-');
+    expect(sheenSvg).toContain('calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s"');
 
     const staticSvg = renderBadge({
       anim: 'none',
@@ -117,8 +137,19 @@ describe('renderBadge', () => {
       value: '95%',
       variant: '2',
     });
-    expect(barSvg).toContain('width="32" height="6" rx="3"');
-    expect(barSvg).toContain('width="30.4" height="6" rx="3"');
+    expect(barSvg).toContain(
+      `width="32" height="6" rx="3" fill="${THEMES.emerald.accentText}" fill-opacity="0.20"`
+    );
+    expect(barSvg).toContain('width="30.4" height="6" rx="3" fill="url(#bar-shimmer-');
+
+    const staticBarSvg = renderBadge({
+      color: 'emerald',
+      label: 'coverage',
+      special: { hasPulse: false, type: 'bar', value: 95 },
+      value: '95%',
+      variant: '2',
+    });
+    expect(staticBarSvg).not.toContain('bar-shimmer-');
 
     const ringSvg = renderBadge({
       color: 'sky',
@@ -127,18 +158,31 @@ describe('renderBadge', () => {
       value: '75%',
       variant: '2',
     });
+    expect(ringSvg).toContain(`stroke="${THEMES.sky.accentText}" stroke-opacity="0.24"`);
     expect(ringSvg).toContain('stroke-dasharray="21.2 28.27"');
+    expect(ringSvg).not.toContain('values="1;0.45;1"');
+
+    const pulsingRingSvg = renderBadge({
+      color: 'sky',
+      label: 'quota',
+      special: { hasPulse: true, type: 'ring', value: 75 },
+      value: '75%',
+      variant: '2',
+    });
+    expect(pulsingRingSvg).toContain('values="1;0.45;1"');
 
     const stripSvg = renderBadge({
       color: 'emerald',
       label: 'uptime',
-      special: { states: ['up', 'warn', 'down', 'up'], type: 'strip' },
+      special: { states: ['9', '6', '4', '2', '0'], type: 'strip' },
       value: '99.9%',
       variant: '2',
     });
-    expect(stripSvg).toContain(`fill="${THEMES.emerald.accentText}"`);
-    expect(stripSvg).toContain(`fill="${THEMES.amber.accentText}"`);
-    expect(stripSvg).toContain(`fill="${THEMES.rose.accentText}"`);
+    expect(stripSvg).toContain('fill="#00d294"');
+    expect(stripSvg).toContain('fill="#9ae600"');
+    expect(stripSvg).toContain('fill="#fdc700"');
+    expect(stripSvg).toContain('fill="#ff8904"');
+    expect(stripSvg).toContain('fill="#ff4d6d"');
 
     const deltaSvg = renderBadge({
       color: 'cyan',
@@ -179,7 +223,7 @@ describe('renderBadge', () => {
     expect(noIconButton).toContain(`x="${totalWidth / 2}" y="17" text-anchor="middle"`);
   });
 
-  it('applies tapering Kumo upper-edge crescent on v=b1, v=b2, and colored v=1 capsules only, and uses muted gray text on both v=3 and v=b3', () => {
+  it('applies tapering Kumo upper-edge crescent on all 3 button variants (b1, b2, b3) and colored v=1 capsules, and uses muted gray text on both v=3 and v=b3', () => {
     const primaryButton = renderBadge({ color: 'blue', label: 'Change', variant: 'b1' });
     // Tapering elliptical return arc (A 6 5) for the 1px upper-edge crescent.
     expect(primaryButton).toContain('A 6 5 0 0 0');
@@ -188,7 +232,8 @@ describe('renderBadge', () => {
 
     const secondaryButton = renderBadge({ color: 'sky', label: 'Changelog', variant: 'b2' });
     expect(secondaryButton).toContain('A 6 5 0 0 0');
-    expect(secondaryButton).toContain(`fill="${THEMES.sky.borderColor}"`);
+    expect(secondaryButton).toContain(`fill="${THEMES.sky.borderColor}" fill-opacity="0.45"`);
+    expect(secondaryButton).toContain(`stroke="${THEMES.sky.borderColor}" stroke-width="1"`);
 
     const splitPrimary = renderBadge({
       color: 'emerald',
@@ -223,10 +268,12 @@ describe('renderBadge', () => {
       label: 'Report Issue',
       variant: 'b3',
     });
-    // Both tertiary badges (v=3) and tertiary buttons (v=b3) use muted gray text (#9ca3af) and flat dark backgrounds.
+    // Both tertiary badges (v=3) and tertiary buttons (v=b3) use muted gray text (#9ca3af), and v=b3 gets the subtle 3D top crescent.
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
+    expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
     expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
-    expect(tertiaryButton).not.toContain('A 6 5 0 0 0');
+    expect(tertiaryButton).toContain('A 6 5 0 0 0');
+    expect(tertiaryButton).toContain('fill="#ffffff" fill-opacity="0.045"');
   });
 });
 

@@ -28,12 +28,30 @@ export interface ResolvedIcon {
  */
 export type AnimationMode = 'auto' | 'nudge' | 'none' | 'shake' | 'sheen' | 'spin';
 
-/** Health state of an individual tick in a segmented uptime strip. */
-export type StripTickState = 'down' | 'up' | 'warn';
+/**
+ * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/red through `'9'` = optimal/emerald,
+ * plus semantic aliases `'down'`, `'warn'`, and `'up'`).
+ */
+export type StripTickState =
+  | '0'
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | 'down'
+  | 'up'
+  | 'warn';
 
 /** Unified right-compartment special data visualization element. */
 export type BadgeSpecialElement =
   | {
+      /** Optional override for whether the rightward shimmer wave is active (`true` by default unless `anim=none`). */
+      hasPulse?: boolean;
       /** Percentage fill (`0`–`100`) for an inline horizontal capacity/progress bar. */
       type: 'bar';
       /** Progress percentage (`0`–`100`). */
@@ -46,6 +64,8 @@ export type BadgeSpecialElement =
       value: string;
     }
   | {
+      /** Optional override to enable a subtle pulse on the circular ring gauge (`false` by default). */
+      hasPulse?: boolean;
       /** Percentage fill (`0`–`100`) for a compact `12x12px` circular ring gauge. */
       type: 'ring';
       /** Progress percentage (`0`–`100`). */

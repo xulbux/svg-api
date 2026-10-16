@@ -78,6 +78,39 @@ const ANIMATION_ALIASES: Readonly<Record<string, AnimationMode>> = {
   wiggle: 'shake',
 };
 
+/** Map of named and 10-stage (`0`–`9`) strip tokens to `StripTickState`. */
+const STRIP_TOKEN_MAP: Readonly<Record<string, StripTickState>> = {
+  '0': '0',
+  '1': '1',
+  '2': '2',
+  '3': '3',
+  '4': '4',
+  '5': '5',
+  '6': '6',
+  '7': '7',
+  '8': '8',
+  '9': '9',
+  amber: 'warn',
+  degraded: 'warn',
+  down: 'down',
+  emerald: '9',
+  err: 'down',
+  fail: 'down',
+  good: '7',
+  green: '8',
+  lime: '6',
+  offline: 'down',
+  ok: 'up',
+  orange: '2',
+  pass: 'up',
+  red: '1',
+  rose: '0',
+  slow: '3',
+  up: 'up',
+  warn: 'warn',
+  yellow: '4',
+};
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches `+` characters in URL path segments for space decoding. */
@@ -88,6 +121,9 @@ const LIST_SEPARATOR_RX = /[,\s]+/;
 
 /** Matches trailing `%` sign on percentage strings. */
 const TRAILING_PERCENT_RX = /%$/;
+
+/** Matches a compact ternary strip payload consisting only of `'0'`, `'1'`, and `'2'` digits (e.g., `'11112111'`). */
+const LEGACY_TERNARY_STRIP_RX = /^[012,\s]+$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -130,44 +166,36 @@ function parseSparklineNumbers(rawPayload: string): number[] | undefined {
   return values.length >= 2 ? values : undefined;
 }
 
-/** Parse a single character or token into a `StripTickState`. */
-function toStripTickState(token: string): StripTickState | undefined {
-  const clean = token.trim().toLowerCase();
-  if (clean === '1' || clean === 'up' || clean === 'ok' || clean === 'green' || clean === 'pass') {
+/** Map a legacy ternary digit (`'0'`, `'1'`, `'2'`) to `'down'`, `'up'`, or `'warn'`. */
+function toLegacyTernaryStripState(token: string): StripTickState | undefined {
+  if (token === '1') {
     return 'up';
   }
-  if (
-    clean === '2' ||
-    clean === 'warn' ||
-    clean === 'degraded' ||
-    clean === 'amber' ||
-    clean === 'slow'
-  ) {
+  if (token === '2') {
     return 'warn';
   }
-  if (
-    clean === '0' ||
-    clean === 'down' ||
-    clean === 'err' ||
-    clean === 'red' ||
-    clean === 'fail' ||
-    clean === 'offline'
-  ) {
+  if (token === '0') {
     return 'down';
   }
   return undefined;
 }
 
-/** Parse a strip payload (`1,1,2,1` or compact `11112111` or `up,up,warn,down`) into `StripTickState[]`. */
+/**
+ * Parse a strip payload into `StripTickState[]`.
+ * Supports 10-stage smooth heat levels (`0`–`9`, e.g., `9876425789`), named colors/states
+ * (`up,warn,orange,down`), and legacy ternary strings (`11112111` where `1=up, 2=warn, 0=down`).
+ */
 function parseStripStates(rawPayload: string): StripTickState[] | undefined {
   const trimmed = rawPayload.trim();
   if (!trimmed) {
     return undefined;
   }
+  const isLegacyTernary = LEGACY_TERNARY_STRIP_RX.test(trimmed) && trimmed.includes('1');
   const tokens = LIST_SEPARATOR_RX.test(trimmed) ? trimmed.split(LIST_SEPARATOR_RX) : [...trimmed];
   const states: StripTickState[] = [];
   for (const token of tokens) {
-    const mapped = toStripTickState(token);
+    const clean = token.trim().toLowerCase();
+    const mapped = isLegacyTernary ? toLegacyTernaryStripState(clean) : STRIP_TOKEN_MAP[clean];
     if (mapped) {
       states.push(mapped);
     }
@@ -175,14 +203,34 @@ function parseStripStates(rawPayload: string): StripTickState[] | undefined {
   return states.length > 0 ? states.slice(0, 10) : undefined;
 }
 
-/** Parse a numeric percentage string (e.g., `'99.4'` or `'99.4%'`) into a finite number. */
-function parsePercentageNumber(rawPayload: string): number | undefined {
-  const cleaned = rawPayload.trim().replace(TRAILING_PERCENT_RX, '');
+/** Parse a percentage payload with an optional `:pulse` / `:static` modifier (e.g., `'99.4'`, `'78:pulse'`, `'90:static'`). */
+function parsePercentageAndPulse(
+  rawPayload: string
+): { hasPulse?: boolean; value: number } | undefined {
+  const colonIdx = rawPayload.indexOf(':');
+  const numberPart = colonIdx !== -1 ? rawPayload.slice(0, colonIdx) : rawPayload;
+  const modifierPart =
+    colonIdx !== -1
+      ? rawPayload
+          .slice(colonIdx + 1)
+          .trim()
+          .toLowerCase()
+      : '';
+  const cleaned = numberPart.trim().replace(TRAILING_PERCENT_RX, '');
   if (!cleaned) {
     return undefined;
   }
   const num = Number(cleaned);
-  return Number.isFinite(num) ? num : undefined;
+  if (!Number.isFinite(num)) {
+    return undefined;
+  }
+  let hasPulse: boolean | undefined = undefined;
+  if (modifierPart === 'pulse' || modifierPart === 'shimmer' || modifierPart === 'anim') {
+    hasPulse = true;
+  } else if (modifierPart === 'static' || modifierPart === 'none' || modifierPart === 'off') {
+    hasPulse = false;
+  }
+  return { hasPulse, value: num };
 }
 
 /** Parse a `<kind>:<payload>` pair into a `BadgeSpecialElement`. */
@@ -195,12 +243,12 @@ function parseSpecialKindAndPayload(
     return values ? { type: 'sparkline', values } : undefined;
   }
   if (kind === 'bar' || kind === 'progress') {
-    const pct = parsePercentageNumber(payload);
-    return pct !== undefined ? { type: 'bar', value: pct } : undefined;
+    const parsed = parsePercentageAndPulse(payload);
+    return parsed ? { hasPulse: parsed.hasPulse, type: 'bar', value: parsed.value } : undefined;
   }
   if (kind === 'ring' || kind === 'donut' || kind === 'gauge') {
-    const pct = parsePercentageNumber(payload);
-    return pct !== undefined ? { type: 'ring', value: pct } : undefined;
+    const parsed = parsePercentageAndPulse(payload);
+    return parsed ? { hasPulse: parsed.hasPulse, type: 'ring', value: parsed.value } : undefined;
   }
   if (kind === 'strip' || kind === 'uptime' || kind === 'health') {
     const states = parseStripStates(payload);
@@ -305,6 +353,22 @@ export function resolveAnimationMode(
   return mapped ?? fallback;
 }
 
+/** Resolve a raw `?dot=` / `?d=` query parameter (color name or status alias like `'maintenance'`, `'standby'`, `'online'`). */
+function resolveDotState(input?: string, fallback?: DotState): DotState | undefined {
+  if (!input) {
+    return fallback;
+  }
+  const clean = input.trim().toLowerCase();
+  if (clean === 'none' || clean === 'off' || clean === 'false') {
+    return undefined;
+  }
+  const preset = STATUS_PRESET_MAP[clean];
+  if (preset) {
+    return preset.dot;
+  }
+  return clean as DotState;
+}
+
 /** Render a badge SVG by merging route defaults with readable and compact URL query overrides. */
 function renderBadgeWithQueryOverrides(
   context: Context<{ Bindings: Env }>,
@@ -314,7 +378,7 @@ function renderBadgeWithQueryOverrides(
   const variantParam = getFirstQueryParam(context, ['variant', 'v']);
   const iconParam = getFirstQueryParam(context, ['icon', 'i']);
   const labelParam = getFirstQueryParam(context, ['label', 'l']);
-  const dotParam = getFirstQueryParam(context, ['dot', 'd']) as DotState | undefined;
+  const dotParam = getFirstQueryParam(context, ['dot', 'd']);
   const animParam = getFirstQueryParam(context, ['anim', 'animate', 'a']);
   const sheenParam = context.req.query('sheen');
   const specialParam = getFirstQueryParam(context, ['special', 's']);
@@ -325,7 +389,7 @@ function renderBadgeWithQueryOverrides(
   return renderBadge({
     anim: resolvedAnim,
     color: resolveColor(colorParam, defaults.color),
-    dot: dotParam ?? defaults.dot,
+    dot: resolveDotState(dotParam, defaults.dot),
     icon: iconParam ?? defaults.icon,
     label: labelParam !== undefined ? decodeSegment(labelParam) : defaults.label,
     sparkline: defaults.sparkline,

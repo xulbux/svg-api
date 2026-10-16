@@ -143,10 +143,59 @@ const AUTO_NUDGE_VECTORS: Readonly<Record<string, readonly [dx: number, dy: numb
 };
 
 /** Critical dot color states that use an urgent fast outward radar beacon. */
-const CRITICAL_DOT_STATES: ReadonlySet<DotState> = new Set(['fuchsia', 'pink', 'red', 'rose']);
+const CRITICAL_DOT_STATES: ReadonlySet<DotState> = new Set(['red', 'rose']);
+
+/** High-load / incident dot color states that use a fast double-pulse outward ripple + core pulse. */
+const INCIDENT_DOT_STATES: ReadonlySet<DotState> = new Set(['orange']);
 
 /** Warning dot color states that use a medium double-pulse outward radar ripple. */
-const WARNING_DOT_STATES: ReadonlySet<DotState> = new Set(['amber', 'orange', 'yellow']);
+const WARNING_DOT_STATES: ReadonlySet<DotState> = new Set(['amber', 'yellow']);
+
+/** Active work / maintenance / deploying dot color states that use a smooth breathing core + soft halo. */
+const ACTIVE_WORK_DOT_STATES: ReadonlySet<DotState> = new Set(['blue', 'cyan', 'indigo', 'sky']);
+
+/** Standby / paused / idle dot color states that use a calm deep-sleep core breath without a radar ring. */
+const STANDBY_DOT_STATES: ReadonlySet<DotState> = new Set([
+  'gray',
+  'neutral',
+  'slate',
+  'stone',
+  'zinc',
+]);
+
+/** 10-stage smooth green -> lime -> yellow -> amber -> orange -> red -> rose palette for dark strip capsules. */
+const STRIP_DARK_COLORS: Readonly<Record<StripTickState, string>> = {
+  '0': '#ff4d6d',
+  '1': '#ff6467',
+  '2': '#ff8904',
+  '3': '#ffb900',
+  '4': '#fdc700',
+  '5': '#ccda00',
+  '6': '#9ae600',
+  '7': '#52e339',
+  '8': '#05df72',
+  '9': '#00d294',
+  down: '#ff637e',
+  up: '#00d294',
+  warn: '#ffb900',
+};
+
+/** 10-stage high-contrast light tint palette for solid primary (`v=1`, `v=b1`) strip capsules. */
+const STRIP_SOLID_COLORS: Readonly<Record<StripTickState, string>> = {
+  '0': '#fecdd3',
+  '1': '#fca5a5',
+  '2': '#fdba74',
+  '3': '#fde68a',
+  '4': '#fef08a',
+  '5': '#ecfccb',
+  '6': '#d9f99d',
+  '7': '#bbf7d0',
+  '8': '#dcfce7',
+  '9': '#ffffff',
+  down: '#fecdd3',
+  up: '#ffffff',
+  warn: '#fde68a',
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -347,7 +396,7 @@ function renderIconMarkup(
 
 /**
  * Render the SVG markup for an animated status indicator dot with an outward-only radar ripple
- * whose cadence adapts to status severity.
+ * or breathing pattern tailored to the status state.
  */
 function renderDotMarkup(
   dot: DotState | undefined,
@@ -363,6 +412,7 @@ function renderDotMarkup(
     return `<circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}" />`;
   }
 
+  // 1. Critical / Offline (red, rose): urgent 1.15s outward beacon + core pulse.
   if (CRITICAL_DOT_STATES.has(dot)) {
     return `
       <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
@@ -375,6 +425,20 @@ function renderDotMarkup(
     `;
   }
 
+  // 2. Incident / Overloaded (orange): faster 1.45s double-beat outward ripple + subtle core pulse.
+  if (INCIDENT_DOT_STATES.has(dot)) {
+    return `
+      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
+        <animate attributeName="r" values="2.6;6.6;2.6;7.0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.72;0;0.55;0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" />
+      </circle>
+      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
+        <animate attributeName="opacity" values="1;0.68;1" dur="1.45s" repeatCount="indefinite" />
+      </circle>
+    `;
+  }
+
+  // 3. Degraded / Warning (amber, yellow): 1.8s double-beat outward radar ripple.
   if (WARNING_DOT_STATES.has(dot)) {
     return `
       <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
@@ -385,6 +449,30 @@ function renderDotMarkup(
     `;
   }
 
+  // 4. Maintenance / Deploying / Syncing (sky, blue, cyan, indigo): active-work breathing core + soft outward halo.
+  if (ACTIVE_WORK_DOT_STATES.has(dot)) {
+    return `
+      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
+        <animate attributeName="r" values="2.6;5.8" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.5;0" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" />
+      </circle>
+      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
+        <animate attributeName="r" values="2.4;3.2;2.4" dur="2s" repeatCount="indefinite" />
+        <animate attributeName="opacity" values="0.75;1;0.75" dur="2s" repeatCount="indefinite" />
+      </circle>
+    `;
+  }
+
+  // 5. Standby / Paused / Idle (slate, gray, zinc, neutral, stone): calm 3.4s deep-sleep core breath without radar ring.
+  if (STANDBY_DOT_STATES.has(dot)) {
+    return `
+      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
+        <animate attributeName="opacity" values="0.9;0.32;0.9" dur="3.4s" repeatCount="indefinite" />
+      </circle>
+    `;
+  }
+
+  // 6. Operational / Online & Beta / Preview (green, emerald, violet, purple, etc.): calm 2.3s outward spline wave.
   return `
       <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
         <animate attributeName="r" values="2.6;6.8" dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1" repeatCount="indefinite" />
@@ -394,9 +482,14 @@ function renderDotMarkup(
     `;
 }
 
-/** Render an inline horizontal progress/capacity bar. */
+/**
+ * Render an inline horizontal progress/capacity bar.
+ * The empty track uses a dark translucent accent color, and the rightward shimmer wave is applied
+ * directly as a fill on the filled `<rect>` so it can never enter the empty part of the bar.
+ */
 function renderBarWidgetMarkup(
   percentValue: number,
+  hasPulse: boolean,
   isSolidCapsule: boolean,
   palette: ThemePalette,
   specialX: number,
@@ -405,20 +498,35 @@ function renderBarWidgetMarkup(
 ): string {
   const clampedPct = Math.min(100, Math.max(0, percentValue));
   const barY = (height - 6) / 2;
-  const trackFill = isSolidCapsule ? 'rgba(0,0,0,0.26)' : 'rgba(255,255,255,0.12)';
-  const barFill = isSolidCapsule ? '#ffffff' : palette.accentText;
+  const trackAttrs = isSolidCapsule
+    ? 'fill="rgba(0,0,0,0.28)"'
+    : `fill="${palette.accentText}" fill-opacity="0.20"`;
+  const barFill = isSolidCapsule ? 'rgba(255,255,255,0.82)' : palette.accentText;
   const fillWidth =
     clampedPct <= 0 ? 0 : Math.max(4, Number(((clampedPct / 100) * specialWidth).toFixed(1)));
-  const fillRect =
-    fillWidth > 0
-      ? `<rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="${barFill}" />`
-      : '';
-  return `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" fill="${trackFill}" />${fillRect}`;
+  if (fillWidth <= 0) {
+    return `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" ${trackAttrs} />`;
+  }
+
+  const baseRect = `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" ${trackAttrs} /><rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="${barFill}" />`;
+  if (!hasPulse) {
+    return baseRect;
+  }
+
+  const gradId = `bar-shimmer-${specialX}-${isSolidCapsule ? 'w' : 'c'}`;
+  const shimmerPeak = isSolidCapsule ? '0.95' : '0.52';
+  const shimmerDef = `<defs><linearGradient id="${gradId}" x1="-0.75" y1="0" x2="0" y2="0"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="50%" stop-color="#ffffff" stop-opacity="${shimmerPeak}" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-0.75;1.05;1.05" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /><animate attributeName="x2" values="0;1.8;1.8" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /></linearGradient></defs>`;
+  const shimmerRect = `<rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="url(#${gradId})" />`;
+  return `${baseRect}${shimmerDef}${shimmerRect}`;
 }
 
-/** Render an inline `12x12px` circular ring/donut gauge. */
+/**
+ * Render an inline `12x12px` circular ring/donut gauge with a dark translucent accent track
+ * and optional pulse.
+ */
 function renderRingWidgetMarkup(
   percentValue: number,
+  hasPulse: boolean,
   isSolidCapsule: boolean,
   palette: ThemePalette,
   specialX: number,
@@ -429,20 +537,21 @@ function renderRingWidgetMarkup(
   const ringCy = height / 2;
   const circumference = 28.27;
   const arcLength = Number(((clampedPct / 100) * circumference).toFixed(2));
-  const trackStroke = isSolidCapsule ? 'rgba(0,0,0,0.28)' : 'rgba(255,255,255,0.16)';
+  const trackAttrs = isSolidCapsule
+    ? 'stroke="rgba(0,0,0,0.28)"'
+    : `stroke="${palette.accentText}" stroke-opacity="0.24"`;
   const arcStroke = isSolidCapsule ? '#ffffff' : palette.accentText;
-  return `<circle cx="${ringCx}" cy="${ringCy}" r="4.5" stroke="${trackStroke}" stroke-width="2" /><circle cx="${ringCx}" cy="${ringCy}" r="4.5" stroke="${arcStroke}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})" />`;
+  const pulseAnim = hasPulse
+    ? '<animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" />'
+    : '';
+  return `<circle cx="${ringCx}" cy="${ringCy}" r="4.5" ${trackAttrs} stroke-width="2" /><circle cx="${ringCx}" cy="${ringCy}" r="4.5" stroke="${arcStroke}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
 }
 
-/** Resolve the fill color for a single tick in a segmented uptime strip. */
+/** Resolve the fill color for a single tick in a 10-stage (`0`–`9` or `down`/`warn`/`up`) segmented strip. */
 function resolveStripTickColor(state: StripTickState, isSolidCapsule: boolean): string {
-  if (state === 'warn') {
-    return isSolidCapsule ? '#fde68a' : THEMES.amber.accentText;
-  }
-  if (state === 'down') {
-    return isSolidCapsule ? '#fecdd3' : THEMES.rose.accentText;
-  }
-  return isSolidCapsule ? '#ffffff' : THEMES.emerald.accentText;
+  return isSolidCapsule
+    ? (STRIP_SOLID_COLORS[state] ?? '#ffffff')
+    : (STRIP_DARK_COLORS[state] ?? THEMES.emerald.accentText);
 }
 
 /** Render a segmented uptime/health history strip. */
@@ -533,8 +642,10 @@ function renderSpecialElementMarkup(
       return `<polygon points="${geometry.areaPoints}" fill="url(#${sparkGradId})" /><polyline points="${geometry.linePoints}" fill="none" stroke="${sparkStroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`;
     }
     case 'bar': {
+      const hasBarShimmer = animMode !== 'none' && special.hasPulse !== false;
       return renderBarWidgetMarkup(
         special.value,
+        hasBarShimmer,
         isSolidCapsule,
         palette,
         specialX,
@@ -543,7 +654,15 @@ function renderSpecialElementMarkup(
       );
     }
     case 'ring': {
-      return renderRingWidgetMarkup(special.value, isSolidCapsule, palette, specialX, height);
+      const hasRingPulse = animMode !== 'none' && Boolean(special.hasPulse);
+      return renderRingWidgetMarkup(
+        special.value,
+        hasRingPulse,
+        isSolidCapsule,
+        palette,
+        specialX,
+        height
+      );
     }
     case 'strip': {
       return renderStripWidgetMarkup(special.states, isSolidCapsule, specialX, height, animMode);
@@ -662,7 +781,7 @@ function renderSurfaceAndBorderLayers(
   if (variant === 'b2') {
     let layers = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="url(#bg-dark)" />`;
     layers += `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${palette.tintBg}" />`;
-    layers += `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="${palette.borderColor}" />`;
+    layers += `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
     if (isSplit) {
       layers += `<line x1="${leftWidth}" y1="0" x2="${leftWidth}" y2="${height}" stroke="${palette.borderColor}" stroke-width="1" />`;
     }
@@ -670,9 +789,13 @@ function renderSurfaceAndBorderLayers(
     return layers;
   }
 
-  // 4. Flat Secondary Badge (v=2), Tertiary Badge (v=3), and Tertiary Button (v=b3).
+  // 4. Tertiary Button (v=b3) and Flat Secondary/Tertiary Badges (v=2, v=3).
   let layers = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="url(#bg-dark)" />`;
   const outerBorder = variant === '2' ? palette.borderColor : BASE_DARK.borderNeutral;
+
+  if (variant === 'b3') {
+    layers += `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="#ffffff" fill-opacity="0.045" />`;
+  }
 
   if (variant === '2' && !isSplit) {
     layers += `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${palette.tintBg}" />`;
@@ -690,7 +813,10 @@ function renderSurfaceAndBorderLayers(
   return layers;
 }
 
-/** Render the optional periodic diagonal specular sheen overlay (`?anim=sheen`). */
+/**
+ * Render the optional periodic diagonal specular sheen overlay (`?anim=sheen`).
+ * Uses a soft multi-stop linear gradient across a skewed band and a gentle spline sweep.
+ */
 function renderSheenOverlay(
   animMode: AnimationMode,
   totalWidth: number,
@@ -701,9 +827,19 @@ function renderSheenOverlay(
     return { clipDef: '', overlay: '' };
   }
   const clipId = `sheen-clip-${totalWidth}-${height}`;
-  const endTranslate = totalWidth + 50;
-  const clipDef = `<clipPath id="${clipId}"><rect width="${totalWidth}" height="${height}" rx="${radiusX}" /></clipPath>`;
-  const overlay = `<g clip-path="url(#${clipId})"><polygon points="-32,0 -12,0 -24,${height} -44,${height}" fill="rgba(255,255,255,0.22)"><animateTransform attributeName="transform" type="translate" values="0 0;${endTranslate} 0;${endTranslate} 0" keyTimes="0;0.22;1" dur="4.5s" repeatCount="indefinite" /></polygon></g>`;
+  const gradId = `sheen-grad-${totalWidth}-${height}`;
+  const endTranslate = totalWidth + 68;
+  const bandHeight = height + 12;
+  const clipDef =
+    `<clipPath id="${clipId}"><rect width="${totalWidth}" height="${height}" rx="${radiusX}" /></clipPath>` +
+    `<linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="0">` +
+    `<stop offset="0%" stop-color="#ffffff" stop-opacity="0" />` +
+    `<stop offset="28%" stop-color="#ffffff" stop-opacity="0.06" />` +
+    `<stop offset="50%" stop-color="#ffffff" stop-opacity="0.28" />` +
+    `<stop offset="72%" stop-color="#ffffff" stop-opacity="0.06" />` +
+    `<stop offset="100%" stop-color="#ffffff" stop-opacity="0" />` +
+    `</linearGradient>`;
+  const overlay = `<g clip-path="url(#${clipId})"><g><animateTransform attributeName="transform" type="translate" values="0 0;${endTranslate} 0;${endTranslate} 0" keyTimes="0;0.34;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><rect x="-52" y="-6" width="40" height="${bandHeight}" transform="skewX(-22)" fill="url(#${gradId})" /></g></g>`;
   return { clipDef, overlay };
 }
 

@@ -2,7 +2,7 @@
  * Preview studio – Interactive HTML showcase rendered directly from the SSOT SVG generator.
  */
 
-import { THEMES } from '@/config/theme';
+import { THEME_COLOR_NAMES } from '@/config/theme';
 import { renderBadge } from '@/svg/renderer';
 import type { BadgeVariant, ThemeColorName } from '@/types';
 
@@ -54,7 +54,7 @@ const VARIANT_DESCRIPTORS: VariantDescriptor[] = [
     title: 'v=b2 · Secondary Button',
   },
   {
-    desc: 'Understated flat utility button with muted label (26px height)',
+    desc: 'Kumo 3D subtle utility button with muted label (26px height)',
     id: 'b3',
     title: 'v=b3 · Tertiary Button',
   },
@@ -115,25 +115,25 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       {
         color: 'emerald',
         icon: 'shield-check',
-        label: 'coverage',
-        special: { type: 'bar', value: 94.8 },
-        value: '94.8%',
+        label: 'rollout',
+        special: { type: 'bar', value: 68 },
+        value: '68%',
         variant: '2',
       },
       {
         color: 'indigo',
         icon: 'cpu',
         label: 'memory',
-        special: { type: 'ring', value: 78 },
-        value: '78%',
+        special: { type: 'ring', value: 74 },
+        value: '74%',
         variant: '1',
       },
       {
         color: 'emerald',
         dot: 'green',
         label: 'uptime',
-        special: { states: ['up', 'up', 'up', 'up', 'warn', 'up', 'up', 'up'], type: 'strip' },
-        value: '99.98%',
+        special: { states: ['9', '8', '7', '5', '3', '1', '3', '6', '8', '9'], type: 'strip' },
+        value: '99.4%',
         variant: '2',
       },
       {
@@ -153,8 +153,8 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
         variant: '3',
       },
     ],
-    desc: 'Unified ?special= widgets: bar:<pct>, ring:<pct>, strip:<states>, and delta:<val>',
-    title: 'Special Data Widgets (Bar, Ring, Strip & Delta)',
+    desc: 'Unified ?special= widgets: bar:<pct>, ring:<pct>, strip:<0..9>, and delta:<val>',
+    title: 'Special Data Widgets (Bar, Ring, 10-Stage Strip & Delta)',
   },
   {
     badges: [
@@ -264,9 +264,8 @@ function renderPaletteSwatch(colorName: ThemeColorName): string {
  * @returns Complete HTML document string.
  */
 export function renderPreviewHtml(): string {
-  const colors = Object.keys(THEMES) as ThemeColorName[];
   const variantCards = VARIANT_DESCRIPTORS.map(renderVariantCard).join('\n');
-  const paletteSwatches = colors.map(renderPaletteSwatch).join('\n');
+  const paletteSwatches = THEME_COLOR_NAMES.map(renderPaletteSwatch).join('\n');
   const useCaseCards = USE_CASE_GROUPS.map(renderUseCaseCard).join('\n');
 
   const specialSamples = [
@@ -285,11 +284,39 @@ export function renderPreviewHtml(): string {
       variant: '2',
     }),
     renderBadge({
+      color: 'orange',
+      dot: 'orange',
+      label: 'queue load',
+      value: 'incident (94%)',
+      variant: '2',
+    }),
+    renderBadge({
       color: 'rose',
       dot: 'red',
       label: 'build pipeline',
       value: 'offline',
       variant: '2',
+    }),
+    renderBadge({
+      color: 'sky',
+      dot: 'sky',
+      label: 'edge cluster',
+      value: 'maintenance',
+      variant: '2',
+    }),
+    renderBadge({
+      color: 'violet',
+      dot: 'violet',
+      label: 'v3 engine',
+      value: 'beta preview',
+      variant: '2',
+    }),
+    renderBadge({
+      color: 'slate',
+      dot: 'slate',
+      label: 'batch worker',
+      value: 'standby',
+      variant: '3',
     }),
     renderBadge({
       color: 'emerald',
@@ -311,8 +338,8 @@ export function renderPreviewHtml(): string {
       color: 'emerald',
       icon: 'shield-check',
       label: 'coverage',
-      special: { type: 'bar', value: 99.4 },
-      value: '99.4%',
+      special: { type: 'bar', value: 82 },
+      value: '82%',
       variant: '2',
     }),
     renderBadge({
@@ -327,7 +354,7 @@ export function renderPreviewHtml(): string {
       color: 'emerald',
       dot: 'green',
       label: 'edge health',
-      special: { states: ['up', 'up', 'up', 'up', 'warn', 'up', 'up', 'up'], type: 'strip' },
+      special: { states: ['9', '9', '8', '6', '4', '2', '5', '7', '8', '9'], type: 'strip' },
       value: '99.9%',
       variant: '3',
     }),
