@@ -1077,7 +1077,7 @@ export function renderIcon(options: IconRenderOptions): string {
   const hasSheen = animMode === 'sheen';
   const sheenId = `icon-sheen-${cleanSlug}-${options.color}-${size}`;
   const sheenDefs = hasSheen
-    ? `<defs><linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="20%" stop-color="#ffffff" stop-opacity="0.35" /><stop offset="50%" stop-color="#ffffff" stop-opacity="0.95" /><stop offset="80%" stop-color="#ffffff" stop-opacity="0.35" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-58;58;58" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><animate attributeName="x2" values="-32;84;84" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /></linearGradient></defs>`
+    ? `<defs><linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="24%" stop-color="#ffffff" stop-opacity="0.12" /><stop offset="50%" stop-color="#ffffff" stop-opacity="0.45" /><stop offset="76%" stop-color="#ffffff" stop-opacity="0.12" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-58;58;58" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><animate attributeName="x2" values="-32;84;84" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /></linearGradient></defs>`
     : '';
 
   if (iconData?.type === 'simple') {
