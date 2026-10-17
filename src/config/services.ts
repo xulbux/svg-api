@@ -1,5 +1,5 @@
 /**
- * Service presets – Declarative configuration for external APIs and status indicators.
+ * Service presets – Declarative configuration for GitHub, PyPI (via ClickHouse ClickPy), Open VSX, and status indicators.
  */
 
 import type { Env, MetricResult, ServiceDefinition, StatusPreset } from '@/types';
@@ -17,6 +17,8 @@ interface GitHubRepoPayload {
   };
   /** Number of open issues and pull requests. */
   open_issues_count?: number;
+  /** ISO 8601 timestamp of the most recent git push. */
+  pushed_at?: string;
   /** Number of repository stargazers. */
   stargazers_count?: number;
 }
@@ -44,13 +46,30 @@ interface PyPiPackagePayload {
   };
 }
 
-/** Partial PyPI Stats recent downloads API payload. */
-interface PyPiStatsPayload {
-  /** Download count metrics block. */
+/** Partial ClickHouse ClickPy (`pypi.pypi_downloads_per_day`) and PyPI Stats download payload. */
+interface PyPiDownloadsPayload {
+  /** Optional legacy PyPI Stats `data` block. */
   data?: {
     /** Downloads in the last 30 days. */
     last_month?: number;
   };
+  /** ClickHouse `JSONObjectEachRow` first row result. */
+  row_1?: {
+    /** Downloads in the last 30 days (`sumIf(count, date >= today() - 30)`). */
+    last_month?: number | string;
+    /** All-time total downloads (`sum(count)`). */
+    total?: number | string;
+  };
+}
+
+/** Partial Open VSX extension metadata API payload (`https://open-vsx.org/api/:owner/:ext`). */
+interface OpenVsxExtensionPayload {
+  /** Average star rating (`0`–`5`). */
+  averageRating?: number;
+  /** Total all-time extension downloads. */
+  downloadCount?: number;
+  /** Latest published extension version. */
+  version?: string;
 }
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -61,10 +80,16 @@ const TRAILING_ZERO_DECIMAL_RX = /\.0$/;
 /** Matches one or more whitespace characters. */
 const WHITESPACE_RX = /\s+/g;
 
+/** Matches any character not allowed in a canonical PyPI package identifier. */
+const UNSAFE_PKG_CHAR_RX = /[^a-zA-Z0-9._-]/g;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Default fallback sparkline points when commit participation history is empty. */
 const DEFAULT_ACTIVITY_SPARKLINE = [2, 5, 3, 8, 6, 11, 9, 14];
+
+/** Number of milliseconds in one day (`24 * 60 * 60 * 1000`). */
+const MS_PER_DAY = 86_400_000;
 
 /**
  * Format a number into a compact human-readable string (e.g., `1.2k`, `3.4M`).
@@ -81,12 +106,45 @@ export function formatCompactNumber(num: number): string {
   return String(num);
 }
 
-/** Resolve the default GitHub owner from environment bindings. */
+/**
+ * Format an ISO 8601 timestamp into a concise relative age label (e.g., `'today'`, `'3d ago'`, `'2mo ago'`).
+ * @param isoTimestamp   ISO 8601 timestamp string from an upstream API.
+ * @param nowMs          Optional reference timestamp in milliseconds (defaults to `Date.now()`).
+ * @returns Compact relative time label.
+ */
+export function formatRelativeDate(isoTimestamp?: string, nowMs = Date.now()): string {
+  if (!isoTimestamp) {
+    return 'recent';
+  }
+  const parsedMs = Date.parse(isoTimestamp);
+  if (!Number.isFinite(parsedMs)) {
+    return 'recent';
+  }
+  const diffDays = Math.max(0, Math.floor((nowMs - parsedMs) / MS_PER_DAY));
+  if (diffDays === 0) {
+    return 'today';
+  }
+  if (diffDays === 1) {
+    return 'yesterday';
+  }
+  if (diffDays < 14) {
+    return `${diffDays}d ago`;
+  }
+  if (diffDays < 60) {
+    return `${Math.floor(diffDays / 7)}w ago`;
+  }
+  if (diffDays < 365) {
+    return `${Math.floor(diffDays / 30)}mo ago`;
+  }
+  return `${Math.floor(diffDays / 365)}y ago`;
+}
+
+/** Resolve the default GitHub / Open VSX owner from environment bindings. */
 function getDefaultGitHubOwner(env: Env): string {
   return env.DEFAULT_GH_OWNER || 'xulbux';
 }
 
-/** Resolve the allowlist of GitHub owners from environment bindings. */
+/** Resolve the allowlist of GitHub / Open VSX owners from environment bindings. */
 function getAllowedGitHubOwners(env: Env): string[] {
   return [(env.DEFAULT_GH_OWNER || 'xulbux').toLowerCase()];
 }
@@ -139,6 +197,17 @@ function transformGitHubLicense(data: unknown): Partial<MetricResult> {
   const payload = (data ?? {}) as GitHubRepoPayload;
   const spdxId = payload.license?.spdx_id;
   return { value: spdxId && spdxId !== 'NOASSERTION' ? spdxId : 'custom' };
+}
+
+/** Build the GitHub commit history redirect URL. */
+function buildGitHubCommitsRedirectUrl(owner: string, repo: string): string {
+  return `https://github.com/${owner}/${repo}/commits`;
+}
+
+/** Transform GitHub repository payload (`pushed_at`) into relative last-commit age. */
+function transformGitHubLastCommit(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as GitHubRepoPayload;
+  return { value: formatRelativeDate(payload.pushed_at) };
 }
 
 /** Build the GitHub latest release API URL. */
@@ -208,15 +277,63 @@ function transformPyPiPythonVersion(data: unknown): Partial<MetricResult> {
   return { value: requirement.replace(WHITESPACE_RX, '') };
 }
 
-/** Build the PyPI Stats recent downloads API URL. */
-function buildPyPiDownloadsApiUrl(_owner: string, pkg: string): string {
-  return `https://pypistats.org/api/packages/${pkg}/recent`;
+/**
+ * Build the ClickHouse public ClickPy SQL API URL for a PyPI package.
+ * Queries both all-time `total` and 30-day `last_month` downloads in one fast read-only query.
+ */
+function buildPyPiClickPyApiUrl(_owner: string, pkg: string): string {
+  const safePkg = pkg.replace(UNSAFE_PKG_CHAR_RX, '').toLowerCase();
+  const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30) AS last_month FROM pypi.pypi_downloads_per_day WHERE project = '${safePkg}'`;
+  return `https://sql-clickhouse.clickhouse.com/?user=play&default_format=JSONObjectEachRow&query=${encodeURIComponent(sql)}`;
 }
 
-/** Transform PyPI Stats payload into monthly download count metric. */
-function transformPyPiDownloads(data: unknown): Partial<MetricResult> {
-  const payload = (data ?? {}) as PyPiStatsPayload;
-  return { value: `${formatCompactNumber(payload.data?.last_month ?? 0)}/mo` };
+/** Build the ClickPy (`clickpy.clickhouse.com`) analytics dashboard redirect URL for a PyPI package. */
+function buildPyPiClickPyRedirectUrl(_owner: string, pkg: string): string {
+  const safePkg = pkg.replace(UNSAFE_PKG_CHAR_RX, '').toLowerCase();
+  return `https://clickpy.clickhouse.com/dashboard/${safePkg}`;
+}
+
+/** Transform ClickHouse ClickPy payload into all-time total download count (`dt`). */
+function transformPyPiTotalDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as PyPiDownloadsPayload;
+  const rawTotal = Number(payload.row_1?.total ?? payload.data?.last_month ?? 0);
+  return { value: formatCompactNumber(Number.isFinite(rawTotal) ? rawTotal : 0) };
+}
+
+/** Transform ClickHouse ClickPy payload into 30-day monthly download count (`dl`). */
+function transformPyPiMonthlyDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as PyPiDownloadsPayload;
+  const rawMonthly = Number(payload.row_1?.last_month ?? payload.data?.last_month ?? 0);
+  return { value: `${formatCompactNumber(Number.isFinite(rawMonthly) ? rawMonthly : 0)}/mo` };
+}
+
+/** Build the Open VSX extension metadata API URL. */
+function buildOpenVsxApiUrl(owner: string, ext: string): string {
+  return `https://open-vsx.org/api/${owner}/${ext}`;
+}
+
+/** Build the Open VSX extension page redirect URL. */
+function buildOpenVsxRedirectUrl(owner: string, ext: string): string {
+  return `https://open-vsx.org/extension/${owner}/${ext}`;
+}
+
+/** Transform Open VSX extension payload into latest version metric (`v`). */
+function transformOpenVsxVersion(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as OpenVsxExtensionPayload;
+  return { value: `v${payload.version ?? '0.0.0'}` };
+}
+
+/** Transform Open VSX extension payload into total download count metric (`dt` / `dl`). */
+function transformOpenVsxDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as OpenVsxExtensionPayload;
+  return { value: formatCompactNumber(payload.downloadCount ?? 0) };
+}
+
+/** Transform Open VSX extension payload into average rating metric (`rating`). */
+function transformOpenVsxRating(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as OpenVsxExtensionPayload;
+  const rating = payload.averageRating;
+  return { value: typeof rating === 'number' && rating > 0 ? `${rating.toFixed(1)}/5` : '5.0/5' };
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -235,7 +352,7 @@ export const STATUS_PRESET_MAP: Record<string, StatusPreset> = {
   standby: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
 };
 
-/** Declarative external service preset configurations. */
+/** Declarative external service preset configurations (`gh`, `pypi`, `ovsx`). */
 export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
   gh: {
     allowedOwners: getAllowedGitHubOwners,
@@ -248,6 +365,14 @@ export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
         defaultIcon: 'activity',
         defaultLabel: 'commits',
         transform: transformGitHubActivity,
+      },
+      commit: {
+        buildApiUrl: buildGitHubRepoApiUrl,
+        buildRedirectUrl: buildGitHubCommitsRedirectUrl,
+        defaultColor: 'rose',
+        defaultIcon: 'git-commit-horizontal',
+        defaultLabel: 'last commit',
+        transform: transformGitHubLastCommit,
       },
       forks: {
         buildApiUrl: buildGitHubRepoApiUrl,
@@ -264,6 +389,14 @@ export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
         defaultIcon: 'circle-dot',
         defaultLabel: 'issues',
         transform: transformGitHubIssues,
+      },
+      'last-commit': {
+        buildApiUrl: buildGitHubRepoApiUrl,
+        buildRedirectUrl: buildGitHubCommitsRedirectUrl,
+        defaultColor: 'rose',
+        defaultIcon: 'git-commit-horizontal',
+        defaultLabel: 'last commit',
+        transform: transformGitHubLastCommit,
       },
       license: {
         buildApiUrl: buildGitHubRepoApiUrl,
@@ -291,16 +424,62 @@ export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
       },
     },
   },
+  ovsx: {
+    allowedOwners: getAllowedGitHubOwners,
+    defaultOwner: getDefaultGitHubOwner,
+    metrics: {
+      dl: {
+        buildApiUrl: buildOpenVsxApiUrl,
+        buildRedirectUrl: buildOpenVsxRedirectUrl,
+        defaultColor: 'violet',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformOpenVsxDownloads,
+      },
+      dt: {
+        buildApiUrl: buildOpenVsxApiUrl,
+        buildRedirectUrl: buildOpenVsxRedirectUrl,
+        defaultColor: 'violet',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformOpenVsxDownloads,
+      },
+      rating: {
+        buildApiUrl: buildOpenVsxApiUrl,
+        buildRedirectUrl: buildOpenVsxRedirectUrl,
+        defaultColor: 'amber',
+        defaultIcon: 'star',
+        defaultLabel: 'rating',
+        transform: transformOpenVsxRating,
+      },
+      v: {
+        buildApiUrl: buildOpenVsxApiUrl,
+        buildRedirectUrl: buildOpenVsxRedirectUrl,
+        defaultColor: 'indigo',
+        defaultIcon: 'puzzle',
+        defaultLabel: 'open vsx',
+        transform: transformOpenVsxVersion,
+      },
+    },
+  },
   pypi: {
     allowedTargets: [],
     metrics: {
       dl: {
-        buildApiUrl: buildPyPiDownloadsApiUrl,
-        buildRedirectUrl: buildPyPiRedirectUrl,
+        buildApiUrl: buildPyPiClickPyApiUrl,
+        buildRedirectUrl: buildPyPiClickPyRedirectUrl,
         defaultColor: 'emerald',
         defaultIcon: 'download',
         defaultLabel: 'downloads',
-        transform: transformPyPiDownloads,
+        transform: transformPyPiMonthlyDownloads,
+      },
+      dt: {
+        buildApiUrl: buildPyPiClickPyApiUrl,
+        buildRedirectUrl: buildPyPiClickPyRedirectUrl,
+        defaultColor: 'indigo',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformPyPiTotalDownloads,
       },
       py: {
         buildApiUrl: buildPyPiApiUrl,

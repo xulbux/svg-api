@@ -420,6 +420,6 @@ export function resolveColor(input?: string, fallback: ThemeColorName = 'indigo'
   if (!input) {
     return fallback;
   }
-  const key = input.toLowerCase() as ThemeColorName;
+  const key = input.trim().toLowerCase() as ThemeColorName;
   return key in TAILWIND_V4_SCALES ? key : fallback;
 }

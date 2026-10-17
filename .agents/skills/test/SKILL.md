@@ -20,7 +20,7 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 | `test/measure.test.ts`  | Text width calculation tests (`src/svg/measure.ts`)                              |
 | `test/icons.test.ts`    | Lucide & Simple Icons resolution tests (`src/svg/icons.ts`)                      |
 | `test/renderer.test.ts` | SSOT SVG rendering across all 6 badge variants, standalone icons, and widgets    |
-| `test/routes.test.ts`   | Hono route handling for `badge.xul.is` and `icon.xul.is`, overrides & redirects  |
+| `test/routes.test.ts`   | Hono route handling for `svg.xul.is` (`/badge/*`, `/icon/*`, `/stack/*`, `/quote/*`), overrides & redirects |
 | `vitest.config.mts`     | Vitest config with `@/` path alias                                               |
 
 ---

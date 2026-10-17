@@ -1,5 +1,5 @@
 /**
- * Worker entrypoint – Hono router for `badge.xul.is` (badges/buttons) and `icon.xul.is` (standalone icons), readable query DSL, smart document redirects, and Tier-2 SVG edge caching.
+ * Worker entrypoint – Hono router for `svg.xul.is` (`/badge/*`, `/icon/*`, `/stack/*`, `/quote/*`), readable query DSL, smart document redirects, and Tier-2 SVG edge caching.
  */
 
 import type { Context } from 'hono';
@@ -7,22 +7,31 @@ import { Hono } from 'hono';
 import { STATUS_PRESET_MAP } from '@/config/services';
 import { DOT_COLORS, resolveColor } from '@/config/theme';
 import { renderPreviewHtml } from '@/preview/page';
-import { resolveServiceMetric } from '@/services/fetcher';
-import { renderBadge, renderIcon } from '@/svg/renderer';
+import { getEdgeCache, putInEdgeCache, resolveServiceMetric } from '@/services/fetcher';
+import {
+  parseStackGroups,
+  renderBadge,
+  renderIcon,
+  renderQuote,
+  renderStack,
+} from '@/svg/renderer';
 import type {
   AnimationMode,
   BadgeSpecialElement,
   BadgeVariant,
   DotState,
   Env,
+  QuoteLayout,
+  QuoteSize,
   StripTickState,
   ThemeColorName,
   WaitUntilContext,
+  WidgetVariant,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Default fallback values for a route before applying URL query overrides. */
+/** Default fallback values for a badge route before applying URL query overrides. */
 interface RouteBadgeDefaults {
   /** Default theme color token. */
   color?: ThemeColorName;
@@ -49,6 +58,9 @@ const ROOT_REDIRECT_URL = 'https://xul.is';
 
 /** Set of valid badge and button variant identifiers. */
 const VALID_VARIANTS: ReadonlySet<BadgeVariant> = new Set(['1', '2', '3', 'b1', 'b2', 'b3']);
+
+/** Set of valid standalone widget variants (`'1'`, `'2'`, `'3'`). */
+const VALID_WIDGET_VARIANTS: ReadonlySet<WidgetVariant> = new Set(['1', '2', '3']);
 
 /** Set of valid animation mode identifiers. */
 const VALID_ANIMATION_MODES: ReadonlySet<AnimationMode> = new Set([
@@ -81,7 +93,7 @@ const VALID_STRIP_STAGES: ReadonlySet<StripTickState> = new Set([
 /** Matches `+` characters in URL path segments for space decoding. */
 const PLUS_SIGN_RX = /\+/g;
 
-/** Matches comma or whitespace separators in list-style special payloads. */
+/** Matches comma or whitespace separators in list-style payloads. */
 const LIST_SEPARATOR_RX = /[,\s]+/;
 
 /** Matches trailing `%` sign on percentage strings. */
@@ -226,6 +238,59 @@ function resolveDotState(input?: string, fallback?: DotState): DotState | undefi
   return fallback;
 }
 
+/** Resolve a raw `?variant=` query parameter for stack/quote widgets (`'1'`, `'2'`, `'3'`). */
+function resolveWidgetVariant(input?: string, fallback: WidgetVariant = '2'): WidgetVariant {
+  if (!input) {
+    return fallback;
+  }
+  const candidate = input.trim() as WidgetVariant;
+  return VALID_WIDGET_VARIANTS.has(candidate) ? candidate : fallback;
+}
+
+/** Parse a single number or comma-separated list of numbers for `?perline=` (e.g., `?perline=8` or `?perline=8,6,6,4,3,3`). */
+function parsePerLineList(raw?: string): number[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const values: number[] = [];
+  for (const part of raw.split(LIST_SEPARATOR_RX)) {
+    const parsed = Number(part.trim());
+    if (Number.isFinite(parsed) && parsed >= 1) {
+      values.push(Math.round(parsed));
+    }
+  }
+  return values.length > 0 ? values : undefined;
+}
+
+/** Resolve the quote card layout (`'horizontal'` or `'vertical'`) from `?layout=`, `?type=`, or `?center=`. */
+function resolveQuoteLayout(
+  layoutParam?: string,
+  typeParam?: string,
+  centerParam?: string
+): QuoteLayout {
+  const candidate = (layoutParam ?? typeParam ?? '').trim().toLowerCase();
+  if (candidate === 'vertical' || candidate === 'center' || candidate === 'v') {
+    return 'vertical';
+  }
+  if (centerParam === 'true' || centerParam === '1') {
+    return 'vertical';
+  }
+  return 'horizontal';
+}
+
+/** Resolve the quote card size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel font size from `?size=`. */
+function resolveQuoteSize(raw?: string): QuoteSize | number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const clean = raw.trim().toLowerCase();
+  if (clean === 'sm' || clean === 'md' || clean === 'lg' || clean === 'xl') {
+    return clean;
+  }
+  const numeric = Number(clean);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
 /** Build an HTTP `200` SVG response with edge cache headers. */
 function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
   return new Response(svg, {
@@ -239,14 +304,6 @@ function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
   });
 }
 
-/** Retrieve the Cloudflare Workers default edge cache if available. */
-function getEdgeCache(): Cache | undefined {
-  if (typeof caches !== 'undefined' && 'default' in caches) {
-    return caches.default;
-  }
-  return undefined;
-}
-
 /** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
 function getSafeExecutionContext(
   context: Context<{ Bindings: Env }>
@@ -256,6 +313,18 @@ function getSafeExecutionContext(
   } catch {
     return undefined;
   }
+}
+
+/** Validate and return an HTTP/HTTPS redirect URL, or `undefined` if unsafe/invalid. */
+function sanitizeRedirectUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl) {
+    return undefined;
+  }
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+    return trimmed;
+  }
+  return undefined;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -298,18 +367,6 @@ export function isDocumentNavigation(request: Request): boolean {
 }
 
 /**
- * Determine whether an incoming HTTP request targets the standalone icon domain (`icon.xul.is`).
- * @param request   Incoming Fetch API `Request`.
- * @returns `true` when the hostname starts with `icon.`.
- */
-export function isIconHost(request: Request): boolean {
-  const hostHeader = request.headers.get('Host');
-  const rawHost = hostHeader ? hostHeader.split(':')[0] : new URL(request.url).hostname;
-  const hostname = rawHost.toLowerCase();
-  return hostname.startsWith('icon.');
-}
-
-/**
  * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant`.
  * @param input      Raw `?variant=` query parameter value (`1`, `2`, `3`, `b1`, `b2`, `b3`).
  * @param fallback   Default variant when `input` is omitted or invalid.
@@ -325,7 +382,7 @@ export function resolveVariant(input?: string, fallback: BadgeVariant = '1'): Ba
 
 /**
  * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
- * @param input      Raw `?anim=` query parameter value (`auto`, `sheen`, `spin`, `shake`, `nudge`, `none`).
+ * @param input      Raw `?anim=` query parameter value (`auto`, `sheen`, `spin`, `shake`, `nudge`, `pulse`, `float`, `none`).
  * @param fallback   Default animation mode when `input` is omitted or invalid.
  * @returns Validated `AnimationMode`.
  */
@@ -342,7 +399,20 @@ export function resolveAnimationMode(
 
 // ----------------------------------------- MAIN ----------------------------------------
 
-/** Render a badge SVG by merging route defaults with canonical URL query overrides. */
+/** Return a `302` redirect response if the request is a document navigation and a valid redirect URL exists. */
+function tryRedirectOnDocumentNav(
+  context: Context<{ Bindings: Env }>,
+  fallbackUrl?: string
+): Response | undefined {
+  if (!isDocumentNavigation(context.req.raw)) {
+    return undefined;
+  }
+  const redirectUrl =
+    sanitizeRedirectUrl(context.req.query('redirect')) || sanitizeRedirectUrl(fallbackUrl);
+  return redirectUrl ? context.redirect(redirectUrl, 302) : undefined;
+}
+
+/** Apply canonical query overrides (`color`, `variant`, `icon`, `label`, `dot`, `anim`, `special`) and render a badge SVG. */
 function renderBadgeWithQueryOverrides(
   context: Context<{ Bindings: Env }>,
   defaults: RouteBadgeDefaults
@@ -355,19 +425,18 @@ function renderBadgeWithQueryOverrides(
   const animParam = context.req.query('anim');
   const specialParam = context.req.query('special');
 
-  return renderBadge({
-    anim: resolveAnimationMode(animParam, 'auto'),
-    color: resolveColor(colorParam, defaults.color),
-    dot: resolveDotState(dotParam, defaults.dot),
-    icon: iconParam ?? defaults.icon,
-    label: labelParam !== undefined ? decodeSegment(labelParam) : defaults.label,
-    special: parseSpecialParam(specialParam) ?? defaults.special,
-    value: defaults.value,
-    variant: resolveVariant(variantParam, defaults.variant),
-  });
+  const color = resolveColor(colorParam, defaults.color ?? 'indigo');
+  const variant = resolveVariant(variantParam, defaults.variant);
+  const icon = iconParam ?? defaults.icon;
+  const label = labelParam ? decodeSegment(labelParam) : defaults.label;
+  const dot = resolveDotState(dotParam, defaults.dot);
+  const anim = resolveAnimationMode(animParam, 'auto');
+  const special = parseSpecialParam(specialParam) ?? defaults.special;
+
+  return renderBadge({ anim, color, dot, icon, label, special, value: defaults.value, variant });
 }
 
-/** Handle 3-segment and 4-segment external service preset routes (`/gh/*`, `/pypi/*`) on `badge.xul.is`. */
+/** Handle 3-segment and 4-segment external service preset routes (`/badge/gh/*`, `/badge/pypi/*`, `/badge/ovsx/*`). */
 async function handleServicePreset(
   context: Context<{ Bindings: Env }>,
   service: string,
@@ -375,14 +444,22 @@ async function handleServicePreset(
   target: string,
   metric: string
 ): Promise<Response> {
-  if (isIconHost(context.req.raw)) {
-    return new Response('Not Found', { status: 404 });
+  const isDocNav = isDocumentNavigation(context.req.raw);
+  const edgeCache = getEdgeCache();
+  const cacheKey = new Request(context.req.url, { method: 'GET' });
+
+  // Tier 2 Rendered SVG Cache Lookup (fast path for `<img src="...">` requests).
+  if (!isDocNav && edgeCache) {
+    const cachedSvg = await edgeCache.match(cacheKey);
+    if (cachedSvg) {
+      return cachedSvg;
+    }
   }
 
   const executionCtx = getSafeExecutionContext(context);
   const envBindings: Env = context.env ?? { DEFAULT_GH_OWNER: 'xulbux' };
 
-  const { result } = await resolveServiceMetric(
+  const { result, status } = await resolveServiceMetric(
     service,
     owner,
     target,
@@ -391,20 +468,9 @@ async function handleServicePreset(
     executionCtx
   );
 
-  const redirectOverride = context.req.query('redirect');
-  const finalRedirect = redirectOverride || result.redirectUrl;
-  if (isDocumentNavigation(context.req.raw) && finalRedirect) {
-    return context.redirect(finalRedirect, 302);
-  }
-
-  // Tier 2 Rendered SVG Cache Lookup.
-  const edgeCache = getEdgeCache();
-  const cacheKey = new Request(context.req.url, { method: 'GET' });
-  if (edgeCache) {
-    const cachedSvg = await edgeCache.match(cacheKey);
-    if (cachedSvg) {
-      return cachedSvg;
-    }
+  const redirectResponse = tryRedirectOnDocumentNav(context, result.redirectUrl);
+  if (redirectResponse) {
+    return redirectResponse;
   }
 
   const svg = renderBadgeWithQueryOverrides(context, {
@@ -417,14 +483,10 @@ async function handleServicePreset(
     variant: '1',
   });
 
-  const response = buildSvgResponse(svg, 600);
-  if (edgeCache) {
-    const putPromise = edgeCache.put(cacheKey, response.clone());
-    if (executionCtx) {
-      executionCtx.waitUntil(putPromise);
-    } else {
-      await putPromise;
-    }
+  const ttlSeconds = status === 200 ? 600 : 60;
+  const response = buildSvgResponse(svg, ttlSeconds);
+  if (edgeCache && status === 200) {
+    await putInEdgeCache(edgeCache, cacheKey, response.clone(), executionCtx);
   }
   return response;
 }
@@ -442,21 +504,17 @@ function handlePreviewRoute(context: Context<{ Bindings: Env }>): Response {
   return context.html(renderPreviewHtml());
 }
 
-/** Handle `/status/:state/:text` status preset route on `badge.xul.is`. */
+/** Handle `/badge/status/:state/:text` status preset route. */
 function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
-  if (isIconHost(context.req.raw)) {
-    return new Response('Not Found', { status: 404 });
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
   }
 
   const stateKey = (context.req.param('state') ?? '').toLowerCase();
   const text = decodeSegment(context.req.param('text') ?? '');
-  const redirectParam = context.req.query('redirect');
-
-  if (redirectParam && isDocumentNavigation(context.req.raw)) {
-    return context.redirect(redirectParam, 302);
-  }
-
   const preset = STATUS_PRESET_MAP[stateKey] || STATUS_PRESET_MAP.online;
+
   const svg = renderBadgeWithQueryOverrides(context, {
     color: preset.color,
     dot: preset.dot,
@@ -468,7 +526,7 @@ function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
   return buildSvgResponse(svg, 300);
 }
 
-/** Handle 3-segment service route `/:service{gh|pypi}/:target/:metric` on `badge.xul.is`. */
+/** Handle 3-segment service route `/badge/:service{gh|pypi|ovsx}/:target/:metric`. */
 function handleDefaultOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
   return handleServicePreset(
     context,
@@ -479,7 +537,7 @@ function handleDefaultOwnerServiceRoute(context: Context<{ Bindings: Env }>): Pr
   );
 }
 
-/** Handle 4-segment service route `/:service{gh|pypi}/:owner/:target/:metric` on `badge.xul.is`. */
+/** Handle 4-segment service route `/badge/:service{gh|pypi|ovsx}/:owner/:target/:metric`. */
 function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
   return handleServicePreset(
     context,
@@ -490,15 +548,11 @@ function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): P
   );
 }
 
-/** Handle generic static 2-segment badge route `/:label/:value` on `badge.xul.is`. */
+/** Handle static 2-segment badge route `/badge/:label/:value`. */
 function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
-  if (isIconHost(context.req.raw)) {
-    return new Response('Not Found', { status: 404 });
-  }
-
-  const redirectParam = context.req.query('redirect');
-  if (redirectParam && isDocumentNavigation(context.req.raw)) {
-    return context.redirect(redirectParam, 302);
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
   }
 
   const svg = renderBadgeWithQueryOverrides(context, {
@@ -511,38 +565,11 @@ function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Respon
   return buildSvgResponse(svg, 3600);
 }
 
-/** Handle 1-segment standalone icon route `/:icon` on `icon.xul.is`. */
-function handleStandaloneIconRoute(context: Context<{ Bindings: Env }>): Response {
-  const redirectParam = context.req.query('redirect');
-  if (redirectParam && isDocumentNavigation(context.req.raw)) {
-    return context.redirect(redirectParam, 302);
-  }
-
-  const colorParam = context.req.query('color');
-  const sizeParam = context.req.query('size');
-  const strokeParam = context.req.query('stroke');
-  const animParam = context.req.query('anim');
-
-  const svg = renderIcon({
-    anim: resolveAnimationMode(animParam, 'auto'),
-    color: resolveColor(colorParam, 'indigo'),
-    icon: decodeSegment(context.req.param('label') ?? ''),
-    size: parseOptionalNumber(sizeParam),
-    strokeWidth: parseOptionalNumber(strokeParam),
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle generic 1-segment route `/:label` (`badge.xul.is` -> micro-button/badge, `icon.xul.is` -> standalone icon). */
-function handleSingleSegmentRoute(context: Context<{ Bindings: Env }>): Response {
-  if (isIconHost(context.req.raw)) {
-    return handleStandaloneIconRoute(context);
-  }
-
-  const redirectParam = context.req.query('redirect');
-  if (redirectParam && isDocumentNavigation(context.req.raw)) {
-    return context.redirect(redirectParam, 302);
+/** Handle 1-segment micro-button / badge route `/badge/:label`. */
+function handleSingleSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
   }
 
   const svg = renderBadgeWithQueryOverrides(context, {
@@ -554,25 +581,119 @@ function handleSingleSegmentRoute(context: Context<{ Bindings: Env }>): Response
   return buildSvgResponse(svg, 3600);
 }
 
+/** Handle standalone icon route `/icon/:icon`. */
+function handleStandaloneIconRoute(context: Context<{ Bindings: Env }>): Response {
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
+  }
+
+  const colorParam = context.req.query('color');
+  const sizeParam = context.req.query('size');
+  const strokeParam = context.req.query('stroke');
+  const animParam = context.req.query('anim');
+
+  const svg = renderIcon({
+    anim: resolveAnimationMode(animParam, 'auto'),
+    color: resolveColor(colorParam, 'indigo'),
+    icon: decodeSegment(context.req.param('icon') ?? ''),
+    size: parseOptionalNumber(sizeParam),
+    strokeWidth: parseOptionalNumber(strokeParam),
+  });
+
+  return buildSvgResponse(svg, 3600);
+}
+
+/** Handle tech stack icon row/grid/multi-group route `/stack/:icons` and `/stack`. */
+function handleStackRoute(context: Context<{ Bindings: Env }>): Response {
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
+  }
+
+  const rawIcons =
+    context.req.param('icons') ??
+    context.req.query('icons') ??
+    context.req.query('i') ??
+    context.req.query('groups') ??
+    '';
+  const decodedIcons = decodeSegment(rawIcons);
+  const perLineList = parsePerLineList(context.req.query('perline'));
+  const groups = parseStackGroups(decodedIcons, perLineList);
+  const colorParam = context.req.query('color');
+  const groupGapParam = context.req.query('groupgap') ?? context.req.query('ggap');
+
+  const svg = renderStack({
+    anim: resolveAnimationMode(context.req.query('anim'), 'auto'),
+    color: colorParam ? resolveColor(colorParam, 'indigo') : undefined,
+    gap: parseOptionalNumber(context.req.query('gap')),
+    groupGap: parseOptionalNumber(groupGapParam),
+    groups,
+    perLine: perLineList?.[0],
+    size: parseOptionalNumber(context.req.query('size')),
+    variant: resolveWidgetVariant(context.req.query('variant'), '2'),
+  });
+
+  return buildSvgResponse(svg, 3600);
+}
+
+/** Handle quote card route `/quote/:author/:text`, `/quote/:text`, and `/quote`. */
+function handleQuoteRoute(context: Context<{ Bindings: Env }>): Response {
+  const redirectResponse = tryRedirectOnDocumentNav(context);
+  if (redirectResponse) {
+    return redirectResponse;
+  }
+
+  const rawAuthor = context.req.param('author') ?? context.req.query('author');
+  const pathText = context.req.param('text');
+  const queryText = context.req.query('text') ?? context.req.query('quote') ?? '';
+
+  const text = pathText ? decodeSegment(pathText) : decodeSegment(queryText);
+  const author = rawAuthor ? decodeSegment(rawAuthor) : undefined;
+  const layout = resolveQuoteLayout(
+    context.req.query('layout'),
+    context.req.query('type'),
+    context.req.query('center')
+  );
+  const size = resolveQuoteSize(context.req.query('size'));
+
+  const svg = renderQuote({
+    anim: resolveAnimationMode(context.req.query('anim'), 'auto'),
+    author,
+    color: resolveColor(context.req.query('color'), 'indigo'),
+    layout,
+    size,
+    text,
+    variant: resolveWidgetVariant(context.req.query('variant'), '2'),
+    width: parseOptionalNumber(context.req.query('width')),
+  });
+
+  return buildSvgResponse(svg, 3600);
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
-// 1. Root Redirect.
+// 1. Root Redirect & SSOT Live Preview Studio.
 app.get('/', handleRootRoute);
-
-// 2. SSOT Live Preview Studio.
 app.get('/preview', handlePreviewRoute);
 
-// 3. Status Preset Route: /status/:state/:text (badge.xul.is only).
-app.get('/status/:state/:text', handleStatusRoute);
+// 2. Badge & Micro-Button Routes (/badge/*).
+app.get('/badge/status/:state/:text', handleStatusRoute);
+app.get('/badge/:service{gh|pypi|ovsx}/:target/:metric', handleDefaultOwnerServiceRoute);
+app.get('/badge/:service{gh|pypi|ovsx}/:owner/:target/:metric', handleExplicitOwnerServiceRoute);
+app.get('/badge/:label/:value', handleTwoSegmentBadgeRoute);
+app.get('/badge/:label', handleSingleSegmentBadgeRoute);
 
-// 4. Service Preset Routes (badge.xul.is only: 3 segments = default owner, 4 segments = explicit owner).
-app.get('/:service{gh|pypi}/:target/:metric', handleDefaultOwnerServiceRoute);
-app.get('/:service{gh|pypi}/:owner/:target/:metric', handleExplicitOwnerServiceRoute);
+// 3. Standalone Icon Route (/icon/:icon).
+app.get('/icon/:icon', handleStandaloneIconRoute);
 
-// 5. Generic Static 2-Segment Badge: /:label/:value (badge.xul.is only).
-app.get('/:label/:value', handleTwoSegmentBadgeRoute);
+// 4. Tech Stack Icon Grid Routes (/stack/:icons & /stack).
+app.get('/stack/:icons', handleStackRoute);
+app.get('/stack', handleStackRoute);
 
-// 6. Single-Segment Route: /:label (badge.xul.is -> button/badge, icon.xul.is -> standalone icon).
-app.get('/:label', handleSingleSegmentRoute);
+// 5. Quote Card Routes (/quote/:author/:text, /quote/:text, & /quote).
+app.get('/quote/:author/:text', handleQuoteRoute);
+app.get('/quote/:text', handleQuoteRoute);
+app.get('/quote', handleQuoteRoute);
 
 export default app;

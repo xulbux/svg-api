@@ -2,7 +2,7 @@
   "name": "svg-api",
   "version": "1.0.0",
   "private": true,
-  "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, and icon engine for badge.xul.is and icon.xul.is.",
+  "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, icon, tech stack, and quote card engine for svg.xul.is.",
   "author": {
     "name": "XulbuX",
     "email": "hi@xul.is"
@@ -33,9 +33,10 @@
   },
   "packageManager": "pnpm@11.24.0",
   "dependencies": {
+    "@iconify-json/devicon-plain": "^1.2.62",
+    "@iconify-json/simple-icons": "^1.2.100",
     "hono": "^4.13.13",
-    "lucide-static": "^1.57.0",
-    "simple-icons": "^16.35.0"
+    "lucide-static": "^1.57.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261015.1",

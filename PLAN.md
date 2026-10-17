@@ -1,8 +1,8 @@
-# Implementation Plan: `svg-api` (`badge.xul.is` & `icon.xul.is`) – Dynamic SVG Badge, Button & Icon Engine
+# Implementation Plan: `svg-api` (`svg.xul.is`) – Dynamic SVG Badge, Button, Icon, Stack & Quote Engine
 
 ## 1. Project Overview & Goals
 
-Build a high-performance, zero-cold-start SVG badge, micro-button, and standalone icon generator deployed to Cloudflare Workers on `badge.xul.is` for badges/buttons and `icon.xul.is` for standalone icons.
+Build a high-performance, zero-cold-start SVG badge, micro-button, standalone icon, tech stack grid, and quote card generator deployed to Cloudflare Workers on `svg.xul.is` (`/badge/*`, `/icon/*`, `/stack/*`, `/quote/*`).
 
 ### Core Capabilities
 
@@ -93,7 +93,7 @@ pnpm add -D @cloudflare/workers-types @types/node oxfmt oxlint tsx typescript vi
 }
 ```
 
-### `wrangler.jsonc` (Cloudflare Configuration for `badge.xul.is` & `icon.xul.is`)
+### `wrangler.jsonc` (Cloudflare Configuration for `svg.xul.is`)
 
 ```jsonc
 {
@@ -105,11 +105,7 @@ pnpm add -D @cloudflare/workers-types @types/node oxfmt oxlint tsx typescript vi
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "badge.xul.is",
-      "custom_domain": true
-    },
-    {
-      "pattern": "icon.xul.is",
+      "pattern": "svg.xul.is",
       "custom_domain": true
     }
   ],
@@ -1368,4 +1364,4 @@ process.stdout.write(`Generated standalone SSOT preview at: ${outPath}\n`);
 4.  **Cloudflare Secret & Deployment**:
     -   Authenticate Wrangler if needed: `pnpm exec wrangler login`
     -   Set GitHub API token secret: `pnpm exec wrangler secret put GITHUB_TOKEN`
-    -   Deploy Worker & automatically bind `badge.xul.is` and `icon.xul.is` Custom Domains: `pnpm run deploy`
+    -   Deploy Worker & automatically bind `svg.xul.is` Custom Domain: `pnpm run deploy`

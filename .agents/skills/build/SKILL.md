@@ -35,7 +35,7 @@ pnpm exec wrangler deploy --dry-run
 
 ## 4. Deploy to Cloudflare
 
-Authenticate Wrangler (if needed), configure secrets, and deploy to `badge.xul.is` and `icon.xul.is`:
+Authenticate Wrangler (if needed), configure secrets, and deploy to `svg.xul.is`:
 
 ```bash
 pnpm exec wrangler secret put GITHUB_TOKEN

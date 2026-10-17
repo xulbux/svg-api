@@ -21,21 +21,13 @@ const DEFAULT_JSON_CACHE_TTL = 600;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Retrieve the Cloudflare Workers default edge cache if available in the current runtime. */
-function getEdgeCache(): Cache | undefined {
-  if (typeof caches !== 'undefined' && 'default' in caches) {
-    return caches.default;
-  }
-  return undefined;
-}
-
 /** Build a standardized `403` restricted badge response when an owner or target is not allowlisted. */
 function buildRestrictedResponse(): ResolvedServiceMetric {
   return {
     result: {
       color: 'rose',
       icon: 'lock',
-      label: 'badge.xul.is',
+      label: 'svg.xul.is',
       redirectUrl: FALLBACK_REDIRECT_URL,
       value: 'restricted',
     },
@@ -51,24 +43,60 @@ function isTargetAllowed(
   env: Env
 ): boolean {
   if (service.allowedOwners) {
-    const allowedOwners = new Set(
-      service.allowedOwners(env).map((ownerItem) => ownerItem.toLowerCase())
-    );
-    if (!allowedOwners.has('*') && !allowedOwners.has(owner.toLowerCase())) {
+    const ownerLower = owner.toLowerCase();
+    const allowedList = service.allowedOwners(env);
+    const isOwnerAllowed = allowedList.some((item) => {
+      const lower = item.toLowerCase();
+      return lower === '*' || lower === ownerLower;
+    });
+    if (!isOwnerAllowed) {
       return false;
     }
   }
 
   if (service.allowedTargets && service.allowedTargets.length > 0) {
-    const allowedTargets = new Set(
-      service.allowedTargets.map((targetItem) => targetItem.toLowerCase())
+    const targetLower = target.toLowerCase();
+    const isTargetPermitted = service.allowedTargets.some(
+      (item) => item.toLowerCase() === targetLower
     );
-    if (!allowedTargets.has(target.toLowerCase())) {
+    if (!isTargetPermitted) {
       return false;
     }
   }
 
   return true;
+}
+
+/**
+ * Retrieve the Cloudflare Workers default edge cache if available in the current runtime.
+ * @returns Default `Cache` instance, or `undefined` when unavailable.
+ */
+export function getEdgeCache(): Cache | undefined {
+  if (typeof caches !== 'undefined' && 'default' in caches) {
+    return caches.default;
+  }
+  return undefined;
+}
+
+/**
+ * Write a `Response` into the Cloudflare edge cache, using `executionCtx.waitUntil` when available.
+ * @param edgeCache      Active edge `Cache` instance.
+ * @param cacheKey       Cache key `Request`.
+ * @param response       `Response` to store.
+ * @param executionCtx   Optional Worker execution context.
+ */
+export async function putInEdgeCache(
+  edgeCache: Cache,
+  cacheKey: Request,
+  response: Response,
+  executionCtx?: WaitUntilContext
+): Promise<void> {
+  const cachePromise = edgeCache.put(cacheKey, response);
+  if (executionCtx) {
+    executionCtx.waitUntil(cachePromise);
+  } else {
+    await cachePromise;
+  }
 }
 
 /** Fetch upstream API JSON with Tier-1 Cloudflare edge cache lookup and write-through. */
@@ -94,7 +122,7 @@ async function fetchUpstreamJson(
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'User-Agent': 'xul-badge-engine/1.0 (https://badge.xul.is)',
+    'User-Agent': 'svg-api/1.0 (https://svg.xul.is)',
   };
   if (serviceKey === 'gh' && env.GITHUB_TOKEN) {
     headers.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
@@ -117,16 +145,11 @@ async function fetchUpstreamJson(
   }
 
   const rawData: unknown = await upstreamResponse.json();
-  if (edgeCache) {
+  if (edgeCache && upstreamResponse.status === 200) {
     const jsonToCache = Response.json(rawData, {
       headers: { 'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}` },
     });
-    const cachePromise = edgeCache.put(cacheKey, jsonToCache);
-    if (executionCtx) {
-      executionCtx.waitUntil(cachePromise);
-    } else {
-      await cachePromise;
-    }
+    await putInEdgeCache(edgeCache, cacheKey, jsonToCache, executionCtx);
   }
 
   return { data: rawData };

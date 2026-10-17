@@ -1,9 +1,9 @@
 /**
- * Preview studio – Interactive HTML showcase rendered directly from the SSOT SVG generator (`badge.xul.is` & `icon.xul.is`).
+ * Preview studio – Interactive HTML showcase rendered directly from the SSOT SVG generator (`svg.xul.is`).
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { renderBadge, renderIcon } from '@/svg/renderer';
+import { renderBadge, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
 import type { BadgeVariant, ThemeColorName } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -84,48 +84,20 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
   },
   {
     badges: [
-      {
-        color: 'emerald',
-        icon: 'shield-check',
-        label: 'rollout',
-        special: { type: 'bar', value: 68 },
-        value: '68%',
-        variant: '2',
-      },
-      {
-        color: 'indigo',
-        icon: 'cpu',
-        label: 'memory',
-        special: { type: 'ring', value: 74 },
-        value: '74%',
-        variant: '1',
-      },
-      {
-        color: 'emerald',
-        dot: 'green',
-        label: 'uptime',
-        special: { states: ['9', '8', '7', '5', '3', '1', '3', '6', '8', '9'], type: 'strip' },
-        value: '99.4%',
-        variant: '2',
-      },
-      {
-        color: 'cyan',
-        icon: 'trending-up',
-        label: 'weekly dl',
-        special: { type: 'delta', value: '+18.4%' },
-        value: '142k',
-        variant: '2',
-      },
+      { color: 'sky', icon: 'pypi', label: 'pypi', value: 'v1.4.0', variant: '1' },
+      { color: 'indigo', icon: 'download', label: 'downloads', value: '86.8k', variant: '1' },
+      { color: 'indigo', icon: 'puzzle', label: 'open vsx', value: 'v1.2.3', variant: '2' },
+      { color: 'violet', icon: 'download', label: 'downloads', value: '2.5k', variant: '2' },
       {
         color: 'rose',
-        icon: 'flame',
-        label: 'p99 latency',
-        special: { type: 'delta', value: '-12%' },
-        value: '14ms',
-        variant: '3',
+        icon: 'git-commit-horizontal',
+        label: 'last commit',
+        value: '2d ago',
+        variant: '2',
       },
+      { color: 'slate', icon: 'scale', label: 'license', value: 'MIT', variant: '3' },
     ],
-    title: 'Special Data Widgets (Bar, Ring, 10-Stage Strip & Delta)',
+    title: 'Live Service Presets (/badge/gh/* · /badge/pypi/* · /badge/ovsx/*)',
   },
   {
     badges: [
@@ -240,7 +212,7 @@ export function renderPreviewHtml(): string {
     renderBadge({
       color: 'emerald',
       dot: 'green',
-      label: 'api.xul.is',
+      label: 'svg.xul.is',
       value: 'online',
       variant: '2',
     }),
@@ -287,6 +259,14 @@ export function renderPreviewHtml(): string {
       variant: '3',
     }),
     renderBadge({
+      color: 'indigo',
+      icon: 'download',
+      label: 'downloads',
+      special: { type: 'sparkline', values: [12, 18, 15, 24, 29, 35, 42] },
+      value: '42.1k/mo',
+      variant: '1',
+    }),
+    renderBadge({
       color: 'emerald',
       icon: 'activity',
       label: 'commits',
@@ -295,11 +275,19 @@ export function renderPreviewHtml(): string {
       variant: '2',
     }),
     renderBadge({
-      color: 'indigo',
-      icon: 'download',
-      label: 'downloads',
-      special: { type: 'sparkline', values: [12, 18, 15, 24, 29, 35, 42] },
-      value: '42.1k/mo',
+      color: 'cyan',
+      icon: 'zap',
+      label: 'latency',
+      special: { type: 'sparkline', values: [19, 16, 18, 15, 14, 15, 12, 11] },
+      value: '11ms',
+      variant: '3',
+    }),
+    renderBadge({
+      color: 'emerald',
+      icon: 'shield-check',
+      label: 'coverage',
+      special: { type: 'bar', value: 92 },
+      value: '92%',
       variant: '1',
     }),
     renderBadge({
@@ -311,11 +299,51 @@ export function renderPreviewHtml(): string {
       variant: '2',
     }),
     renderBadge({
+      color: 'amber',
+      icon: 'database',
+      label: 'storage',
+      special: { type: 'bar', value: 64 },
+      value: '64%',
+      variant: '3',
+    }),
+    renderBadge({
+      color: 'sky',
+      icon: 'cpu',
+      label: 'kv quota',
+      special: { hasPulse: true, type: 'ring', value: 84 },
+      value: '84%',
+      variant: '1',
+    }),
+    renderBadge({
       color: 'sky',
       icon: 'cpu',
       label: 'kv quota',
       special: { type: 'ring', value: 72 },
       value: '72%',
+      variant: '2',
+    }),
+    renderBadge({
+      color: 'violet',
+      icon: 'cpu',
+      label: 'memory',
+      special: { type: 'ring', value: 48 },
+      value: '48%',
+      variant: '3',
+    }),
+    renderBadge({
+      color: 'emerald',
+      dot: 'green',
+      label: 'edge health',
+      special: { states: ['9', '9', '8', '7', '9', '9', '8', '9', '9', '9'], type: 'strip' },
+      value: '99.98%',
+      variant: '1',
+    }),
+    renderBadge({
+      color: 'emerald',
+      dot: 'green',
+      label: 'edge health',
+      special: { states: ['9', '9', '8', '6', '4', '2', '5', '7', '8', '9'], type: 'strip' },
+      value: '99.9%',
       variant: '2',
     }),
     renderBadge({
@@ -327,6 +355,14 @@ export function renderPreviewHtml(): string {
       variant: '3',
     }),
     renderBadge({
+      color: 'indigo',
+      icon: 'trending-up',
+      label: 'requests',
+      special: { type: 'delta', value: '+38%' },
+      value: '2.4M/d',
+      variant: '1',
+    }),
+    renderBadge({
       color: 'violet',
       icon: 'trending-up',
       label: 'requests',
@@ -334,11 +370,20 @@ export function renderPreviewHtml(): string {
       value: '1.2M/d',
       variant: '2',
     }),
+    renderBadge({
+      color: 'rose',
+      icon: 'trending-down',
+      label: 'error rate',
+      special: { type: 'delta', value: '-18%' },
+      value: '0.02%',
+      variant: '3',
+    }),
   ].join('\n');
 
   const standaloneIconSamples = [
     renderIcon({ anim: 'none', color: 'violet', icon: 'globe-code', size: 16, strokeWidth: 2.5 }),
     renderIcon({ anim: 'none', color: 'indigo', icon: 'code-xml', size: 16, strokeWidth: 2.5 }),
+    renderIcon({ anim: 'none', color: 'violet', icon: 'square-text', size: 16, strokeWidth: 2.5 }),
     renderIcon({ anim: 'sheen', color: 'sky', icon: 'square-terminal', size: 20 }),
     renderIcon({ color: 'emerald', icon: 'package', size: 24 }),
     renderIcon({ anim: 'sheen', color: 'amber', icon: 'zap', size: 28 }),
@@ -353,12 +398,99 @@ export function renderPreviewHtml(): string {
     renderIcon({ color: 'slate', icon: 'github', size: 24 }),
   ].join('\n');
 
+  const fullProfileGroupsDsl = [
+    'c,cpp,cs,rust,java,py,js,ts,php,lua,bash,powershell,html,css,sass,md:8',
+    'dotnet,vue,pinia,laravel,symfony,nodejs,threejs,tauri,unity,unreal,tailwind,wordpress:6',
+    'git,github,githubactions,vscode,visualstudio,npm,vite,cmake,linux,windows,raspberrypi,arduino:6|aws,azure,cloudflare,firebase,netlify,terraform,mysql,sqlite:4',
+    'figma,ai,blender,ps,pr,ae:3|obsidian,notion,codepen,gtk,latex,regex:3',
+  ].join(';');
+
+  const fullStackVariant1 = renderStack({
+    anim: 'sheen',
+    icons: [fullProfileGroupsDsl],
+    variant: '1',
+  });
+
+  const fullStackVariant2 = renderStack({
+    anim: 'sheen',
+    icons: [fullProfileGroupsDsl],
+    variant: '2',
+  });
+
+  const fullStackVariant3 = renderStack({ icons: [fullProfileGroupsDsl], variant: '3' });
+
+  const quoteTextChaos =
+    'Who says programmers are boring? I bring the humor to the office while my code brings the chaos!';
+  const quoteTextEdge =
+    'Always creating more cool stuff for you – with balanced OKLCH colors and zero cold starts at the edge.';
+
+  const quoteHorizV1 = renderQuote({
+    anim: 'sheen',
+    author: 'XulbuX',
+    color: 'indigo',
+    size: 'md',
+    text: quoteTextChaos,
+    variant: '1',
+    width: 440,
+  });
+
+  const quoteHorizV2 = renderQuote({
+    anim: 'sheen',
+    author: 'XulbuX',
+    color: 'cyan',
+    size: 'lg',
+    text: quoteTextChaos,
+    variant: '2',
+    width: 440,
+  });
+
+  const quoteHorizV3 = renderQuote({
+    author: 'XulbuX',
+    color: 'violet',
+    size: 'md',
+    text: quoteTextEdge,
+    variant: '3',
+    width: 440,
+  });
+
+  const quoteVertV1 = renderQuote({
+    anim: 'sheen',
+    author: 'XulbuX',
+    color: 'blue',
+    layout: 'vertical',
+    size: 'lg',
+    text: quoteTextChaos,
+    variant: '1',
+    width: 340,
+  });
+
+  const quoteVertV2 = renderQuote({
+    anim: 'sheen',
+    author: 'XulbuX',
+    color: 'indigo',
+    layout: 'vertical',
+    size: 'lg',
+    text: quoteTextChaos,
+    variant: '2',
+    width: 340,
+  });
+
+  const quoteVertV3 = renderQuote({
+    author: 'XulbuX',
+    color: 'cyan',
+    layout: 'vertical',
+    size: 'lg',
+    text: quoteTextChaos,
+    variant: '3',
+    width: 340,
+  });
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>svg-api (badge.xul.is &amp; icon.xul.is) – SSOT Visual Studio</title>
+  <title>svg-api (svg.xul.is) – SSOT Visual Studio</title>
   <style>
     :root {
       --bg: #090b10;
@@ -382,7 +514,7 @@ export function renderPreviewHtml(): string {
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
       transition: background 0.2s, color 0.2s;
     }
-    .container { max-width: 980px; margin: 0 auto; }
+    .container { max-width: 1120px; margin: 0 auto; }
     header {
       display: flex;
       justify-content: space-between;
@@ -403,6 +535,7 @@ export function renderPreviewHtml(): string {
       font-weight: 500;
     }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 16px; }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -412,24 +545,25 @@ export function renderPreviewHtml(): string {
     .card-header { display: flex; align-items: baseline; margin-bottom: 14px; }
     .card-header code { font-weight: 600; font-size: 13px; white-space: nowrap; }
     .badge-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .center-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <div>
-        <h1>svg-api – SSOT Live Preview (<code>badge.xul.is</code> &amp; <code>icon.xul.is</code>)</h1>
-        <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">Rendered directly via <code>src/svg/renderer.ts</code></p>
+        <h1>svg-api – SSOT Live Preview (<code>svg.xul.is</code>)</h1>
+        <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">Unified endpoints: <code>/badge/*</code> · <code>/icon/*</code> · <code>/stack/*</code> · <code>/quote/*</code></p>
       </div>
       <button class="toggle" onclick="document.body.classList.toggle('light-canvas')">
         Toggle Dark / Light README Canvas
       </button>
     </header>
 
-    <h2>1. The 6 Badge &amp; Button Variants (badge.xul.is)</h2>
+    <h2>1. The 6 Badge &amp; Button Variants (svg.xul.is/badge/*)</h2>
     <div class="grid">${variantCards}</div>
 
-    <h2>2. Special Elements (?special=sparkline | bar | ring | strip | delta)</h2>
+    <h2>2. Special Elements Across All Variants (?special=sparkline | bar | ring | strip | delta)</h2>
     <div class="card">
       <div class="badge-row">${specialSamples}</div>
     </div>
@@ -439,12 +573,58 @@ export function renderPreviewHtml(): string {
       <div class="badge-row">${paletteSwatches}</div>
     </div>
 
-    <h2>4. Structural Combinations, Micro-Animations &amp; Edge Cases</h2>
+    <h2>4. Structural Combinations, Service Presets &amp; Micro-Animations</h2>
     <div class="grid">${useCaseCards}</div>
 
-    <h2>5. Standalone Icons – icon.xul.is/:icon (?color= &amp; ?size= &amp; ?stroke= &amp; ?anim=)</h2>
+    <h2>5. Standalone Icons – svg.xul.is/icon/:icon (?color= &amp; ?size= &amp; ?stroke= &amp; ?anim=)</h2>
     <div class="card">
       <div class="badge-row" style="gap: 16px;">${standaloneIconSamples}</div>
+    </div>
+
+    <h2>6. Multi-Group Tech Stacks – All 3 Variants (svg.xul.is/stack/:groups · ; bands · | side-by-side · :N cols)</h2>
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><code>variant=1 + anim=sheen · Primary Brand Gradient Multi-Group Stack (60 Icons)</code></div>
+        <div class="center-row">${fullStackVariant1}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><code>variant=2 + anim=sheen · Secondary Tinted Dark Multi-Group Stack (60 Icons)</code></div>
+        <div class="center-row">${fullStackVariant2}</div>
+      </div>
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header"><code>variant=3 · Tertiary Neutral Dark Multi-Group Stack (60 Icons)</code></div>
+        <div class="center-row">${fullStackVariant3}</div>
+      </div>
+    </div>
+
+    <h2>7. Quote Cards – All 3 Variants in Vertical Centered &amp; Horizontal Layouts (svg.xul.is/quote/:author/:text)</h2>
+    <div class="grid-3" style="margin-bottom: 16px;">
+      <div class="card">
+        <div class="card-header"><code>variant=1 + layout=vertical + size=lg + anim=sheen · Primary Brand Quote</code></div>
+        <div class="center-row">${quoteVertV1}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><code>variant=2 + layout=vertical + size=lg + anim=sheen · Secondary Tinted Quote</code></div>
+        <div class="center-row">${quoteVertV2}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><code>variant=3 + layout=vertical + size=lg · Tertiary Neutral Quote</code></div>
+        <div class="center-row">${quoteVertV3}</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><code>variant=1 + size=md + anim=sheen · Horizontal Primary Brand Quote</code></div>
+        <div class="badge-row">${quoteHorizV1}</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><code>variant=2 + size=lg + anim=sheen · Horizontal Secondary Tinted Quote</code></div>
+        <div class="badge-row">${quoteHorizV2}</div>
+      </div>
+      <div class="card" style="grid-column: 1 / -1;">
+        <div class="card-header"><code>variant=3 + size=md · Horizontal Tertiary Neutral Quote</code></div>
+        <div class="badge-row">${quoteHorizV3}</div>
+      </div>
     </div>
   </div>
 </body>

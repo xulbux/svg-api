@@ -8,15 +8,18 @@ importers:
 
   .:
     dependencies:
+      '@iconify-json/devicon-plain':
+        specifier: ^1.2.62
+        version: 1.2.62
+      '@iconify-json/simple-icons':
+        specifier: ^1.2.100
+        version: 1.2.100
       hono:
         specifier: ^4.13.13
         version: 4.13.13
       lucide-static:
         specifier: ^1.57.0
         version: 1.57.0
-      simple-icons:
-        specifier: ^16.35.0
-        version: 16.35.0
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^5.20261015.1
@@ -253,6 +256,15 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@iconify-json/devicon-plain@1.2.62':
+    resolution: {integrity: sha512-3jZJ80bBym2ZOZOKvFh2NaJjzmESHmXrSd8DKOmIMV5iEEZNYFgF5eJYAvOmk7v2t4dOOAEd6jdcjkZa/QGf4w==}
+
+  '@iconify-json/simple-icons@1.2.100':
+    resolution: {integrity: sha512-536pN2RCEQyy5bYwzayrs4e9egr8cmtVcbdSHLaQl/ULUsihzn1eZ0+Hhn50zgz9cbEotiynKsKQSEjFJ7qKmw==}
+
+  '@iconify/types@2.0.0':
+    resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -1154,10 +1166,6 @@ packages:
       '@types/node':
         optional: true
 
-  simple-icons@16.35.0:
-    resolution: {integrity: sha512-TCfl/2+GTrx0nCo4pEWGvxhOb8c6NsqOU1OpwjtF4lwJAthB8IYVD0fuIMjLMg6JFuG1YBO0t1iETQqJLqkoJA==}
-    engines: {node: '>=0.12.18'}
-
   source-map-js@1.2.2:
     resolution: {integrity: sha512-KGj/8Y43x35aZVDtt+J4mK1hoLGHULMYfSkODJNQjNDC3oW1PqPoxMwo0pLUsWM/UEGzON/NxeHywEfNXNP3Vw==}
     engines: {node: '>=0.10.0'}
@@ -1443,6 +1451,16 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@iconify-json/devicon-plain@1.2.62':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/simple-icons@1.2.100':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify/types@2.0.0': {}
 
   '@img/colour@1.1.0': {}
 
@@ -2074,8 +2092,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 26.6.5
-
-  simple-icons@16.35.0: {}
 
   source-map-js@1.2.2: {}
 

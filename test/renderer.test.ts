@@ -1,11 +1,11 @@
 /**
- * SSOT SVG renderer tests – Variants 1..3, b1..b3, standalone icons, Kumo 3D crescents, micro-animations, and special elements (`src/svg/renderer.ts`).
+ * SSOT SVG renderer tests – Variants 1..3, b1..b3, standalone icons, tech stack grids, quote cards, Kumo 3D crescents, micro-animations, and special elements (`src/svg/`).
  */
 
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import { renderPreviewHtml } from '@/preview/page';
-import { renderBadge, renderIcon } from '@/svg/renderer';
+import { renderBadge, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
 import type { BadgeVariant } from '@/types';
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -40,7 +40,6 @@ describe('renderBadge', () => {
       variant: '2',
     });
     expect(greenDotSvg).toContain(`fill="${DOT_COLORS.green}"`);
-    // Outward-only expansion (2.6 -> 6.8), never shrinking back inwards.
     expect(greenDotSvg).toContain('values="2.6;6.8"');
     expect(greenDotSvg).toContain('dur="2.3s"');
 
@@ -225,7 +224,6 @@ describe('renderBadge', () => {
 
   it('applies tapering Kumo upper-edge crescent on all 3 button variants (b1, b2, b3) and colored variant=1 capsules, and uses muted gray text on both variant=3 and variant=b3', () => {
     const primaryButton = renderBadge({ color: 'blue', label: 'Change', variant: 'b1' });
-    // Tapering elliptical return arc (A 6 5) for the 1px upper-edge crescent.
     expect(primaryButton).toContain('A 6 5 0 0 0');
     expect(primaryButton).toContain(`fill="${THEMES.blue.emphasisBg}"`);
     expect(primaryButton).toContain(`stroke="${THEMES.blue.emphasisRing}"`);
@@ -242,7 +240,6 @@ describe('renderBadge', () => {
       value: 'v2.4.0',
       variant: '1',
     });
-    // Left half is flat dark gradient with neutral border; Right half gets the tapering crescent (A 5 4) and emphasisRing.
     expect(splitPrimary).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
     expect(splitPrimary).toContain('A 5 4 0 0 0');
     expect(splitPrimary).toContain(`fill="${THEMES.emerald.emphasisBg}"`);
@@ -268,7 +265,6 @@ describe('renderBadge', () => {
       label: 'Report Issue',
       variant: 'b3',
     });
-    // Both tertiary badges (variant=3) and tertiary buttons (variant=b3) use muted gray text (#9ca3af), and variant=b3 gets the subtle 3D top crescent.
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
     expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
     expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
@@ -300,6 +296,7 @@ describe('renderIcon', () => {
     expect(sheenLucideSvg).toContain('linearGradient id="icon-sheen-zap-amber-28"');
     expect(sheenLucideSvg).toContain('values="-58;58;58"');
     expect(sheenLucideSvg).toContain('values="-32;84;84"');
+    expect(sheenLucideSvg).toContain('stop-opacity="0.45"');
     expect(sheenLucideSvg).toContain('stroke="url(#icon-sheen-zap-amber-28)"');
 
     const sheenSimpleSvg = renderIcon({
@@ -332,15 +329,93 @@ describe('renderIcon', () => {
   });
 });
 
+describe('renderStack', () => {
+  it('renders single and multi-group Kumo 3D tech stack icon grids across Primary (1), Secondary (2), and Tertiary (3) variants', () => {
+    const stackSvgV1 = renderStack({
+      anim: 'sheen',
+      gap: 8,
+      icons: ['c', 'cpp', 'cs', 'rust', 'py', 'ts'],
+      perLine: 3,
+      size: 42,
+      variant: '1',
+    });
+    expect(stackSvgV1).toContain('width="142" height="92"');
+    expect(stackSvgV1).toContain('stack-sheen-clip-142-92');
+    expect(stackSvgV1).toContain('fill="url(#grad-blue)"');
+    expect(stackSvgV1).toContain('fill="url(#grad-orange)"');
+    expect(stackSvgV1).toContain('fill="#ffffff"');
+
+    const groupedStackSvgV2 = renderStack({
+      anim: 'sheen',
+      icons: ['figma,ai,blender,ps,pr,ae:3|obsidian,notion,codepen,gtk,latex,regex:3'],
+      variant: '2',
+    });
+    expect(groupedStackSvgV2).toContain('width="310" height="92"');
+    expect(groupedStackSvgV2).toContain('stack-sheen-clip-310-92');
+    expect(groupedStackSvgV2).toContain(`fill="${THEMES.orange.iconColor}"`);
+    expect(groupedStackSvgV2).toContain(`fill="${THEMES.orange.tintBg}"`);
+
+    const stackSvgV3 = renderStack({ icons: ['rust', 'ts'], variant: '3' });
+    expect(stackSvgV3).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
+    expect(stackSvgV3).toContain('fill="#ffffff" fill-opacity="0.045"');
+  });
+});
+
+describe('renderQuote', () => {
+  it('renders horizontal and vertical Kumo 3D quote cards across Primary (1), Secondary (2), and Tertiary (3) variants', () => {
+    const quoteSvgV2 = renderQuote({
+      anim: 'sheen',
+      author: 'XulbuX',
+      color: 'indigo',
+      size: 'lg',
+      text: 'Who says programmers are boring? I bring the humor to the office while my code brings the chaos!',
+      variant: '2',
+      width: 440,
+    });
+    expect(quoteSvgV2).toContain('width="440"');
+    expect(quoteSvgV2).toContain('Who says programmers are boring?');
+    expect(quoteSvgV2).toContain('— XulbuX</text>');
+    expect(quoteSvgV2).toContain('quote-sheen-clip-440-');
+    expect(quoteSvgV2).toContain(`fill="${THEMES.indigo.tintBg}"`);
+
+    const verticalQuoteSvgV1 = renderQuote({
+      anim: 'sheen',
+      author: 'XulbuX',
+      color: 'blue',
+      layout: 'vertical',
+      size: 'lg',
+      text: 'Who says programmers are boring? I bring the humor to the office while my code brings the chaos!',
+      variant: '1',
+      width: 340,
+    });
+    expect(verticalQuoteSvgV1).toContain('width="340"');
+    expect(verticalQuoteSvgV1).toContain('fill="url(#quote-grad-blue)"');
+    expect(verticalQuoteSvgV1).toContain('fill="#ffffff"');
+    expect(verticalQuoteSvgV1).toContain('rotate(180 12 12)');
+    expect(verticalQuoteSvgV1).toContain('font-style: italic;');
+    expect(verticalQuoteSvgV1).toContain('— XulbuX</text>');
+
+    const quoteSvgV3 = renderQuote({
+      author: 'XulbuX',
+      color: 'violet',
+      text: 'Minimal tertiary quote card.',
+      variant: '3',
+    });
+    expect(quoteSvgV3).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
+    expect(quoteSvgV3).toContain('fill="#ffffff" fill-opacity="0.045"');
+  });
+});
+
 describe('renderPreviewHtml', () => {
-  it('renders the complete SSOT preview studio HTML containing all 6 variants, standalone icons, and structural use cases', () => {
+  it('renders the complete SSOT preview studio HTML containing all variants for badges, buttons, tech stacks, and quote cards', () => {
     const html = renderPreviewHtml();
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('svg-api – SSOT Live Preview');
     expect(html).toContain('variant=1 · Primary Badge');
     expect(html).toContain('variant=b3 · Tertiary Button');
-    expect(html).toContain('Special Data Widgets');
-    expect(html).toContain('Standalone Icons – icon.xul.is/:icon');
+    expect(html).toContain('svg.xul.is/icon/:icon');
+    expect(html).toContain('svg.xul.is/stack/:groups');
+    expect(html).toContain('svg.xul.is/quote/:author/:text');
     expect(html).not.toContain('<span>');
     expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
   });

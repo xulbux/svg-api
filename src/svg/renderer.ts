@@ -1,5 +1,5 @@
 /**
- * SVG renderer – Single Source of Truth generator for badges, micro-buttons, standalone icons, micro-animations, and special elements.
+ * SVG renderer – Single Source of Truth generator for badges, micro-buttons, standalone icons, tech stacks, and quote cards (`svg.xul.is`).
  */
 
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
@@ -16,6 +16,17 @@ import type {
 } from '@/types';
 import { resolveIcon } from './icons';
 import { measureTextWidth } from './measure';
+import {
+  buildTopCrescentPath,
+  clampInt,
+  clampNumber,
+  escapeXml,
+  renderDarkBgGradientDef,
+  renderKumoBoxSurface,
+  renderSheenOverlay,
+  renderThemeGradientDef,
+  SYSTEM_FONT_STACK,
+} from './shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -69,7 +80,7 @@ interface BadgeLayout {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Default rendered size in pixels for standalone SVG icons (`icon.xul.is`). */
+/** Default rendered size in pixels for standalone SVG icons (`svg.xul.is/icon/:icon`). */
 const DEFAULT_ICON_SIZE = 24;
 
 /** Minimum allowed size in pixels for standalone SVG icons. */
@@ -229,34 +240,7 @@ const STRIP_SOLID_COLORS: Readonly<Record<StripTickState, string>> = {
   '9': '#ffffff',
 };
 
-// ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches `&` for XML escaping. */
-const AMP_RX = /&/g;
-
-/** Matches `<` for XML escaping. */
-const LT_RX = /</g;
-
-/** Matches `>` for XML escaping. */
-const GT_RX = />/g;
-
-/** Matches `"` for XML escaping. */
-const QUOT_RX = /"/g;
-
-/** Matches `'` for XML escaping. */
-const APOS_RX = /'/g;
-
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Escape special characters for safe inclusion in SVG XML text and attributes. */
-function escapeXml(unsafe: string): string {
-  return unsafe
-    .replace(AMP_RX, '&amp;')
-    .replace(LT_RX, '&lt;')
-    .replace(GT_RX, '&gt;')
-    .replace(QUOT_RX, '&quot;')
-    .replace(APOS_RX, '&#039;');
-}
 
 /** Measure the horizontal width in pixels required by the active special element. */
 function measureSpecialElementWidth(
@@ -705,34 +689,6 @@ function renderSparklineGradientDef(
 }
 
 /**
- * Build the SVG `<path>` for Cloudflare Kumo's upper-edge 3D highlight crescent.
- * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
- * highlight is `1px` thick along the top straight edge and tapers smoothly to `0px` around the
- * top corner curve without extending down the vertical sides.
- */
-function buildTopCrescentPath(
-  startX: number,
-  endX: number,
-  radiusX: number,
-  hasRoundedLeftCorner: boolean
-): string {
-  const innerR = radiusX - 1;
-  const innerRy = innerR - 1;
-  const rightArcStart = endX - 1 - innerR;
-  const rightTangentX = endX - 1;
-  const cornerEndY = 1 + innerR;
-
-  if (!hasRoundedLeftCorner) {
-    const leftEdgeX = startX + 1;
-    return `M ${leftEdgeX} 1 H ${rightArcStart} A ${innerR} ${innerR} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerR} ${innerRy} 0 0 0 ${rightArcStart} 2 H ${leftEdgeX} Z`;
-  }
-
-  const leftTangentX = startX + 1;
-  const leftArcEnd = startX + 1 + innerR;
-  return `M ${leftTangentX} ${cornerEndY} A ${innerR} ${innerR} 0 0 1 ${leftArcEnd} 1 H ${rightArcStart} A ${innerR} ${innerR} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerR} ${innerRy} 0 0 0 ${rightArcStart} 2 H ${leftArcEnd} A ${innerR} ${innerRy} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
-}
-
-/**
  * Render all background fills, upper-edge 3D Kumo crescents (on `v=b1`, `v=b2`, `v=b3`, and the
  * colored part of `v=1`), and outer border rings for the active variant and split state.
  */
@@ -746,18 +702,49 @@ function renderSurfaceAndBorderLayers(
   height: number,
   radiusX: number
 ): string {
-  const themeGradUrl = `url(#grad-${color})`;
+  const themeGradId = `grad-${color}`;
   const isSplit = leftWidth > 0 && rightWidth > 0;
+  const splitLineX = isSplit ? leftWidth : undefined;
 
-  // 1. Full-pill 3D Kumo Primary surface (v=b1 buttons and single-part v=1 badges).
+  // 1. Micro-buttons (v=b1, v=b2, v=b3) and single-part Primary badges (v=1): unified 3-variant Kumo 3D surface.
   if (variant === 'b1' || (variant === '1' && !isSplit)) {
-    const gradientBody = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${themeGradUrl}" />`;
-    const topCrescent = `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="${palette.emphasisBg}" />`;
-    const splitDivider = isSplit
-      ? `<line x1="${leftWidth}" y1="5" x2="${leftWidth}" y2="${height - 5}" stroke="rgba(255,255,255,0.28)" stroke-width="1" />`
-      : '';
-    const outerRing = `<rect x="0.5" y="0.5" width="${totalWidth - 1}" height="${height - 1}" rx="${radiusX - 0.5}" stroke="${palette.emphasisRing}" stroke-width="1" />`;
-    return `${gradientBody}${topCrescent}${splitDivider}${outerRing}`;
+    return renderKumoBoxSurface(
+      0,
+      0,
+      totalWidth,
+      height,
+      radiusX,
+      '1',
+      palette,
+      themeGradId,
+      splitLineX
+    );
+  }
+  if (variant === 'b2') {
+    return renderKumoBoxSurface(
+      0,
+      0,
+      totalWidth,
+      height,
+      radiusX,
+      '2',
+      palette,
+      themeGradId,
+      splitLineX
+    );
+  }
+  if (variant === 'b3') {
+    return renderKumoBoxSurface(
+      0,
+      0,
+      totalWidth,
+      height,
+      radiusX,
+      '3',
+      palette,
+      themeGradId,
+      splitLineX
+    );
   }
 
   // 2. Split Primary Badge (v=1): flat dark slate left compartment + 3D Kumo colored right capsule.
@@ -772,31 +759,15 @@ function renderSurfaceAndBorderLayers(
     return (
       `<path d="${leftFillPath}" fill="url(#bg-dark)" />` +
       `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
-      `<path d="${rightFillPath}" fill="${themeGradUrl}" />` +
+      `<path d="${rightFillPath}" fill="url(#${themeGradId})" />` +
       `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
       `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
     );
   }
 
-  // 3. Secondary Button (v=b2): tinted dark surface + subtle Kumo upper-edge crescent + glowing border.
-  if (variant === 'b2') {
-    let layers = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="url(#bg-dark)" />`;
-    layers += `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${palette.tintBg}" />`;
-    layers += `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
-    if (isSplit) {
-      layers += `<line x1="${leftWidth}" y1="0" x2="${leftWidth}" y2="${height}" stroke="${palette.borderColor}" stroke-width="1" />`;
-    }
-    layers += `<rect x="0.5" y="0.5" width="${totalWidth - 1}" height="${height - 1}" rx="${radiusX - 0.5}" stroke="${palette.borderColor}" stroke-width="1" />`;
-    return layers;
-  }
-
-  // 4. Tertiary Button (v=b3) and Flat Secondary/Tertiary Badges (v=2, v=3).
+  // 3. Flat Secondary and Tertiary Badges (v=2, v=3).
   let layers = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="url(#bg-dark)" />`;
   const outerBorder = variant === '2' ? palette.borderColor : BASE_DARK.borderNeutral;
-
-  if (variant === 'b3') {
-    layers += `<path d="${buildTopCrescentPath(0, totalWidth, radiusX, true)}" fill="#ffffff" fill-opacity="0.045" />`;
-  }
 
   if (variant === '2' && !isSplit) {
     layers += `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${palette.tintBg}" />`;
@@ -812,36 +783,6 @@ function renderSurfaceAndBorderLayers(
 
   layers += `<rect x="0.5" y="0.5" width="${totalWidth - 1}" height="${height - 1}" rx="${radiusX - 0.5}" stroke="${outerBorder}" stroke-width="1" />`;
   return layers;
-}
-
-/**
- * Render the optional periodic diagonal specular sheen overlay (`?anim=sheen`).
- * Uses a soft multi-stop linear gradient across a skewed band and a gentle spline sweep.
- */
-function renderSheenOverlay(
-  animMode: AnimationMode,
-  totalWidth: number,
-  height: number,
-  radiusX: number
-): { clipDef: string; overlay: string } {
-  if (animMode !== 'sheen') {
-    return { clipDef: '', overlay: '' };
-  }
-  const clipId = `sheen-clip-${totalWidth}-${height}`;
-  const gradId = `sheen-grad-${totalWidth}-${height}`;
-  const endTranslate = totalWidth + 68;
-  const bandHeight = height + 12;
-  const clipDef =
-    `<clipPath id="${clipId}"><rect width="${totalWidth}" height="${height}" rx="${radiusX}" /></clipPath>` +
-    `<linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="0">` +
-    `<stop offset="0%" stop-color="#ffffff" stop-opacity="0" />` +
-    `<stop offset="28%" stop-color="#ffffff" stop-opacity="0.06" />` +
-    `<stop offset="50%" stop-color="#ffffff" stop-opacity="0.28" />` +
-    `<stop offset="72%" stop-color="#ffffff" stop-opacity="0.06" />` +
-    `<stop offset="100%" stop-color="#ffffff" stop-opacity="0" />` +
-    `</linearGradient>`;
-  const overlay = `<g clip-path="url(#${clipId})"><g><animateTransform attributeName="transform" type="translate" values="0 0;${endTranslate} 0;${endTranslate} 0" keyTimes="0;0.34;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><rect x="-52" y="-6" width="40" height="${bandHeight}" transform="skewX(-22)" fill="url(#${gradId})" /></g></g>`;
-  return { clipDef, overlay };
 }
 
 /** Compute horizontal compartment widths and spacing offsets for a badge or button. */
@@ -1021,26 +962,20 @@ export function renderBadge(options: BadgeRenderOptions): string {
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
   <defs>
-    <linearGradient id="bg-dark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${BASE_DARK.bgTop}" />
-      <stop offset="100%" stop-color="${BASE_DARK.bgBottom}" />
-    </linearGradient>
-    <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${palette.gradStart}" />
-      <stop offset="100%" stop-color="${palette.gradEnd}" />
-    </linearGradient>
+    ${renderDarkBgGradientDef()}
+    ${renderThemeGradientDef(gradId, palette)}
     ${sparkGradDef}
     ${sheen.clipDef}
   </defs>
   <style>
     .txt {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: ${SYSTEM_FONT_STACK};
       font-size: ${fontSize}px;
       font-weight: ${fontWeight};
       letter-spacing: -0.01em;
     }
     .val {
-      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      font-family: ${SYSTEM_FONT_STACK};
       font-size: ${fontSize}px;
       font-weight: 600;
       letter-spacing: -0.01em;
@@ -1052,7 +987,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
 }
 
 /**
- * Render a standalone SVG icon string (`icon.xul.is`).
+ * Render a standalone SVG icon string (`svg.xul.is/icon/:icon`).
  * Uses a padded `-3 -3 30 30` viewBox centered at `(12, 12)` so rotation, scale, and translation
  * micro-animations never clip on any of the four sides.
  * @param options   Standalone icon rendering configuration (`icon`, `color`, `size`, `strokeWidth`, `anim`).
@@ -1062,11 +997,14 @@ export function renderIcon(options: IconRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const { iconColor } = palette;
   const animMode: AnimationMode = options.anim ?? 'auto';
-  const rawSize = options.size ?? DEFAULT_ICON_SIZE;
-  const size = Math.min(MAX_ICON_SIZE, Math.max(MIN_ICON_SIZE, Math.round(rawSize)));
-  const rawStroke = options.strokeWidth ?? DEFAULT_ICON_STROKE_WIDTH;
+  const size = clampInt(options.size, MIN_ICON_SIZE, MAX_ICON_SIZE, DEFAULT_ICON_SIZE);
   const strokeWidth = Number(
-    Math.min(MAX_ICON_STROKE_WIDTH, Math.max(MIN_ICON_STROKE_WIDTH, rawStroke)).toFixed(2)
+    clampNumber(
+      options.strokeWidth,
+      MIN_ICON_STROKE_WIDTH,
+      MAX_ICON_STROKE_WIDTH,
+      DEFAULT_ICON_STROKE_WIDTH
+    ).toFixed(2)
   );
 
   const cleanSlug = options.icon.trim().toLowerCase() || 'sparkles';
@@ -1094,3 +1032,6 @@ export function renderIcon(options: IconRenderOptions): string {
   const animatedLucide = wrapIconWithAnimation(combinedLucide, cleanSlug, animMode);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-3 -3 30 30" fill="none" stroke="${iconColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${ariaLabel}">${sheenDefs}${animatedLucide}</svg>`;
 }
+
+export { renderQuote } from './quote';
+export { parseStackGroups, renderStack } from './stack';

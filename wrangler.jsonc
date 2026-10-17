@@ -7,11 +7,7 @@
   "workers_dev": false,
   "routes": [
     {
-      "pattern": "badge.xul.is",
-      "custom_domain": true
-    },
-    {
-      "pattern": "icon.xul.is",
+      "pattern": "svg.xul.is",
       "custom_domain": true
     }
   ],
@@ -20,4 +16,3 @@
     "ALLOW_PREVIEW_IN_PROD": "true"
   }
 }
-
