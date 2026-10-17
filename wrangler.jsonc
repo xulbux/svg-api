@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "xul-badge",
+  "name": "svg-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-15",
   "upload_source_maps": true,
@@ -11,7 +11,7 @@
       "custom_domain": true
     },
     {
-      "pattern": "b.xul.is",
+      "pattern": "icon.xul.is",
       "custom_domain": true
     }
   ],

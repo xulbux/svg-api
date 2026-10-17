@@ -1,5 +1,5 @@
 /**
- * SVG renderer – Single Source of Truth generator for all 6 badge/button variants, micro-animations, and special elements.
+ * SVG renderer – Single Source of Truth generator for badges, micro-buttons, standalone icons, micro-animations, and special elements.
  */
 
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
@@ -9,6 +9,7 @@ import type {
   BadgeSpecialElement,
   BadgeVariant,
   DotState,
+  IconRenderOptions,
   ResolvedIcon,
   StripTickState,
   ThemePalette,
@@ -68,7 +69,25 @@ interface BadgeLayout {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Size metrics for standard `22px` badges (`v=1`, `v=2`, `v=3`). */
+/** Default rendered size in pixels for standalone SVG icons (`icon.xul.is`). */
+const DEFAULT_ICON_SIZE = 24;
+
+/** Minimum allowed size in pixels for standalone SVG icons. */
+const MIN_ICON_SIZE = 8;
+
+/** Maximum allowed size in pixels for standalone SVG icons. */
+const MAX_ICON_SIZE = 256;
+
+/** Default stroke width in 24x24 viewBox units for standalone Lucide SVG icons. */
+const DEFAULT_ICON_STROKE_WIDTH = 2.25;
+
+/** Minimum allowed stroke width for standalone Lucide SVG icons. */
+const MIN_ICON_STROKE_WIDTH = 1;
+
+/** Maximum allowed stroke width for standalone Lucide SVG icons. */
+const MAX_ICON_STROKE_WIDTH = 4;
+
+/** Size metrics for standard `22px` badges (`variant=1`, `variant=2`, `variant=3`). */
 const BADGE_METRICS: VariantMetrics = {
   fontSize: 11,
   fontWeight: 500,
@@ -78,7 +97,7 @@ const BADGE_METRICS: VariantMetrics = {
   radiusX: 6,
 };
 
-/** Size metrics for `26px` micro-buttons (`v=b1`, `v=b2`, `v=b3`). */
+/** Size metrics for `26px` micro-buttons (`variant=b1`, `variant=b2`, `variant=b3`). */
 const BUTTON_METRICS: VariantMetrics = {
   fontSize: 11.5,
   fontWeight: 600,
@@ -110,7 +129,6 @@ const AUTO_SHAKE_ICONS: ReadonlySet<string> = new Set([
   'bell',
   'bug',
   'flame',
-  'heart',
   'party-popper',
   'shield-alert',
   'sparkles',
@@ -119,6 +137,26 @@ const AUTO_SHAKE_ICONS: ReadonlySet<string> = new Set([
   'trophy',
   'wand-sparkles',
   'zap',
+]);
+
+/** Icons that automatically receive a double-beat heartbeat scale pulse in `'auto'` mode. */
+const AUTO_PULSE_ICONS: ReadonlySet<string> = new Set([
+  'activity',
+  'heart',
+  'heart-handshake',
+  'podcast',
+  'radio',
+  'wifi',
+]);
+
+/** Icons that automatically receive a smooth vertical levitation bob in `'auto'` mode. */
+const AUTO_FLOAT_ICONS: ReadonlySet<string> = new Set([
+  'box',
+  'cloud',
+  'feather',
+  'ghost',
+  'layers',
+  'package',
 ]);
 
 /** Directional nudge vectors (`[dx, dy]` in 24x24 icon units) for action icons in `'auto'` mode. */
@@ -328,6 +366,14 @@ function wrapIconWithAnimation(
   if (animMode === 'nudge' || (isAuto && nudgeVector !== undefined)) {
     const [dx, dy] = nudgeVector ?? [2.2, 0];
     return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 0;${dx} ${dy};0 0;0 0" keyTimes="0;0.65;0.78;0.92;1" dur="2.8s" repeatCount="indefinite" />${innerSvg}</g>`;
+  }
+
+  if (animMode === 'pulse' || (isAuto && AUTO_PULSE_ICONS.has(cleanSlug))) {
+    return `<g transform="translate(12, 12)"><g><animateTransform attributeName="transform" type="scale" values="1;1;1.18;0.96;1.14;1;1" keyTimes="0;0.58;0.68;0.76;0.84;0.94;1" dur="2.6s" repeatCount="indefinite" /><g transform="translate(-12, -12)">${innerSvg}</g></g></g>`;
+  }
+
+  if (animMode === 'float' || (isAuto && AUTO_FLOAT_ICONS.has(cleanSlug))) {
+    return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.28;0.55;0.80;1" dur="3.4s" repeatCount="indefinite" />${innerSvg}</g>`;
   }
 
   return innerSvg;
@@ -1003,4 +1049,48 @@ export function renderBadge(options: BadgeRenderOptions): string {
   ${surfaceAndBorderLayers}
   ${dotMarkup}${iconMarkup}${labelMarkup}${specialMarkup}${valueMarkup}${sheen.overlay}
 </svg>`;
+}
+
+/**
+ * Render a standalone SVG icon string (`icon.xul.is`).
+ * Uses a padded `-3 -3 30 30` viewBox centered at `(12, 12)` so rotation, scale, and translation
+ * micro-animations never clip on any of the four sides.
+ * @param options   Standalone icon rendering configuration (`icon`, `color`, `size`, `strokeWidth`, `anim`).
+ * @returns Complete, self-contained `<svg>` markup string.
+ */
+export function renderIcon(options: IconRenderOptions): string {
+  const palette = THEMES[options.color] || THEMES.indigo;
+  const { iconColor } = palette;
+  const animMode: AnimationMode = options.anim ?? 'auto';
+  const rawSize = options.size ?? DEFAULT_ICON_SIZE;
+  const size = Math.min(MAX_ICON_SIZE, Math.max(MIN_ICON_SIZE, Math.round(rawSize)));
+  const rawStroke = options.strokeWidth ?? DEFAULT_ICON_STROKE_WIDTH;
+  const strokeWidth = Number(
+    Math.min(MAX_ICON_STROKE_WIDTH, Math.max(MIN_ICON_STROKE_WIDTH, rawStroke)).toFixed(2)
+  );
+
+  const cleanSlug = options.icon.trim().toLowerCase() || 'sparkles';
+  const iconData = resolveIcon(cleanSlug) ?? resolveIcon('circle-help');
+  const rawInner = iconData ? iconData.innerSvg : '<circle cx="12" cy="12" r="9" />';
+  const ariaLabel = escapeXml(cleanSlug);
+
+  const hasSheen = animMode === 'sheen';
+  const sheenId = `icon-sheen-${cleanSlug}-${options.color}-${size}`;
+  const sheenDefs = hasSheen
+    ? `<defs><linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="20%" stop-color="#ffffff" stop-opacity="0.35" /><stop offset="50%" stop-color="#ffffff" stop-opacity="0.95" /><stop offset="80%" stop-color="#ffffff" stop-opacity="0.35" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-58;58;58" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><animate attributeName="x2" values="-32;84;84" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /></linearGradient></defs>`
+    : '';
+
+  if (iconData?.type === 'simple') {
+    const combinedSimple = hasSheen
+      ? `${rawInner}<g fill="url(#${sheenId})">${rawInner}</g>`
+      : rawInner;
+    const animatedSimple = wrapIconWithAnimation(combinedSimple, cleanSlug, animMode);
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-3 -3 30 30" fill="${iconColor}" role="img" aria-label="${ariaLabel}">${sheenDefs}${animatedSimple}</svg>`;
+  }
+
+  const combinedLucide = hasSheen
+    ? `${rawInner}<g stroke="url(#${sheenId})">${rawInner}</g>`
+    : rawInner;
+  const animatedLucide = wrapIconWithAnimation(combinedLucide, cleanSlug, animMode);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-3 -3 30 30" fill="none" stroke="${iconColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${ariaLabel}">${sheenDefs}${animatedLucide}</svg>`;
 }

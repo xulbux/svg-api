@@ -1,17 +1,17 @@
 ---
 name: test
-description: Guidelines and commands for running tests and maintaining the badge test suite.
+description: Guidelines and commands for running tests and maintaining the svg-api test suite.
 ---
 
 # Test
 
-In accordance with the validation policy in `AGENTS.md` Section 4, use this skill to create, organize, run, and maintain tests for `badge`.
+In accordance with the validation policy in `AGENTS.md` Section 4, use this skill to create, organize, run, and maintain tests for `svg-api`.
 
 ---
 
 ## 1. Architecture
 
-Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `resolveColor`, `formatCompactNumber`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account.
+Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderIcon`, `resolveColor`, `formatCompactNumber`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account.
 
 ### Key Files
 
@@ -19,8 +19,8 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 | ----------------------- | -------------------------------------------------------------------------------- |
 | `test/measure.test.ts`  | Text width calculation tests (`src/svg/measure.ts`)                              |
 | `test/icons.test.ts`    | Lucide & Simple Icons resolution tests (`src/svg/icons.ts`)                      |
-| `test/renderer.test.ts` | SSOT SVG rendering across all 6 variants, dots, and sparklines (`src/svg/`)      |
-| `test/routes.test.ts`   | Hono route handling, query overrides, allowlists, and smart document redirects   |
+| `test/renderer.test.ts` | SSOT SVG rendering across all 6 badge variants, standalone icons, and widgets    |
+| `test/routes.test.ts`   | Hono route handling for `badge.xul.is` and `icon.xul.is`, overrides & redirects  |
 | `vitest.config.mts`     | Vitest config with `@/` path alias                                               |
 
 ---

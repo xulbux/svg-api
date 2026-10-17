@@ -1,11 +1,11 @@
 /**
- * SSOT SVG renderer tests – Variants 1..3, b1..b3, Kumo 3D crescents, micro-animations, and special elements (`src/svg/renderer.ts`).
+ * SSOT SVG renderer tests – Variants 1..3, b1..b3, standalone icons, Kumo 3D crescents, micro-animations, and special elements (`src/svg/renderer.ts`).
  */
 
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import { renderPreviewHtml } from '@/preview/page';
-import { renderBadge } from '@/svg/renderer';
+import { renderBadge, renderIcon } from '@/svg/renderer';
 import type { BadgeVariant } from '@/types';
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -277,13 +277,71 @@ describe('renderBadge', () => {
   });
 });
 
+describe('renderIcon', () => {
+  it('renders standalone Lucide stroke icons and Simple Icons brand fills with anti-clipping padded viewBox, custom size, strokeWidth, color, glint sheen, pulse, float, and spin animations', () => {
+    const lucideSvg = renderIcon({
+      anim: 'none',
+      color: 'violet',
+      icon: 'globe-code',
+      size: 16,
+      strokeWidth: 2.5,
+    });
+    expect(lucideSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
+    expect(lucideSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
+    expect(lucideSvg).toContain('stroke-width="2.5"');
+    expect(lucideSvg).not.toContain('<animateTransform');
+
+    const simpleSvg = renderIcon({ color: 'cyan', icon: 'archlinux', size: 28 });
+    expect(simpleSvg).toContain('width="28" height="28" viewBox="-3 -3 30 30"');
+    expect(simpleSvg).toContain(`fill="${THEMES.cyan.iconColor}"`);
+    expect(simpleSvg).not.toContain('stroke-width=');
+
+    const sheenLucideSvg = renderIcon({ anim: 'sheen', color: 'amber', icon: 'zap', size: 28 });
+    expect(sheenLucideSvg).toContain('linearGradient id="icon-sheen-zap-amber-28"');
+    expect(sheenLucideSvg).toContain('values="-58;58;58"');
+    expect(sheenLucideSvg).toContain('values="-32;84;84"');
+    expect(sheenLucideSvg).toContain('stroke="url(#icon-sheen-zap-amber-28)"');
+
+    const sheenSimpleSvg = renderIcon({
+      anim: 'sheen',
+      color: 'orange',
+      icon: 'cloudflare',
+      size: 24,
+    });
+    expect(sheenSimpleSvg).toContain('linearGradient id="icon-sheen-cloudflare-orange-24"');
+    expect(sheenSimpleSvg).toContain('fill="url(#icon-sheen-cloudflare-orange-24)"');
+
+    const pulseIconSvg = renderIcon({ color: 'rose', icon: 'heart-handshake' });
+    expect(pulseIconSvg).toContain('type="scale" values="1;1;1.18;0.96;1.14;1;1"');
+
+    const floatIconSvg = renderIcon({ color: 'emerald', icon: 'package' });
+    expect(floatIconSvg).toContain('type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0"');
+
+    const animatedIconSvg = renderIcon({ color: 'teal', icon: 'refresh-cw' });
+    expect(animatedIconSvg).toContain('width="24" height="24"');
+    expect(animatedIconSvg).toContain('type="rotate" from="0 12 12" to="360 12 12"');
+
+    const clampedIconSvg = renderIcon({
+      color: 'amber',
+      icon: 'unknown-nonexistent-icon',
+      size: 9999,
+      strokeWidth: 99,
+    });
+    expect(clampedIconSvg).toContain('width="256" height="256"');
+    expect(clampedIconSvg).toContain('stroke-width="4"');
+  });
+});
+
 describe('renderPreviewHtml', () => {
-  it('renders the complete SSOT preview studio HTML containing all 6 variants and structural use cases', () => {
+  it('renders the complete SSOT preview studio HTML containing all 6 variants, standalone icons, and structural use cases', () => {
     const html = renderPreviewHtml();
     expect(html).toContain('<!DOCTYPE html>');
+    expect(html).toContain('svg-api – SSOT Live Preview');
     expect(html).toContain('variant=1 · Primary Badge');
     expect(html).toContain('variant=b3 · Tertiary Button');
     expect(html).toContain('Special Data Widgets');
+    expect(html).toContain('Standalone Icons – icon.xul.is/:icon');
+    expect(html).not.toContain('<span>');
     expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
   });
 });

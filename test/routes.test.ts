@@ -4,9 +4,10 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatCompactNumber } from '@/config/services';
-import { resolveColor } from '@/config/theme';
+import { resolveColor, THEMES } from '@/config/theme';
 import app, {
   isDocumentNavigation,
+  isIconHost,
   parseSpecialParam,
   resolveAnimationMode,
   resolveVariant,
@@ -57,6 +58,8 @@ describe('helpers', () => {
     expect(resolveAnimationMode('spin')).toBe('spin');
     expect(resolveAnimationMode('shake')).toBe('shake');
     expect(resolveAnimationMode('nudge')).toBe('nudge');
+    expect(resolveAnimationMode('pulse')).toBe('pulse');
+    expect(resolveAnimationMode('float')).toBe('float');
     expect(resolveAnimationMode('none')).toBe('none');
     expect(resolveAnimationMode('unknown')).toBe('auto');
   });
@@ -102,6 +105,12 @@ describe('helpers', () => {
     });
     expect(isDocumentNavigation(acceptHtmlReq)).toBe(true);
   });
+
+  it('distinguishes icon.xul.is from badge.xul.is', () => {
+    expect(isIconHost(new Request('https://icon.xul.is/globe-code'))).toBe(true);
+    expect(isIconHost(new Request('https://badge.xul.is/Documentation'))).toBe(false);
+    expect(isIconHost(new Request('https://badge.xul.is/license/MIT'))).toBe(false);
+  });
 });
 
 describe('Hono routes', () => {
@@ -116,7 +125,7 @@ describe('Hono routes', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('text/html');
     const body = await response.text();
-    expect(body).toContain('badge.xul.is — SSOT Live Preview');
+    expect(body).toContain('svg-api – SSOT Live Preview');
   });
 
   it('renders 2-segment static badge with canonical query params and special widgets', async () => {
@@ -152,6 +161,36 @@ describe('Hono routes', () => {
     );
     expect(docResponse.status).toBe(302);
     expect(docResponse.headers.get('Location')).toBe('https://docs.xul.is');
+  });
+
+  it('renders standalone SVG icons on icon.xul.is and rejects multi-segment badge routes on icon.xul.is', async () => {
+    const iconRes = await app.request(
+      'https://icon.xul.is/globe-code?color=violet&size=16&stroke=2.5&anim=none',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(iconRes.status).toBe(200);
+    expect(iconRes.headers.get('Content-Type')).toContain('image/svg+xml');
+    const iconSvg = await iconRes.text();
+    expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
+    expect(iconSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
+    expect(iconSvg).toContain('stroke-width="2.5"');
+
+    const iconRedirectRes = await app.request(
+      'https://icon.xul.is/rocket?redirect=https://xul.is',
+      { headers: { 'Sec-Fetch-Dest': 'document' } },
+      TEST_ENV
+    );
+    expect(iconRedirectRes.status).toBe(302);
+    expect(iconRedirectRes.headers.get('Location')).toBe('https://xul.is');
+
+    // Multi-segment badge paths must return 404 on icon.xul.is.
+    const badgeOnIconHostRes = await app.request(
+      'https://icon.xul.is/license/MIT',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(badgeOnIconHostRes.status).toBe(404);
   });
 
   it('renders /status/:state/:text preset with outward radar ripple dot and 10-stage strip', async () => {

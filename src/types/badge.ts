@@ -1,32 +1,31 @@
 /**
- * Badge rendering, micro-animation, special element, and icon resolution types.
+ * Badge rendering, micro-animation, and special element types.
  */
 
 import type { BadgeVariant, DotState, ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Supported icon library source types. */
-export type IconType = 'lucide' | 'simple';
-
-/** Resolved SVG icon markup and source type. */
-export interface ResolvedIcon {
-  /** Inner SVG elements (without the outer `<svg>` wrapper). */
-  innerSvg: string;
-  /** Whether the icon uses Lucide strokes or a Simple Icons fill path. */
-  type: IconType;
-}
-
 /**
- * Micro-animation mode for icons, status dots, and button specular sheen.
+ * Micro-animation mode for icons, status dots, and specular sheen.
  * - `'auto'`: Contextual icon micro-animations + status dot radar ripples (default).
  * - `'sheen'`: Enables periodic diagonal specular glint sweep in addition to `'auto'`.
  * - `'spin'`: Forces smooth 360-degree continuous rotation on the icon.
  * - `'shake'`: Forces periodic scale-up + subtle back-and-forth wiggle on the icon.
  * - `'nudge'`: Forces periodic directional nudge on the icon.
+ * - `'pulse'`: Forces periodic double-beat scale pulse on the icon.
+ * - `'float'`: Forces smooth vertical levitation bob on the icon.
  * - `'none'`: Disables all SVG animations for a static image.
  */
-export type AnimationMode = 'auto' | 'nudge' | 'none' | 'shake' | 'sheen' | 'spin';
+export type AnimationMode =
+  | 'auto'
+  | 'float'
+  | 'none'
+  | 'nudge'
+  | 'pulse'
+  | 'shake'
+  | 'sheen'
+  | 'spin';
 
 /**
  * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald).

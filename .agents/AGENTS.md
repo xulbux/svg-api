@@ -1,4 +1,4 @@
-# Agent Guidelines for `badge`
+# Agent Guidelines for `svg-api`
 
 When working on this repository, any AI agent or automated assistant must adhere strictly to the following rules to maintain the codebase's integrity, performance, readability, and correctness.
 
@@ -19,7 +19,7 @@ This service runs on Cloudflare Workers at the edge with a zero-cold-start targe
 -   **Lazy Initialization:** Avoid eager computation at module load time. Defer heavy work (regex compilation, data structure construction) until first use where practical.
 -   **Regex Best Practices:** Prefer non-backtracking patterns. Use possessive-style character classes with word-boundary lookaheads instead of relying on regex backtracking.
 -   **Avoid Unnecessary Allocations:** Reuse objects and arrays where possible. Prefer `for` loops over `.map()/.filter()` chains when intermediate arrays aren't needed.
--   **DRY Principle (Don't Repeat Yourself):** Always strive to prevent redundant code and duplicate logic. Abstract repeated patterns into reusable helper functions. When a feature depends on data produced by multiple stages (e.g., static routes, status presets, service presets), feed **all** sources into a single unified rendering and caching code path (`renderBadge` as the Single Source of Truth).
+-   **DRY Principle (Don't Repeat Yourself):** Always strive to prevent redundant code and duplicate logic. Abstract repeated patterns into reusable helper functions. When a feature depends on data produced by multiple stages (e.g., static routes, status presets, service presets, standalone icons), feed **all** sources into a single unified rendering and caching code path (`renderBadge` and `renderIcon` as the Single Source of Truth).
 -   **Bundle Size:** Avoid adding heavyweight dependencies (such as WASM font parsers) – prefer small, focused utility functions and lookup tables written in-house.
 
 ## 4. Validation & Testing

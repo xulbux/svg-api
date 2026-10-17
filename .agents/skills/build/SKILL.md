@@ -23,7 +23,7 @@ Generate `preview.html` in the project root using the Single Source of Truth ren
 pnpm run preview:export
 ```
 
-Open `preview.html` in a browser or start the local Wrangler dev server (`pnpm run dev` → <http://localhost:8787/preview>) to inspect all 6 badge/button variants, status dots, sparklines, and theme palettes on dark and light canvases.
+Open `preview.html` in a browser or start the local Wrangler dev server (`pnpm run dev` → <http://localhost:8787/preview>) to inspect all 6 badge/button variants, standalone icons, status dots, special elements, and theme palettes on dark and light canvases.
 
 ## 3. Verify Worker Bundle (Dry Run)
 
@@ -35,7 +35,7 @@ pnpm exec wrangler deploy --dry-run
 
 ## 4. Deploy to Cloudflare
 
-Authenticate Wrangler (if needed), configure secrets, and deploy to `badge.xul.is` and `b.xul.is`:
+Authenticate Wrangler (if needed), configure secrets, and deploy to `badge.xul.is` and `icon.xul.is`:
 
 ```bash
 pnpm exec wrangler secret put GITHUB_TOKEN

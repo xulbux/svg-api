@@ -1,19 +1,19 @@
-# Implementation Plan: `badge.xul.is` — Dynamic SVG Badge & Button Engine
+# Implementation Plan: `svg-api` (`badge.xul.is` & `icon.xul.is`) – Dynamic SVG Badge, Button & Icon Engine
 
 ## 1. Project Overview & Goals
 
-Build a high-performance, zero-cold-start SVG badge and micro-button generator deployed to Cloudflare Workers on `badge.xul.is` (and short alias `b.xul.is`).
+Build a high-performance, zero-cold-start SVG badge, micro-button, and standalone icon generator deployed to Cloudflare Workers on `badge.xul.is` for badges/buttons and `icon.xul.is` for standalone icons.
 
 ### Core Capabilities
 
 1.  **Modern Dark-Native Visuals**: Opaque dark-slate base (`#0f1117` / `#141821`) with hairline inner highlights (`1px`), subtle vertical gradients, and curated theme tokens so badges look crisp on both dark and light backgrounds without fragile OS media-query mismatches.
 2.  **Six Visual Variants (`v=`)**:
-    -   `v=1` (Default): **Primary Badge** (`22px` height) — dark label section + vibrant gradient value capsule.
-    -   `v=2`: **Secondary Badge** (`22px` height) — unified dark pill with colored `1px` border and tinted (`16%` opacity) value capsule with bright accent text.
-    -   `v=3`: **Tertiary Badge** (`22px` height) — understated neutral border (`#262c3a`), muted label, accent-colored value text.
-    -   `v=b1`: **Primary Button** (`26px` height) — full-bleed vibrant gradient pill, top inner bevel highlight, bold icon + text.
-    -   `v=b2`: **Secondary Button** (`26px` height) — dark pill with `14%` color wash, glowing colored border, accent icon + crisp white text.
-    -   `v=b3`: **Tertiary Button** (`26px` height) — minimal dark button with neutral border, subtle inner highlight, colored icon + white text.
+    -   `v=1` (Default): **Primary Badge** (`22px` height) – dark label section + vibrant gradient value capsule.
+    -   `v=2`: **Secondary Badge** (`22px` height) – unified dark pill with colored `1px` border and tinted (`16%` opacity) value capsule with bright accent text.
+    -   `v=3`: **Tertiary Badge** (`22px` height) – understated neutral border (`#262c3a`), muted label, accent-colored value text.
+    -   `v=b1`: **Primary Button** (`26px` height) – full-bleed vibrant gradient pill, top inner bevel highlight, bold icon + text.
+    -   `v=b2`: **Secondary Button** (`26px` height) – dark pill with `14%` color wash, glowing colored border, accent icon + crisp white text.
+    -   `v=b3`: **Tertiary Button** (`26px` height) – minimal dark button with neutral border, subtle inner highlight, colored icon + white text.
 3.  **Smart Document Redirects**:
     -   Inspect request headers (`Sec-Fetch-Dest` and `Accept`).
     -   When loaded inside `<img src="...">` (`Sec-Fetch-Dest: image`), return `Content-Type: image/svg+xml`.
@@ -93,12 +93,12 @@ pnpm add -D @cloudflare/workers-types @types/node oxfmt oxlint tsx typescript vi
 }
 ```
 
-### `wrangler.jsonc` (Cloudflare Configuration for `badge.xul.is` & `b.xul.is`)
+### `wrangler.jsonc` (Cloudflare Configuration for `badge.xul.is` & `icon.xul.is`)
 
 ```jsonc
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "xul-badge",
+  "name": "svg-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-15",
   "upload_source_maps": true,
@@ -109,7 +109,7 @@ pnpm add -D @cloudflare/workers-types @types/node oxfmt oxlint tsx typescript vi
       "custom_domain": true
     },
     {
-      "pattern": "b.xul.is",
+      "pattern": "icon.xul.is",
       "custom_domain": true
     }
   ],
@@ -1074,7 +1074,7 @@ export function renderPreviewHtml(): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>badge.xul.is — SSOT Visual Studio</title>
+  <title>badge.xul.is – SSOT Visual Studio</title>
   <style>
     :root {
       --bg: #090b10;
@@ -1135,7 +1135,7 @@ export function renderPreviewHtml(): string {
   <div class="container">
     <header>
       <div>
-        <h1>badge.xul.is — SSOT Live Preview</h1>
+        <h1>badge.xul.is – SSOT Live Preview</h1>
         <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">Rendered directly via <code>src/svg/renderer.ts</code></p>
       </div>
       <button class="toggle" onclick="document.body.classList.toggle('light-canvas')">
@@ -1368,5 +1368,4 @@ process.stdout.write(`Generated standalone SSOT preview at: ${outPath}\n`);
 4.  **Cloudflare Secret & Deployment**:
     -   Authenticate Wrangler if needed: `pnpm exec wrangler login`
     -   Set GitHub API token secret: `pnpm exec wrangler secret put GITHUB_TOKEN`
-    -   Deploy Worker & automatically bind `badge.xul.is` and `b.xul.is` Custom Domains: `pnpm run deploy`
-
+    -   Deploy Worker & automatically bind `badge.xul.is` and `icon.xul.is` Custom Domains: `pnpm run deploy`

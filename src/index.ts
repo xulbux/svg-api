@@ -1,14 +1,14 @@
 /**
- * Worker entrypoint – Hono router, readable query DSL, smart document redirects, and Tier-2 SVG edge caching.
+ * Worker entrypoint – Hono router for `badge.xul.is` (badges/buttons) and `icon.xul.is` (standalone icons), readable query DSL, smart document redirects, and Tier-2 SVG edge caching.
  */
 
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { STATUS_PRESET_MAP } from '@/config/services';
-import { resolveColor } from '@/config/theme';
+import { DOT_COLORS, resolveColor } from '@/config/theme';
 import { renderPreviewHtml } from '@/preview/page';
 import { resolveServiceMetric } from '@/services/fetcher';
-import { renderBadge } from '@/svg/renderer';
+import { renderBadge, renderIcon } from '@/svg/renderer';
 import type {
   AnimationMode,
   BadgeSpecialElement,
@@ -53,8 +53,10 @@ const VALID_VARIANTS: ReadonlySet<BadgeVariant> = new Set(['1', '2', '3', 'b1', 
 /** Set of valid animation mode identifiers. */
 const VALID_ANIMATION_MODES: ReadonlySet<AnimationMode> = new Set([
   'auto',
+  'float',
   'none',
   'nudge',
+  'pulse',
   'shake',
   'sheen',
   'spin',
@@ -192,6 +194,72 @@ function parseSpecialKindAndPayload(
   }
 }
 
+/** Parse an optional finite number query parameter (e.g., `?size=24`, `?stroke=2.25`). */
+function parseOptionalNumber(raw?: string): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+  const cleaned = raw.trim();
+  if (!cleaned) {
+    return undefined;
+  }
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Resolve a raw `?dot=` query parameter (color name or status preset name like `'online'`, `'maintenance'`, `'standby'`). */
+function resolveDotState(input?: string, fallback?: DotState): DotState | undefined {
+  if (!input) {
+    return fallback;
+  }
+  const clean = input.trim().toLowerCase();
+  if (clean === 'none') {
+    return undefined;
+  }
+  const preset = STATUS_PRESET_MAP[clean];
+  if (preset) {
+    return preset.dot;
+  }
+  if (clean in DOT_COLORS) {
+    return clean as DotState;
+  }
+  return fallback;
+}
+
+/** Build an HTTP `200` SVG response with edge cache headers. */
+function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
+  return new Response(svg, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': `public, max-age=300, s-maxage=${ttlSeconds}, stale-while-revalidate=86400`,
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'X-Content-Type-Options': 'nosniff',
+    },
+    status: 200,
+  });
+}
+
+/** Retrieve the Cloudflare Workers default edge cache if available. */
+function getEdgeCache(): Cache | undefined {
+  if (typeof caches !== 'undefined' && 'default' in caches) {
+    return caches.default;
+  }
+  return undefined;
+}
+
+/** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
+function getSafeExecutionContext(
+  context: Context<{ Bindings: Env }>
+): WaitUntilContext | undefined {
+  try {
+    return context.executionCtx;
+  } catch {
+    return undefined;
+  }
+}
+
+// -------------------------------------- PUBLIC API -------------------------------------
+
 /**
  * Parse the unified `?special=<type>:<payload>` query parameter into a structured `BadgeSpecialElement`.
  * @param specialRaw   Raw `?special=` query parameter (e.g., `'bar:82'`, `'strip:9876425789'`).
@@ -230,6 +298,18 @@ export function isDocumentNavigation(request: Request): boolean {
 }
 
 /**
+ * Determine whether an incoming HTTP request targets the standalone icon domain (`icon.xul.is`).
+ * @param request   Incoming Fetch API `Request`.
+ * @returns `true` when the hostname starts with `icon.`.
+ */
+export function isIconHost(request: Request): boolean {
+  const hostHeader = request.headers.get('Host');
+  const rawHost = hostHeader ? hostHeader.split(':')[0] : new URL(request.url).hostname;
+  const hostname = rawHost.toLowerCase();
+  return hostname.startsWith('icon.');
+}
+
+/**
  * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant`.
  * @param input      Raw `?variant=` query parameter value (`1`, `2`, `3`, `b1`, `b2`, `b3`).
  * @param fallback   Default variant when `input` is omitted or invalid.
@@ -260,21 +340,7 @@ export function resolveAnimationMode(
   return VALID_ANIMATION_MODES.has(candidate) ? candidate : fallback;
 }
 
-/** Resolve a raw `?dot=` query parameter (color name or status preset name like `'online'`, `'maintenance'`, `'standby'`). */
-function resolveDotState(input?: string, fallback?: DotState): DotState | undefined {
-  if (!input) {
-    return fallback;
-  }
-  const clean = input.trim().toLowerCase();
-  if (clean === 'none') {
-    return undefined;
-  }
-  const preset = STATUS_PRESET_MAP[clean];
-  if (preset) {
-    return preset.dot;
-  }
-  return clean as DotState;
-}
+// ----------------------------------------- MAIN ----------------------------------------
 
 /** Render a badge SVG by merging route defaults with canonical URL query overrides. */
 function renderBadgeWithQueryOverrides(
@@ -301,39 +367,7 @@ function renderBadgeWithQueryOverrides(
   });
 }
 
-/** Build an HTTP `200` SVG response with edge cache headers. */
-function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
-  return new Response(svg, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': `public, max-age=300, s-maxage=${ttlSeconds}, stale-while-revalidate=86400`,
-      'Content-Type': 'image/svg+xml; charset=utf-8',
-      'X-Content-Type-Options': 'nosniff',
-    },
-    status: 200,
-  });
-}
-
-/** Retrieve the Cloudflare Workers default edge cache if available. */
-function getEdgeCache(): Cache | undefined {
-  if (typeof caches !== 'undefined' && 'default' in caches) {
-    return caches.default;
-  }
-  return undefined;
-}
-
-/** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
-function getSafeExecutionContext(
-  context: Context<{ Bindings: Env }>
-): WaitUntilContext | undefined {
-  try {
-    return context.executionCtx;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Handle 3-segment and 4-segment external service preset routes (`/gh/*`, `/pypi/*`). */
+/** Handle 3-segment and 4-segment external service preset routes (`/gh/*`, `/pypi/*`) on `badge.xul.is`. */
 async function handleServicePreset(
   context: Context<{ Bindings: Env }>,
   service: string,
@@ -341,6 +375,10 @@ async function handleServicePreset(
   target: string,
   metric: string
 ): Promise<Response> {
+  if (isIconHost(context.req.raw)) {
+    return new Response('Not Found', { status: 404 });
+  }
+
   const executionCtx = getSafeExecutionContext(context);
   const envBindings: Env = context.env ?? { DEFAULT_GH_OWNER: 'xulbux' };
 
@@ -404,8 +442,12 @@ function handlePreviewRoute(context: Context<{ Bindings: Env }>): Response {
   return context.html(renderPreviewHtml());
 }
 
-/** Handle `/status/:state/:text` status preset route. */
+/** Handle `/status/:state/:text` status preset route on `badge.xul.is`. */
 function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
+  if (isIconHost(context.req.raw)) {
+    return new Response('Not Found', { status: 404 });
+  }
+
   const stateKey = (context.req.param('state') ?? '').toLowerCase();
   const text = decodeSegment(context.req.param('text') ?? '');
   const redirectParam = context.req.query('redirect');
@@ -426,7 +468,7 @@ function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
   return buildSvgResponse(svg, 300);
 }
 
-/** Handle 3-segment service route `/:service{gh|pypi}/:target/:metric`. */
+/** Handle 3-segment service route `/:service{gh|pypi}/:target/:metric` on `badge.xul.is`. */
 function handleDefaultOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
   return handleServicePreset(
     context,
@@ -437,7 +479,7 @@ function handleDefaultOwnerServiceRoute(context: Context<{ Bindings: Env }>): Pr
   );
 }
 
-/** Handle 4-segment service route `/:service{gh|pypi}/:owner/:target/:metric`. */
+/** Handle 4-segment service route `/:service{gh|pypi}/:owner/:target/:metric` on `badge.xul.is`. */
 function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
   return handleServicePreset(
     context,
@@ -448,8 +490,12 @@ function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): P
   );
 }
 
-/** Handle generic static 2-segment badge route `/:label/:value`. */
+/** Handle generic static 2-segment badge route `/:label/:value` on `badge.xul.is`. */
 function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
+  if (isIconHost(context.req.raw)) {
+    return new Response('Not Found', { status: 404 });
+  }
+
   const redirectParam = context.req.query('redirect');
   if (redirectParam && isDocumentNavigation(context.req.raw)) {
     return context.redirect(redirectParam, 302);
@@ -465,8 +511,35 @@ function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Respon
   return buildSvgResponse(svg, 3600);
 }
 
-/** Handle generic static 1-segment button/badge route `/:label`. */
-function handleSingleSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
+/** Handle 1-segment standalone icon route `/:icon` on `icon.xul.is`. */
+function handleStandaloneIconRoute(context: Context<{ Bindings: Env }>): Response {
+  const redirectParam = context.req.query('redirect');
+  if (redirectParam && isDocumentNavigation(context.req.raw)) {
+    return context.redirect(redirectParam, 302);
+  }
+
+  const colorParam = context.req.query('color');
+  const sizeParam = context.req.query('size');
+  const strokeParam = context.req.query('stroke');
+  const animParam = context.req.query('anim');
+
+  const svg = renderIcon({
+    anim: resolveAnimationMode(animParam, 'auto'),
+    color: resolveColor(colorParam, 'indigo'),
+    icon: decodeSegment(context.req.param('label') ?? ''),
+    size: parseOptionalNumber(sizeParam),
+    strokeWidth: parseOptionalNumber(strokeParam),
+  });
+
+  return buildSvgResponse(svg, 3600);
+}
+
+/** Handle generic 1-segment route `/:label` (`badge.xul.is` -> micro-button/badge, `icon.xul.is` -> standalone icon). */
+function handleSingleSegmentRoute(context: Context<{ Bindings: Env }>): Response {
+  if (isIconHost(context.req.raw)) {
+    return handleStandaloneIconRoute(context);
+  }
+
   const redirectParam = context.req.query('redirect');
   if (redirectParam && isDocumentNavigation(context.req.raw)) {
     return context.redirect(redirectParam, 302);
@@ -481,8 +554,6 @@ function handleSingleSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Res
   return buildSvgResponse(svg, 3600);
 }
 
-// ----------------------------------------- MAIN ----------------------------------------
-
 const app = new Hono<{ Bindings: Env }>();
 
 // 1. Root Redirect.
@@ -491,17 +562,17 @@ app.get('/', handleRootRoute);
 // 2. SSOT Live Preview Studio.
 app.get('/preview', handlePreviewRoute);
 
-// 3. Status Preset Route: /status/:state/:text.
+// 3. Status Preset Route: /status/:state/:text (badge.xul.is only).
 app.get('/status/:state/:text', handleStatusRoute);
 
-// 4. Service Preset Routes (3 segments = default owner, 4 segments = explicit owner).
+// 4. Service Preset Routes (badge.xul.is only: 3 segments = default owner, 4 segments = explicit owner).
 app.get('/:service{gh|pypi}/:target/:metric', handleDefaultOwnerServiceRoute);
 app.get('/:service{gh|pypi}/:owner/:target/:metric', handleExplicitOwnerServiceRoute);
 
-// 5. Generic Static 2-Segment Badge: /:label/:value.
+// 5. Generic Static 2-Segment Badge: /:label/:value (badge.xul.is only).
 app.get('/:label/:value', handleTwoSegmentBadgeRoute);
 
-// 6. Generic Static 1-Segment Button/Badge: /:label.
-app.get('/:label', handleSingleSegmentBadgeRoute);
+// 6. Single-Segment Route: /:label (badge.xul.is -> button/badge, icon.xul.is -> standalone icon).
+app.get('/:label', handleSingleSegmentRoute);
 
 export default app;

@@ -1,17 +1,15 @@
 /**
- * Preview studio – Interactive HTML showcase rendered directly from the SSOT SVG generator.
+ * Preview studio – Interactive HTML showcase rendered directly from the SSOT SVG generator (`badge.xul.is` & `icon.xul.is`).
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { renderBadge } from '@/svg/renderer';
+import { renderBadge, renderIcon } from '@/svg/renderer';
 import type { BadgeVariant, ThemeColorName } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Metadata for a variant showcase card in the preview studio. */
 interface VariantDescriptor {
-  /** Short description of the variant's visual design. */
-  desc: string;
   /** Variant query parameter identifier. */
   id: BadgeVariant;
   /** Display title for the variant card. */
@@ -22,8 +20,6 @@ interface VariantDescriptor {
 interface UseCaseGroup {
   /** Array of badge render configurations for this use-case card. */
   badges: Parameters<typeof renderBadge>[0][];
-  /** Short description of the structural combination being tested. */
-  desc: string;
   /** Display title for the use-case card. */
   title: string;
 }
@@ -32,36 +28,12 @@ interface UseCaseGroup {
 
 /** Showcase definitions for all 6 badge and micro-button variants. */
 const VARIANT_DESCRIPTORS: VariantDescriptor[] = [
-  {
-    desc: 'Flat dark slate label + Kumo 3D gradient value capsule',
-    id: '1',
-    title: 'variant=1 · Primary Badge',
-  },
-  {
-    desc: 'Colored border + 16% tinted value capsule',
-    id: '2',
-    title: 'variant=2 · Secondary Badge',
-  },
-  {
-    desc: 'Minimal neutral border + muted label + accent value',
-    id: '3',
-    title: 'variant=3 · Tertiary Badge',
-  },
-  {
-    desc: 'Kumo 3D full-bleed gradient CTA pill (26px height)',
-    id: 'b1',
-    title: 'variant=b1 · Primary Button',
-  },
-  {
-    desc: 'Kumo 3D tinted dark button with glowing border (26px height)',
-    id: 'b2',
-    title: 'variant=b2 · Secondary Button',
-  },
-  {
-    desc: 'Kumo 3D subtle utility button with muted label (26px height)',
-    id: 'b3',
-    title: 'variant=b3 · Tertiary Button',
-  },
+  { id: '1', title: 'variant=1 · Primary Badge' },
+  { id: '2', title: 'variant=2 · Secondary Badge' },
+  { id: '3', title: 'variant=3 · Tertiary Badge' },
+  { id: 'b1', title: 'variant=b1 · Primary Button' },
+  { id: 'b2', title: 'variant=b2 · Secondary Button' },
+  { id: 'b3', title: 'variant=b3 · Tertiary Button' },
 ];
 
 /** Comprehensive structural use-case and edge-case groups for visual verification. */
@@ -75,7 +47,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'amber', label: 'Get Started', variant: 'b1' },
       { color: 'sky', label: 'View Changelog', variant: 'b2' },
     ],
-    desc: 'Pure typography without icons (or with ?icon=none)',
     title: 'No-Icon Badges & Buttons',
   },
   {
@@ -87,7 +58,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'rose', label: 'Experimental', variant: '1' },
       { color: 'slate', label: 'MIT Licensed', variant: '3' },
     ],
-    desc: '22px badges (variant=1, variant=2, variant=3) with only a single compartment',
     title: 'Single-Part Badges (No Split Side)',
   },
   {
@@ -100,7 +70,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'sky', icon: 'terminal', label: '', variant: 'b2' },
       { color: 'rose', icon: 'heart', label: '', variant: 'b3' },
     ],
-    desc: 'Symmetrically padded icon-only and status-dot-only micro-pills (?label=)',
     title: 'Icon-Only & Dot-Only Pills',
   },
   {
@@ -111,7 +80,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
       { color: 'emerald', dot: 'green', label: '', value: '99.99%', variant: '2' },
       { color: 'amber', dot: 'amber', label: '', value: '180ms', variant: '3' },
     ],
-    desc: 'Icon or pulsing dot on the left + value capsule on the right (?label=)',
     title: 'Compact Icon / Dot + Value (No Label Text)',
   },
   {
@@ -157,7 +125,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
         variant: '3',
       },
     ],
-    desc: 'Unified ?special= widgets: bar:<pct>, ring:<pct>, strip:<0..9>, and delta:<val>',
     title: 'Special Data Widgets (Bar, Ring, 10-Stage Strip & Delta)',
   },
   {
@@ -183,7 +150,6 @@ const USE_CASE_GROUPS: UseCaseGroup[] = [
         variant: '2',
       },
     ],
-    desc: 'Optional ?anim=sheen button glint, auto spin/shake/nudge icons, and kitchen-sink badge',
     title: 'Micro-Animations & Split Micro-Buttons',
   },
 ];
@@ -228,7 +194,6 @@ function renderVariantCard(variantInfo: VariantDescriptor): string {
         <div class="card">
           <div class="card-header">
             <code>${variantInfo.title}</code>
-            <span>${variantInfo.desc}</span>
           </div>
           <div class="badge-row">${samples}</div>
         </div>
@@ -243,7 +208,6 @@ function renderUseCaseCard(group: UseCaseGroup): string {
         <div class="card">
           <div class="card-header">
             <code>${group.title}</code>
-            <span>${group.desc}</span>
           </div>
           <div class="badge-row">${samples}</div>
         </div>
@@ -372,12 +336,29 @@ export function renderPreviewHtml(): string {
     }),
   ].join('\n');
 
+  const standaloneIconSamples = [
+    renderIcon({ anim: 'none', color: 'violet', icon: 'globe-code', size: 16, strokeWidth: 2.5 }),
+    renderIcon({ anim: 'none', color: 'indigo', icon: 'code-xml', size: 16, strokeWidth: 2.5 }),
+    renderIcon({ anim: 'sheen', color: 'sky', icon: 'square-terminal', size: 20 }),
+    renderIcon({ color: 'emerald', icon: 'package', size: 24 }),
+    renderIcon({ anim: 'sheen', color: 'amber', icon: 'zap', size: 28 }),
+    renderIcon({ color: 'rose', icon: 'heart-handshake', size: 28 }),
+    renderIcon({ anim: 'sheen', color: 'yellow', icon: 'star', size: 24 }),
+    renderIcon({ color: 'purple', icon: 'sparkles', size: 24 }),
+    renderIcon({ color: 'teal', icon: 'refresh-cw', size: 24 }),
+    renderIcon({ color: 'blue', icon: 'rocket', size: 24 }),
+    renderIcon({ anim: 'sheen', color: 'cyan', icon: 'archlinux', size: 24 }),
+    renderIcon({ color: 'amber', icon: 'python', size: 24 }),
+    renderIcon({ anim: 'sheen', color: 'orange', icon: 'cloudflare', size: 24 }),
+    renderIcon({ color: 'slate', icon: 'github', size: 24 }),
+  ].join('\n');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>badge.xul.is — SSOT Visual Studio</title>
+  <title>svg-api (badge.xul.is &amp; icon.xul.is) – SSOT Visual Studio</title>
   <style>
     :root {
       --bg: #090b10;
@@ -428,9 +409,8 @@ export function renderPreviewHtml(): string {
       border-radius: 10px;
       padding: 18px;
     }
-    .card-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; gap: 12px; }
+    .card-header { display: flex; align-items: baseline; margin-bottom: 14px; }
     .card-header code { font-weight: 600; font-size: 13px; white-space: nowrap; }
-    .card-header span { font-size: 12px; color: var(--muted); text-align: right; }
     .badge-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   </style>
 </head>
@@ -438,7 +418,7 @@ export function renderPreviewHtml(): string {
   <div class="container">
     <header>
       <div>
-        <h1>badge.xul.is — SSOT Live Preview</h1>
+        <h1>svg-api – SSOT Live Preview (<code>badge.xul.is</code> &amp; <code>icon.xul.is</code>)</h1>
         <p style="margin:4px 0 0;font-size:13px;color:var(--muted)">Rendered directly via <code>src/svg/renderer.ts</code></p>
       </div>
       <button class="toggle" onclick="document.body.classList.toggle('light-canvas')">
@@ -446,7 +426,7 @@ export function renderPreviewHtml(): string {
       </button>
     </header>
 
-    <h2>1. The 6 Badge & Button Variants</h2>
+    <h2>1. The 6 Badge &amp; Button Variants (badge.xul.is)</h2>
     <div class="grid">${variantCards}</div>
 
     <h2>2. Special Elements (?special=sparkline | bar | ring | strip | delta)</h2>
@@ -459,8 +439,13 @@ export function renderPreviewHtml(): string {
       <div class="badge-row">${paletteSwatches}</div>
     </div>
 
-    <h2>4. Structural Combinations, Micro-Animations & Edge Cases</h2>
+    <h2>4. Structural Combinations, Micro-Animations &amp; Edge Cases</h2>
     <div class="grid">${useCaseCards}</div>
+
+    <h2>5. Standalone Icons – icon.xul.is/:icon (?color= &amp; ?size= &amp; ?stroke= &amp; ?anim=)</h2>
+    <div class="card">
+      <div class="badge-row" style="gap: 16px;">${standaloneIconSamples}</div>
+    </div>
   </div>
 </body>
 </html>`;

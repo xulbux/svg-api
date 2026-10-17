@@ -1,8 +1,8 @@
 {
-  "name": "badge",
+  "name": "svg-api",
   "version": "1.0.0",
   "private": true,
-  "description": "High-performance, zero-cold-start dynamic SVG badge and micro-button engine for badge.xul.is.",
+  "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, and icon engine for badge.xul.is and icon.xul.is.",
   "author": {
     "name": "XulbuX",
     "email": "hi@xul.is"
@@ -12,10 +12,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/xulbux/badge"
+    "url": "https://github.com/xulbux/svg-api"
   },
   "bugs": {
-    "url": "https://github.com/xulbux/badge/issues"
+    "url": "https://github.com/xulbux/svg-api/issues"
   },
   "license": "MIT",
   "type": "module",
