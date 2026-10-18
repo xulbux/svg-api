@@ -20,6 +20,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "check": "pnpm run fmt:check && pnpm run lint:check && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "fmt": "oxfmt",
