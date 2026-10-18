@@ -29,19 +29,19 @@ export type ThemeColorName =
   | 'yellow'
   | 'zinc';
 
-/** Visual badge (`1`-`3`) and micro-button (`b1`-`b3`) variants. */
-export type BadgeVariant = '1' | '2' | '3' | 'b1' | 'b2' | 'b3';
+/** Visual hierarchy variants (`1` = Primary Brand Gradient, `2` = Secondary Tinted Dark, `3` = Tertiary Neutral Dark). */
+export type BadgeVariant = '1' | '2' | '3';
 
 /** Animated pulsing status dot color states. */
 export type DotState = ThemeColorName;
 
-/** Base dark-slate neutral surface tokens. */
+/** Base neutral dark carbon surface tokens. */
 export interface BaseDarkPalette {
   /** Inner bevel highlight color for primary filled buttons. */
   bevelHighlight: string;
-  /** Bottom stop of the dark slate vertical background gradient. */
+  /** Bottom stop of the neutral dark vertical background gradient. */
   bgBottom: string;
-  /** Top stop of the dark slate vertical background gradient. */
+  /** Top stop of the neutral dark vertical background gradient. */
   bgTop: string;
   /** Neutral 1px border color for standard dark pills. */
   borderNeutral: string;
@@ -57,7 +57,7 @@ export interface BaseDarkPalette {
 export interface ThemePalette {
   /** Bright readable accent text color on dark backgrounds. */
   accentText: string;
-  /** Glowing border color for secondary variants (`v=2` and `v=b2`). */
+  /** Glowing border color for secondary variants (`variant=2`). */
   borderColor: string;
   /** Inner top 3D highlight color for primary fills (`color-mix(in oklch, brand, white 30%)`). */
   emphasisBg: string;
@@ -65,12 +65,12 @@ export interface ThemePalette {
   emphasisRing: string;
   /** Dot / filter glow color. */
   glowColor: string;
-  /** Bottom gradient stop for primary fills (`v=1` and `v=b1`). */
+  /** Bottom gradient stop for primary fills (`variant=1`). */
   gradEnd: string;
   /** Top gradient stop for primary fills (`color-mix(in oklch, brand, white 15%)`). */
   gradStart: string;
   /** Icon tint color on dark backgrounds. */
   iconColor: string;
-  /** Low-opacity fill color for secondary variants (`v=2` and `v=b2`). */
+  /** Low-opacity fill color for secondary variants (`variant=2`). */
   tintBg: string;
 }

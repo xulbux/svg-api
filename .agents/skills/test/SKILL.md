@@ -11,7 +11,7 @@ In accordance with the validation policy in `AGENTS.md` Section 4, use this skil
 
 ## 1. Architecture
 
-Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderIcon`, `resolveColor`, `formatCompactNumber`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account.
+Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderButton`, `renderIcon`, `resolveColor`, `formatCompactNumber`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account.
 
 ### Key Files
 
@@ -19,8 +19,8 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 | ----------------------- | -------------------------------------------------------------------------------- |
 | `test/measure.test.ts`  | Text width calculation tests (`src/svg/measure.ts`)                              |
 | `test/icons.test.ts`    | Lucide & Simple Icons resolution tests (`src/svg/icons.ts`)                      |
-| `test/renderer.test.ts` | SSOT SVG rendering across all 6 badge variants, standalone icons, and widgets    |
-| `test/routes.test.ts`   | Hono route handling for `svg.xul.is` (`/badge/*`, `/icon/*`, `/stack/*`, `/quote/*`), overrides & redirects |
+| `test/renderer.test.ts` | SSOT SVG rendering across badge/button variants, standalone icons, and widgets   |
+| `test/routes.test.ts`   | Hono route handling for `svg.xul.is` (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), overrides & redirects |
 | `vitest.config.mts`     | Vitest config with `@/` path alias                                               |
 
 ---
@@ -54,7 +54,7 @@ pnpm run test:watch
 ### Full Validation + Tests
 
 ```bash
-pnpm run type-check; pnpm run lint; pnpm run fmt; pnpm run test; pnpm run preview:export
+pnpm run check
 ```
 
 ---

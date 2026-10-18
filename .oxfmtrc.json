@@ -12,7 +12,6 @@
     ".markdownlint.json",
     "*.md",
     "package.json",
-    "preview.html",
     "wrangler.jsonc"
   ],
   "objectWrap": "collapse",

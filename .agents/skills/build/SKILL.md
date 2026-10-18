@@ -1,29 +1,29 @@
 ---
 name: build
-description: Exports the standalone SSOT preview HTML, verifies the Cloudflare Worker bundle, and deploys to Cloudflare.
+description: Runs the local Wrangler dev server for live previewing, verifies the Cloudflare Worker bundle, and deploys to Cloudflare.
 ---
 
 # Build & Deploy
 
-Use this skill to export the standalone visual preview, verify the Cloudflare Worker bundle with Wrangler, or deploy to production.
+Use this skill to preview `svg.xul.is` locally via Wrangler, verify the Cloudflare Worker bundle, or deploy to production.
 
 ## 1. Prerequisites
 
 Before building or deploying, always run the full validation suite (see `AGENTS.md` Section 4) and ensure the output is completely clean:
 
 ```bash
-pnpm run type-check; pnpm run lint; pnpm run fmt; pnpm run test; pnpm run preview:export
+pnpm run check
 ```
 
-## 2. Export Standalone Preview
+## 2. Local Preview & Documentation Server (`localhost:8787`)
 
-Generate `preview.html` in the project root using the Single Source of Truth renderer (`src/svg/renderer.ts`):
+In accordance with `AGENTS.md` Section 4, keep `src/preview/` (`catalog.ts`, `page.ts`, `layout.ts`) synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview all routes (`/` homepage, `/docs`, `/docs/:section`, `/preview`, `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) exactly as hosted on `svg.xul.is`:
 
 ```bash
-pnpm run preview:export
+pnpm run dev
 ```
 
-Open `preview.html` in a browser or start the local Wrangler dev server (`pnpm run dev` → <http://localhost:8787/preview>) to inspect all 6 badge/button variants, standalone icons, status dots, special elements, and theme palettes on dark and light canvases.
+Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants across dark and light canvases.
 
 ## 3. Verify Worker Bundle (Dry Run)
 
@@ -45,6 +45,6 @@ pnpm run deploy
 ## 5. Full One-Liner (Validate + Dry-Run Bundle)
 
 ```bash
-pnpm run type-check && pnpm run lint && pnpm run fmt && pnpm run test && pnpm run preview:export && pnpm exec wrangler deploy --dry-run
+pnpm run check
 ```
 

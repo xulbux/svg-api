@@ -1,34 +1,48 @@
 /**
- * SSOT SVG renderer tests – Variants 1..3, b1..b3, standalone icons, tech stack grids, quote cards, Kumo 3D crescents, micro-animations, and special elements (`src/svg/`).
+ * SSOT SVG renderer tests – Variants 1..3, CTA buttons, standalone icons, tech stack grids, quote cards, Kumo 3D crescents, micro-animations, and special elements (`src/svg/`).
  */
 
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
-import { renderPreviewHtml } from '@/preview/page';
-import { renderBadge, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
+import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
+import { renderBadge, renderButton, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
 import type { BadgeVariant } from '@/types';
 
 // ----------------------------------------- MAIN ----------------------------------------
 
-describe('renderBadge', () => {
-  it('renders all 6 variants with valid SVG dimensions and viewBox', () => {
-    const variants: BadgeVariant[] = ['1', '2', '3', 'b1', 'b2', 'b3'];
+describe('renderBadge & renderButton', () => {
+  it('renders all 3 badge variants (22px) and all 3 button variants across sm/md/lg/xl sizes', () => {
+    const variants: BadgeVariant[] = ['1', '2', '3'];
 
     for (const variant of variants) {
-      const isBtn = variant.startsWith('b');
-      const svg = renderBadge({
+      const badgeSvg = renderBadge({
         color: 'indigo',
         icon: 'sparkles',
         label: 'xulbux',
-        value: isBtn ? undefined : 'v1.0',
+        value: 'v1.0',
         variant,
       });
+      expect(badgeSvg).toContain('xmlns="http://www.w3.org/2000/svg"');
+      expect(badgeSvg).toContain('height="22"');
+      expect(badgeSvg).toMatch(/viewBox="0 0 \d+ 22"/);
 
-      const expectedHeight = isBtn ? 26 : 22;
-      expect(svg).toContain('xmlns="http://www.w3.org/2000/svg"');
-      expect(svg).toContain(`height="${expectedHeight}"`);
-      expect(svg).toMatch(new RegExp(`viewBox="0 0 \\d+ ${expectedHeight}"`));
+      const btnSvg = renderButton({ color: 'indigo', icon: 'sparkles', label: 'Explore', variant });
+      expect(btnSvg).toContain('height="30"');
+      expect(btnSvg).toMatch(/viewBox="0 0 \d+ 30"/);
     }
+
+    expect(renderButton({ color: 'indigo', label: 'Small', size: 'sm', variant: '1' })).toContain(
+      'height="26"'
+    );
+    expect(renderButton({ color: 'indigo', label: 'Large', size: 'lg', variant: '1' })).toContain(
+      'height="36"'
+    );
+    expect(renderButton({ color: 'indigo', label: 'XL', size: 'xl', variant: '1' })).toContain(
+      'height="42"'
+    );
+    expect(renderButton({ color: 'indigo', label: 'Custom', size: 40, variant: '1' })).toContain(
+      'height="40"'
+    );
   });
 
   it('renders outward-only radar ripples with severity-specific cadences for status dots', () => {
@@ -82,23 +96,64 @@ describe('renderBadge', () => {
     expect(standbyDotSvg).toContain('values="0.9;0.32;0.9" dur="3.4s"');
   });
 
-  it('renders contextual icon micro-animations automatically and respects anim overrides', () => {
-    const spinSvg = renderBadge({
+  it('keeps icons static by default and under anim=sheen, while animating icons for anim=auto, explicit modes, and sheen,<mode>', () => {
+    const defaultSparklesSvg = renderButton({
+      color: 'indigo',
+      icon: 'sparkles',
+      label: 'Explore svg.xul.is',
+      variant: '1',
+    });
+    expect(defaultSparklesSvg).not.toContain('<animateTransform');
+
+    const sheenOnlyButtonSvg = renderButton({
+      anim: 'sheen',
+      color: 'indigo',
+      icon: 'sparkles',
+      label: 'Explore svg.xul.is',
+      variant: '1',
+    });
+    expect(sheenOnlyButtonSvg).toContain('clipPath id="sheen-clip-');
+    expect(sheenOnlyButtonSvg).not.toContain('type="rotate"');
+
+    const sheenAndAutoButtonSvg = renderButton({
+      anim: 'sheen,auto',
+      color: 'indigo',
+      icon: 'sparkles',
+      label: 'Explore svg.xul.is',
+      variant: '1',
+    });
+    expect(sheenAndAutoButtonSvg).toContain('clipPath id="sheen-clip-');
+    expect(sheenAndAutoButtonSvg).toContain('type="rotate" values="0;0;-11;11;-9;7;0;0"');
+
+    const spinSvg = renderButton({
+      anim: 'auto',
       color: 'teal',
       icon: 'refresh-cw',
       label: 'Syncing',
-      variant: 'b2',
+      variant: '2',
     });
     expect(spinSvg).toContain('type="rotate" from="0 12 12" to="360 12 12"');
 
-    const shakeSvg = renderBadge({ color: 'purple', icon: 'sparkles', label: 'AI', variant: 'b2' });
+    const shakeSvg = renderButton({
+      anim: 'auto',
+      color: 'purple',
+      icon: 'sparkles',
+      label: 'AI',
+      variant: '2',
+    });
     expect(shakeSvg).toContain('type="scale" values="1;1;1.15;1.15;1.15;1.15;1;1"');
     expect(shakeSvg).toContain('type="rotate" values="0;0;-11;11;-9;7;0;0"');
 
-    const nudgeSvg = renderBadge({ color: 'blue', icon: 'rocket', label: 'Launch', variant: 'b1' });
+    const nudgeSvg = renderButton({
+      anim: 'auto',
+      color: 'blue',
+      icon: 'rocket',
+      label: 'Launch',
+      variant: '1',
+    });
     expect(nudgeSvg).toContain('type="translate" values="0 0;0 0;1.8 -1.8;0 0;0 0"');
 
-    const sheenSvg = renderBadge({ anim: 'sheen', color: 'blue', label: 'Deploy', variant: 'b1' });
+    const sheenSvg = renderButton({ anim: 'sheen', color: 'blue', label: 'Deploy', variant: '1' });
     expect(sheenSvg).toContain('clipPath id="sheen-clip-');
     expect(sheenSvg).toContain('linearGradient id="sheen-grad-');
     expect(sheenSvg).toContain('calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s"');
@@ -216,20 +271,20 @@ describe('renderBadge', () => {
     expect(dotOnlyBadge).toContain('width="25"');
     expect(dotOnlyBadge).toContain('cx="12.5"');
 
-    const noIconButton = renderBadge({ color: 'amber', label: 'Get Started', variant: 'b1' });
+    const noIconButton = renderButton({ color: 'amber', label: 'Get Started', variant: '1' });
     const widthMatch = /width="(?<total>\d+)"/.exec(noIconButton);
     const totalWidth = Number(widthMatch?.groups?.total);
-    expect(noIconButton).toContain(`x="${totalWidth / 2}" y="17" text-anchor="middle"`);
+    expect(noIconButton).toContain(`x="${totalWidth / 2}" y="19" text-anchor="middle"`);
   });
 
-  it('applies tapering Kumo upper-edge crescent on all 3 button variants (b1, b2, b3) and colored variant=1 capsules, and uses muted gray text on both variant=3 and variant=b3', () => {
-    const primaryButton = renderBadge({ color: 'blue', label: 'Change', variant: 'b1' });
-    expect(primaryButton).toContain('A 6 5 0 0 0');
+  it('applies tapering Kumo upper-edge crescent on all 3 button variants (1, 2, 3) and colored variant=1 badge capsules, and uses muted carbon-gray text on variant=3', () => {
+    const primaryButton = renderButton({ color: 'blue', label: 'Change', variant: '1' });
+    expect(primaryButton).toContain('A 8 7 0 0 0');
     expect(primaryButton).toContain(`fill="${THEMES.blue.emphasisBg}"`);
     expect(primaryButton).toContain(`stroke="${THEMES.blue.emphasisRing}"`);
 
-    const secondaryButton = renderBadge({ color: 'sky', label: 'Changelog', variant: 'b2' });
-    expect(secondaryButton).toContain('A 6 5 0 0 0');
+    const secondaryButton = renderButton({ color: 'sky', label: 'Changelog', variant: '2' });
+    expect(secondaryButton).toContain('A 8 7 0 0 0');
     expect(secondaryButton).toContain(`fill="${THEMES.sky.borderColor}" fill-opacity="0.45"`);
     expect(secondaryButton).toContain(`stroke="${THEMES.sky.borderColor}" stroke-width="1"`);
 
@@ -259,16 +314,18 @@ describe('renderBadge', () => {
       value: '4.8k',
       variant: '3',
     });
-    const tertiaryButton = renderBadge({
+    const tertiaryButton = renderButton({
       color: 'rose',
       icon: 'bug',
       label: 'Report Issue',
-      variant: 'b3',
+      variant: '3',
     });
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
     expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
-    expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
-    expect(tertiaryButton).toContain('A 6 5 0 0 0');
+    expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="btn-txt-30"`);
+    expect(tertiaryButton).not.toContain('.txt {');
+    expect(tertiaryButton).not.toContain('.val {');
+    expect(tertiaryButton).toContain('A 8 7 0 0 0');
     expect(tertiaryButton).toContain('fill="#ffffff" fill-opacity="0.045"');
   });
 });
@@ -298,6 +355,7 @@ describe('renderIcon', () => {
     expect(sheenLucideSvg).toContain('values="-32;84;84"');
     expect(sheenLucideSvg).toContain('stop-opacity="0.45"');
     expect(sheenLucideSvg).toContain('stroke="url(#icon-sheen-zap-amber-28)"');
+    expect(sheenLucideSvg).not.toContain('<animateTransform');
 
     const sheenSimpleSvg = renderIcon({
       anim: 'sheen',
@@ -308,13 +366,16 @@ describe('renderIcon', () => {
     expect(sheenSimpleSvg).toContain('linearGradient id="icon-sheen-cloudflare-orange-24"');
     expect(sheenSimpleSvg).toContain('fill="url(#icon-sheen-cloudflare-orange-24)"');
 
-    const pulseIconSvg = renderIcon({ color: 'rose', icon: 'heart-handshake' });
+    const staticHeartSvg = renderIcon({ color: 'rose', icon: 'heart-handshake' });
+    expect(staticHeartSvg).not.toContain('<animateTransform');
+
+    const pulseIconSvg = renderIcon({ anim: 'auto', color: 'rose', icon: 'heart-handshake' });
     expect(pulseIconSvg).toContain('type="scale" values="1;1;1.18;0.96;1.14;1;1"');
 
-    const floatIconSvg = renderIcon({ color: 'emerald', icon: 'package' });
+    const floatIconSvg = renderIcon({ anim: 'auto', color: 'emerald', icon: 'package' });
     expect(floatIconSvg).toContain('type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0"');
 
-    const animatedIconSvg = renderIcon({ color: 'teal', icon: 'refresh-cw' });
+    const animatedIconSvg = renderIcon({ anim: 'auto', color: 'teal', icon: 'refresh-cw' });
     expect(animatedIconSvg).toContain('width="24" height="24"');
     expect(animatedIconSvg).toContain('type="rotate" from="0 12 12" to="360 12 12"');
 
@@ -406,17 +467,56 @@ describe('renderQuote', () => {
   });
 });
 
-describe('renderPreviewHtml', () => {
-  it('renders the complete SSOT preview studio HTML containing all variants for badges, buttons, tech stacks, and quote cards', () => {
-    const html = renderPreviewHtml();
-    expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('svg-api – SSOT Live Preview');
-    expect(html).toContain('variant=1 · Primary Badge');
-    expect(html).toContain('variant=b3 · Tertiary Button');
-    expect(html).toContain('svg.xul.is/icon/:icon');
-    expect(html).toContain('svg.xul.is/stack/:groups');
-    expect(html).toContain('svg.xul.is/quote/:author/:text');
-    expect(html).not.toContain('<span>');
-    expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+describe('renderDocsHtml & renderHomeHtml', () => {
+  it('renders the homepage and all 7 dedicated documentation subpages containing all variants, service registries, and syntax-highlighted Markdown snippets', () => {
+    const homeHtml = renderHomeHtml();
+    const badgesHtml = renderDocsHtml('badges');
+    const buttonsHtml = renderDocsHtml('buttons');
+    const servicesHtml = renderDocsHtml('services');
+    const iconsHtml = renderDocsHtml('icons');
+    const stackHtml = renderDocsHtml('stack');
+    const quotesHtml = renderDocsHtml('quotes');
+    const colorsHtml = renderDocsHtml('colors');
+
+    for (const html of [
+      homeHtml,
+      badgesHtml,
+      buttonsHtml,
+      servicesHtml,
+      iconsHtml,
+      stackHtml,
+      quotesHtml,
+      colorsHtml,
+    ]) {
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).not.toContain('<span>');
+      expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+      expect(html).toContain(
+        'Missing a public API service, vector icon, or even a whole new SVG element?'
+      );
+    }
+
+    expect(badgesHtml).toContain(
+      '<code class="card-title-code">variant=1</code><span class="card-title-text">Primary Badge</span><span class="card-title-pill">Default</span>'
+    );
+    expect(buttonsHtml).toContain(
+      '<code class="card-title-code">variant=3</code><span class="card-title-text">Tertiary Button</span>'
+    );
+    expect(servicesHtml).toContain(
+      '<span class="card-title-text">PyPI &amp; ClickPy</span><code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
+    );
+    expect(servicesHtml).toContain(
+      '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
+    );
+    expect(servicesHtml).toContain(
+      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:owner/:ext/:metric</code>'
+    );
+    expect(servicesHtml).toContain(
+      '<span class="card-title-text">Crates.io &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docker/*</code>'
+    );
+    expect(iconsHtml).toContain('svg.xul.is/icon/:icon');
+    expect(stackHtml).toContain('svg.xul.is/stack/:groups');
+    expect(quotesHtml).toContain('svg.xul.is/quote/:author/:text');
+    expect(colorsHtml).toContain('22 Tailwind v4 OKLCH Theme Colors');
   });
 });

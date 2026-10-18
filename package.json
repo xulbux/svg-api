@@ -3,20 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, icon, tech stack, and quote card engine for svg.xul.is.",
-  "author": {
-    "name": "XulbuX",
-    "email": "hi@xul.is"
-  },
-  "maintainers": [
-    "XulbuX <hi@xul.is>"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/xulbux/svg-api"
-  },
-  "bugs": {
-    "url": "https://github.com/xulbux/svg-api/issues"
-  },
+  "author": { "name": "XulbuX", "email": "hi@xul.is" },
+  "maintainers": ["XulbuX <hi@xul.is>"],
+  "repository": { "type": "git", "url": "https://github.com/xulbux/svg-api" },
+  "bugs": { "url": "https://github.com/xulbux/svg-api/issues" },
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -27,7 +17,6 @@
     "fmt:check": "oxfmt --check",
     "lint": "oxlint --fix",
     "lint:check": "oxlint",
-    "preview:export": "tsx scripts/exportPreview.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "type-check": "tsc --noEmit"

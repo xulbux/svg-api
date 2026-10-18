@@ -17,5 +17,5 @@
     "types": ["@cloudflare/workers-types", "node"]
   },
   "exclude": ["node_modules", "dist", ".wrangler"],
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "*.config.*"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "*.config.*"]
 }

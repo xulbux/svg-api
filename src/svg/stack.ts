@@ -330,7 +330,8 @@ export function renderStack(options: StackRenderOptions): string {
     DEFAULT_STACK_PER_LINE
   );
   const variant: WidgetVariant = options.variant ?? '2';
-  const animMode: AnimationMode = options.anim ?? 'auto';
+  const animMode: AnimationMode = options.anim ?? 'default';
+  const hasSheen = animMode === 'sheen' || animMode.startsWith('sheen,');
 
   const { allSlugs, bands } = buildMeasuredBands(options, tileSize, gap, groupGap, defaultPerLine);
 
@@ -385,7 +386,7 @@ export function renderStack(options: StackRenderOptions): string {
           usedPrimaryColors
         );
 
-        if (animMode === 'sheen') {
+        if (hasSheen) {
           clipRects += `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
         }
       }

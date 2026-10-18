@@ -25,11 +25,12 @@ afterEach(() => {
 });
 
 describe('helpers', () => {
-  it('formats compact numbers with k and M suffixes', () => {
+  it('formats compact numbers with k, M, and B suffixes', () => {
     expect(formatCompactNumber(42)).toBe('42');
     expect(formatCompactNumber(1000)).toBe('1k');
     expect(formatCompactNumber(4820)).toBe('4.8k');
     expect(formatCompactNumber(2_500_000)).toBe('2.5M');
+    expect(formatCompactNumber(1_200_000_000)).toBe('1.2B');
   });
 
   it('formats relative dates from ISO timestamps', () => {
@@ -55,21 +56,22 @@ describe('helpers', () => {
     expect(resolveVariant('1', '2')).toBe('1');
     expect(resolveVariant('2', '1')).toBe('2');
     expect(resolveVariant('3', '1')).toBe('3');
-    expect(resolveVariant('b1', '1')).toBe('b1');
-    expect(resolveVariant('b2', '1')).toBe('b2');
-    expect(resolveVariant('b3', '1')).toBe('b3');
-    expect(resolveVariant('invalid', 'b1')).toBe('b1');
+    expect(resolveVariant('invalid', '2')).toBe('2');
   });
 
-  it('resolves canonical animation modes and falls back to auto', () => {
+  it('resolves canonical animation modes (including sheen,<mode> combinations) and falls back to default', () => {
     expect(resolveAnimationMode('sheen')).toBe('sheen');
+    expect(resolveAnimationMode('auto')).toBe('auto');
     expect(resolveAnimationMode('spin')).toBe('spin');
     expect(resolveAnimationMode('shake')).toBe('shake');
     expect(resolveAnimationMode('nudge')).toBe('nudge');
     expect(resolveAnimationMode('pulse')).toBe('pulse');
     expect(resolveAnimationMode('float')).toBe('float');
+    expect(resolveAnimationMode('sheen,auto')).toBe('sheen,auto');
+    expect(resolveAnimationMode('shake,sheen')).toBe('sheen,shake');
     expect(resolveAnimationMode('none')).toBe('none');
-    expect(resolveAnimationMode('unknown')).toBe('auto');
+    expect(resolveAnimationMode(undefined)).toBe('default');
+    expect(resolveAnimationMode('unknown')).toBe('default');
   });
 
   it('parses unified special=<type>:<payload> strings across all 5 widget types', () => {
@@ -116,23 +118,71 @@ describe('helpers', () => {
 });
 
 describe('Hono routes on svg.xul.is', () => {
-  it('redirects root / to https://xul.is', async () => {
+  it('renders homepage HTML at / and redirects when ALLOW_PREVIEW_IN_PROD is false', async () => {
     const response = await app.request('/', {}, TEST_ENV);
-    expect(response.status).toBe(302);
-    expect(response.headers.get('Location')).toBe('https://xul.is');
-  });
-
-  it('renders /preview HTML studio when enabled', async () => {
-    const response = await app.request('/preview', {}, TEST_ENV);
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('text/html');
     const body = await response.text();
-    expect(body).toContain('svg-api – SSOT Live Preview');
+    expect(body).toContain('One Cohesive <span class="hero-gradient-text">Edge SVG Engine</span>');
+    expect(body).toContain('href="/docs/badges"');
+    expect(body).toContain('href="/docs/buttons"');
+    expect(body).toContain('href="/docs/services"');
+    expect(body).toContain('<details class="code-drawer">');
+    expect(body).toContain('class="ui-icon');
+    expect(body).toContain('@view-transition');
+    expect(body).toContain('class="feature-card"');
+
+    const disabledRes = await app.request(
+      '/',
+      {},
+      { ALLOW_PREVIEW_IN_PROD: 'false', DEFAULT_GH_OWNER: 'xulbux' }
+    );
+    expect(disabledRes.status).toBe(302);
+    expect(disabledRes.headers.get('Location')).toBe('https://xul.is');
   });
 
-  it('renders 2-segment static badge under /badge/:label/:value with canonical query params and special widgets', async () => {
+  it('redirects /docs and /preview to /docs/badges and renders /docs/:section pages with syntax-highlighted Markdown code drawers', async () => {
+    const docsRedirect = await app.request('/docs', {}, TEST_ENV);
+    expect(docsRedirect.status).toBe(302);
+    expect(docsRedirect.headers.get('Location')).toBe('/docs/badges');
+
+    const previewRedirect = await app.request('/preview', {}, TEST_ENV);
+    expect(previewRedirect.status).toBe(302);
+    expect(previewRedirect.headers.get('Location')).toBe('/docs/badges');
+
+    const badgesRes = await app.request('/docs/badges', {}, TEST_ENV);
+    expect(badgesRes.status).toBe(200);
+    expect(badgesRes.headers.get('Content-Type')).toContain('text/html');
+    const body = await badgesRes.text();
+    expect(body).toContain('View Markdown');
+    expect(body).toContain(
+      '<span class="hl-p">![</span><span class="hl-alt">build</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge/build/passing</span>'
+    );
+
+    const buttonsRes = await app.request('/docs/buttons', {}, TEST_ENV);
+    expect(buttonsRes.status).toBe(200);
+    expect(await buttonsRes.text()).toContain('Interactive CTA Buttons');
+
+    const servicesRes = await app.request('/docs/services', {}, TEST_ENV);
+    expect(servicesRes.status).toBe(200);
+    const servicesBody = await servicesRes.text();
+    expect(servicesBody).toContain('Live Service Badges');
+    expect(servicesBody).toContain(
+      '<span class="hl-p">![</span><span class="hl-alt">PyPI Version</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge/pypi/xulbux/v</span><span class="hl-p">)</span>'
+    );
+
+    const sectionRes = await app.request('/docs/stack', {}, TEST_ENV);
+    expect(sectionRes.status).toBe(200);
+    expect(await sectionRes.text()).toContain('Grouped Tech Stack Icon Grids');
+
+    const unknownSectionRes = await app.request('/docs/unknown-page', {}, TEST_ENV);
+    expect(unknownSectionRes.status).toBe(302);
+    expect(unknownSectionRes.headers.get('Location')).toBe('/docs/badges');
+  });
+
+  it('renders 2-segment static badge under /badge/:label/:value with canonical query params and ignores ?label= on static badges', async () => {
     const response = await app.request(
-      '/badge/coverage/99.4%25?color=emerald&variant=2&icon=shield-check&special=bar:99.4',
+      '/badge/coverage/99.4%25?color=emerald&variant=2&icon=shield-check&label=ignored&special=bar:99.4',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
@@ -140,29 +190,48 @@ describe('Hono routes on svg.xul.is', () => {
     expect(response.headers.get('Content-Type')).toContain('image/svg+xml');
     const svg = await response.text();
     expect(svg).toContain('coverage');
+    expect(svg).not.toContain('ignored');
     expect(svg).toContain('99.4%');
     expect(svg).toContain('width="32" height="6" rx="3"');
   });
 
-  it('renders 1-segment micro-button under /badge/:label defaulting to variant=b1 and redirects on document navigation via ?redirect=', async () => {
-    const imgResponse = await app.request(
-      '/badge/Documentation?color=indigo&icon=book-open&anim=sheen&redirect=https://docs.xul.is',
+  it('renders 1-segment 22px badge under /badge/:label, CTA buttons under /button/* and /btn/*, and serves /favicon.svg', async () => {
+    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
+    expect(faviconRes.status).toBe(200);
+    expect(faviconRes.headers.get('Content-Type')).toContain('image/svg+xml');
+    expect(await faviconRes.text()).toContain('width="32" height="32"');
+
+    const singleBadgeRes = await app.request(
+      '/badge/xulbux?color=indigo&icon=sparkles',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
-    expect(imgResponse.status).toBe(200);
-    const svg = await imgResponse.text();
-    expect(svg).toContain('height="26"');
-    expect(svg).toContain('Documentation');
-    expect(svg).toContain('sheen-clip-');
+    expect(singleBadgeRes.status).toBe(200);
+    expect(await singleBadgeRes.text()).toContain('height="22"');
 
-    const docResponse = await app.request(
-      '/badge/Documentation?color=indigo&icon=book-open&redirect=https://docs.xul.is',
-      { headers: { 'Sec-Fetch-Dest': 'document' } },
+    const buttonRes = await app.request(
+      '/button/Documentation?color=indigo&icon=book-open&icon_right=arrow-right&anim=sheen',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
-    expect(docResponse.status).toBe(302);
-    expect(docResponse.headers.get('Location')).toBe('https://docs.xul.is');
+    expect(buttonRes.status).toBe(200);
+    const svg = await buttonRes.text();
+    expect(svg).toContain('height="30"');
+    expect(svg).toContain('Documentation');
+    expect(svg).toContain('sheen-clip-');
+    expect(svg).not.toContain('translate(12, 12)');
+
+    const splitBtnAliasRes = await app.request(
+      '/btn/Deploy/Production?size=lg&variant=2&color=emerald',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(splitBtnAliasRes.status).toBe(200);
+    const splitSvg = await splitBtnAliasRes.text();
+    expect(splitSvg).toContain('height="36"');
+    expect(splitSvg).toContain('rx="11"');
+    expect(splitSvg).toContain('Deploy');
+    expect(splitSvg).toContain('Production');
   });
 
   it('renders standalone SVG icons under /icon/:icon', async () => {
@@ -177,14 +246,6 @@ describe('Hono routes on svg.xul.is', () => {
     expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
     expect(iconSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
     expect(iconSvg).toContain('stroke-width="2.5"');
-
-    const iconRedirectRes = await app.request(
-      'https://svg.xul.is/icon/rocket?redirect=https://xul.is',
-      { headers: { 'Sec-Fetch-Dest': 'document' } },
-      TEST_ENV
-    );
-    expect(iconRedirectRes.status).toBe(302);
-    expect(iconRedirectRes.headers.get('Location')).toBe('https://xul.is');
   });
 
   it('renders single and grouped tech stack grids under /stack/:icons and horizontal/vertical quote cards under /quote/:author/:text', async () => {
@@ -230,7 +291,7 @@ describe('Hono routes on svg.xul.is', () => {
     expect(svg).toContain('width="2.5" height="10"');
   });
 
-  it('fetches GitHub, ClickPy PyPI, and Open VSX metrics and enforces owner allowlist', async () => {
+  it('fetches GitHub, ClickPy PyPI, npm, Open VSX, Crates.io, and Docker Hub metrics and enforces GitHub owner allowlist', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     // 1. GitHub stars & last-commit.
@@ -259,17 +320,19 @@ describe('Hono routes on svg.xul.is', () => {
     expect(ghCommitRes.status).toBe(200);
     expect(await ghCommitRes.text()).toContain('today');
 
-    // 2. ClickHouse ClickPy PyPI total downloads (dt) + redirect to clickpy.clickhouse.com.
+    // 2. ClickHouse ClickPy PyPI total downloads (dt) with ?label= override + redirect to clickpy.clickhouse.com.
     fetchSpy.mockResolvedValueOnce(
       Response.json({ row_1: { last_month: '3333', total: '86808' } }, { status: 200 })
     );
     const pypiDtRes = await app.request(
-      '/badge/pypi/xulbux/dt',
+      '/badge/pypi/xulbux/dt?label=total+downloads',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
     expect(pypiDtRes.status).toBe(200);
-    expect(await pypiDtRes.text()).toContain('86.8k');
+    const pypiDtSvg = await pypiDtRes.text();
+    expect(pypiDtSvg).toContain('total downloads');
+    expect(pypiDtSvg).toContain('86.8k');
 
     fetchSpy.mockResolvedValueOnce(
       Response.json({ row_1: { last_month: '3333', total: '86808' } }, { status: 200 })
@@ -284,7 +347,31 @@ describe('Hono routes on svg.xul.is', () => {
       'https://clickpy.clickhouse.com/dashboard/xulbux'
     );
 
-    // 3. Open VSX version & total downloads.
+    // 3. npm unscoped version & scoped downloads.
+    fetchSpy.mockResolvedValueOnce(
+      Response.json(
+        { license: 'MIT', types: './dist/index.d.ts', version: '4.13.13' },
+        { status: 200 }
+      )
+    );
+    const npmVerRes = await app.request(
+      '/badge/npm/hono/v',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(npmVerRes.status).toBe(200);
+    expect(await npmVerRes.text()).toContain('v4.13.13');
+
+    fetchSpy.mockResolvedValueOnce(Response.json({ downloads: 12_400_000 }, { status: 200 }));
+    const npmScopedDlRes = await app.request(
+      '/badge/npm/@hono/node-server/dt',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(npmScopedDlRes.status).toBe(200);
+    expect(await npmScopedDlRes.text()).toContain('12.4M/yr');
+
+    // 4. Open VSX version & total downloads.
     fetchSpy.mockResolvedValueOnce(
       Response.json({ downloadCount: 2486, version: '1.2.3' }, { status: 200 })
     );
@@ -296,7 +383,39 @@ describe('Hono routes on svg.xul.is', () => {
     expect(ovsxRes.status).toBe(200);
     expect(await ovsxRes.text()).toContain('v1.2.3');
 
-    // 4. Restricted owner check.
+    // 5. Crates.io version & Docker Hub pulls.
+    fetchSpy.mockResolvedValueOnce(
+      Response.json(
+        {
+          crate: {
+            downloads: 450_000_000,
+            max_stable_version: '1.0.215',
+            recent_downloads: 32_000_000,
+          },
+        },
+        { status: 200 }
+      )
+    );
+    const cratesRes = await app.request(
+      '/badge/crates/serde/v',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(cratesRes.status).toBe(200);
+    expect(await cratesRes.text()).toContain('v1.0.215');
+
+    fetchSpy.mockResolvedValueOnce(
+      Response.json({ pull_count: 1_200_000_000, star_count: 1940 }, { status: 200 })
+    );
+    const dockerRes = await app.request(
+      '/badge/docker/nginx/pulls',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(dockerRes.status).toBe(200);
+    expect(await dockerRes.text()).toContain('1.2B');
+
+    // 6. Restricted owner check.
     const restrictedRes = await app.request(
       '/badge/gh/someone-else/some-repo/stars',
       { headers: { 'Sec-Fetch-Dest': 'image' } },

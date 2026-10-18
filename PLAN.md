@@ -20,8 +20,8 @@ Build a high-performance, zero-cold-start SVG badge, micro-button, standalone ic
     -   When visited directly or clicked via a self-link in Markdown (`Sec-Fetch-Dest: document` or `Accept: text/html`), return `302 Found` to the resolved destination URL (either `?r=` query param or the preset's configured `redirectUrl`).
 4.  **Declarative Service & Special Element Config (`src/config/services.ts`)**:
     -   Single configuration file defining all external services (`gh`, `pypi`, `status`, etc.), upstream API endpoints, JSON transformers, redirect URLs, and **special visual elements**:
-        -   **Pulsing Status Dot (`dot`)**: Maps API states or preset keys to animated glowing SVG dots (e.g. `{ green: 'online', amber: 'degraded', red: 'offline' }`).
-        -   **Mini Sparkline (`sparkline`)**: Renders an inline `38×12px` `<polyline>` trend graph inside the badge for time-series metrics (e.g. GitHub commit activity).
+        -   **Pulsing Status Dot (`dot`)**: Maps API states or preset keys to animated glowing SVG dots (e.g., `{ green: 'online', amber: 'degraded', red: 'offline' }`).
+        -   **Mini Sparkline (`sparkline`)**: Renders an inline `38×12px` `<polyline>` trend graph inside the badge for time-series metrics (e.g., GitHub commit activity).
 5.  **Owner Lock & Allowlist**:
     -   Static badges (`/:label` and `/:label/:value`) are public since they make zero upstream API calls.
     -   API-backed service presets (`/gh/*`, `/pypi/*`) default to the owner's configured username and validate any explicit owner/package against an allowlist in `src/config/services.ts` to protect upstream rate limits.
@@ -171,7 +171,7 @@ pnpm add -D @cloudflare/workers-types @types/node oxfmt oxlint tsx typescript vi
 | :--- | :--- | :--- |
 | `c` | `indigo` \| `violet` \| `emerald` \| `rose` \| `amber` \| `cyan` \| `sky` \| `slate` \| `red` \| `green` | Named theme color token. Defaults to preset's default color or `indigo`. |
 | `v` | `1` \| `2` \| `3` \| `b1` \| `b2` \| `b3` | Visual variant (`1-3` = badge styles, `b1-b3` = button styles). Defaults to `1` (or `b1` for 1-segment static badges). |
-| `i` | `<icon-name>` \| `none` | Lucide icon slug (e.g. `sparkles`, `star`, `terminal`, `book-open`) or Simple Icons slug (`github`, `pypi`, `archlinux`, `rust`, `python`). Pass `none` to hide preset default icon. |
+| `i` | `<icon-name>` \| `none` | Lucide icon slug (e.g., `sparkles`, `star`, `terminal`, `book-open`) or Simple Icons slug (`github`, `pypi`, `archlinux`, `rust`, `python`). Pass `none` to hide preset default icon. |
 | `r` | `<url>` | Custom redirect destination when visited directly as a document. |
 | `dot` | `green` \| `amber` \| `red` \| `cyan` | Adds an animated pulsing status dot to any badge. |
 | `l` | `<string>` | Overrides the default left-side label on service preset badges. |

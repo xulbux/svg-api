@@ -8,23 +8,32 @@ import type { BadgeVariant, DotState, ThemeColorName } from './theme';
 
 /**
  * Micro-animation mode for icons, status dots, and specular sheen.
- * - `'auto'`: Contextual icon micro-animations + status dot radar ripples (default).
- * - `'sheen'`: Enables periodic diagonal specular glint sweep in addition to `'auto'`.
+ * - `'default'`: Status dots and progress bars animate; icons and surfaces remain static (default when `?anim=` is omitted).
+ * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
+ * - `'auto'`: Enables contextual icon micro-animations (`spin`, `shake`, `nudge`, `pulse`, `float`) based on the icon slug.
  * - `'spin'`: Forces smooth 360-degree continuous rotation on the icon.
  * - `'shake'`: Forces periodic scale-up + subtle back-and-forth wiggle on the icon.
  * - `'nudge'`: Forces periodic directional nudge on the icon.
  * - `'pulse'`: Forces periodic double-beat scale pulse on the icon.
  * - `'float'`: Forces smooth vertical levitation bob on the icon.
- * - `'none'`: Disables all SVG animations for a static image.
+ * - `'sheen,auto' | 'sheen,spin' | 'sheen,shake' | 'sheen,nudge' | 'sheen,pulse' | 'sheen,float'`: Combines surface sheen with an icon animation.
+ * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
  */
 export type AnimationMode =
   | 'auto'
+  | 'default'
   | 'float'
   | 'none'
   | 'nudge'
   | 'pulse'
   | 'shake'
   | 'sheen'
+  | 'sheen,auto'
+  | 'sheen,float'
+  | 'sheen,nudge'
+  | 'sheen,pulse'
+  | 'sheen,shake'
+  | 'sheen,spin'
   | 'spin';
 
 /**
@@ -69,9 +78,9 @@ export type BadgeSpecialElement =
       type: 'strip';
     };
 
-/** Options for rendering a badge or button SVG via `renderBadge`. */
+/** Options for rendering a `22px` badge SVG via `renderBadge`. */
 export interface BadgeRenderOptions {
-  /** Optional micro-animation control mode (defaults to `'auto'`). */
+  /** Optional micro-animation control mode (defaults to `'default'`). */
   anim?: AnimationMode;
   /** Named theme color token. */
   color: ThemeColorName;
@@ -79,12 +88,37 @@ export interface BadgeRenderOptions {
   dot?: DotState;
   /** Optional icon slug (Lucide or Simple Icons) or `'none'` to suppress default icons. */
   icon?: string;
-  /** Left-hand label text (or button text for 1-segment badges). */
+  /** Left-hand label text (or single-part badge text). */
   label: string;
   /** Optional right-hand special data visualization element (`bar`, `ring`, `strip`, `delta`, or `sparkline`). */
   special?: BadgeSpecialElement;
-  /** Right-hand value text (omitted on 1-segment buttons). */
+  /** Right-hand value text (omitted on 1-segment badges). */
   value?: string;
-  /** Visual variant (`1`..`3` for badges, `b1`..`b3` for buttons). */
+  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary). */
+  variant: BadgeVariant;
+}
+
+/** Named size scale preset for CTA buttons (`/button/*` and `/btn/*`). */
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
+
+/** Options for rendering a CTA button SVG via `renderButton` (`/button/*` and `/btn/*`). */
+export interface ButtonRenderOptions {
+  /** Optional micro-animation control mode (defaults to `'default'`). */
+  anim?: AnimationMode;
+  /** Named theme color token. */
+  color: ThemeColorName;
+  /** Optional pulsing status indicator state. */
+  dot?: DotState;
+  /** Optional leading left-hand icon slug (Lucide or Simple Icons). */
+  icon?: string;
+  /** Optional trailing right-hand icon slug (e.g. `'arrow-right'`, `'external-link'`, `'chevron-right'`). */
+  iconRight?: string;
+  /** Primary button label text. */
+  label: string;
+  /** Optional button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22`–`48`, defaults to `'md'` = `30px`). */
+  size?: ButtonSize | number;
+  /** Optional secondary right-hand compartment text for split CTA buttons (`/button/:label/:value`). */
+  value?: string;
+  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary; defaults to `'1'`). */
   variant: BadgeVariant;
 }

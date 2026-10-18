@@ -10,21 +10,14 @@
   },
   "env": { "builtin": true, "node": true },
   "globals": { "caches": "readonly" },
-  "ignorePatterns": [
-    ".wrangler/**",
-    "dist/**",
-    "*.md",
-    "package.json",
-    "preview.html",
-    "wrangler.jsonc"
-  ],
+  "ignorePatterns": [".wrangler/**", "dist/**", "*.md", "package.json", "wrangler.jsonc"],
   "plugins": ["eslint", "oxc", "typescript", "unicorn"],
   "rules": {
     "capitalized-comments": "off",
     "eslint/no-ternary": "off",
     "func-style": ["error", "declaration"],
     "id-length": "off",
-    "import/no-nodejs-modules": ["error", { "allow": ["node:fs", "node:path"] }],
+    "import/no-nodejs-modules": "error",
     "import/unambiguous": "off",
     "max-params": "off",
     "max-statements": "off",

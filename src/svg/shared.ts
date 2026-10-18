@@ -234,7 +234,7 @@ export function renderSheenOverlay(
   idPrefix = 'sheen',
   customClipInner?: string
 ): { clipDef: string; overlay: string } {
-  if (animMode !== 'sheen') {
+  if (animMode !== 'sheen' && !animMode.startsWith('sheen,')) {
     return { clipDef: '', overlay: '' };
   }
   const clipId = `${idPrefix}-clip-${totalWidth}-${height}`;

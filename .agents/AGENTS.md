@@ -24,14 +24,15 @@ This service runs on Cloudflare Workers at the edge with a zero-cold-start targe
 
 ## 4. Validation & Testing
 
-After making any code changes, you must validate them by running the full suite of type checks, linters, formatters, tests, and the preview build:
+After making any code changes, you must validate them by running the full suite of type checks, linters, formatters, tests, and Wrangler dry-run verification:
 
 ```bash
-pnpm run type-check; pnpm run lint; pnpm run fmt; pnpm run test; pnpm run preview:export
+pnpm run type-check; pnpm run lint; pnpm run fmt; pnpm run test; pnpm exec wrangler deploy --dry-run
 ```
 
-Fix all problems and warnings until they are completely resolved (zero errors, zero warnings, and zero lint issues). Use the `test` skill for testing guidelines and commands, and the `build` skill for preview generation, Wrangler verification, and deployment.
+Fix all problems and warnings until they are completely resolved (zero errors, zero warnings, and zero lint issues). Use the `test` skill for testing guidelines and commands, and the `build` skill for local development server previewing, Wrangler verification, and deployment.
 
+-   **Keep Homepage, Docs, Previews & README Synchronized:** Whenever routes, query parameters, variants, service presets, icons, or visual behaviors are added or modified, you **must** update the homepage (`/`), dedicated documentation pages (`/docs/badges`, `/docs/services`, `/docs/icons`, `/docs/stack`, `/docs/quotes`, `/docs/colors`), parameter tables, live preview cards, and expandable Markdown snippets in `src/preview/` (`src/preview/catalog.ts`, `src/preview/page.ts`, `src/preview/layout.ts`), as well as `README.md` for local development instructions and owner-restricted `/badge/gh/*` badges.
 -   **Regression Tests for Bug Fixes:** Every bug fix **must** include a test that reproduces the original bug and verifies the fix before considering the fix complete. This prevents regressions and ensures the same problem never resurfaces.
 
 ## 5. Ask, Don't Assume

@@ -44,15 +44,15 @@ const CHROMA_SEARCH_STEPS = 24;
 /** Upper bound for OKLCH chroma search. */
 const MAX_SEARCH_CHROMA = 0.4;
 
-/** Base dark-slate neutral surface tokens. */
+/** Base neutral dark carbon surface tokens (matching Isolux Pro Dark). */
 export const BASE_DARK: BaseDarkPalette = {
   bevelHighlight: 'rgba(255, 255, 255, 0.28)',
-  bgBottom: '#0f1118',
-  bgTop: '#161923',
-  borderNeutral: '#262b38',
+  bgBottom: '#101010',
+  bgTop: '#1a1a1a',
+  borderNeutral: '#2c2c2c',
   innerHighlight: 'rgba(255, 255, 255, 0.09)',
-  textMuted: '#9ca3af',
-  textPrimary: '#f3f4f6',
+  textMuted: '#a3a3a3',
+  textPrimary: '#f5f5f5',
 };
 
 /**

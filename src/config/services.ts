@@ -1,5 +1,5 @@
 /**
- * Service presets – Declarative configuration for GitHub, PyPI (via ClickHouse ClickPy), Open VSX, and status indicators.
+ * Service presets – Declarative configuration for GitHub (owner-restricted) and public registries (PyPI/ClickPy, npm, Open VSX, crates.io, Docker Hub), plus status indicators.
  */
 
 import type { Env, MetricResult, ServiceDefinition, StatusPreset } from '@/types';
@@ -39,6 +39,10 @@ interface GitHubParticipationPayload {
 interface PyPiPackagePayload {
   /** Package metadata block. */
   info?: {
+    /** Legacy license string. */
+    license?: string;
+    /** PEP 639 SPDX license expression. */
+    license_expression?: string;
     /** Required Python version specifier. */
     requires_python?: string;
     /** Latest published package version. */
@@ -62,6 +66,24 @@ interface PyPiDownloadsPayload {
   };
 }
 
+/** Partial npm Registry latest version metadata payload (`https://registry.npmjs.org/:pkg/latest`). */
+interface NpmLatestPayload {
+  /** SPDX license identifier or object. */
+  license?: string | { type?: string };
+  /** Bundled TypeScript `.d.ts` entrypoint. */
+  types?: string;
+  /** Legacy TypeScript `.d.ts` entrypoint. */
+  typings?: string;
+  /** Latest published npm version. */
+  version?: string;
+}
+
+/** Partial npm Downloads API payload (`https://api.npmjs.org/downloads/point/:period/:pkg`). */
+interface NpmDownloadsPayload {
+  /** Total downloads in the requested period. */
+  downloads?: number;
+}
+
 /** Partial Open VSX extension metadata API payload (`https://open-vsx.org/api/:owner/:ext`). */
 interface OpenVsxExtensionPayload {
   /** Average star rating (`0`–`5`). */
@@ -70,6 +92,36 @@ interface OpenVsxExtensionPayload {
   downloadCount?: number;
   /** Latest published extension version. */
   version?: string;
+}
+
+/** Partial crates.io crate metadata API payload (`https://crates.io/api/v1/crates/:crate`). */
+interface CratesIoPayload {
+  /** Crate summary object. */
+  crate?: {
+    /** Total all-time downloads. */
+    downloads?: number;
+    /** Latest stable version string. */
+    max_stable_version?: string;
+    /** Highest published version string. */
+    max_version?: string;
+    /** Newest published version string. */
+    newest_version?: string;
+    /** Downloads in the last 90 days. */
+    recent_downloads?: number;
+  };
+  /** Published versions array. */
+  versions?: {
+    /** SPDX license expression for the version. */
+    license?: string;
+  }[];
+}
+
+/** Partial Docker Hub repository API payload (`https://hub.docker.com/v2/repositories/:owner/:repo/`). */
+interface DockerHubRepoPayload {
+  /** Total image pulls. */
+  pull_count?: number;
+  /** Total repository stars. */
+  star_count?: number;
 }
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -92,11 +144,14 @@ const DEFAULT_ACTIVITY_SPARKLINE = [2, 5, 3, 8, 6, 11, 9, 14];
 const MS_PER_DAY = 86_400_000;
 
 /**
- * Format a number into a compact human-readable string (e.g., `1.2k`, `3.4M`).
+ * Format a number into a compact human-readable string (e.g., `1.2k`, `3.4M`, `1.1B`).
  * @param num   Numeric value to format.
  * @returns Compact string representation.
  */
 export function formatCompactNumber(num: number): string {
+  if (num >= 1_000_000_000) {
+    return `${(num / 1_000_000_000).toFixed(1).replace(TRAILING_ZERO_DECIMAL_RX, '')}B`;
+  }
   if (num >= 1_000_000) {
     return `${(num / 1_000_000).toFixed(1).replace(TRAILING_ZERO_DECIMAL_RX, '')}M`;
   }
@@ -144,9 +199,14 @@ function getDefaultGitHubOwner(env: Env): string {
   return env.DEFAULT_GH_OWNER || 'xulbux';
 }
 
-/** Resolve the allowlist of GitHub / Open VSX owners from environment bindings. */
+/** Resolve the allowlist of GitHub owners from environment bindings. */
 function getAllowedGitHubOwners(env: Env): string[] {
   return [(env.DEFAULT_GH_OWNER || 'xulbux').toLowerCase()];
+}
+
+/** Resolve the default Docker Hub namespace (`library` for official images). */
+function getDefaultDockerOwner(): string {
+  return 'library';
 }
 
 /** Build the GitHub repository metadata API URL. */
@@ -277,6 +337,13 @@ function transformPyPiPythonVersion(data: unknown): Partial<MetricResult> {
   return { value: requirement.replace(WHITESPACE_RX, '') };
 }
 
+/** Transform PyPI package metadata into license identifier metric. */
+function transformPyPiLicense(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as PyPiPackagePayload;
+  const rawLicense = (payload.info?.license_expression || payload.info?.license || 'MIT').trim();
+  return { value: rawLicense.length > 18 ? `${rawLicense.slice(0, 16)}..` : rawLicense };
+}
+
 /**
  * Build the ClickHouse public ClickPy SQL API URL for a PyPI package.
  * Queries both all-time `total` and 30-day `last_month` downloads in one fast read-only query.
@@ -305,6 +372,85 @@ function transformPyPiMonthlyDownloads(data: unknown): Partial<MetricResult> {
   const payload = (data ?? {}) as PyPiDownloadsPayload;
   const rawMonthly = Number(payload.row_1?.last_month ?? payload.data?.last_month ?? 0);
   return { value: `${formatCompactNumber(Number.isFinite(rawMonthly) ? rawMonthly : 0)}/mo` };
+}
+
+/** Combine an optional npm scope (`owner`) and package name (`pkg`) into a full npm package identifier. */
+function resolveNpmPackageIdentifier(owner: string, pkg: string): string {
+  const cleanOwner = owner.trim();
+  if (!cleanOwner) {
+    return pkg.trim();
+  }
+  const normalizedScope = cleanOwner.startsWith('@') ? cleanOwner : `@${cleanOwner}`;
+  return `${normalizedScope}/${pkg.trim()}`;
+}
+
+/** Build the npm Registry latest version metadata API URL. */
+function buildNpmLatestApiUrl(owner: string, pkg: string): string {
+  const fullPkg = resolveNpmPackageIdentifier(owner, pkg);
+  return `https://registry.npmjs.org/${fullPkg}/latest`;
+}
+
+/** Build the npm monthly downloads API URL. */
+function buildNpmMonthlyDownloadsApiUrl(owner: string, pkg: string): string {
+  const fullPkg = resolveNpmPackageIdentifier(owner, pkg);
+  return `https://api.npmjs.org/downloads/point/last-month/${fullPkg}`;
+}
+
+/** Build the npm weekly downloads API URL. */
+function buildNpmWeeklyDownloadsApiUrl(owner: string, pkg: string): string {
+  const fullPkg = resolveNpmPackageIdentifier(owner, pkg);
+  return `https://api.npmjs.org/downloads/point/last-week/${fullPkg}`;
+}
+
+/** Build the npm yearly downloads API URL. */
+function buildNpmYearlyDownloadsApiUrl(owner: string, pkg: string): string {
+  const fullPkg = resolveNpmPackageIdentifier(owner, pkg);
+  return `https://api.npmjs.org/downloads/point/last-year/${fullPkg}`;
+}
+
+/** Build the npm package page redirect URL. */
+function buildNpmRedirectUrl(owner: string, pkg: string): string {
+  const fullPkg = resolveNpmPackageIdentifier(owner, pkg);
+  return `https://www.npmjs.com/package/${fullPkg}`;
+}
+
+/** Transform npm latest metadata into version string (`v`). */
+function transformNpmVersion(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmLatestPayload;
+  return { value: `v${payload.version ?? '0.0.0'}` };
+}
+
+/** Transform npm downloads payload into monthly download count (`dl`). */
+function transformNpmMonthlyDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmDownloadsPayload;
+  return { value: `${formatCompactNumber(payload.downloads ?? 0)}/mo` };
+}
+
+/** Transform npm downloads payload into weekly download count (`dw`). */
+function transformNpmWeeklyDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmDownloadsPayload;
+  return { value: `${formatCompactNumber(payload.downloads ?? 0)}/wk` };
+}
+
+/** Transform npm downloads payload into yearly download count (`dt`). */
+function transformNpmYearlyDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmDownloadsPayload;
+  return { value: `${formatCompactNumber(payload.downloads ?? 0)}/yr` };
+}
+
+/** Transform npm latest metadata into SPDX license string (`license`). */
+function transformNpmLicense(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmLatestPayload;
+  const rawLicense =
+    typeof payload.license === 'string' ? payload.license : payload.license?.type || 'MIT';
+  return { value: rawLicense };
+}
+
+/** Transform npm latest metadata into TypeScript definitions indicator (`types`). */
+function transformNpmTypes(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as NpmLatestPayload;
+  const hasTypes = Boolean(payload.types || payload.typings);
+  return { value: hasTypes ? 'included' : 'none' };
 }
 
 /** Build the Open VSX extension metadata API URL. */
@@ -336,6 +482,73 @@ function transformOpenVsxRating(data: unknown): Partial<MetricResult> {
   return { value: typeof rating === 'number' && rating > 0 ? `${rating.toFixed(1)}/5` : '5.0/5' };
 }
 
+/** Build the crates.io crate metadata API URL. */
+function buildCratesApiUrl(_owner: string, crateName: string): string {
+  return `https://crates.io/api/v1/crates/${encodeURIComponent(crateName.trim())}`;
+}
+
+/** Build the crates.io crate page redirect URL. */
+function buildCratesRedirectUrl(_owner: string, crateName: string): string {
+  return `https://crates.io/crates/${encodeURIComponent(crateName.trim())}`;
+}
+
+/** Transform crates.io payload into latest version metric (`v`). */
+function transformCratesVersion(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as CratesIoPayload;
+  const ver =
+    payload.crate?.max_stable_version ||
+    payload.crate?.max_version ||
+    payload.crate?.newest_version ||
+    '0.0.0';
+  return { value: `v${ver}` };
+}
+
+/** Transform crates.io payload into all-time total download count (`dt`). */
+function transformCratesTotalDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as CratesIoPayload;
+  return { value: formatCompactNumber(payload.crate?.downloads ?? 0) };
+}
+
+/** Transform crates.io payload into recent 90-day download count (`dl`). */
+function transformCratesRecentDownloads(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as CratesIoPayload;
+  return { value: `${formatCompactNumber(payload.crate?.recent_downloads ?? 0)}/90d` };
+}
+
+/** Transform crates.io payload into license metric (`license`). */
+function transformCratesLicense(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as CratesIoPayload;
+  const rawLicense = payload.versions?.[0]?.license || 'MIT/Apache-2.0';
+  return { value: rawLicense };
+}
+
+/** Build the Docker Hub repository metadata API URL. */
+function buildDockerHubApiUrl(owner: string, repo: string): string {
+  const namespace = owner.trim() || 'library';
+  return `https://hub.docker.com/v2/repositories/${encodeURIComponent(namespace)}/${encodeURIComponent(repo.trim())}/`;
+}
+
+/** Build the Docker Hub repository page redirect URL. */
+function buildDockerHubRedirectUrl(owner: string, repo: string): string {
+  const namespace = owner.trim() || 'library';
+  const cleanRepo = encodeURIComponent(repo.trim());
+  return namespace === 'library'
+    ? `https://hub.docker.com/_/${cleanRepo}`
+    : `https://hub.docker.com/r/${encodeURIComponent(namespace)}/${cleanRepo}`;
+}
+
+/** Transform Docker Hub repository payload into pull count metric (`pulls`). */
+function transformDockerPulls(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as DockerHubRepoPayload;
+  return { value: formatCompactNumber(payload.pull_count ?? 0) };
+}
+
+/** Transform Docker Hub repository payload into star count metric (`stars`). */
+function transformDockerStars(data: unknown): Partial<MetricResult> {
+  const payload = (data ?? {}) as DockerHubRepoPayload;
+  return { value: formatCompactNumber(payload.star_count ?? 0) };
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /**
@@ -352,8 +565,89 @@ export const STATUS_PRESET_MAP: Record<string, StatusPreset> = {
   standby: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
 };
 
-/** Declarative external service preset configurations (`gh`, `pypi`, `ovsx`). */
+/** Declarative external service preset configurations (`gh`, `pypi`, `npm`, `ovsx`, `crates`, `docker`). */
 export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
+  crates: {
+    metrics: {
+      dl: {
+        buildApiUrl: buildCratesApiUrl,
+        buildRedirectUrl: buildCratesRedirectUrl,
+        defaultColor: 'emerald',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformCratesRecentDownloads,
+      },
+      dt: {
+        buildApiUrl: buildCratesApiUrl,
+        buildRedirectUrl: buildCratesRedirectUrl,
+        defaultColor: 'indigo',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformCratesTotalDownloads,
+      },
+      l: {
+        buildApiUrl: buildCratesApiUrl,
+        buildRedirectUrl: buildCratesRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformCratesLicense,
+      },
+      license: {
+        buildApiUrl: buildCratesApiUrl,
+        buildRedirectUrl: buildCratesRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformCratesLicense,
+      },
+      v: {
+        buildApiUrl: buildCratesApiUrl,
+        buildRedirectUrl: buildCratesRedirectUrl,
+        defaultColor: 'orange',
+        defaultIcon: 'rust',
+        defaultLabel: 'crates.io',
+        transform: transformCratesVersion,
+      },
+    },
+  },
+  docker: {
+    defaultOwner: getDefaultDockerOwner,
+    metrics: {
+      dl: {
+        buildApiUrl: buildDockerHubApiUrl,
+        buildRedirectUrl: buildDockerHubRedirectUrl,
+        defaultColor: 'sky',
+        defaultIcon: 'docker',
+        defaultLabel: 'docker pulls',
+        transform: transformDockerPulls,
+      },
+      dt: {
+        buildApiUrl: buildDockerHubApiUrl,
+        buildRedirectUrl: buildDockerHubRedirectUrl,
+        defaultColor: 'sky',
+        defaultIcon: 'docker',
+        defaultLabel: 'docker pulls',
+        transform: transformDockerPulls,
+      },
+      pulls: {
+        buildApiUrl: buildDockerHubApiUrl,
+        buildRedirectUrl: buildDockerHubRedirectUrl,
+        defaultColor: 'sky',
+        defaultIcon: 'docker',
+        defaultLabel: 'docker pulls',
+        transform: transformDockerPulls,
+      },
+      stars: {
+        buildApiUrl: buildDockerHubApiUrl,
+        buildRedirectUrl: buildDockerHubRedirectUrl,
+        defaultColor: 'amber',
+        defaultIcon: 'star',
+        defaultLabel: 'docker stars',
+        transform: transformDockerStars,
+      },
+    },
+  },
   gh: {
     allowedOwners: getAllowedGitHubOwners,
     defaultOwner: getDefaultGitHubOwner,
@@ -424,8 +718,83 @@ export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
       },
     },
   },
+  npm: {
+    metrics: {
+      dl: {
+        buildApiUrl: buildNpmMonthlyDownloadsApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'emerald',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformNpmMonthlyDownloads,
+      },
+      dm: {
+        buildApiUrl: buildNpmMonthlyDownloadsApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'emerald',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformNpmMonthlyDownloads,
+      },
+      dt: {
+        buildApiUrl: buildNpmYearlyDownloadsApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'indigo',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformNpmYearlyDownloads,
+      },
+      dw: {
+        buildApiUrl: buildNpmWeeklyDownloadsApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'sky',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformNpmWeeklyDownloads,
+      },
+      dy: {
+        buildApiUrl: buildNpmYearlyDownloadsApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'indigo',
+        defaultIcon: 'download',
+        defaultLabel: 'downloads',
+        transform: transformNpmYearlyDownloads,
+      },
+      l: {
+        buildApiUrl: buildNpmLatestApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformNpmLicense,
+      },
+      license: {
+        buildApiUrl: buildNpmLatestApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformNpmLicense,
+      },
+      types: {
+        buildApiUrl: buildNpmLatestApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'blue',
+        defaultIcon: 'ts',
+        defaultLabel: 'types',
+        transform: transformNpmTypes,
+      },
+      v: {
+        buildApiUrl: buildNpmLatestApiUrl,
+        buildRedirectUrl: buildNpmRedirectUrl,
+        defaultColor: 'rose',
+        defaultIcon: 'npm',
+        defaultLabel: 'npm',
+        transform: transformNpmVersion,
+      },
+    },
+  },
   ovsx: {
-    allowedOwners: getAllowedGitHubOwners,
     defaultOwner: getDefaultGitHubOwner,
     metrics: {
       dl: {
@@ -480,6 +849,22 @@ export const SERVICES_CONFIG: Record<string, ServiceDefinition> = {
         defaultIcon: 'download',
         defaultLabel: 'downloads',
         transform: transformPyPiTotalDownloads,
+      },
+      l: {
+        buildApiUrl: buildPyPiApiUrl,
+        buildRedirectUrl: buildPyPiRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformPyPiLicense,
+      },
+      license: {
+        buildApiUrl: buildPyPiApiUrl,
+        buildRedirectUrl: buildPyPiRedirectUrl,
+        defaultColor: 'slate',
+        defaultIcon: 'scale',
+        defaultLabel: 'license',
+        transform: transformPyPiLicense,
       },
       py: {
         buildApiUrl: buildPyPiApiUrl,

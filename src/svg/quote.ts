@@ -196,7 +196,9 @@ function renderVerticalQuoteContent(
   variant: WidgetVariant,
   metrics: QuoteMetrics,
   iconBoxSize: number,
-  textBlockHeight: number
+  textBlockHeight: number,
+  txtClass: string,
+  authorClass: string
 ): string {
   const { authorFontSize, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const centerX = Number((width / 2).toFixed(1));
@@ -210,7 +212,7 @@ function renderVerticalQuoteContent(
   const firstLineY = topQuoteY + iconBoxSize + 10 + Math.round(fontSize * 0.85);
   for (let i = 0; i < lines.length; i += 1) {
     const lineY = firstLineY + i * lineHeight;
-    markup += `<text x="${centerX}" y="${lineY}" text-anchor="middle" fill="${textColor}" class="q-txt">${escapeXml(lines[i])}</text>`;
+    markup += `<text x="${centerX}" y="${lineY}" text-anchor="middle" fill="${textColor}" class="${txtClass}">${escapeXml(lines[i])}</text>`;
   }
 
   const bottomQuoteY = topQuoteY + iconBoxSize + 14 + textBlockHeight;
@@ -218,7 +220,7 @@ function renderVerticalQuoteContent(
 
   if (authorText.length > 0) {
     const authorY = bottomQuoteY + iconBoxSize + Math.round(authorFontSize * 1.45);
-    markup += `<text x="${centerX}" y="${authorY}" text-anchor="middle" fill="${authorColor}" class="q-author">— ${escapeXml(authorText)}</text>`;
+    markup += `<text x="${centerX}" y="${authorY}" text-anchor="middle" fill="${authorColor}" class="${authorClass}">— ${escapeXml(authorText)}</text>`;
   }
 
   return markup;
@@ -267,7 +269,9 @@ function renderHorizontalQuoteContent(
   variant: WidgetVariant,
   metrics: QuoteMetrics,
   iconBoxSize: number,
-  textBlockHeight: number
+  textBlockHeight: number,
+  txtClass: string,
+  authorClass: string
 ): string {
   const { authorFontSize, barWidth, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const watermarkX = Math.round(width - iconBoxSize - 18);
@@ -283,12 +287,12 @@ function renderHorizontalQuoteContent(
     const lineY = firstLineY + i * lineHeight;
     const prefix = i === 0 ? '“' : '';
     const suffix = i === lines.length - 1 ? '”' : '';
-    markup += `<text x="${textStartX}" y="${lineY}" fill="${textColor}" class="q-txt">${escapeXml(`${prefix}${lines[i]}${suffix}`)}</text>`;
+    markup += `<text x="${textStartX}" y="${lineY}" fill="${textColor}" class="${txtClass}">${escapeXml(`${prefix}${lines[i]}${suffix}`)}</text>`;
   }
 
   if (authorText.length > 0) {
     const authorY = padY + textBlockHeight + Math.round(authorFontSize * 1.45);
-    markup += `<text x="${textStartX}" y="${authorY}" fill="${authorColor}" class="q-author">— ${escapeXml(authorText)}</text>`;
+    markup += `<text x="${textStartX}" y="${authorY}" fill="${authorColor}" class="${authorClass}">— ${escapeXml(authorText)}</text>`;
   }
 
   return markup;
@@ -307,7 +311,7 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const variant: WidgetVariant = options.variant ?? '2';
   const layout: QuoteLayout = options.layout ?? 'horizontal';
-  const animMode: AnimationMode = options.anim ?? 'auto';
+  const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveQuoteMetrics(options.size, layout);
   const {
     authorFontSize,
@@ -347,6 +351,10 @@ export function renderQuote(options: QuoteRenderOptions): string {
     palette
   );
 
+  const styleScope = `${isVertical ? 'v' : 'h'}-${String(fontSize).replace('.', '_')}-${textWeight}`;
+  const txtClass = `q-txt-${styleScope}`;
+  const authorClass = `q-author-${styleScope}`;
+
   const surfaceLayers = renderQuoteSurface(
     width,
     height,
@@ -370,7 +378,9 @@ export function renderQuote(options: QuoteRenderOptions): string {
         variant,
         metrics,
         iconBoxSize,
-        textBlockHeight
+        textBlockHeight,
+        txtClass,
+        authorClass
       )
     : renderHorizontalQuoteContent(
         width,
@@ -382,7 +392,9 @@ export function renderQuote(options: QuoteRenderOptions): string {
         variant,
         metrics,
         iconBoxSize,
-        textBlockHeight
+        textBlockHeight,
+        txtClass,
+        authorClass
       );
 
   const sheen = renderSheenOverlay(animMode, width, height, radius, 'quote-sheen');
@@ -395,13 +407,13 @@ export function renderQuote(options: QuoteRenderOptions): string {
     ${sheen.clipDef}
   </defs>
   <style>
-    .q-txt {
+    .${txtClass} {
       font-family: ${SYSTEM_FONT_STACK};
       font-size: ${fontSize}px;
       font-weight: ${textWeight};
       letter-spacing: -0.01em;
     }
-    .q-author {
+    .${authorClass} {
       font-family: ${SYSTEM_FONT_STACK};
       font-size: ${authorFontSize}px;
       font-weight: 600;
