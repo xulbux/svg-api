@@ -1,239 +1,198 @@
 /**
- * Text measurement – Calibrated 500-weight and 600-weight character advance lookup tables for accurate SVG pill widths.
+ * Text measurement & vector path rendering – Exact OpenType glyph outline measurement and `<path>` generation using bundled Geist Sans `.ttf` binaries (`500` Medium, `600` SemiBold, `600` SemiBold Italic).
  */
+
+import opentype, { type Font, type PathCommand, type RenderOptions } from 'opentype.js';
+import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
+import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
+import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Cached analytical ink bounding box metrics for a text string at `(0, 0)` baseline. */
+interface TextInkMetrics {
+  /** Whether the path contains zero visible contours (e.g. empty or whitespace-only text). */
+  isEmpty: boolean;
+  /** Visible ink width (`x2 - x1`) or advance width for whitespace-only strings. */
+  width: number;
+  /** Leftmost visible ink X coordinate relative to `x = 0` origin. */
+  x1: number;
+  /** Rightmost visible ink X coordinate relative to `x = 0` origin. */
+  x2: number;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/**
- * Calibrated character advance lookup table in pixels at `11px` `font-weight: 500` (`letter-spacing: -0.01em`).
- */
-const CHAR_WIDTHS_500_11PX: Readonly<Record<string, number>> = {
-  ' ': 2.95,
-  '!': 2.95,
-  '"': 3.8,
-  '#': 6.01,
-  $: 6.01,
-  '%': 9.67,
-  '&': 7.23,
-  "'": 1.99,
-  '(': 3.56,
-  ')': 3.56,
-  '*': 4.17,
-  '+': 6.32,
-  ',': 2.95,
-  '-': 3.56,
-  '.': 2.95,
-  '/': 2.95,
-  '0': 6.01,
-  '1': 5.28,
-  '2': 6.01,
-  '3': 6.01,
-  '4': 6.01,
-  '5': 6.01,
-  '6': 6.01,
-  '7': 6.01,
-  '8': 6.01,
-  '9': 6.01,
-  ':': 2.95,
-  ';': 2.95,
-  '<': 6.32,
-  '=': 6.32,
-  '>': 6.32,
-  '?': 6.01,
-  '@': 11.06,
-  A: 7.23,
-  B: 7.23,
-  C: 7.84,
-  D: 7.84,
-  E: 7.23,
-  F: 6.61,
-  G: 8.45,
-  H: 7.84,
-  I: 2.95,
-  J: 5.39,
-  K: 7.23,
-  L: 6.01,
-  M: 9.06,
-  N: 7.84,
-  O: 8.45,
-  P: 7.23,
-  Q: 8.45,
-  R: 7.84,
-  S: 7.23,
-  T: 6.61,
-  U: 7.84,
-  V: 7.23,
-  W: 10.28,
-  X: 7.23,
-  Y: 7.23,
-  Z: 6.61,
-  '[': 2.95,
-  '\\': 2.95,
-  ']': 2.95,
-  '^': 5.05,
-  _: 6.01,
-  '`': 3.56,
-  a: 6.01,
-  b: 6.01,
-  c: 5.39,
-  d: 6.01,
-  e: 6.01,
-  f: 2.77,
-  g: 6.01,
-  h: 6.01,
-  i: 2.34,
-  j: 2.34,
-  k: 5.39,
-  l: 2.34,
-  m: 9.06,
-  n: 6.01,
-  o: 6.01,
-  p: 6.01,
-  q: 6.01,
-  r: 3.56,
-  s: 5.39,
-  t: 2.95,
-  u: 6.01,
-  v: 5.39,
-  w: 7.84,
-  x: 5.39,
-  y: 5.39,
-  z: 5.39,
-  '{': 3.57,
-  '|': 2.75,
-  '}': 3.57,
-  '~': 6.32,
-};
+/** Default OpenType layout options (`kerning: true`, slight `-0.01em` UI tracking). */
+const PATH_OPTIONS: RenderOptions = { kerning: true, letterSpacing: -0.01 };
 
-/**
- * Calibrated character advance lookup table in pixels at `11px` `font-weight: 600` (`letter-spacing: -0.01em`).
- */
-const CHAR_WIDTHS_600_11PX: Readonly<Record<string, number>> = {
-  ' ': 2.94,
-  '!': 3.55,
-  '"': 5.1,
-  '#': 6.01,
-  $: 6.01,
-  '%': 9.67,
-  '&': 7.83,
-  "'": 2.5,
-  '(': 3.55,
-  ')': 3.55,
-  '*': 4.17,
-  '+': 6.31,
-  ',': 2.94,
-  '-': 3.55,
-  '.': 2.94,
-  '/': 2.94,
-  '0': 6.01,
-  '1': 5.46,
-  '2': 6.01,
-  '3': 6.01,
-  '4': 6.01,
-  '5': 6.01,
-  '6': 6.01,
-  '7': 6.01,
-  '8': 6.01,
-  '9': 6.01,
-  ':': 3.55,
-  ';': 3.55,
-  '<': 6.31,
-  '=': 6.31,
-  '>': 6.31,
-  '?': 6.61,
-  '@': 10.61,
-  A: 7.83,
-  B: 7.83,
-  C: 7.83,
-  D: 7.83,
-  E: 7.23,
-  F: 6.61,
-  G: 8.44,
-  H: 7.83,
-  I: 2.94,
-  J: 6.01,
-  K: 7.83,
-  L: 6.61,
-  M: 9.05,
-  N: 7.83,
-  O: 8.44,
-  P: 7.23,
-  Q: 8.44,
-  R: 7.83,
-  S: 7.23,
-  T: 6.61,
-  U: 7.83,
-  V: 7.23,
-  W: 10.27,
-  X: 7.23,
-  Y: 7.23,
-  Z: 6.61,
-  '[': 3.55,
-  '\\': 2.94,
-  ']': 3.55,
-  '^': 6.31,
-  _: 6.01,
-  '`': 3.55,
-  a: 6.01,
-  b: 6.61,
-  c: 6.01,
-  d: 6.61,
-  e: 6.01,
-  f: 3.55,
-  g: 6.61,
-  h: 6.61,
-  i: 2.94,
-  j: 2.94,
-  k: 6.01,
-  l: 2.94,
-  m: 9.67,
-  n: 6.61,
-  o: 6.61,
-  p: 6.61,
-  q: 6.61,
-  r: 4.17,
-  s: 6.01,
-  t: 3.55,
-  u: 6.61,
-  v: 6.01,
-  w: 8.44,
-  x: 6.01,
-  y: 6.01,
-  z: 5.39,
-  '{': 4.17,
-  '|': 2.97,
-  '}': 4.17,
-  '~': 6.31,
-};
+/** Ratio of Geist Sans cap-height (`710 / 1000`) to `fontSize`, halved (`0.355`) for vertical baseline centering. */
+const HALF_CAP_HEIGHT_RATIO = 0.355;
 
-/** Default fallback width in pixels for characters not in the lookup tables. */
-const DEFAULT_CHAR_WIDTH_11PX = 6.01;
+/** Maximum number of entries in the in-memory `TextInkMetrics` cache per Worker isolate. */
+const MAX_METRICS_CACHE_SIZE = 512;
 
-/** Base font size in pixels for the lookup tables. */
-const BASE_FONT_SIZE = 11;
+// -------------------------------------- INTERNALS --------------------------------------
 
-/** Outer left+right glyph sidebearing trim at `11px` so measured width matches visible ink bounds. */
-const OUTER_SIDEBEARING_TRIM_11PX = 1.2;
+/** Lazily parsed Geist Sans `Font` singletons (`500` Medium, `600` SemiBold, `600` SemiBold Italic). */
+const fontSingletons: { italic?: Font; medium?: Font; semiBold?: Font } = {};
+
+/** Bounded in-memory lookup cache mapping `text|fontSize|bold|italic` to `TextInkMetrics`. */
+const metricsCache = new Map<string, TextInkMetrics>();
+
+/** Return the lazily initialized Geist Sans `Font` instance for the requested weight and style. */
+function resolveGeistFont(isBold: boolean, isItalic: boolean): Font {
+  if (isItalic) {
+    fontSingletons.italic ??= opentype.parse(geistSemiBoldItalicBuffer);
+    return fontSingletons.italic;
+  }
+  if (isBold) {
+    fontSingletons.semiBold ??= opentype.parse(geistSemiBoldBuffer);
+    return fontSingletons.semiBold;
+  }
+  fontSingletons.medium ??= opentype.parse(geistMediumBuffer);
+  return fontSingletons.medium;
+}
+
+/** Round a numeric coordinate to at most 2 decimal places (`15` instead of `15.00`). */
+function fmtCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Serialize an array of OpenType `PathCommand` objects into a compact, NaN-free SVG `d` string. */
+function serializePathCommands(commands: readonly PathCommand[]): string {
+  let d = '';
+  for (const cmd of commands) {
+    switch (cmd.type) {
+      case 'M': {
+        d += `M${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        break;
+      }
+      case 'L': {
+        d += `L${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        break;
+      }
+      case 'Q': {
+        d += `Q${fmtCoord(cmd.x1)} ${fmtCoord(cmd.y1)} ${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        break;
+      }
+      case 'C': {
+        d += `C${fmtCoord(cmd.x1)} ${fmtCoord(cmd.y1)} ${fmtCoord(cmd.x2)} ${fmtCoord(cmd.y2)} ${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        break;
+      }
+      case 'Z': {
+        d += 'Z';
+        break;
+      }
+      default: {
+        break;
+      }
+    }
+  }
+  return d;
+}
+
+/** Compute or retrieve cached analytical ink bounds (`x1`, `x2`, `width`) for `text` at `(0, 0)`. */
+function getTextInkMetrics(
+  text: string,
+  fontSize: number,
+  isBold: boolean,
+  isItalic: boolean
+): TextInkMetrics {
+  const cacheKey = `${text}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}`;
+  const cached = metricsCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const font = resolveGeistFont(isBold, isItalic);
+  const path = font.getPath(text, 0, 0, fontSize, PATH_OPTIONS);
+  const isEmpty = path.commands.length === 0;
+  const bbox = path.getBoundingBox();
+  const rawWidth = isEmpty
+    ? font.getAdvanceWidth(text, fontSize, PATH_OPTIONS)
+    : Math.max(0, bbox.x2 - bbox.x1);
+
+  const metrics: TextInkMetrics = { isEmpty, width: fmtCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 };
+
+  if (metricsCache.size >= MAX_METRICS_CACHE_SIZE) {
+    metricsCache.clear();
+  }
+  metricsCache.set(cacheKey, metrics);
+  return metrics;
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Calculate the visible pixel width of a text string at a given font size and weight.
+ * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string in Geist Sans.
  * @param text       Text string to measure.
  * @param fontSize   Font size in pixels (defaults to `11`).
  * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
- * @returns Rounded-up width in pixels.
+ * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
+ * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
-export function measureTextWidth(text: string, fontSize = 11, isBold = false): number {
+export function measureTextWidth(
+  text: string,
+  fontSize = 11,
+  isBold = false,
+  isItalic = false
+): number {
   if (text.length === 0) {
     return 0;
   }
-  const scale = fontSize / BASE_FONT_SIZE;
-  const table = isBold ? CHAR_WIDTHS_600_11PX : CHAR_WIDTHS_500_11PX;
-  let total = 0;
-  for (const char of text) {
-    total += table[char] ?? DEFAULT_CHAR_WIDTH_11PX;
+  return getTextInkMetrics(text, fontSize, isBold, isItalic).width;
+}
+
+/**
+ * Render a text string directly as an SVG `<path d="..." fill="..." />` vector outline in Geist Sans.
+ * Aligns the path using its exact analytical Bezier bounding box (`x1..x2`) so horizontal centering or
+ * left-alignment has `0.00px` sidebearing error on every operating system and browser.
+ * @param text       Raw unescaped text string to convert to an SVG `<path>`.
+ * @param anchorX    Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`).
+ * @param baselineY  Target vertical baseline Y coordinate in pixels.
+ * @param fontSize   Font size in pixels.
+ * @param fill       SVG `fill` color string.
+ * @param isBold     Whether to use Geist Sans SemiBold (`600`) instead of Medium (`500`).
+ * @param isItalic   Whether to use Geist Sans SemiBold Italic (`600` italic).
+ * @param align      Horizontal alignment mode (`'center'` or `'left'`, defaults to `'center'`).
+ * @returns `<path d="..." fill="..." />` SVG string, or `''` if `text` has no visible contours.
+ */
+export function renderTextPathMarkup(
+  text: string,
+  anchorX: number,
+  baselineY: number,
+  fontSize: number,
+  fill: string,
+  isBold = false,
+  isItalic = false,
+  align: 'center' | 'left' = 'center'
+): string {
+  if (text.length === 0) {
+    return '';
   }
-  const visibleTotal = Math.max(1, total - OUTER_SIDEBEARING_TRIM_11PX);
-  return Math.round(visibleTotal * scale);
+  const metrics = getTextInkMetrics(text, fontSize, isBold, isItalic);
+  if (metrics.isEmpty) {
+    return '';
+  }
+  const originX =
+    align === 'center'
+      ? fmtCoord(anchorX - (metrics.x1 + metrics.x2) / 2)
+      : fmtCoord(anchorX - metrics.x1);
+  const y = fmtCoord(baselineY);
+  const font = resolveGeistFont(isBold, isItalic);
+  const pathData = serializePathCommands(
+    font.getPath(text, originX, y, fontSize, PATH_OPTIONS).commands
+  );
+  return pathData.length > 0 ? `<path d="${pathData}" fill="${fill}" />` : '';
+}
+
+/**
+ * Compute the vertically centered cap-height baseline Y coordinate for a container of `height` pixels.
+ * @param height     Total vertical container height in pixels.
+ * @param fontSize   Font size in pixels.
+ * @returns Baseline Y coordinate where the cap-height midpoint sits at `height / 2`.
+ */
+export function computeCenteredBaselineY(height: number, fontSize: number): number {
+  return fmtCoord(height / 2 + fontSize * HALF_CAP_HEIGHT_RATIO);
 }

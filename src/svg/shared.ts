@@ -7,10 +7,6 @@ import type { AnimationMode, ThemePalette, WidgetVariant } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Shared system sans-serif font stack used across badges, buttons, and quote cards. */
-export const SYSTEM_FONT_STACK =
-  "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
-
 /** Lookup table for single-pass XML character escaping. */
 const XML_ENTITY_MAP: Readonly<Record<string, string>> = {
   '"': '&quot;',

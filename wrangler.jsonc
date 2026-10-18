@@ -5,6 +5,13 @@
   "compatibility_date": "2026-10-15",
   "upload_source_maps": true,
   "workers_dev": false,
+  "rules": [
+    {
+      "type": "Data",
+      "globs": ["**/*.ttf"],
+      "fallthrough": true
+    }
+  ],
   "routes": [
     {
       "pattern": "svg.xul.is",

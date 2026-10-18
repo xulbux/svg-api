@@ -17,7 +17,7 @@ import type {
   ThemePalette,
 } from '@/types';
 import { resolveIcon } from './icons';
-import { measureTextWidth } from './measure';
+import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from './measure';
 import {
   buildTopCrescentPath,
   clampInt,
@@ -27,7 +27,6 @@ import {
   renderKumoBoxSurface,
   renderSheenOverlay,
   renderThemeGradientDef,
-  SYSTEM_FONT_STACK,
 } from './shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -36,8 +35,6 @@ import {
 interface VariantMetrics {
   /** Font size in pixels. */
   fontSize: number;
-  /** Font weight for the left-side label. */
-  fontWeight: number;
   /** Total height of the SVG in pixels. */
   height: number;
   /** Width and height of the icon in pixels. */
@@ -137,7 +134,6 @@ const MAX_ICON_STROKE_WIDTH = 4;
 /** Size metrics for standard `22px` badges (`variant=1`, `variant=2`, `variant=3`). */
 const BADGE_METRICS: VariantMetrics = {
   fontSize: 11,
-  fontWeight: 500,
   height: 22,
   iconSize: 13,
   padX: 9,
@@ -146,10 +142,10 @@ const BADGE_METRICS: VariantMetrics = {
 
 /** Named size scale presets for CTA buttons (`/button/*` and `/btn/*`). */
 const BUTTON_SIZE_PRESETS: Readonly<Record<ButtonSize, VariantMetrics>> = {
-  lg: { fontSize: 14, fontWeight: 600, height: 36, iconSize: 17, padX: 18, radiusX: 11 },
-  md: { fontSize: 12.5, fontWeight: 600, height: 30, iconSize: 15, padX: 14, radiusX: 9 },
-  sm: { fontSize: 11.5, fontWeight: 600, height: 26, iconSize: 14, padX: 12, radiusX: 7 },
-  xl: { fontSize: 15.5, fontWeight: 600, height: 42, iconSize: 19, padX: 22, radiusX: 13 },
+  lg: { fontSize: 14, height: 36, iconSize: 17, padX: 18, radiusX: 11 },
+  md: { fontSize: 12.5, height: 30, iconSize: 15, padX: 14, radiusX: 9 },
+  sm: { fontSize: 11.5, height: 26, iconSize: 14, padX: 12, radiusX: 7 },
+  xl: { fontSize: 15.5, height: 42, iconSize: 19, padX: 22, radiusX: 13 },
 };
 
 /** Icons that automatically receive a smooth 360-degree continuous rotation in `'auto'` mode. */
@@ -708,7 +704,6 @@ function renderDeltaWidgetMarkup(
   specialX: number,
   height: number,
   fontSize: number,
-  textY: number,
   specialWidth: number
 ): string {
   const rawDelta = rawValue.trim();
@@ -731,7 +726,16 @@ function renderDeltaWidgetMarkup(
   const textWidth = specialWidth - 13;
   const textCenterX = Number((specialX + 13 + textWidth / 2).toFixed(2));
   const deltaFontSize = fontSize - 0.5;
-  return `${arrowMarkup}<text x="${textCenterX}" y="${textY}" text-anchor="middle" fill="${deltaColor}" class="val" style="font-size:${deltaFontSize}px">${escapeXml(rawDelta)}</text>`;
+  const deltaBaselineY = computeCenteredBaselineY(height, deltaFontSize);
+  const deltaTextMarkup = renderTextPathMarkup(
+    rawDelta,
+    textCenterX,
+    deltaBaselineY,
+    deltaFontSize,
+    deltaColor,
+    true
+  );
+  return `${arrowMarkup}${deltaTextMarkup}`;
 }
 
 /** Render the active right-compartment special element (`sparkline`, `bar`, `ring`, `strip`, or `delta`). */
@@ -743,7 +747,6 @@ function renderSpecialElementMarkup(
   specialX: number,
   height: number,
   fontSize: number,
-  textY: number,
   specialWidth: number,
   animMode: AnimationMode
 ): string {
@@ -796,7 +799,6 @@ function renderSpecialElementMarkup(
         specialX,
         height,
         fontSize,
-        textY,
         specialWidth
       );
     }
@@ -905,7 +907,6 @@ function resolveButtonMetrics(sizeOption: ButtonSize | number | undefined): Vari
     const height = clampInt(sizeOption, 22, 48, 30);
     return {
       fontSize: Number((height * 0.415).toFixed(1)),
-      fontWeight: 600,
       height,
       iconSize: Math.round(height * 0.5),
       padX: Math.round(height * 0.47),
@@ -974,7 +975,7 @@ function computeBadgeLayout(
     [hasDot ? 7 : 0, leftIconWidth, labelWidth, hasRightCompartment ? 0 : rightIconWidth],
     innerGap,
     padX,
-    hasRightCompartment ? padX - 0.5 : padX
+    padX
   );
 
   const rightPack = packCompartment(
@@ -1081,7 +1082,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = BADGE_METRICS;
-  const { fontSize, fontWeight, height, iconSize, radiusX } = metrics;
+  const { fontSize, height, iconSize, radiusX } = metrics;
 
   const labelText = options.label;
   const valueText = options.value ?? '';
@@ -1118,7 +1119,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
   } = layout;
 
   const centerY = height / 2;
-  const textY = Math.round(centerY + fontSize * 0.35);
+  const textY = computeCenteredBaselineY(height, fontSize);
   const iconY = (height - iconSize) / 2;
   const dotMarkup = renderDotMarkup(options.dot, dotCx, centerY, animMode);
 
@@ -1166,7 +1167,6 @@ export function renderBadge(options: BadgeRenderOptions): string {
     specialX,
     height,
     fontSize,
-    textY,
     specialWidth,
     animMode
   );
@@ -1189,10 +1189,10 @@ export function renderBadge(options: BadgeRenderOptions): string {
   );
   const sheen = renderSheenOverlay(animMode, totalWidth, height, radiusX);
   const labelMarkup = hasLabel
-    ? `<text x="${labelCenterX}" y="${textY}" text-anchor="middle" fill="${labelColor}" class="txt">${escapeXml(labelText)}</text>`
+    ? renderTextPathMarkup(labelText, labelCenterX, textY, fontSize, labelColor, false)
     : '';
   const valueMarkup = hasValue
-    ? `<text x="${valueCenterX}" y="${textY}" text-anchor="middle" fill="${valueColor}" class="val">${escapeXml(valueText)}</text>`
+    ? renderTextPathMarkup(valueText, valueCenterX, textY, fontSize, valueColor, true)
     : '';
   const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
 
@@ -1203,20 +1203,6 @@ export function renderBadge(options: BadgeRenderOptions): string {
     ${sparkGradDef}
     ${sheen.clipDef}
   </defs>
-  <style>
-    .txt {
-      font-family: ${SYSTEM_FONT_STACK};
-      font-size: ${fontSize}px;
-      font-weight: ${fontWeight};
-      letter-spacing: -0.01em;
-    }
-    .val {
-      font-family: ${SYSTEM_FONT_STACK};
-      font-size: ${fontSize}px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-    }
-  </style>
   ${surfaceAndBorderLayers}
   ${dotMarkup}${leftIconMarkup}${labelMarkup}${specialMarkup}${valueMarkup}${rightIconMarkup}${sheen.overlay}
 </svg>`;
@@ -1233,7 +1219,7 @@ export function renderButton(options: ButtonRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveButtonMetrics(options.size);
-  const { fontSize, fontWeight, height, iconSize, radiusX } = metrics;
+  const { fontSize, height, iconSize, radiusX } = metrics;
 
   const labelText = options.label;
   const valueText = options.value ?? '';
@@ -1261,7 +1247,7 @@ export function renderButton(options: ButtonRenderOptions): string {
     valueCenterX,
   } = layout;
 
-  const textY = Math.round(height / 2 + fontSize * 0.35);
+  const textY = computeCenteredBaselineY(height, fontSize);
   const iconY = Number(((height - iconSize) / 2).toFixed(2));
   const dotMarkup = renderDotMarkup(options.dot, dotCx, height / 2, animMode);
   const isPrimary = options.variant === '1';
@@ -1311,14 +1297,13 @@ export function renderButton(options: ButtonRenderOptions): string {
     isSplit ? leftWidth : undefined
   );
   const sheen = renderSheenOverlay(animMode, totalWidth, height, radiusX);
-  const textClass = `btn-txt-${height}`;
   const labelMarkup =
     labelText.length > 0
-      ? `<text x="${labelCenterX}" y="${textY}" text-anchor="middle" fill="${labelColor}" class="${textClass}">${escapeXml(labelText)}</text>`
+      ? renderTextPathMarkup(labelText, labelCenterX, textY, fontSize, labelColor, true)
       : '';
   const valueMarkup =
     valueText.length > 0
-      ? `<text x="${valueCenterX}" y="${textY}" text-anchor="middle" fill="${valueColor}" class="${textClass}">${escapeXml(valueText)}</text>`
+      ? renderTextPathMarkup(valueText, valueCenterX, textY, fontSize, valueColor, true)
       : '';
   const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
 
@@ -1328,14 +1313,6 @@ export function renderButton(options: ButtonRenderOptions): string {
     ${renderThemeGradientDef(gradId, palette)}
     ${sheen.clipDef}
   </defs>
-  <style>
-    .${textClass} {
-      font-family: ${SYSTEM_FONT_STACK};
-      font-size: ${fontSize}px;
-      font-weight: ${fontWeight};
-      letter-spacing: -0.01em;
-    }
-  </style>
   ${surfaceLayers}
   ${dotMarkup}${leftIconMarkup}${labelMarkup}${valueMarkup}${rightIconMarkup}${sheen.overlay}
 </svg>`;

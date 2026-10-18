@@ -567,14 +567,8 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Compact Icon + Value',
-          path: '/badge//100%25?icon=zap',
-          svg: renderBadge({
-            color: 'indigo',
-            icon: 'zap',
-            label: '',
-            value: '100%',
-            variant: '1',
-          }),
+          path: '/badge//100%25?icon=zap&color=amber',
+          svg: renderBadge({ color: 'amber', icon: 'zap', label: '', value: '100%', variant: '1' }),
         },
         {
           alt: 'Dual-Icon Badge',
@@ -589,13 +583,13 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Icon-Only Pill',
-          path: '/badge/?icon=github',
-          svg: renderBadge({ color: 'indigo', icon: 'github', label: '', variant: '1' }),
+          path: '/badge/?icon=github&color=violet',
+          svg: renderBadge({ color: 'violet', icon: 'github', label: '', variant: '1' }),
         },
         {
           alt: 'No-Icon Badge',
-          path: '/badge/platform/linux',
-          svg: renderBadge({ color: 'indigo', label: 'platform', value: 'linux', variant: '1' }),
+          path: '/badge/platform/linux?color=rose',
+          svg: renderBadge({ color: 'rose', label: 'platform', value: 'linux', variant: '1' }),
         },
       ],
       subtitle:
@@ -618,10 +612,10 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Sheen + Icon Motion',
-          path: '/badge/Featured?icon=sparkles&anim=sheen,auto',
+          path: '/badge/Featured?icon=sparkles&color=amber&anim=sheen,auto',
           svg: renderBadge({
             anim: 'sheen,auto',
-            color: 'indigo',
+            color: 'amber',
             icon: 'sparkles',
             label: 'Featured',
             variant: '1',
@@ -653,10 +647,10 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Icon Nudge',
-          path: '/badge/next/step?icon=arrow-right&anim=nudge',
+          path: '/badge/next/step?icon=arrow-right&color=emerald&anim=nudge',
           svg: renderBadge({
             anim: 'nudge',
-            color: 'indigo',
+            color: 'emerald',
             icon: 'arrow-right',
             label: 'next',
             value: 'step',
@@ -689,9 +683,9 @@ function buildButtonUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Medium Button',
-          path: '/button/Medium+30px?icon=rocket&size=md',
+          path: '/button/Medium+30px?icon=rocket&size=md&color=emerald',
           svg: renderButton({
-            color: 'indigo',
+            color: 'emerald',
             icon: 'rocket',
             label: 'Medium 30px',
             size: 'md',

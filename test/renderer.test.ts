@@ -265,7 +265,9 @@ describe('renderBadge & renderButton', () => {
       value: '142k',
       variant: '2',
     });
-    expect(deltaSvg).toContain('+18%</text>');
+    expect(deltaSvg).toContain(`stroke="${THEMES.emerald.accentText}"`);
+    expect(deltaSvg).toContain(`fill="${THEMES.emerald.accentText}" />`);
+    expect(deltaSvg).not.toContain('<text');
   });
 
   it('escapes XML special characters in label, value, and aria-label', () => {
@@ -285,7 +287,7 @@ describe('renderBadge & renderButton', () => {
     const iconOnlyBadge = renderBadge({ color: 'indigo', icon: 'github', label: '', variant: '1' });
     expect(iconOnlyBadge).toContain('width="31"');
     expect(iconOnlyBadge).toContain('translate(9, 4.5)');
-    expect(iconOnlyBadge).not.toContain('class="txt"');
+    expect(iconOnlyBadge).not.toContain('<text');
 
     const dotOnlyBadge = renderBadge({ color: 'emerald', dot: 'green', label: '', variant: '2' });
     expect(dotOnlyBadge).toContain('width="25"');
@@ -294,7 +296,9 @@ describe('renderBadge & renderButton', () => {
     const noIconButton = renderButton({ color: 'amber', label: 'Get Started', variant: '1' });
     const widthMatch = /width="(?<total>\d+)"/.exec(noIconButton);
     const totalWidth = Number(widthMatch?.groups?.total);
-    expect(noIconButton).toContain(`x="${totalWidth / 2}" y="19" text-anchor="middle"`);
+    expect(totalWidth).toBeGreaterThan(80);
+    expect(noIconButton).toContain('aria-label="Get Started"');
+    expect(noIconButton).not.toContain('<text');
 
     const dualIconBadge = renderBadge({
       color: 'sky',
@@ -376,11 +380,10 @@ describe('renderBadge & renderButton', () => {
       label: 'Report Issue',
       variant: '3',
     });
-    expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" class="txt"`);
+    expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" />`);
     expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
-    expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" class="btn-txt-30"`);
-    expect(tertiaryButton).not.toContain('.txt {');
-    expect(tertiaryButton).not.toContain('.val {');
+    expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" />`);
+    expect(tertiaryButton).not.toContain('<style>');
     expect(tertiaryButton).toContain('A 8 7 0 0 0');
     expect(tertiaryButton).toContain('fill="#ffffff" fill-opacity="0.045"');
   });
@@ -491,7 +494,8 @@ describe('renderQuote', () => {
     });
     expect(quoteSvgV2).toContain('width="440"');
     expect(quoteSvgV2).toContain('Who says programmers are boring?');
-    expect(quoteSvgV2).toContain('— XulbuX</text>');
+    expect(quoteSvgV2).toContain('— XulbuX');
+    expect(quoteSvgV2).not.toContain('<text');
     expect(quoteSvgV2).toContain('quote-sheen-clip-440-');
     expect(quoteSvgV2).toContain(`fill="${THEMES.indigo.tintBg}"`);
 
@@ -509,8 +513,9 @@ describe('renderQuote', () => {
     expect(verticalQuoteSvgV1).toContain('fill="url(#quote-grad-blue)"');
     expect(verticalQuoteSvgV1).toContain('fill="#ffffff"');
     expect(verticalQuoteSvgV1).toContain('rotate(180 12 12)');
-    expect(verticalQuoteSvgV1).toContain('font-style: italic;');
-    expect(verticalQuoteSvgV1).toContain('— XulbuX</text>');
+    expect(verticalQuoteSvgV1).toContain('fill="rgba(255, 255, 255, 0.82)" />');
+    expect(verticalQuoteSvgV1).toContain('— XulbuX');
+    expect(verticalQuoteSvgV1).not.toContain('<text');
 
     const quoteSvgV3 = renderQuote({
       author: 'XulbuX',

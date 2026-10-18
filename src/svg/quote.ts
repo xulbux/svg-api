@@ -11,7 +11,7 @@ import type {
   ThemePalette,
   WidgetVariant,
 } from '@/types';
-import { measureTextWidth } from './measure';
+import { measureTextWidth, renderTextPathMarkup } from './measure';
 import {
   clampInt,
   clampNumber,
@@ -20,7 +20,6 @@ import {
   renderKumoBoxSurface,
   renderSheenOverlay,
   renderThemeGradientDef,
-  SYSTEM_FONT_STACK,
 } from './shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -203,9 +202,7 @@ function renderVerticalQuoteContent(
   variant: WidgetVariant,
   metrics: QuoteMetrics,
   iconBoxSize: number,
-  textBlockHeight: number,
-  txtClass: string,
-  authorClass: string
+  textBlockHeight: number
 ): string {
   const { authorFontSize, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const centerX = Number((width / 2).toFixed(1));
@@ -219,7 +216,16 @@ function renderVerticalQuoteContent(
   const firstLineY = topQuoteY + iconBoxSize + 10 + Math.round(fontSize * 0.85);
   for (let i = 0; i < lines.length; i += 1) {
     const lineY = firstLineY + i * lineHeight;
-    markup += `<text x="${centerX}" y="${lineY}" text-anchor="middle" fill="${textColor}" class="${txtClass}">${escapeXml(lines[i])}</text>`;
+    markup += renderTextPathMarkup(
+      lines[i],
+      centerX,
+      lineY,
+      fontSize,
+      textColor,
+      true,
+      false,
+      'center'
+    );
   }
 
   const bottomQuoteY = topQuoteY + iconBoxSize + 14 + textBlockHeight;
@@ -227,7 +233,16 @@ function renderVerticalQuoteContent(
 
   if (authorText.length > 0) {
     const authorY = bottomQuoteY + iconBoxSize + Math.round(authorFontSize * 1.45);
-    markup += `<text x="${centerX}" y="${authorY}" text-anchor="middle" fill="${authorColor}" class="${authorClass}">— ${escapeXml(authorText)}</text>`;
+    markup += renderTextPathMarkup(
+      `— ${authorText}`,
+      centerX,
+      authorY,
+      authorFontSize,
+      authorColor,
+      true,
+      true,
+      'center'
+    );
   }
 
   return markup;
@@ -246,7 +261,7 @@ function resolveQuoteStyleTokens(
   isVertical: boolean,
   gradId: string,
   palette: ThemePalette
-): { authorColor: string; gradDefs: string; textColor: string; textWeight: number } {
+): { authorColor: string; gradDefs: string; isBoldText: boolean; textColor: string } {
   let textColor = BASE_DARK.textPrimary;
   if (variant === '1') {
     textColor = '#ffffff';
@@ -255,14 +270,14 @@ function resolveQuoteStyleTokens(
   }
 
   const authorColor = variant === '1' ? 'rgba(255, 255, 255, 0.82)' : palette.accentText;
-  const textWeight = isVertical || variant === '1' ? 600 : 500;
+  const isBoldText = isVertical || variant === '1';
   const darkGradDef = variant === '1' ? '' : renderDarkBgGradientDef();
   const themeGradDef =
     variant === '1' || (!isVertical && variant === '2')
       ? renderThemeGradientDef(gradId, palette)
       : '';
 
-  return { authorColor, gradDefs: `${darkGradDef}${themeGradDef}`, textColor, textWeight };
+  return { authorColor, gradDefs: `${darkGradDef}${themeGradDef}`, isBoldText, textColor };
 }
 
 /** Render the inner watermark, wrapped text lines, and author line for a horizontal quote card. */
@@ -277,8 +292,7 @@ function renderHorizontalQuoteContent(
   metrics: QuoteMetrics,
   iconBoxSize: number,
   textBlockHeight: number,
-  txtClass: string,
-  authorClass: string
+  isBoldText: boolean
 ): string {
   const { authorFontSize, barWidth, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const watermarkX = Math.round(width - iconBoxSize - 18);
@@ -294,12 +308,30 @@ function renderHorizontalQuoteContent(
     const lineY = firstLineY + i * lineHeight;
     const prefix = i === 0 ? '“' : '';
     const suffix = i === lines.length - 1 ? '”' : '';
-    markup += `<text x="${textStartX}" y="${lineY}" fill="${textColor}" class="${txtClass}">${escapeXml(`${prefix}${lines[i]}${suffix}`)}</text>`;
+    markup += renderTextPathMarkup(
+      `${prefix}${lines[i]}${suffix}`,
+      textStartX,
+      lineY,
+      fontSize,
+      textColor,
+      isBoldText,
+      false,
+      'left'
+    );
   }
 
   if (authorText.length > 0) {
     const authorY = padY + textBlockHeight + Math.round(authorFontSize * 1.45);
-    markup += `<text x="${textStartX}" y="${authorY}" fill="${authorColor}" class="${authorClass}">— ${escapeXml(authorText)}</text>`;
+    markup += renderTextPathMarkup(
+      `— ${authorText}`,
+      textStartX,
+      authorY,
+      authorFontSize,
+      authorColor,
+      true,
+      false,
+      'left'
+    );
   }
 
   return markup;
@@ -320,17 +352,8 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const layout: QuoteLayout = options.layout ?? 'horizontal';
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveQuoteMetrics(options.size, layout);
-  const {
-    authorFontSize,
-    authorSpace,
-    barWidth,
-    fontSize,
-    lineHeight,
-    padX,
-    padY,
-    quoteIconScale,
-    radius,
-  } = metrics;
+  const { authorSpace, barWidth, fontSize, lineHeight, padX, padY, quoteIconScale, radius } =
+    metrics;
 
   const isVertical = layout === 'vertical';
   const defaultWidth = isVertical
@@ -339,7 +362,13 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const width = clampInt(options.width, MIN_QUOTE_WIDTH, MAX_QUOTE_WIDTH, defaultWidth);
 
   const maxTextWidth = isVertical ? width - padX * 2 : width - (padX + 42);
-  const lines = wrapQuoteLines(options.text, maxTextWidth, fontSize, isVertical);
+  const { authorColor, gradDefs, isBoldText, textColor } = resolveQuoteStyleTokens(
+    variant,
+    isVertical,
+    `quote-grad-${options.color}`,
+    palette
+  );
+  const lines = wrapQuoteLines(options.text, maxTextWidth, fontSize, isBoldText);
   const authorText = (options.author ?? '').trim();
   const hasAuthor = authorText.length > 0;
 
@@ -351,17 +380,6 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const height = padY + verticalQuotesSpace + textBlockHeight + effectiveAuthorSpace + padY;
 
   const gradId = `quote-grad-${options.color}`;
-  const { authorColor, gradDefs, textColor, textWeight } = resolveQuoteStyleTokens(
-    variant,
-    isVertical,
-    gradId,
-    palette
-  );
-
-  const styleScope = `${isVertical ? 'v' : 'h'}-${String(fontSize).replace('.', '_')}-${textWeight}`;
-  const txtClass = `q-txt-${styleScope}`;
-  const authorClass = `q-author-${styleScope}`;
-
   const surfaceLayers = renderQuoteSurface(
     width,
     height,
@@ -385,9 +403,7 @@ export function renderQuote(options: QuoteRenderOptions): string {
         variant,
         metrics,
         iconBoxSize,
-        textBlockHeight,
-        txtClass,
-        authorClass
+        textBlockHeight
       )
     : renderHorizontalQuoteContent(
         width,
@@ -400,34 +416,17 @@ export function renderQuote(options: QuoteRenderOptions): string {
         metrics,
         iconBoxSize,
         textBlockHeight,
-        txtClass,
-        authorClass
+        isBoldText
       );
 
   const sheen = renderSheenOverlay(animMode, width, height, radius, 'quote-sheen');
   const ariaLabel = escapeXml(hasAuthor ? `${lines.join(' ')} — ${authorText}` : lines.join(' '));
-  const authorStyle = isVertical ? 'font-style: italic;' : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
   <defs>
     ${gradDefs}
     ${sheen.clipDef}
   </defs>
-  <style>
-    .${txtClass} {
-      font-family: ${SYSTEM_FONT_STACK};
-      font-size: ${fontSize}px;
-      font-weight: ${textWeight};
-      letter-spacing: -0.01em;
-    }
-    .${authorClass} {
-      font-family: ${SYSTEM_FONT_STACK};
-      font-size: ${authorFontSize}px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      ${authorStyle}
-    }
-  </style>
   ${surfaceLayers}
   ${contentMarkup}
   ${sheen.overlay}

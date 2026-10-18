@@ -26,7 +26,8 @@
     "@iconify-json/devicon-plain": "^1.2.62",
     "@iconify-json/simple-icons": "^1.2.100",
     "hono": "^4.13.13",
-    "lucide-static": "^1.57.0"
+    "lucide-static": "^1.57.0",
+    "opentype.js": "^2.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261015.1",
