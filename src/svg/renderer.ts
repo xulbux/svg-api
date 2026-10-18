@@ -384,12 +384,12 @@ function resolveAutoIconMotion(cleanSlug: string): string | undefined {
 function wrapIconWithAnimation(
   innerSvg: string,
   iconSlug: string | undefined,
-  animMode: AnimationMode
+  iconMotion: string
 ): string {
-  if (animMode === 'none' || animMode === 'default' || animMode === 'sheen') {
+  if (iconMotion === 'none' || iconMotion === 'default' || iconMotion === 'sheen') {
     return innerSvg;
   }
-  const rawMode = animMode.startsWith('sheen,') ? animMode.slice(6) : animMode;
+  const rawMode = iconMotion.startsWith('sheen,') ? iconMotion.slice(6) : iconMotion;
   const cleanSlug = (iconSlug ?? '').trim().toLowerCase();
   const motion = rawMode === 'auto' ? resolveAutoIconMotion(cleanSlug) : rawMode;
 
@@ -414,6 +414,52 @@ function wrapIconWithAnimation(
       return innerSvg;
     }
   }
+}
+
+/**
+ * Resolve independent left and right icon motion tokens from `animMode`.
+ * Supports explicit per-icon pairs (`anim="none,nudge"`, `anim="sheen,shake,nudge"`) as well as
+ * smart single-token targeting when two icons are present (e.g., `icon="book-open,arrow-right"` with
+ * `anim="nudge"` animates only the directional `arrow-right` icon).
+ */
+function resolveIconAnimationPair(
+  animMode: AnimationMode,
+  leftSlug: string | undefined,
+  rightSlug: string | undefined,
+  hasLeftIcon: boolean,
+  hasRightIcon: boolean
+): { leftMotion: string; rightMotion: string } {
+  if (animMode === 'none' || animMode === 'default' || animMode === 'sheen') {
+    return { leftMotion: 'none', rightMotion: 'none' };
+  }
+  const tokens = animMode
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0 && t !== 'sheen');
+
+  if (tokens.length === 0) {
+    return { leftMotion: 'none', rightMotion: 'none' };
+  }
+  const [firstToken, secondToken] = tokens;
+  if (tokens.length >= 2) {
+    return { leftMotion: firstToken, rightMotion: secondToken };
+  }
+
+  if (firstToken === 'auto' || !hasLeftIcon || !hasRightIcon) {
+    return { leftMotion: firstToken, rightMotion: firstToken };
+  }
+
+  const leftNatural = resolveAutoIconMotion((leftSlug ?? '').trim().toLowerCase());
+  const rightNatural = resolveAutoIconMotion((rightSlug ?? '').trim().toLowerCase());
+  if (rightNatural === firstToken && leftNatural !== firstToken) {
+    return { leftMotion: 'none', rightMotion: firstToken };
+  }
+  if (leftNatural === firstToken && rightNatural !== firstToken) {
+    return { leftMotion: firstToken, rightMotion: 'none' };
+  }
+  return firstToken === 'nudge'
+    ? { leftMotion: 'none', rightMotion: firstToken }
+    : { leftMotion: firstToken, rightMotion: 'none' };
 }
 
 /** Parse an icon specification (`'name'`, `'left,right'`, or `'none,right'`) into resolved left and right icons. */
@@ -457,7 +503,8 @@ function renderIconMarkup(
   iconY: number,
   iconSize: number,
   iconColor: string,
-  animMode: AnimationMode
+  iconMotion: string,
+  opacity?: number
 ): string {
   if (!iconData) {
     return '';
@@ -465,10 +512,11 @@ function renderIconMarkup(
   const scaleNum = iconSize / 24;
   const scale = Number(scaleNum.toFixed(4));
   const translateX = Number((visualStartX - iconData.minX * scaleNum).toFixed(2));
-  const animatedInner = wrapIconWithAnimation(iconData.innerSvg, iconSlug, animMode);
+  const opacityAttr = opacity !== undefined && opacity < 1 ? ` opacity="${opacity}"` : '';
+  const animatedInner = wrapIconWithAnimation(iconData.innerSvg, iconSlug, iconMotion);
   return iconData.type === 'lucide'
-    ? `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="none" stroke="${iconColor}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${animatedInner}</g>`
-    : `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="${iconColor}">${animatedInner}</g>`;
+    ? `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="none" stroke="${iconColor}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"${opacityAttr}>${animatedInner}</g>`
+    : `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="${iconColor}"${opacityAttr}>${animatedInner}</g>`;
 }
 
 /**
@@ -617,7 +665,7 @@ function renderRingWidgetMarkup(
   const trackAttrs = isSolidCapsule
     ? 'stroke="rgba(0,0,0,0.28)"'
     : `stroke="${palette.accentText}" stroke-opacity="0.24"`;
-  const arcStroke = isSolidCapsule ? '#ffffff' : palette.accentText;
+  const arcStroke = isSolidCapsule ? 'rgba(255,255,255,0.85)' : palette.accentText;
   const pulseAnim = hasPulse
     ? '<animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" />'
     : '';
@@ -678,7 +726,8 @@ function renderDeltaWidgetMarkup(
   }
 
   const arrowY = (height - 10) / 2;
-  const arrowMarkup = `<g transform="translate(${specialX}, ${arrowY})" fill="none" stroke="${deltaColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${arrowPath}" /></g>`;
+  const arrowOpacityAttr = isSolidCapsule ? ' opacity="0.82"' : '';
+  const arrowMarkup = `<g transform="translate(${specialX}, ${arrowY})" fill="none" stroke="${deltaColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"${arrowOpacityAttr}><path d="${arrowPath}" /></g>`;
   const textWidth = specialWidth - 13;
   const textCenterX = Number((specialX + 13 + textWidth / 2).toFixed(2));
   const deltaFontSize = fontSize - 0.5;
@@ -710,7 +759,7 @@ function renderSpecialElementMarkup(
       if (!geometry) {
         return '';
       }
-      const sparkStroke = isSolidCapsule ? 'rgba(255,255,255,0.92)' : palette.accentText;
+      const sparkStroke = isSolidCapsule ? 'rgba(255,255,255,0.86)' : palette.accentText;
       const sparkGradId = isSolidCapsule ? 'spark-fill-white' : `spark-fill-${color}`;
       return `<polygon points="${geometry.areaPoints}" fill="url(#${sparkGradId})" /><polyline points="${geometry.linePoints}" fill="none" stroke="${sparkStroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`;
     }
@@ -770,8 +819,9 @@ function renderSparklineGradientDef(
   const isSolidCapsule = variant === '1';
   const sparkGradId = isSolidCapsule ? 'spark-fill-white' : `spark-fill-${color}`;
   const stopColor = isSolidCapsule ? '#ffffff' : palette.accentText;
+  const topOpacity = isSolidCapsule ? '0.32' : '0.38';
   return `<linearGradient id="${sparkGradId}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${stopColor}" stop-opacity="0.38" />
+      <stop offset="0%" stop-color="${stopColor}" stop-opacity="${topOpacity}" />
       <stop offset="100%" stop-color="${stopColor}" stop-opacity="0" />
     </linearGradient>`;
 }
@@ -865,11 +915,12 @@ function resolveButtonMetrics(sizeOption: ButtonSize | number | undefined): Vari
   return BUTTON_SIZE_PRESETS.md;
 }
 
-/** Pack non-zero item widths with `gap` between adjacent items and symmetric rounded `padX`. */
+/** Pack non-zero item widths with `gap` between adjacent items and optical edge padding (`leftPad`, `rightPad`). */
 function packCompartment(
   itemWidths: readonly number[],
   gap: number,
-  padX: number,
+  leftPad: number,
+  rightPad = leftPad,
   extraFirstGap = 0
 ): { offsets: number[]; width: number } {
   let rawWidth = 0;
@@ -887,10 +938,11 @@ function packCompartment(
     rawWidth += extraFirstGap;
   }
   if (activeCount === 0) {
-    return { offsets: itemWidths.map(() => padX), width: 0 };
+    return { offsets: itemWidths.map(() => leftPad), width: 0 };
   }
-  const width = Math.round(padX + rawWidth + padX);
-  let cursor = (width - rawWidth) / 2;
+  const width = Math.round(leftPad + rawWidth + rightPad);
+  const roundDelta = (width - (leftPad + rawWidth + rightPad)) / 2;
+  let cursor = leftPad + roundDelta;
   const offsets: number[] = [];
   for (let idx = 0; idx < itemWidths.length; idx += 1) {
     const w = itemWidths[idx];
@@ -921,11 +973,14 @@ function computeBadgeLayout(
   const leftPack = packCompartment(
     [hasDot ? 7 : 0, leftIconWidth, labelWidth, hasRightCompartment ? 0 : rightIconWidth],
     innerGap,
-    padX
+    padX,
+    hasRightCompartment ? padX - 0.5 : padX
   );
+
   const rightPack = packCompartment(
     hasRightCompartment ? [specialWidth, valueWidth, rightIconWidth] : [0, 0, 0],
     innerGap,
+    padX,
     padX,
     1
   );
@@ -970,12 +1025,15 @@ function computeButtonLayout(
   const leftPack = packCompartment(
     [hasDot ? 7 : 0, leftIconWidth, labelWidth, isSplit ? 0 : rightIconWidth],
     innerGap,
+    padX,
     padX
   );
   const leftWidth = leftPack.width || padX * 2;
+
   const rightPack = packCompartment(
     isSplit ? [valueWidth, rightIconWidth] : [0, 0],
     innerGap,
+    padX,
     padX
   );
   const totalWidth = leftWidth + rightPack.width;
@@ -1067,9 +1125,18 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const isPrimarySolid = options.variant === '1' && !isSplit;
   const leftIconColor = isPrimarySolid ? '#ffffff' : palette.iconColor;
   const rightIconColor = options.variant === '1' ? '#ffffff' : palette.iconColor;
+  const leftIconOpacity = isPrimarySolid ? 0.82 : undefined;
+  const rightIconOpacity = options.variant === '1' ? 0.82 : undefined;
   const labelColor = resolveLabelColor(options.variant, isPrimarySolid);
   const valueColor = resolveValueColor(options.variant, palette);
   const gradId = `grad-${options.color}`;
+  const { leftMotion, rightMotion } = resolveIconAnimationPair(
+    animMode,
+    leftSlug,
+    rightSlug,
+    Boolean(leftData),
+    Boolean(rightData)
+  );
 
   const leftIconMarkup = renderIconMarkup(
     leftData,
@@ -1078,7 +1145,8 @@ export function renderBadge(options: BadgeRenderOptions): string {
     iconY,
     iconSize,
     leftIconColor,
-    animMode
+    leftMotion,
+    leftIconOpacity
   );
   const rightIconMarkup = renderIconMarkup(
     rightData,
@@ -1087,7 +1155,8 @@ export function renderBadge(options: BadgeRenderOptions): string {
     iconY,
     iconSize,
     rightIconColor,
-    animMode
+    rightMotion,
+    rightIconOpacity
   );
   const specialMarkup = renderSpecialElementMarkup(
     specialElement,
@@ -1197,9 +1266,18 @@ export function renderButton(options: ButtonRenderOptions): string {
   const dotMarkup = renderDotMarkup(options.dot, dotCx, height / 2, animMode);
   const isPrimary = options.variant === '1';
   const iconColor = isPrimary ? '#ffffff' : palette.iconColor;
+  const iconOpacity = isPrimary ? 0.82 : undefined;
   const labelColor = resolveLabelColor(options.variant, isPrimary);
-  const valueColor = resolveValueColor(options.variant, palette);
+  const valueColor =
+    isPrimary && isSplit ? 'rgba(255,255,255,0.88)' : resolveValueColor(options.variant, palette);
   const gradId = `grad-${options.color}`;
+  const { leftMotion, rightMotion } = resolveIconAnimationPair(
+    animMode,
+    leftSlug,
+    rightSlug,
+    Boolean(leftData),
+    Boolean(rightData)
+  );
 
   const leftIconMarkup = renderIconMarkup(
     leftData,
@@ -1208,7 +1286,8 @@ export function renderButton(options: ButtonRenderOptions): string {
     iconY,
     iconSize,
     iconColor,
-    animMode
+    leftMotion,
+    iconOpacity
   );
   const rightIconMarkup = renderIconMarkup(
     rightData,
@@ -1217,7 +1296,8 @@ export function renderButton(options: ButtonRenderOptions): string {
     iconY,
     iconSize,
     iconColor,
-    animMode
+    rightMotion,
+    iconOpacity
   );
   const surfaceLayers = renderKumoBoxSurface(
     0,

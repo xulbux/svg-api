@@ -75,8 +75,8 @@ const VALID_VARIANTS: ReadonlySet<BadgeVariant> = new Set(['1', '2', '3']);
 /** Set of valid standalone widget variants (`'1'`, `'2'`, `'3'`). */
 const VALID_WIDGET_VARIANTS: ReadonlySet<WidgetVariant> = new Set(['1', '2', '3']);
 
-/** Set of valid animation mode identifiers. */
-const VALID_ANIMATION_MODES: ReadonlySet<AnimationMode> = new Set([
+/** Set of valid per-icon motion tokens for `?anim=`. */
+const VALID_ICON_MOTIONS: ReadonlySet<string> = new Set([
   'auto',
   'default',
   'float',
@@ -84,13 +84,6 @@ const VALID_ANIMATION_MODES: ReadonlySet<AnimationMode> = new Set([
   'nudge',
   'pulse',
   'shake',
-  'sheen',
-  'sheen,auto',
-  'sheen,float',
-  'sheen,nudge',
-  'sheen,pulse',
-  'sheen,shake',
-  'sheen,spin',
   'spin',
 ]);
 
@@ -329,7 +322,7 @@ function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
   return new Response(svg, {
     headers: {
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': `public, max-age=300, s-maxage=${ttlSeconds}, stale-while-revalidate=86400`,
+      'Cache-Control': `public, max-age=60, s-maxage=${ttlSeconds}, stale-while-revalidate=600`,
       'Content-Type': 'image/svg+xml; charset=utf-8',
       'X-Content-Type-Options': 'nosniff',
     },
@@ -415,7 +408,9 @@ export function resolveVariant(input?: string, fallback: BadgeVariant = '1'): Ba
 
 /**
  * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
- * @param input      Raw `?anim=` query parameter value (`sheen`, `auto`, `spin`, `shake`, `nudge`, `pulse`, `float`, `sheen,auto`, `none`).
+ * Supports single modes (`sheen`, `auto`, `spin`, `shake`, `nudge`, `pulse`, `float`, `none`),
+ * per-icon pairs (`none,nudge`, `shake,nudge`), and combined sheen (`sheen,auto`, `sheen,none,nudge`).
+ * @param input      Raw `?anim=` query parameter value.
  * @param fallback   Default animation mode when `input` is omitted or invalid.
  * @returns Validated `AnimationMode`.
  */
@@ -427,16 +422,30 @@ export function resolveAnimationMode(
     return fallback;
   }
   const raw = input.trim().toLowerCase();
-  if (VALID_ANIMATION_MODES.has(raw as AnimationMode)) {
-    return raw as AnimationMode;
+  if (!raw) {
+    return fallback;
   }
-  const tokens = raw.split(LIST_SEPARATOR_RX);
-  if (tokens.length === 2 && tokens.includes('sheen')) {
-    const other = tokens[0] === 'sheen' ? tokens[1] : tokens[0];
-    const combined = `sheen,${other}` as AnimationMode;
-    if (VALID_ANIMATION_MODES.has(combined)) {
-      return combined;
+  const tokens = raw.split(LIST_SEPARATOR_RX).filter((t) => t.length > 0);
+  const hasSheen = tokens.includes('sheen');
+  const motionTokens = tokens.filter((t) => t !== 'sheen');
+
+  if (motionTokens.length === 0) {
+    return hasSheen ? 'sheen' : fallback;
+  }
+  const [firstMotion, secondMotion] = motionTokens;
+  if (motionTokens.length === 1 && VALID_ICON_MOTIONS.has(firstMotion)) {
+    if (hasSheen && (firstMotion === 'none' || firstMotion === 'default')) {
+      return 'sheen';
     }
+    return (hasSheen ? `sheen,${firstMotion}` : firstMotion) as AnimationMode;
+  }
+  if (
+    motionTokens.length === 2 &&
+    VALID_ICON_MOTIONS.has(firstMotion) &&
+    VALID_ICON_MOTIONS.has(secondMotion)
+  ) {
+    const pair = `${firstMotion},${secondMotion}`;
+    return (hasSheen ? `sheen,${pair}` : pair) as AnimationMode;
   }
   return fallback;
 }

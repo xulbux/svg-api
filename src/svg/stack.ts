@@ -293,10 +293,11 @@ function renderSingleStackTile(
       ? `translate(${iconX}, ${iconY})`
       : `translate(${iconX}, ${iconY}) scale(${iconScale})`;
   const iconFillOrStroke = variant === '1' ? '#ffffff' : palette.iconColor;
+  const iconOpacityAttr = variant === '1' ? ' opacity="0.9"' : '';
   const iconMarkup =
     iconData?.type === 'lucide'
-      ? `<g transform="${transformAttr}" fill="none" stroke="${iconFillOrStroke}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</g>`
-      : `<g transform="${transformAttr}" fill="${iconFillOrStroke}">${innerSvg}</g>`;
+      ? `<g transform="${transformAttr}" fill="none" stroke="${iconFillOrStroke}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"${iconOpacityAttr}>${innerSvg}</g>`
+      : `<g transform="${transformAttr}" fill="${iconFillOrStroke}"${iconOpacityAttr}>${innerSvg}</g>`;
   const titleText = escapeXml(resolveStackIconTitle(slug));
 
   return `<g><title>${titleText}</title>${surfaceMarkup}${iconMarkup}</g>`;

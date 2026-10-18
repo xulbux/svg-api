@@ -77,5 +77,5 @@ All `/badge/gh/*` routes accept the standard badge query parameters plus `?label
 -   `?icon=<slug>|<left>,<right>|none,<right>|none` (override the default left icon, add both left and right icons, or show only a right icon)
 -   `?label=<text>` (override the left-hand label text on service badges)
 -   `?dot=green|amber|red|blue|sky|indigo|violet|purple|emerald|teal|cyan|slate`
--   `?anim=sheen|auto|spin|shake|nudge|pulse|float|sheen,<mode>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `sheen,auto` for both, or `none` to disable all animations)
+-   `?anim=sheen|auto|spin|shake|nudge|pulse|float|<left>,<right>|sheen,<mode>|sheen,<left>,<right>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `<left>,<right>` like `none,nudge` or `shake,nudge` to animate left and right icons independently, `sheen,auto` for both, or `none` to disable all animations)
 -   `?special=sparkline:...|bar:...|ring:...|strip:...|delta:...`

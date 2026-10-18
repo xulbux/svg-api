@@ -158,6 +158,26 @@ describe('renderBadge & renderButton', () => {
     expect(sheenSvg).toContain('linearGradient id="sheen-grad-');
     expect(sheenSvg).toContain('calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s"');
 
+    const dualIconNudgeSvg = renderButton({
+      anim: 'nudge',
+      color: 'indigo',
+      icon: 'book-open,arrow-right',
+      label: 'Explore Docs',
+      variant: '1',
+    });
+    expect((dualIconNudgeSvg.match(/<animateTransform/g) ?? []).length).toBe(1);
+
+    const dualIconExplicitPairSvg = renderButton({
+      anim: 'sheen,shake,nudge',
+      color: 'indigo',
+      icon: 'sparkles,arrow-right',
+      label: 'Get Started',
+      variant: '1',
+    });
+    expect(dualIconExplicitPairSvg).toContain('clipPath id="sheen-clip-');
+    expect(dualIconExplicitPairSvg).toContain('type="rotate" values="0;0;-11;11;-9;7;0;0"');
+    expect(dualIconExplicitPairSvg).toContain('type="translate" values="0 0;0 0;2.2 0;0 0;0 0"');
+
     const staticSvg = renderBadge({
       anim: 'none',
       color: 'emerald',
@@ -296,19 +316,33 @@ describe('renderBadge & renderButton', () => {
   });
 
   it('applies tapering Kumo upper-edge crescent on all 3 button variants (1, 2, 3) and colored variant=1 badge capsules, and uses muted carbon-gray text on variant=3', () => {
-    const primaryButton = renderButton({ color: 'blue', label: 'Change', variant: '1' });
+    const primaryButton = renderButton({
+      color: 'blue',
+      icon: 'sparkles',
+      label: 'Change',
+      variant: '1',
+    });
     expect(primaryButton).toContain('A 8 7 0 0 0');
     expect(primaryButton).toContain(`fill="${THEMES.blue.emphasisBg}"`);
     expect(primaryButton).toContain(`stroke="${THEMES.blue.emphasisRing}"`);
+    expect(primaryButton).toContain(
+      'stroke="#ffffff" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+    );
 
-    const secondaryButton = renderButton({ color: 'sky', label: 'Changelog', variant: '2' });
+    const secondaryButton = renderButton({
+      color: 'sky',
+      icon: 'sparkles',
+      label: 'Changelog',
+      variant: '2',
+    });
     expect(secondaryButton).toContain('A 8 7 0 0 0');
     expect(secondaryButton).toContain(`fill="${THEMES.sky.borderColor}" fill-opacity="0.45"`);
     expect(secondaryButton).toContain(`stroke="${THEMES.sky.borderColor}" stroke-width="1"`);
+    expect(secondaryButton).not.toContain('opacity="0.82"');
 
     const splitPrimary = renderBadge({
       color: 'emerald',
-      icon: 'pypi',
+      icon: 'pypi,arrow-right',
       label: 'pypi',
       value: 'v2.4.0',
       variant: '1',
@@ -317,6 +351,10 @@ describe('renderBadge & renderButton', () => {
     expect(splitPrimary).toContain('A 5 4 0 0 0');
     expect(splitPrimary).toContain(`fill="${THEMES.emerald.emphasisBg}"`);
     expect(splitPrimary).toContain(`stroke="${THEMES.emerald.emphasisRing}"`);
+    expect(splitPrimary).toContain(`fill="${THEMES.emerald.iconColor}">`);
+    expect(splitPrimary).toContain(
+      'stroke="#ffffff" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+    );
 
     const secondaryBadge = renderBadge({
       color: 'cyan',

@@ -12,12 +12,17 @@ describe('measureTextWidth', () => {
     expect(measureTextWidth('')).toBe(0);
   });
 
-  it('measures known ASCII strings accurately at 11px normal weight', () => {
+  it('measures known ASCII strings accurately at 11px normal and semi-bold weights', () => {
     const narrowWidth = measureTextWidth('iii', 11, false);
     const wideWidth = measureTextWidth('WWW', 11, false);
     expect(narrowWidth).toBeLessThan(wideWidth);
-    expect(narrowWidth).toBe(Math.ceil(2.86 * 3));
-    expect(wideWidth).toBe(Math.ceil(10.24 * 3));
+    expect(narrowWidth).toBe(Math.round(2.34 * 3 - 1.2));
+    expect(wideWidth).toBe(Math.round(10.28 * 3 - 1.2));
+    expect(measureTextWidth('python', 11, false)).toBe(31);
+    expect(measureTextWidth('npm', 11, false)).toBe(20);
+    expect(measureTextWidth('platform', 11, false)).toBe(38);
+    expect(measureTextWidth('linux', 11, true)).toBe(24);
+    expect(measureTextWidth('Discussions', 12.5, true)).toBe(71);
   });
 
   it('scales proportionally with font size', () => {
@@ -26,10 +31,10 @@ describe('measureTextWidth', () => {
     expect(largerWidth).toBeGreaterThanOrEqual(baseWidth * 2 - 1);
   });
 
-  it('applies a bold multiplier when isBold is true', () => {
+  it('uses distinct calibrated tables for 500 normal and 600 semi-bold weights', () => {
     const regularWidth = measureTextWidth('stars', 11, false);
     const boldWidth = measureTextWidth('stars', 11, true);
-    expect(boldWidth).toBeGreaterThanOrEqual(regularWidth);
+    expect(boldWidth).toBeGreaterThan(regularWidth);
   });
 
   it('uses fallback width for unmapped Unicode characters', () => {

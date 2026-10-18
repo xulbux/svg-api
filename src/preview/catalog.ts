@@ -102,9 +102,9 @@ export const BADGE_PARAM_ROWS: readonly ParamTableRow[] = [
   {
     defaultVal: '~static',
     description:
-      'Surface sheen, icon motion (auto/spin/shake/nudge/pulse/float), combined sheen,<mode>, or none.',
+      'Surface sheen, icon motion (auto/spin/shake/nudge/pulse/float), per-icon pair (none,nudge), combined sheen,<mode>, or none.',
     name: '?anim=',
-    values: 'sheen | auto | spin | shake | nudge | pulse | float | sheen,auto | none',
+    values: 'sheen | auto | spin | shake | nudge | pulse | float | none,nudge | sheen,auto | none',
   },
 ];
 
@@ -145,9 +145,9 @@ export const BUTTON_PARAM_ROWS: readonly ParamTableRow[] = [
   {
     defaultVal: '~static',
     description:
-      'Surface sheen, icon motion (auto/spin/shake/nudge/pulse/float), combined sheen,<mode>, or none.',
+      'Surface sheen, icon motion (auto/spin/shake/nudge/pulse/float), per-icon pair (none,nudge), combined sheen,<mode>, or none.',
     name: '?anim=',
-    values: 'sheen | auto | spin | shake | nudge | pulse | float | sheen,auto | none',
+    values: 'sheen | auto | spin | shake | nudge | pulse | float | none,nudge | sheen,auto | none',
   },
 ];
 

@@ -6,20 +6,8 @@ import type { BadgeVariant, DotState, ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/**
- * Micro-animation mode for icons, status dots, and specular sheen.
- * - `'default'`: Status dots and progress bars animate; icons and surfaces remain static (default when `?anim=` is omitted).
- * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
- * - `'auto'`: Enables contextual icon micro-animations (`spin`, `shake`, `nudge`, `pulse`, `float`) based on the icon slug.
- * - `'spin'`: Forces smooth 360-degree continuous rotation on the icon.
- * - `'shake'`: Forces periodic scale-up + subtle back-and-forth wiggle on the icon.
- * - `'nudge'`: Forces periodic directional nudge on the icon.
- * - `'pulse'`: Forces periodic double-beat scale pulse on the icon.
- * - `'float'`: Forces smooth vertical levitation bob on the icon.
- * - `'sheen,auto' | 'sheen,spin' | 'sheen,shake' | 'sheen,nudge' | 'sheen,pulse' | 'sheen,float'`: Combines surface sheen with an icon animation.
- * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
- */
-export type AnimationMode =
+/** Single icon micro-animation token. */
+export type IconMotionMode =
   | 'auto'
   | 'default'
   | 'float'
@@ -27,14 +15,23 @@ export type AnimationMode =
   | 'nudge'
   | 'pulse'
   | 'shake'
-  | 'sheen'
-  | 'sheen,auto'
-  | 'sheen,float'
-  | 'sheen,nudge'
-  | 'sheen,pulse'
-  | 'sheen,shake'
-  | 'sheen,spin'
   | 'spin';
+
+/**
+ * Micro-animation mode for icons, status dots, and specular sheen.
+ * - `'default'`: Status dots and progress bars animate; icons and surfaces remain static (default when `?anim=` is omitted).
+ * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
+ * - `'auto' | 'spin' | 'shake' | 'nudge' | 'pulse' | 'float'`: Enables contextual or explicit icon micro-animation.
+ * - `'<left>,<right>'` (e.g. `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
+ * - `'sheen,<mode>'` or `'sheen,<left>,<right>'`: Combines surface sheen with single or per-icon animations.
+ * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
+ */
+export type AnimationMode =
+  | IconMotionMode
+  | 'sheen'
+  | `sheen,${IconMotionMode}`
+  | `${IconMotionMode},${IconMotionMode}`
+  | `sheen,${IconMotionMode},${IconMotionMode}`;
 
 /**
  * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald).

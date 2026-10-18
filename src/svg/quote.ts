@@ -174,7 +174,7 @@ function renderQuoteSurface(
     const barHeight = Math.max(16, height - barY * 2);
     const barRx = Number((barWidth / 2).toFixed(2));
     if (variant === '1') {
-      layers += `<rect x="18" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barRx}" fill="#ffffff" fill-opacity="0.86" />`;
+      layers += `<rect x="18" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barRx}" fill="#ffffff" fill-opacity="0.82" />`;
     } else if (variant === '2') {
       layers += `<rect x="18" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barRx}" fill="url(#${gradId})" />`;
     } else {
@@ -184,6 +184,13 @@ function renderQuoteSurface(
 
   return layers;
 }
+
+/** Vertical quote mark fill opacity by quote card variant (`'1'`, `'2'`, `'3'`). */
+const VERTICAL_QUOTE_OPACITY_BY_VARIANT: Readonly<Record<WidgetVariant, string>> = {
+  '1': '0.74',
+  '2': '0.78',
+  '3': '0.52',
+};
 
 /** Render the inner quote marks, wrapped text lines, and author line for a vertical centered quote card. */
 function renderVerticalQuoteContent(
@@ -205,7 +212,7 @@ function renderVerticalQuoteContent(
   const quoteIconX = Number((centerX - iconBoxSize / 2).toFixed(1));
   const topQuoteY = padY;
   const quoteFillColor = variant === '1' ? '#ffffff' : palette.iconColor;
-  const quoteFillOpacity = variant === '3' ? '0.6' : '0.92';
+  const quoteFillOpacity = VERTICAL_QUOTE_OPACITY_BY_VARIANT[variant];
 
   let markup = `<g transform="translate(${quoteIconX}, ${topQuoteY}) scale(${quoteIconScale}) rotate(180 12 12)" fill="${quoteFillColor}" fill-opacity="${quoteFillOpacity}">${QUOTE_MARK_PATHS}</g>`;
 
@@ -228,9 +235,9 @@ function renderVerticalQuoteContent(
 
 /** Watermark stroke opacity by quote card variant (`'1'`, `'2'`, `'3'`). */
 const WATERMARK_OPACITY_BY_VARIANT: Readonly<Record<WidgetVariant, string>> = {
-  '1': '0.24',
-  '2': '0.18',
-  '3': '0.14',
+  '1': '0.20',
+  '2': '0.16',
+  '3': '0.12',
 };
 
 /** Resolve text color, author color, font weight, and `<defs>` gradient markup for a quote card. */
@@ -247,7 +254,7 @@ function resolveQuoteStyleTokens(
     textColor = BASE_DARK.textMuted;
   }
 
-  const authorColor = variant === '1' ? 'rgba(255, 255, 255, 0.88)' : palette.accentText;
+  const authorColor = variant === '1' ? 'rgba(255, 255, 255, 0.82)' : palette.accentText;
   const textWeight = isVertical || variant === '1' ? 600 : 500;
   const darkGradDef = variant === '1' ? '' : renderDarkBgGradientDef();
   const themeGradDef =
