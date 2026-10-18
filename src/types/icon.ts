@@ -10,10 +10,14 @@ import type { ThemeColorName } from './theme';
 /** Supported icon library source types. */
 export type IconType = 'lucide' | 'simple';
 
-/** Resolved SVG icon markup and source type. */
+/** Resolved SVG icon markup, horizontal visual bounds in `24x24` space, and source type. */
 export interface ResolvedIcon {
   /** Inner SVG elements (without the outer `<svg>` wrapper). */
   innerSvg: string;
+  /** Rightmost visible horizontal coordinate (`0`–`24`) for exact optical spacing. */
+  maxX: number;
+  /** Leftmost visible horizontal coordinate (`0`–`24`) for exact optical spacing. */
+  minX: number;
   /** Whether the icon uses Lucide strokes or a Simple Icons fill path. */
   type: IconType;
 }

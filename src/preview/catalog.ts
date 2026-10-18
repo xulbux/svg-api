@@ -82,9 +82,10 @@ export const BADGE_PARAM_ROWS: readonly ParamTableRow[] = [
   },
   {
     defaultVal: 'none',
-    description: 'Left-hand Lucide stroke icon or Simple Icons / Devicon slug (none to hide).',
+    description:
+      'Leading left icon (icon=name), both left and right icons (icon=left,right), right-only icon (icon=none,right), or none.',
     name: '?icon=',
-    values: 'circle-check | rocket | archlinux | cloudflare | none | ...',
+    values: 'circle-check | rocket,arrow-right | none,external-link | none | ...',
   },
   {
     defaultVal: 'none',
@@ -130,15 +131,10 @@ export const BUTTON_PARAM_ROWS: readonly ParamTableRow[] = [
   },
   {
     defaultVal: 'none',
-    description: 'Leading left-hand Lucide stroke icon or Simple Icons / Devicon brand slug.',
+    description:
+      'Leading left icon (icon=name), both left and right icons (icon=left,right), or trailing right icon only (icon=none,right).',
     name: '?icon=',
-    values: 'rocket | book-open | sparkles | github | ...',
-  },
-  {
-    defaultVal: 'none',
-    description: 'Trailing right-hand icon slug for directional CTAs and external links.',
-    name: '?icon_right=',
-    values: 'arrow-right | external-link | chevron-right | ...',
+    values: 'rocket | book-open,arrow-right | none,chevron-right | sparkles | ...',
   },
   {
     defaultVal: 'none',
@@ -581,6 +577,17 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
           }),
         },
         {
+          alt: 'Dual-Icon Badge',
+          path: '/badge/docs/read?icon=book-open,arrow-right&color=sky',
+          svg: renderBadge({
+            color: 'sky',
+            icon: 'book-open,arrow-right',
+            label: 'docs',
+            value: 'read',
+            variant: '1',
+          }),
+        },
+        {
           alt: 'Icon-Only Pill',
           path: '/badge/?icon=github',
           svg: renderBadge({ color: 'indigo', icon: 'github', label: '', variant: '1' }),
@@ -592,7 +599,7 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
       ],
       subtitle:
-        'Omit label or value segments for compact icon+value pills, single-part tags, or icon-only badges.',
+        'Omit label or value segments, or set both left and right icons via ?icon=left,right.',
       title: 'Flexible Structural Layouts (/badge/:label, /badge//:value)',
     },
     {
@@ -723,12 +730,11 @@ function buildButtonUseCaseCards(): ShowcaseCardConfig[] {
         {
           alt: 'Explore Docs',
           href: 'https://svg.xul.is/docs/badges',
-          path: '/button/Explore+Docs?icon=book-open&icon_right=arrow-right&anim=nudge',
+          path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=nudge',
           svg: renderButton({
             anim: 'nudge',
             color: 'indigo',
-            icon: 'book-open',
-            iconRight: 'arrow-right',
+            icon: 'book-open,arrow-right',
             label: 'Explore Docs',
             variant: '1',
           }),
@@ -736,41 +742,39 @@ function buildButtonUseCaseCards(): ShowcaseCardConfig[] {
         {
           alt: 'Open Website',
           href: 'https://xul.is',
-          path: '/button/Open+Website?icon=globe&icon_right=external-link&color=sky&variant=2',
+          path: '/button/Open+Website?icon=globe,external-link&color=sky&variant=2',
           svg: renderButton({
             color: 'sky',
-            icon: 'globe',
-            iconRight: 'external-link',
+            icon: 'globe,external-link',
             label: 'Open Website',
             variant: '2',
           }),
         },
         {
           alt: 'Continue',
-          path: '/btn/Continue?icon_right=chevron-right&color=emerald',
+          path: '/btn/Continue?icon=none,chevron-right&color=emerald',
           svg: renderButton({
             color: 'emerald',
-            iconRight: 'chevron-right',
+            icon: 'none,chevron-right',
             label: 'Continue',
             variant: '1',
           }),
         },
       ],
       subtitle:
-        'Add a trailing right-hand directional or external-link icon alongside or instead of a leading icon via ?icon_right=.',
-      title: 'Trailing Icons & Directional CTAs (?icon_right=)',
+        'Set a leading icon (?icon=name), both leading and trailing icons (?icon=left,right), or a trailing icon only (?icon=none,right).',
+      title: 'Leading & Trailing Icons (?icon=left,right)',
     },
     {
       items: [
         {
           alt: 'Get Started',
           href: 'https://svg.xul.is/docs/badges',
-          path: '/button/Get+Started?icon=sparkles&icon_right=arrow-right&anim=sheen',
+          path: '/button/Get+Started?icon=sparkles,arrow-right&anim=sheen',
           svg: renderButton({
             anim: 'sheen',
             color: 'indigo',
-            icon: 'sparkles',
-            iconRight: 'arrow-right',
+            icon: 'sparkles,arrow-right',
             label: 'Get Started',
             variant: '1',
           }),
@@ -811,11 +815,10 @@ function buildButtonUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Download v1.4.0',
-          path: '/button/Download/v1.4.0?icon=download&icon_right=arrow-right&color=emerald&variant=2',
+          path: '/button/Download/v1.4.0?icon=download,arrow-right&color=emerald&variant=2',
           svg: renderButton({
             color: 'emerald',
-            icon: 'download',
-            iconRight: 'arrow-right',
+            icon: 'download,arrow-right',
             label: 'Download',
             value: 'v1.4.0',
             variant: '2',

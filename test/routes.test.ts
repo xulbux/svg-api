@@ -210,7 +210,7 @@ describe('Hono routes on svg.xul.is', () => {
     expect(await singleBadgeRes.text()).toContain('height="22"');
 
     const buttonRes = await app.request(
-      '/button/Documentation?color=indigo&icon=book-open&icon_right=arrow-right&anim=sheen',
+      '/button/Documentation?color=indigo&icon=book-open,arrow-right&anim=sheen',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
@@ -219,10 +219,11 @@ describe('Hono routes on svg.xul.is', () => {
     expect(svg).toContain('height="30"');
     expect(svg).toContain('Documentation');
     expect(svg).toContain('sheen-clip-');
+    expect((svg.match(/scale\(0\.625\)/g) ?? []).length).toBe(2);
     expect(svg).not.toContain('translate(12, 12)');
 
     const splitBtnAliasRes = await app.request(
-      '/btn/Deploy/Production?size=lg&variant=2&color=emerald',
+      '/btn/Deploy/Production?size=lg&variant=2&color=emerald&icon=none,arrow-right',
       { headers: { 'Sec-Fetch-Dest': 'image' } },
       TEST_ENV
     );
@@ -232,6 +233,7 @@ describe('Hono routes on svg.xul.is', () => {
     expect(splitSvg).toContain('rx="11"');
     expect(splitSvg).toContain('Deploy');
     expect(splitSvg).toContain('Production');
+    expect((splitSvg.match(/scale\(0\.7083\)/g) ?? []).length).toBe(1);
   });
 
   it('renders standalone SVG icons under /icon/:icon', async () => {

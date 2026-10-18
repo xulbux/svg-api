@@ -56,46 +56,62 @@ interface SparklineGeometry {
   linePoints: string;
 }
 
-/** Horizontal layout dimensions for left and right badge segments. */
+/** Horizontal layout dimensions and coordinates for left and right badge segments. */
 interface BadgeLayout {
-  /** Horizontal space reserved for the pulsing status dot. */
-  dotSpace: number;
-  /** Horizontal space reserved for the icon. */
-  iconSpace: number;
+  /** Center X coordinate of the pulsing status dot. */
+  dotCx: number;
   /** Whether the badge is split into both a left and a right compartment. */
   isSplit: boolean;
-  /** Measured width of the left-side label text in pixels. */
-  labelWidth: number;
+  /** Center X coordinate of the left-side label text. */
+  labelCenterX: number;
+  /** Visual starting X coordinate of the leading icon. */
+  leftIconX: number;
   /** Width of the left segment in pixels. */
   leftWidth: number;
+  /** Visual starting X coordinate of the trailing icon. */
+  rightIconX: number;
   /** Width of the right segment in pixels. */
   rightWidth: number;
-  /** Horizontal space reserved for the right-hand special element (including gap). */
-  specialSpace: number;
   /** Width of the right-hand special element box in pixels. */
   specialWidth: number;
+  /** Starting X coordinate of the right-hand special element. */
+  specialX: number;
   /** Total width of the badge SVG in pixels. */
   totalWidth: number;
-  /** Measured width of the right-side value text in pixels. */
-  valueWidth: number;
+  /** Center X coordinate of the right-side value text. */
+  valueCenterX: number;
 }
 
 /** Horizontal layout dimensions and coordinates for a CTA button. */
 interface ButtonLayout {
+  /** Center X coordinate of the pulsing status dot. */
+  dotCx: number;
   /** Whether the button is split into both a left and a right compartment. */
   isSplit: boolean;
   /** Center X coordinate of the left-side label text. */
   labelCenterX: number;
-  /** Starting X coordinate of the leading icon. */
+  /** Visual starting X coordinate of the leading icon. */
   leftIconX: number;
   /** Width of the left segment in pixels. */
   leftWidth: number;
-  /** Starting X coordinate of the trailing icon. */
+  /** Visual starting X coordinate of the trailing icon. */
   rightIconX: number;
   /** Total width of the button SVG in pixels. */
   totalWidth: number;
   /** Center X coordinate of the right-side value text. */
   valueCenterX: number;
+}
+
+/** Resolved left and right icon pair from `?icon=name`, `?icon=left,right`, or `?icon=none,right`. */
+interface ResolvedIconPair {
+  /** Resolved leading left-hand icon data. */
+  leftData: ResolvedIcon | undefined;
+  /** Leading left-hand icon slug. */
+  leftSlug: string | undefined;
+  /** Resolved trailing right-hand icon data. */
+  rightData: ResolvedIcon | undefined;
+  /** Trailing right-hand icon slug. */
+  rightSlug: string | undefined;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -400,11 +416,44 @@ function wrapIconWithAnimation(
   }
 }
 
-/** Render the SVG `<g>` markup for a resolved Lucide or Simple Icons icon. */
+/** Parse an icon specification (`'name'`, `'left,right'`, or `'none,right'`) into resolved left and right icons. */
+function resolveIconPair(iconSpec: string | undefined): ResolvedIconPair {
+  if (!iconSpec) {
+    return { leftData: undefined, leftSlug: undefined, rightData: undefined, rightSlug: undefined };
+  }
+  const commaIdx = iconSpec.indexOf(',');
+  if (commaIdx === -1) {
+    const leftSlug = iconSpec.trim();
+    return {
+      leftData: resolveIcon(leftSlug),
+      leftSlug,
+      rightData: undefined,
+      rightSlug: undefined,
+    };
+  }
+  const leftSlug = iconSpec.slice(0, commaIdx).trim() || 'none';
+  const rightSlug = iconSpec.slice(commaIdx + 1).trim() || 'none';
+  return {
+    leftData: resolveIcon(leftSlug),
+    leftSlug,
+    rightData: resolveIcon(rightSlug),
+    rightSlug,
+  };
+}
+
+/** Measure the true rendered horizontal width in pixels of a resolved icon (`(maxX - minX) * (iconSize / 24)`). */
+function measureIconVisualWidth(iconData: ResolvedIcon | undefined, iconSize: number): number {
+  if (!iconData) {
+    return 0;
+  }
+  return Number(((iconData.maxX - iconData.minX) * (iconSize / 24)).toFixed(2));
+}
+
+/** Render the SVG `<g>` markup for a resolved Lucide or Simple Icons icon, aligned so its leftmost visible pixel starts at `visualStartX`. */
 function renderIconMarkup(
   iconData: ResolvedIcon | undefined,
   iconSlug: string | undefined,
-  iconX: number,
+  visualStartX: number,
   iconY: number,
   iconSize: number,
   iconColor: string,
@@ -413,11 +462,13 @@ function renderIconMarkup(
   if (!iconData) {
     return '';
   }
-  const scale = (iconSize / 24).toFixed(4);
+  const scaleNum = iconSize / 24;
+  const scale = Number(scaleNum.toFixed(4));
+  const translateX = Number((visualStartX - iconData.minX * scaleNum).toFixed(2));
   const animatedInner = wrapIconWithAnimation(iconData.innerSvg, iconSlug, animMode);
   return iconData.type === 'lucide'
-    ? `<g transform="translate(${iconX}, ${iconY}) scale(${scale})" fill="none" stroke="${iconColor}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${animatedInner}</g>`
-    : `<g transform="translate(${iconX}, ${iconY}) scale(${scale})" fill="${iconColor}">${animatedInner}</g>`;
+    ? `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="none" stroke="${iconColor}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">${animatedInner}</g>`
+    : `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="${iconColor}">${animatedInner}</g>`;
 }
 
 /**
@@ -814,51 +865,90 @@ function resolveButtonMetrics(sizeOption: ButtonSize | number | undefined): Vari
   return BUTTON_SIZE_PRESETS.md;
 }
 
-/** Compute horizontal compartment widths and spacing offsets for a badge. */
+/** Pack non-zero item widths with `gap` between adjacent items and symmetric rounded `padX`. */
+function packCompartment(
+  itemWidths: readonly number[],
+  gap: number,
+  padX: number,
+  extraFirstGap = 0
+): { offsets: number[]; width: number } {
+  let rawWidth = 0;
+  let activeCount = 0;
+  for (const w of itemWidths) {
+    if (w > 0) {
+      if (activeCount > 0) {
+        rawWidth += gap;
+      }
+      rawWidth += w;
+      activeCount += 1;
+    }
+  }
+  if (itemWidths[0] > 0 && activeCount > 1) {
+    rawWidth += extraFirstGap;
+  }
+  if (activeCount === 0) {
+    return { offsets: itemWidths.map(() => padX), width: 0 };
+  }
+  const width = Math.round(padX + rawWidth + padX);
+  let cursor = (width - rawWidth) / 2;
+  const offsets: number[] = [];
+  for (let idx = 0; idx < itemWidths.length; idx += 1) {
+    const w = itemWidths[idx];
+    offsets.push(Number(cursor.toFixed(2)));
+    if (w > 0) {
+      cursor += w + gap + (idx === 0 ? extraFirstGap : 0);
+    }
+  }
+  return { offsets, width };
+}
+
+/** Compute horizontal compartment widths and coordinate offsets for a `22px` badge. */
 function computeBadgeLayout(
   labelText: string,
   valueText: string,
   hasDot: boolean,
-  hasIcon: boolean,
+  leftIconWidth: number,
+  rightIconWidth: number,
   specialWidth: number,
   metrics: VariantMetrics
 ): BadgeLayout {
-  const { fontSize, iconSize, padX } = metrics;
-  const hasLabel = labelText.length > 0;
-  const hasValue = valueText.length > 0;
-  const hasSpecial = specialWidth > 0;
+  const { fontSize, padX } = metrics;
   const innerGap = 6;
+  const labelWidth = labelText.length > 0 ? measureTextWidth(labelText, fontSize, false) : 0;
+  const valueWidth = valueText.length > 0 ? measureTextWidth(valueText, fontSize, true) : 0;
+  const hasRightCompartment = valueWidth > 0 || specialWidth > 0;
 
-  const dotGap = hasIcon || hasLabel ? innerGap : 0;
-  const dotSpace = hasDot ? 7 + dotGap : 0;
-  const iconGap = hasLabel ? innerGap : 0;
-  const iconSpace = hasIcon ? iconSize + iconGap : 0;
+  const leftPack = packCompartment(
+    [hasDot ? 7 : 0, leftIconWidth, labelWidth, hasRightCompartment ? 0 : rightIconWidth],
+    innerGap,
+    padX
+  );
+  const rightPack = packCompartment(
+    hasRightCompartment ? [specialWidth, valueWidth, rightIconWidth] : [0, 0, 0],
+    innerGap,
+    padX,
+    1
+  );
 
-  const specialGap = hasValue ? 7 : 0;
-  const specialSpace = hasSpecial ? specialWidth + specialGap : 0;
-
-  const hasLeftContent = hasDot || hasIcon || hasLabel;
-  const hasRightContent = hasValue || hasSpecial;
-
-  const labelWidth = hasLabel ? measureTextWidth(labelText, fontSize, false) : 0;
-  const leftWidth = hasLeftContent ? padX + dotSpace + iconSpace + labelWidth + padX : 0;
-
-  const valueWidth = hasValue ? measureTextWidth(valueText, fontSize, true) : 0;
-  const rightWidth = hasRightContent ? padX + specialSpace + valueWidth + padX : 0;
+  const leftWidth = leftPack.width;
+  const rightWidth = rightPack.width;
   const totalWidth = leftWidth + rightWidth || padX * 2;
   const isSplit = leftWidth > 0 && rightWidth > 0;
 
   return {
-    dotSpace,
-    iconSpace,
+    dotCx: Number((leftPack.offsets[0] + 3.5).toFixed(2)),
     isSplit,
-    labelWidth,
+    labelCenterX: Number((leftPack.offsets[2] + labelWidth / 2).toFixed(2)),
+    leftIconX: leftPack.offsets[1],
     leftWidth,
+    rightIconX: hasRightCompartment
+      ? Number((leftWidth + rightPack.offsets[2]).toFixed(2))
+      : leftPack.offsets[3],
     rightWidth,
-    specialSpace,
     specialWidth,
+    specialX: Number((leftWidth + rightPack.offsets[0]).toFixed(2)),
     totalWidth,
-    valueWidth,
+    valueCenterX: Number((leftWidth + rightPack.offsets[1] + valueWidth / 2).toFixed(2)),
   };
 }
 
@@ -867,38 +957,41 @@ function computeButtonLayout(
   labelText: string,
   valueText: string,
   hasDot: boolean,
-  hasLeftIcon: boolean,
-  hasRightIcon: boolean,
+  leftIconWidth: number,
+  rightIconWidth: number,
   metrics: VariantMetrics
 ): ButtonLayout {
-  const { fontSize, height, iconSize, padX } = metrics;
-  const hasLabel = labelText.length > 0;
+  const { fontSize, height, padX } = metrics;
   const isSplit = valueText.length > 0;
   const innerGap = Math.max(6, Math.round(height * 0.24));
-
-  const dotSpace = hasDot ? 7 + (hasLeftIcon || hasLabel ? innerGap : 0) : 0;
-  const leftIconSpace = hasLeftIcon ? iconSize + (hasLabel ? innerGap : 0) : 0;
-  const labelWidth = hasLabel ? measureTextWidth(labelText, fontSize, true) : 0;
+  const labelWidth = labelText.length > 0 ? measureTextWidth(labelText, fontSize, true) : 0;
   const valueWidth = isSplit ? measureTextWidth(valueText, fontSize, true) : 0;
 
-  const hasLeftContent = hasLabel || hasLeftIcon || hasDot;
-  const leftTrailSpace = !isSplit && hasRightIcon ? (hasLeftContent ? innerGap : 0) + iconSize : 0;
-  const rightTrailSpace = isSplit && hasRightIcon ? innerGap + iconSize : 0;
+  const leftPack = packCompartment(
+    [hasDot ? 7 : 0, leftIconWidth, labelWidth, isSplit ? 0 : rightIconWidth],
+    innerGap,
+    padX
+  );
+  const leftWidth = leftPack.width || padX * 2;
+  const rightPack = packCompartment(
+    isSplit ? [valueWidth, rightIconWidth] : [0, 0],
+    innerGap,
+    padX
+  );
+  const totalWidth = leftWidth + rightPack.width;
 
-  const leftWidth = padX + dotSpace + leftIconSpace + labelWidth + leftTrailSpace + padX;
-  const rightWidth = isSplit ? padX + valueWidth + rightTrailSpace + padX : 0;
-  const totalWidth = leftWidth + rightWidth;
-
-  const leftIconX = padX + dotSpace;
-  const labelX = padX + dotSpace + leftIconSpace;
-  const labelCenterX = Number((labelX + labelWidth / 2).toFixed(2));
-  const valueX = leftWidth + padX;
-  const valueCenterX = Number((valueX + valueWidth / 2).toFixed(2));
-  const rightIconX = isSplit
-    ? valueX + valueWidth + innerGap
-    : labelX + labelWidth + (hasLeftContent ? innerGap : 0);
-
-  return { isSplit, labelCenterX, leftIconX, leftWidth, rightIconX, totalWidth, valueCenterX };
+  return {
+    dotCx: Number((leftPack.offsets[0] + 3.5).toFixed(2)),
+    isSplit,
+    labelCenterX: Number((leftPack.offsets[2] + labelWidth / 2).toFixed(2)),
+    leftIconX: leftPack.offsets[1],
+    leftWidth,
+    rightIconX: isSplit
+      ? Number((leftWidth + rightPack.offsets[1]).toFixed(2))
+      : leftPack.offsets[3],
+    totalWidth,
+    valueCenterX: Number((leftWidth + rightPack.offsets[0] + valueWidth / 2).toFixed(2)),
+  };
 }
 
 /** Build the accessible `aria-label` string for the rendered SVG element. */
@@ -930,62 +1023,70 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = BADGE_METRICS;
-  const { fontSize, fontWeight, height, iconSize, padX, radiusX } = metrics;
+  const { fontSize, fontWeight, height, iconSize, radiusX } = metrics;
 
   const labelText = options.label;
   const valueText = options.value ?? '';
   const hasLabel = labelText.length > 0;
   const hasValue = valueText.length > 0;
 
-  const iconData = resolveIcon(options.icon);
-  const dotMarkup = renderDotMarkup(options.dot, padX + 3.5, height / 2, animMode);
+  const { leftData, leftSlug, rightData, rightSlug } = resolveIconPair(options.icon);
+  const leftIconWidth = measureIconVisualWidth(leftData, iconSize);
+  const rightIconWidth = measureIconVisualWidth(rightData, iconSize);
+  const hasDot = Boolean(options.dot && options.dot in DOT_COLORS);
   const specialElement = options.special;
   const specialWidth = measureSpecialElementWidth(specialElement, fontSize);
 
   const layout = computeBadgeLayout(
     labelText,
     valueText,
-    dotMarkup.length > 0,
-    Boolean(iconData),
+    hasDot,
+    leftIconWidth,
+    rightIconWidth,
     specialWidth,
     metrics
   );
   const {
-    dotSpace,
-    iconSpace,
+    dotCx,
     isSplit,
-    labelWidth,
+    labelCenterX,
+    leftIconX,
     leftWidth,
+    rightIconX,
     rightWidth,
-    specialSpace,
+    specialX,
     totalWidth,
-    valueWidth,
+    valueCenterX,
   } = layout;
 
   const centerY = height / 2;
   const textY = Math.round(centerY + fontSize * 0.35);
-
-  const iconX = padX + dotSpace;
   const iconY = (height - iconSize) / 2;
-  const labelX = padX + dotSpace + iconSpace;
-  const labelCenterX = Number((labelX + labelWidth / 2).toFixed(2));
-  const specialX = leftWidth + padX;
-  const valueX = leftWidth + padX + specialSpace;
-  const valueCenterX = Number((valueX + valueWidth / 2).toFixed(2));
+  const dotMarkup = renderDotMarkup(options.dot, dotCx, centerY, animMode);
 
   const isPrimarySolid = options.variant === '1' && !isSplit;
-  const iconStrokeOrFill = isPrimarySolid ? '#ffffff' : palette.iconColor;
+  const leftIconColor = isPrimarySolid ? '#ffffff' : palette.iconColor;
+  const rightIconColor = options.variant === '1' ? '#ffffff' : palette.iconColor;
   const labelColor = resolveLabelColor(options.variant, isPrimarySolid);
   const valueColor = resolveValueColor(options.variant, palette);
   const gradId = `grad-${options.color}`;
 
-  const iconMarkup = renderIconMarkup(
-    iconData,
-    options.icon,
-    iconX,
+  const leftIconMarkup = renderIconMarkup(
+    leftData,
+    leftSlug,
+    leftIconX,
     iconY,
     iconSize,
-    iconStrokeOrFill,
+    leftIconColor,
+    animMode
+  );
+  const rightIconMarkup = renderIconMarkup(
+    rightData,
+    rightSlug,
+    rightIconX,
+    iconY,
+    iconSize,
+    rightIconColor,
     animMode
   );
   const specialMarkup = renderSpecialElementMarkup(
@@ -1024,7 +1125,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const valueMarkup = hasValue
     ? `<text x="${valueCenterX}" y="${textY}" text-anchor="middle" fill="${valueColor}" class="val">${escapeXml(valueText)}</text>`
     : '';
-  const ariaLabel = buildAriaLabel(labelText, valueText, options.icon || options.dot);
+  const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
   <defs>
@@ -1048,14 +1149,14 @@ export function renderBadge(options: BadgeRenderOptions): string {
     }
   </style>
   ${surfaceAndBorderLayers}
-  ${dotMarkup}${iconMarkup}${labelMarkup}${specialMarkup}${valueMarkup}${sheen.overlay}
+  ${dotMarkup}${leftIconMarkup}${labelMarkup}${specialMarkup}${valueMarkup}${rightIconMarkup}${sheen.overlay}
 </svg>`;
 }
 
 /**
  * Render a CTA button SVG string (`svg.xul.is/button/*` and `svg.xul.is/btn/*`) from `ButtonRenderOptions`.
- * Supports size presets (`sm`, `md`, `lg`, `xl` or custom pixel height), leading `icon`,
- * trailing `iconRight`, status `dot`, optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
+ * Supports size presets (`sm`, `md`, `lg`, `xl` or custom pixel height), unified `icon` (`'left'`, `'left,right'`, `'none,right'`),
+ * status `dot`, optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
  * @param options   Button rendering configuration.
  * @returns Complete SVG markup string.
  */
@@ -1063,27 +1164,37 @@ export function renderButton(options: ButtonRenderOptions): string {
   const palette = THEMES[options.color] || THEMES.indigo;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveButtonMetrics(options.size);
-  const { fontSize, fontWeight, height, iconSize, padX, radiusX } = metrics;
+  const { fontSize, fontWeight, height, iconSize, radiusX } = metrics;
 
   const labelText = options.label;
   const valueText = options.value ?? '';
-  const leftIconData = resolveIcon(options.icon);
-  const rightIconData = resolveIcon(options.iconRight);
-  const dotMarkup = renderDotMarkup(options.dot, padX + 3.5, height / 2, animMode);
+  const { leftData, leftSlug, rightData, rightSlug } = resolveIconPair(options.icon);
+  const leftIconWidth = measureIconVisualWidth(leftData, iconSize);
+  const rightIconWidth = measureIconVisualWidth(rightData, iconSize);
+  const hasDot = Boolean(options.dot && options.dot in DOT_COLORS);
 
   const layout = computeButtonLayout(
     labelText,
     valueText,
-    dotMarkup.length > 0,
-    Boolean(leftIconData),
-    Boolean(rightIconData),
+    hasDot,
+    leftIconWidth,
+    rightIconWidth,
     metrics
   );
-  const { isSplit, labelCenterX, leftIconX, leftWidth, rightIconX, totalWidth, valueCenterX } =
-    layout;
+  const {
+    dotCx,
+    isSplit,
+    labelCenterX,
+    leftIconX,
+    leftWidth,
+    rightIconX,
+    totalWidth,
+    valueCenterX,
+  } = layout;
 
   const textY = Math.round(height / 2 + fontSize * 0.35);
   const iconY = Number(((height - iconSize) / 2).toFixed(2));
+  const dotMarkup = renderDotMarkup(options.dot, dotCx, height / 2, animMode);
   const isPrimary = options.variant === '1';
   const iconColor = isPrimary ? '#ffffff' : palette.iconColor;
   const labelColor = resolveLabelColor(options.variant, isPrimary);
@@ -1091,8 +1202,8 @@ export function renderButton(options: ButtonRenderOptions): string {
   const gradId = `grad-${options.color}`;
 
   const leftIconMarkup = renderIconMarkup(
-    leftIconData,
-    options.icon,
+    leftData,
+    leftSlug,
     leftIconX,
     iconY,
     iconSize,
@@ -1100,8 +1211,8 @@ export function renderButton(options: ButtonRenderOptions): string {
     animMode
   );
   const rightIconMarkup = renderIconMarkup(
-    rightIconData,
-    options.iconRight,
+    rightData,
+    rightSlug,
     rightIconX,
     iconY,
     iconSize,
@@ -1129,11 +1240,7 @@ export function renderButton(options: ButtonRenderOptions): string {
     valueText.length > 0
       ? `<text x="${valueCenterX}" y="${textY}" text-anchor="middle" fill="${valueColor}" class="${textClass}">${escapeXml(valueText)}</text>`
       : '';
-  const ariaLabel = buildAriaLabel(
-    labelText,
-    valueText,
-    options.icon || options.iconRight || options.dot
-  );
+  const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
   <defs>

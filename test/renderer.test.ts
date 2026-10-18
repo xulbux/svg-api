@@ -261,7 +261,7 @@ describe('renderBadge & renderButton', () => {
     expect(svg).not.toContain('<rust>');
   });
 
-  it('renders symmetric horizontal padding and centered text-anchor for no-icon buttons and pills', () => {
+  it('renders symmetric horizontal padding, optical icon-bound trimming, and unified icon=left,right / icon=none,right syntax', () => {
     const iconOnlyBadge = renderBadge({ color: 'indigo', icon: 'github', label: '', variant: '1' });
     expect(iconOnlyBadge).toContain('width="31"');
     expect(iconOnlyBadge).toContain('translate(9, 4.5)');
@@ -275,6 +275,24 @@ describe('renderBadge & renderButton', () => {
     const widthMatch = /width="(?<total>\d+)"/.exec(noIconButton);
     const totalWidth = Number(widthMatch?.groups?.total);
     expect(noIconButton).toContain(`x="${totalWidth / 2}" y="19" text-anchor="middle"`);
+
+    const dualIconBadge = renderBadge({
+      color: 'sky',
+      icon: 'book-open,arrow-right',
+      label: 'docs',
+      value: 'read',
+      variant: '1',
+    });
+    expect((dualIconBadge.match(/scale\(0\.5417\)/g) ?? []).length).toBe(2);
+
+    const rightOnlyButton = renderButton({
+      color: 'emerald',
+      icon: 'none,chevron-right',
+      label: 'Continue',
+      variant: '1',
+    });
+    expect((rightOnlyButton.match(/scale\(0\.625\)/g) ?? []).length).toBe(1);
+    expect(rightOnlyButton).toContain('Continue');
   });
 
   it('applies tapering Kumo upper-edge crescent on all 3 button variants (1, 2, 3) and colored variant=1 badge capsules, and uses muted carbon-gray text on variant=3', () => {

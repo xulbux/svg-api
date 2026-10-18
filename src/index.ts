@@ -455,6 +455,21 @@ function tryRedirectOnDocumentNav(
   return redirectUrl ? context.redirect(redirectUrl, 302) : undefined;
 }
 
+/** Resolve `?icon=` query overrides, preserving `defaultIcon` on the left when `,right` shorthand is used on service presets. */
+function resolveIconQueryParam(
+  iconParam: string | undefined,
+  defaultIcon?: string
+): string | undefined {
+  if (iconParam === undefined) {
+    return defaultIcon;
+  }
+  const trimmed = iconParam.trim();
+  if (trimmed.startsWith(',') && defaultIcon) {
+    return `${defaultIcon}${trimmed}`;
+  }
+  return trimmed;
+}
+
 /** Apply canonical query overrides (`color`, `variant`, `icon`, `dot`, `anim`, `special`, and `label` when `allowLabelOverride` is `true`) and render a badge SVG. */
 function renderBadgeWithQueryOverrides(
   context: Context<{ Bindings: Env }>,
@@ -471,7 +486,7 @@ function renderBadgeWithQueryOverrides(
 
   const color = resolveColor(colorParam, defaults.color ?? 'indigo');
   const variant = resolveVariant(variantParam, defaults.variant);
-  const icon = iconParam ?? defaults.icon;
+  const icon = resolveIconQueryParam(iconParam, defaults.icon);
   const label = labelParam ? decodeSegment(labelParam) : defaults.label;
   const dot = resolveDotState(dotParam, defaults.dot);
   const anim = resolveAnimationMode(animParam, 'default');
@@ -480,7 +495,7 @@ function renderBadgeWithQueryOverrides(
   return renderBadge({ anim, color, dot, icon, label, special, value: defaults.value, variant });
 }
 
-/** Apply canonical button query overrides (`color`, `variant`, `size`, `icon`, `icon_right`, `dot`, `anim`) and render a button SVG. */
+/** Apply canonical button query overrides (`color`, `variant`, `size`, `icon`, `dot`, `anim`) and render a button SVG. */
 function renderButtonWithQueryOverrides(
   context: Context<{ Bindings: Env }>,
   label: string,
@@ -489,12 +504,11 @@ function renderButtonWithQueryOverrides(
   const color = resolveColor(context.req.query('color'), 'indigo');
   const variant = resolveVariant(context.req.query('variant'), '1');
   const size = resolveButtonSize(context.req.query('size'));
-  const icon = context.req.query('icon');
-  const iconRight = context.req.query('icon_right') ?? context.req.query('right_icon');
+  const icon = resolveIconQueryParam(context.req.query('icon'));
   const dot = resolveDotState(context.req.query('dot'));
   const anim = resolveAnimationMode(context.req.query('anim'), 'default');
 
-  return renderButton({ anim, color, dot, icon, iconRight, label, size, value, variant });
+  return renderButton({ anim, color, dot, icon, label, size, value, variant });
 }
 
 /** Handle 3-segment and 4-segment external service preset routes (`/badge/gh/*`, `/badge/pypi/*`, `/badge/npm/*`, `/badge/ovsx/*`, `/badge/crates/*`, `/badge/docker/*`). */

@@ -143,12 +143,11 @@ function buildHomeOverviewCards(): ShowcaseCardConfig[] {
         {
           alt: 'Explore Docs',
           href: 'https://svg.xul.is/docs/buttons',
-          path: '/button/Explore+Docs?icon=rocket&icon_right=arrow-right&anim=sheen',
+          path: '/button/Explore+Docs?icon=rocket,arrow-right&anim=sheen',
           svg: renderButton({
             anim: 'sheen',
             color: 'indigo',
-            icon: 'rocket',
-            iconRight: 'arrow-right',
+            icon: 'rocket,arrow-right',
             label: 'Explore Docs',
             variant: '1',
           }),

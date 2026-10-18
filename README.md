@@ -74,7 +74,7 @@ All `/badge/gh/*` routes accept the standard badge query parameters plus `?label
 
 -   `?variant=1|2|3` (defaults to `1` for `release`, `2` for all other GitHub metrics)
 -   `?color=<theme>` (any of the 22 Tailwind v4 OKLCH theme colors)
--   `?icon=<slug>|none` (override the default Lucide / Simple Icon)
+-   `?icon=<slug>|<left>,<right>|none,<right>|none` (override the default left icon, add both left and right icons, or show only a right icon)
 -   `?label=<text>` (override the left-hand label text on service badges)
 -   `?dot=green|amber|red|blue|sky|indigo|violet|purple|emerald|teal|cyan|slate`
 -   `?anim=sheen|auto|spin|shake|nudge|pulse|float|sheen,<mode>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `sheen,auto` for both, or `none` to disable all animations)

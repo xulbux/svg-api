@@ -86,7 +86,7 @@ export interface BadgeRenderOptions {
   color: ThemeColorName;
   /** Optional pulsing status indicator state. */
   dot?: DotState;
-  /** Optional icon slug (Lucide or Simple Icons) or `'none'` to suppress default icons. */
+  /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
   icon?: string;
   /** Left-hand label text (or single-part badge text). */
   label: string;
@@ -109,10 +109,8 @@ export interface ButtonRenderOptions {
   color: ThemeColorName;
   /** Optional pulsing status indicator state. */
   dot?: DotState;
-  /** Optional leading left-hand icon slug (Lucide or Simple Icons). */
+  /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
   icon?: string;
-  /** Optional trailing right-hand icon slug (e.g. `'arrow-right'`, `'external-link'`, `'chevron-right'`). */
-  iconRight?: string;
   /** Primary button label text. */
   label: string;
   /** Optional button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22`–`48`, defaults to `'md'` = `30px`). */

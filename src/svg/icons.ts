@@ -181,6 +181,244 @@ const STACK_ICON_COLORS: Readonly<Record<string, ThemeColorName>> = {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Matches `<circle ...>` elements in SVG markup. */
+const CIRCLE_TAG_RX = /<circle\b[^>]*>/g;
+
+/** Matches `<ellipse ...>` elements in SVG markup. */
+const ELLIPSE_TAG_RX = /<ellipse\b[^>]*>/g;
+
+/** Matches `<rect ...>` elements in SVG markup. */
+const RECT_TAG_RX = /<rect\b[^>]*>/g;
+
+/** Matches `<line ...>` elements in SVG markup. */
+const LINE_TAG_RX = /<line\b[^>]*>/g;
+
+/** Matches `<polyline ... points="...">` and `<polygon ... points="...">` elements in SVG markup. */
+const POLY_POINTS_RX = /<(?:polyline|polygon)\b[^>]*\bpoints="(?<pts>[^"]+)"/g;
+
+/** Matches `d="..."` path data attributes in SVG markup. */
+const PATH_D_RX = /\bd="(?<d>[^"]+)"/g;
+
+/** Matches whitespace or comma separators inside SVG coordinate lists. */
+const COORD_SPLIT_RX = /[\s,]+/;
+
+/** Matches a leading SVG path number token (integer, decimal, or scientific notation). */
+const LEADING_NUMBER_RX = /^[-+]?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/i;
+
+/** In-memory cache of resolved icons keyed by `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`. */
+const RESOLVED_ICON_CACHE = new Map<string, ResolvedIcon>();
+
+/** Extract a numeric attribute value (`attr="12.5"`) from an SVG tag string. */
+function extractNumericAttr(tag: string, attrName: string): number {
+  const match = new RegExp(`\\b${attrName}="([^"]+)"`).exec(tag);
+  return match ? Number(match[1]) : 0;
+}
+
+/** Update running `[minX, maxX]` bounds with a candidate X coordinate in `24x24` space. */
+function updateBounds(bounds: { maxX: number; minX: number }, rawX: number, scale: number): void {
+  const scaled = rawX * scale;
+  if (Number.isFinite(scaled)) {
+    if (scaled < bounds.minX) {
+      bounds.minX = scaled;
+    }
+    if (scaled > bounds.maxX) {
+      bounds.maxX = scaled;
+    }
+  }
+}
+
+/** Record horizontal bounds for basic SVG geometric primitives (`circle`, `ellipse`, `rect`, `line`, `polyline`, `polygon`). */
+function recordShapeBounds(
+  svgStr: string,
+  scale: number,
+  bounds: { maxX: number; minX: number }
+): void {
+  for (const match of svgStr.matchAll(CIRCLE_TAG_RX)) {
+    const cx = extractNumericAttr(match[0], 'cx');
+    const r = extractNumericAttr(match[0], 'r');
+    updateBounds(bounds, cx - r, scale);
+    updateBounds(bounds, cx + r, scale);
+  }
+  for (const match of svgStr.matchAll(ELLIPSE_TAG_RX)) {
+    const cx = extractNumericAttr(match[0], 'cx');
+    const rx = extractNumericAttr(match[0], 'rx');
+    updateBounds(bounds, cx - rx, scale);
+    updateBounds(bounds, cx + rx, scale);
+  }
+  for (const match of svgStr.matchAll(RECT_TAG_RX)) {
+    const x = extractNumericAttr(match[0], 'x');
+    const width = extractNumericAttr(match[0], 'width');
+    updateBounds(bounds, x, scale);
+    updateBounds(bounds, x + width, scale);
+  }
+  for (const match of svgStr.matchAll(LINE_TAG_RX)) {
+    updateBounds(bounds, extractNumericAttr(match[0], 'x1'), scale);
+    updateBounds(bounds, extractNumericAttr(match[0], 'x2'), scale);
+  }
+  for (const match of svgStr.matchAll(POLY_POINTS_RX)) {
+    const pts = (match.groups?.pts ?? '').trim().split(COORD_SPLIT_RX);
+    for (let i = 0; i < pts.length; i += 2) {
+      updateBounds(bounds, Number(pts[i]), scale);
+    }
+  }
+}
+
+/** Record the horizontal bulge and endpoint of an SVG elliptical arc command (`A` or `a`). */
+function recordArcXBounds(
+  x0: number,
+  y0: number,
+  rx: number,
+  ry: number,
+  largeArc: number,
+  sweep: number,
+  x1: number,
+  y1: number,
+  scale: number,
+  bounds: { maxX: number; minX: number }
+): void {
+  updateBounds(bounds, x1, scale);
+  if (rx <= 0 || ry <= 0) {
+    return;
+  }
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 1e-4) {
+    return;
+  }
+  const radius = Math.max(rx, chord / 2);
+  const halfChord = Math.min(radius, chord / 2);
+  const centerDist = Math.sqrt(Math.max(0, radius * radius - halfChord * halfChord));
+  const sagitta = largeArc === 1 ? radius + centerDist : radius - centerDist;
+  const sign = largeArc === sweep ? -1 : 1;
+  const normalX = sign * (-dy / chord);
+  updateBounds(bounds, (x0 + x1) / 2 + normalX * sagitta, scale);
+}
+
+/** Parse a single SVG `<path d="...">` string and update `[minX, maxX]` bounds. */
+function recordSinglePathD(d: string, scale: number, bounds: { maxX: number; minX: number }): void {
+  let idx = 0;
+  let cmd = '';
+  let cx = 0;
+  let cy = 0;
+  let sx = 0;
+  let sy = 0;
+
+  function skipSeparators(): void {
+    while (idx < d.length && ' ,\n\t\r'.includes(d[idx])) {
+      idx += 1;
+    }
+  }
+
+  function readNum(): number {
+    skipSeparators();
+    const numMatch = LEADING_NUMBER_RX.exec(d.slice(idx));
+    if (!numMatch) {
+      return Number.NaN;
+    }
+    idx += numMatch[0].length;
+    return Number(numMatch[0]);
+  }
+
+  function readArcFlag(): number {
+    skipSeparators();
+    const ch = d[idx];
+    if (ch === '0' || ch === '1') {
+      idx += 1;
+      return Number(ch);
+    }
+    return readNum();
+  }
+
+  while (idx < d.length) {
+    skipSeparators();
+    if (idx >= d.length) {
+      break;
+    }
+    const ch = d[idx];
+    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+      cmd = ch;
+      idx += 1;
+    }
+    const upper = cmd.toUpperCase();
+    const ox = cmd === upper ? 0 : cx;
+    const oy = cmd === upper ? 0 : cy;
+
+    if (upper === 'M') {
+      cx = ox + readNum();
+      cy = oy + readNum();
+      sx = cx;
+      sy = cy;
+      updateBounds(bounds, cx, scale);
+      cmd = cmd === 'M' ? 'L' : 'l';
+    } else if (upper === 'L' || upper === 'T') {
+      cx = ox + readNum();
+      cy = oy + readNum();
+      updateBounds(bounds, cx, scale);
+    } else if (upper === 'H') {
+      cx = ox + readNum();
+      updateBounds(bounds, cx, scale);
+    } else if (upper === 'V') {
+      cy = oy + readNum();
+    } else if (upper === 'C') {
+      updateBounds(bounds, ox + readNum(), scale);
+      readNum();
+      updateBounds(bounds, ox + readNum(), scale);
+      readNum();
+      cx = ox + readNum();
+      cy = oy + readNum();
+      updateBounds(bounds, cx, scale);
+    } else if (upper === 'S' || upper === 'Q') {
+      updateBounds(bounds, ox + readNum(), scale);
+      readNum();
+      cx = ox + readNum();
+      cy = oy + readNum();
+      updateBounds(bounds, cx, scale);
+    } else if (upper === 'A') {
+      const rx = readNum();
+      const ry = readNum();
+      readNum();
+      const largeArc = readArcFlag();
+      const sweep = readArcFlag();
+      const ex = ox + readNum();
+      const ey = oy + readNum();
+      recordArcXBounds(cx, cy, rx, ry, largeArc, sweep, ex, ey, scale, bounds);
+      cx = ex;
+      cy = ey;
+    } else if (upper === 'Z') {
+      cx = sx;
+      cy = sy;
+    } else {
+      idx += 1;
+    }
+  }
+}
+
+/** Compute the horizontal visual bounding box `[minX, maxX]` in `24x24` coordinate space for an icon SVG body. */
+function computeIconXBounds(
+  svgStr: string,
+  isStroke: boolean,
+  coordScale = 1
+): { maxX: number; minX: number } {
+  const bounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
+  recordShapeBounds(svgStr, coordScale, bounds);
+  for (const match of svgStr.matchAll(PATH_D_RX)) {
+    recordSinglePathD(match.groups?.d ?? '', coordScale, bounds);
+  }
+  if (
+    !Number.isFinite(bounds.minX) ||
+    !Number.isFinite(bounds.maxX) ||
+    bounds.maxX <= bounds.minX
+  ) {
+    return { maxX: 22, minX: 2 };
+  }
+  const strokePad = isStroke ? 1.125 : 0;
+  return {
+    maxX: Number(Math.min(24, bounds.maxX + strokePad).toFixed(2)),
+    minX: Number(Math.max(0, bounds.minX - strokePad).toFixed(2)),
+  };
+}
+
 /** Convert a kebab-case or snake_case slug into PascalCase. */
 function toPascalCase(slug: string): string {
   const parts = slug.split(SLUG_SEPARATOR_RX);
@@ -201,7 +439,13 @@ function lookupDeviconPlain(slug: string): ResolvedIcon | undefined {
     return undefined;
   }
   const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
-  return { innerSvg: `<g transform="scale(${DEVICON_SCALE})">${cleanBody}</g>`, type: 'simple' };
+  const { maxX, minX } = computeIconXBounds(cleanBody, false, DEVICON_SCALE);
+  return {
+    innerSvg: `<g transform="scale(${DEVICON_SCALE})">${cleanBody}</g>`,
+    maxX,
+    minX,
+    type: 'simple',
+  };
 }
 
 /** Look up a `24x24` icon in `@iconify-json/simple-icons`. */
@@ -216,7 +460,9 @@ function lookupSimpleIcon(slug: string): ResolvedIcon | undefined {
   if (!entry?.body) {
     return undefined;
   }
-  return { innerSvg: entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim(), type: 'simple' };
+  const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
+  const { maxX, minX } = computeIconXBounds(cleanBody, false, 1);
+  return { innerSvg: cleanBody, maxX, minX, type: 'simple' };
 }
 
 /** Look up a brand/tech slug in `@iconify-json/devicon-plain` and `@iconify-json/simple-icons`. */
@@ -236,7 +482,9 @@ function lookupLucideIcon(cleanSlug: string): ResolvedIcon | undefined {
     const innerMatch = INNER_SVG_RX.exec(rawSvg);
     const innerContent = innerMatch?.groups?.inner;
     if (innerContent) {
-      return { innerSvg: innerContent.trim(), type: 'lucide' };
+      const trimmed = innerContent.trim();
+      const { maxX, minX } = computeIconXBounds(trimmed, true, 1);
+      return { innerSvg: trimmed, maxX, minX, type: 'lucide' };
     }
   }
   return undefined;
@@ -245,7 +493,7 @@ function lookupLucideIcon(cleanSlug: string): ResolvedIcon | undefined {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Resolve an icon slug to its inner SVG markup from `lucide-static`, `@iconify-json/simple-icons`, or `@iconify-json/devicon-plain`.
+ * Resolve an icon slug to its inner SVG markup and horizontal visual bounds from `lucide-static`, `@iconify-json/simple-icons`, or `@iconify-json/devicon-plain`.
  * @param slug            Icon slug (e.g., `'star'`, `'globe-code'`, `'rust'`, `'archlinux'`) or `'none'`.
  * @param isBrandFirst    When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
  * @returns The resolved icon data, or `undefined` if `'none'`, empty, or not found.
@@ -259,22 +507,26 @@ export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon |
     return undefined;
   }
   const cleanSlug = ICON_SLUG_ALIASES[rawSlug] ?? rawSlug;
-
-  if (isBrandFirst) {
-    return (
-      lookupBrandIcon(cleanSlug) ??
-      lookupBrandIcon(rawSlug) ??
-      lookupLucideIcon(cleanSlug) ??
-      lookupLucideIcon(rawSlug)
-    );
+  const cacheKey = `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`;
+  const cached = RESOLVED_ICON_CACHE.get(cacheKey);
+  if (cached) {
+    return cached;
   }
 
-  return (
-    lookupLucideIcon(cleanSlug) ??
-    lookupLucideIcon(rawSlug) ??
-    lookupBrandIcon(cleanSlug) ??
-    lookupBrandIcon(rawSlug)
-  );
+  const resolved = isBrandFirst
+    ? (lookupBrandIcon(cleanSlug) ??
+      lookupBrandIcon(rawSlug) ??
+      lookupLucideIcon(cleanSlug) ??
+      lookupLucideIcon(rawSlug))
+    : (lookupLucideIcon(cleanSlug) ??
+      lookupLucideIcon(rawSlug) ??
+      lookupBrandIcon(cleanSlug) ??
+      lookupBrandIcon(rawSlug));
+
+  if (resolved) {
+    RESOLVED_ICON_CACHE.set(cacheKey, resolved);
+  }
+  return resolved;
 }
 
 /** Human-readable display titles for tech stack tooltips (`<title>`). */

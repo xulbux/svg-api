@@ -16,8 +16,8 @@ describe('measureTextWidth', () => {
     const narrowWidth = measureTextWidth('iii', 11, false);
     const wideWidth = measureTextWidth('WWW', 11, false);
     expect(narrowWidth).toBeLessThan(wideWidth);
-    expect(narrowWidth).toBe(Math.ceil(2.7 * 3));
-    expect(wideWidth).toBe(Math.ceil(10.2 * 3));
+    expect(narrowWidth).toBe(Math.ceil(2.86 * 3));
+    expect(wideWidth).toBe(Math.ceil(10.24 * 3));
   });
 
   it('scales proportionally with font size', () => {
