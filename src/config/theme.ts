@@ -47,10 +47,10 @@ const MAX_SEARCH_CHROMA = 0.4;
 /** Base neutral dark carbon surface tokens (matching Isolux Pro Dark). */
 export const BASE_DARK: BaseDarkPalette = {
   bgBottom: '#101010',
-  bgTop: '#1a1a1a',
-  borderNeutral: '#2c2c2c',
-  textMuted: '#a3a3a3',
-  textPrimary: '#f5f5f5',
+  bgTop: '#1A1A1A',
+  borderNeutral: '#2C2C2C',
+  textMuted: '#A3A3A3',
+  textPrimary: '#F5F5F5',
 };
 
 /** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */

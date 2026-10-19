@@ -391,7 +391,7 @@ function renderQuoteSurface(context: QuoteCardContext): string {
   const barGeometry = `x="18" y="${barY}" width="${metrics.barWidth}" height="${Math.max(16, height - barY * 2)}" rx="${Number((metrics.barWidth / 2).toFixed(2))}"`;
   let barPaint = `fill="${palette.iconColor}" fill-opacity="0.55"`;
   if (variant === '1') {
-    barPaint = `fill="#ffffff" fill-opacity="${PRIMARY_FOREGROUND_OPACITY}"`;
+    barPaint = `fill="#FFFFFF" fill-opacity="${PRIMARY_FOREGROUND_OPACITY}"`;
   } else if (variant === '2') {
     barPaint = `fill="url(#${buildThemeGradientId(color)})"`;
   }
@@ -404,7 +404,7 @@ function renderVerticalQuoteContent(context: QuoteCardContext): string {
   const { authorFontSize, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const centerX = Number((width / 2).toFixed(1));
   const quoteIconX = Number((centerX - iconBoxSize / 2).toFixed(1));
-  const quoteFillColor = variant === '1' ? '#ffffff' : context.palette.iconColor;
+  const quoteFillColor = variant === '1' ? '#FFFFFF' : context.palette.iconColor;
   const quotePaint = `fill="${quoteFillColor}" fill-opacity="${VERTICAL_QUOTE_OPACITY_BY_VARIANT[variant]}"`;
 
   let markup = renderQuoteMarkGroup(
@@ -449,7 +449,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
   const { authorFontSize, barWidth, fontSize, lineHeight, padY, quoteIconScale } = metrics;
   const watermarkX = Math.round(width - iconBoxSize - 18);
   const watermarkY = Math.max(14, Math.round(padY * 0.72));
-  const watermarkStroke = variant === '1' ? '#ffffff' : context.palette.iconColor;
+  const watermarkStroke = variant === '1' ? '#FFFFFF' : context.palette.iconColor;
 
   let markup = renderQuoteMarkGroup(
     `translate(${watermarkX}, ${watermarkY}) scale(${quoteIconScale})`,

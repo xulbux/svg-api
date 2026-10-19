@@ -420,7 +420,7 @@ function renderSingleStackTile(
     width: tileSize,
   });
   const iconMarkup = renderIconGroup({
-    color: isPrimary ? '#ffffff' : THEMES[themeColor].iconColor,
+    color: isPrimary ? '#FFFFFF' : THEMES[themeColor].iconColor,
     innerSvg: `<use href="#${icon.bodyId}" />`,
     opacity: isPrimary ? STACK_PRIMARY_ICON_OPACITY : undefined,
     strokeWidth: STACK_ICON_STROKE_WIDTH,

@@ -317,11 +317,11 @@ describe('renderBadge & renderButton', () => {
       value: '99.9%',
       variant: '2',
     });
-    expect(stripSvg).toContain('fill="#00d294"');
-    expect(stripSvg).toContain('fill="#9ae600"');
-    expect(stripSvg).toContain('fill="#fdc700"');
-    expect(stripSvg).toContain('fill="#ff8904"');
-    expect(stripSvg).toContain('fill="#ff4d6d"');
+    expect(stripSvg).toContain('fill="#00D294"');
+    expect(stripSvg).toContain('fill="#9AE600"');
+    expect(stripSvg).toContain('fill="#FDC700"');
+    expect(stripSvg).toContain('fill="#FF8904"');
+    expect(stripSvg).toContain('fill="#FF4D6D"');
 
     const deltaSvg = renderBadge({
       color: 'cyan',
@@ -395,7 +395,7 @@ describe('renderBadge & renderButton', () => {
     expect(primaryButton).toContain(`fill="${THEMES.blue.emphasisBg}"`);
     expect(primaryButton).toContain(`stroke="${THEMES.blue.emphasisRing}"`);
     expect(primaryButton).toContain(
-      'stroke="#ffffff" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
     );
 
     const secondaryButton = renderButton({
@@ -422,7 +422,7 @@ describe('renderBadge & renderButton', () => {
     expect(splitPrimary).toContain(`stroke="${THEMES.emerald.emphasisRing}"`);
     expect(splitPrimary).toContain(`fill="${THEMES.emerald.iconColor}">`);
     expect(splitPrimary).toContain(
-      'stroke="#ffffff" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
     );
 
     const secondaryBadge = renderBadge({
@@ -448,11 +448,11 @@ describe('renderBadge & renderButton', () => {
     });
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" />`);
     expect(tertiaryBadge).toContain('A 5 4 0 0 0');
-    expect(tertiaryBadge).toContain('fill="#ffffff" fill-opacity="0.045"');
+    expect(tertiaryBadge).toContain('fill="#FFFFFF" fill-opacity="0.045"');
     expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" />`);
     expect(tertiaryButton).not.toContain('<style>');
     expect(tertiaryButton).toContain('A 8 7 0 0 0');
-    expect(tertiaryButton).toContain('fill="#ffffff" fill-opacity="0.045"');
+    expect(tertiaryButton).toContain('fill="#FFFFFF" fill-opacity="0.045"');
   });
 });
 
@@ -531,7 +531,7 @@ describe('renderStack', () => {
     expect(stackSvgV1).toContain('stack-sheen-clip-142-92');
     expect(stackSvgV1).toContain('fill="url(#grad-blue)"');
     expect(stackSvgV1).toContain('fill="url(#grad-orange)"');
-    expect(stackSvgV1).toContain('fill="#ffffff"');
+    expect(stackSvgV1).toContain('fill="#FFFFFF"');
 
     const groupedStackSvgV2 = renderStack({
       anim: 'sheen',
@@ -545,7 +545,7 @@ describe('renderStack', () => {
 
     const stackSvgV3 = renderStack({ icons: ['rust', 'ts'], variant: '3' });
     expect(stackSvgV3).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
-    expect(stackSvgV3).toContain('fill="#ffffff" fill-opacity="0.045"');
+    expect(stackSvgV3).toContain('fill="#FFFFFF" fill-opacity="0.045"');
   });
 });
 
@@ -579,7 +579,7 @@ describe('renderQuote', () => {
     });
     expect(verticalQuoteSvgV1).toContain('width="340"');
     expect(verticalQuoteSvgV1).toContain('fill="url(#grad-blue)"');
-    expect(verticalQuoteSvgV1).toContain('fill="#ffffff"');
+    expect(verticalQuoteSvgV1).toContain('fill="#FFFFFF"');
     expect(verticalQuoteSvgV1).toContain('rotate(180 12 12)');
     expect(verticalQuoteSvgV1).toContain('fill="rgba(255, 255, 255, 0.82)" />');
     expect(verticalQuoteSvgV1).toContain('— XulbuX');
@@ -592,7 +592,7 @@ describe('renderQuote', () => {
       variant: '3',
     });
     expect(quoteSvgV3).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
-    expect(quoteSvgV3).toContain('fill="#ffffff" fill-opacity="0.045"');
+    expect(quoteSvgV3).toContain('fill="#FFFFFF" fill-opacity="0.045"');
   });
 });
 

@@ -269,7 +269,7 @@ describe('documentation pages – head metadata & client script', () => {
 
   it('inverts the preview stage relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
     const html = renderHomeHtml();
-    expect(html).toContain('--c-preview-inverse-bg: light-dark(#0d1117, #ffffff);');
+    expect(html).toContain('--c-preview-inverse-bg: light-dark(#0D1117, #FFFFFF);');
     expect(html).toContain(':root[data-preview-bg="inverse"] .preview-stage');
     expect(html).not.toContain('data-preview-bg="dark"');
     expect(html).not.toContain('data-preview-bg="light"');

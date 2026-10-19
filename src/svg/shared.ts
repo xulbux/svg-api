@@ -419,7 +419,7 @@ export function resolveSurfaceTextColor(
   isOnPrimary = variant === '1'
 ): string {
   if (isOnPrimary) {
-    return '#ffffff';
+    return '#FFFFFF';
   }
   return variant === '3' ? BASE_DARK.textMuted : BASE_DARK.textPrimary;
 }
@@ -465,7 +465,7 @@ export function renderThemeGradientDef(color: ThemeColorName): string {
 export function renderWhiteBandStops(stops: readonly BandStop[]): string {
   let markup = '';
   for (const [offsetPercent, opacity] of stops) {
-    markup += `<stop offset="${offsetPercent}%" stop-color="#ffffff" stop-opacity="${opacity}" />`;
+    markup += `<stop offset="${offsetPercent}%" stop-color="#FFFFFF" stop-opacity="${opacity}" />`;
   }
   return markup;
 }
@@ -557,7 +557,7 @@ export function renderIconGroup(options: IconGroupOptions): string {
  * optional split divider, and outer border ring.
  * - `variant = '1'` (Primary): vivid brand gradient fill (`url(#grad-<color>)`) + `palette.emphasisBg` top crescent + `palette.emphasisRing` border.
  * - `variant = '2'` (Secondary): dark slate fill (`url(#bg-dark)`) + `palette.tintBg` overlay + `palette.borderColor` (`0.45`) top crescent + `palette.borderColor` border.
- * - `variant = '3'` (Tertiary): dark slate fill (`url(#bg-dark)`) + subtle `#ffffff` (`0.045`) top crescent + `BASE_DARK.borderNeutral` border.
+ * - `variant = '3'` (Tertiary): dark slate fill (`url(#bg-dark)`) + subtle `#FFFFFF` (`0.045`) top crescent + `BASE_DARK.borderNeutral` border.
  * With `rightCapsuleStartX` (split `variant = '2'` badges), the tint and the 3D top crescent only cover the
  * right capsule, like split primary badges; Tertiary dividers stop short of the edges, so their crescent spans both halves.
  * @param options   Surface geometry, variant, color, and optional split/right capsule positions.
@@ -609,7 +609,7 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
-  const topCrescent = `<path d="${crescentD}" fill="#ffffff" fill-opacity="0.045" />`;
+  const topCrescent = `<path d="${crescentD}" fill="#FFFFFF" fill-opacity="0.045" />`;
   const splitDivider =
     splitLineX === undefined
       ? ''

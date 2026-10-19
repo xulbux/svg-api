@@ -116,16 +116,16 @@ export const DOCS_SECTIONS: readonly DocsSectionMeta[] = [
 ];
 
 /** Page background in the light color scheme (also the light `theme-color`). */
-const LIGHT_BG = '#ffffff';
+const LIGHT_BG = '#FFFFFF';
 
 /** Page background in the dark color scheme (also the dark `theme-color`). */
 const DARK_BG = '#101010';
 
 /** Start color of the indigo brand gradient (navbar brand mark and favicon). */
-const BRAND_GRADIENT_START = '#818cf8';
+const BRAND_GRADIENT_START = '#818CF8';
 
 /** End color of the indigo brand gradient (navbar brand mark and favicon). */
-const BRAND_GRADIENT_END = '#4f46e5';
+const BRAND_GRADIENT_END = '#4F46E5';
 
 /** Shared SVG root attributes of every inline UI icon. */
 const UI_ICON_SVG_ATTRS =
@@ -154,16 +154,16 @@ const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
  */
 const THEME_TOKENS: readonly ThemeToken[] = [
   { dark: DARK_BG, isColor: true, light: LIGHT_BG, name: 'bg' },
-  { dark: '#000000', isColor: true, light: '#fafafa', name: 'bg-alt' },
-  { dark: '#1a1a1a', isColor: true, light: '#f0f0f0', name: 'bg-elv' },
-  { dark: '#000000', isColor: true, light: '#fafafa', name: 'bg-soft' },
-  { dark: '#262626', isColor: true, light: '#ededed', name: 'divider' },
+  { dark: '#000000', isColor: true, light: '#FAFAFA', name: 'bg-alt' },
+  { dark: '#1A1A1A', isColor: true, light: '#F0F0F0', name: 'bg-elv' },
+  { dark: '#000000', isColor: true, light: '#FAFAFA', name: 'bg-soft' },
+  { dark: '#262626', isColor: true, light: '#EDEDED', name: 'divider' },
   { dark: 'rgba(255 255 255 / 0.9)', isColor: true, light: 'rgba(0 0 0 / 0.88)', name: 'text-1' },
   { dark: 'rgba(255 255 255 / 0.6)', isColor: true, light: 'rgba(0 0 0 / 0.6)', name: 'text-2' },
   // WCAG AA (≥ 4.5:1) for small text on both `bg` and `bg-soft`.
   { dark: 'rgba(255 255 255 / 0.5)', isColor: true, light: 'rgba(0 0 0 / 0.55)', name: 'text-3' },
   { dark: BRAND_GRADIENT_START, isColor: true, light: BRAND_GRADIENT_END, name: 'brand-1' },
-  { dark: '#6366f1', isColor: true, light: '#6366f1', name: 'brand-2' },
+  { dark: '#6366F1', isColor: true, light: '#6366F1', name: 'brand-2' },
   { dark: BRAND_GRADIENT_END, isColor: true, light: BRAND_GRADIENT_START, name: 'brand-3' },
   {
     dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
@@ -172,26 +172,26 @@ const THEME_TOKENS: readonly ThemeToken[] = [
     name: 'nav-bg',
   },
   { dark: BRAND_GRADIENT_END, isColor: true, light: BRAND_GRADIENT_END, name: 'btn-brand-bg' },
-  { dark: '#ffffff', isColor: true, light: '#ffffff', name: 'btn-brand-text' },
+  { dark: '#FFFFFF', isColor: true, light: '#FFFFFF', name: 'btn-brand-text' },
   {
-    dark: `color-mix(in srgb, #6366f1, ${BRAND_GRADIENT_END} 50%)`,
+    dark: `color-mix(in srgb, #6366F1, ${BRAND_GRADIENT_END} 50%)`,
     isColor: true,
-    light: `color-mix(in srgb, #6366f1, ${BRAND_GRADIENT_END} 50%)`,
+    light: `color-mix(in srgb, #6366F1, ${BRAND_GRADIENT_END} 50%)`,
     name: 'btn-brand-hover-bg',
   },
-  { dark: '#26262a', isColor: true, light: '#f0f0f0', name: 'switch-bg' },
-  { dark: '#000000', isColor: true, light: '#ffffff', name: 'switch-thumb-bg' },
+  { dark: '#26262A', isColor: true, light: '#F0F0F0', name: 'switch-bg' },
+  { dark: '#000000', isColor: true, light: '#FFFFFF', name: 'switch-thumb-bg' },
   // Inverted preview stage: GitHub's README canvas of the opposite color scheme.
-  { dark: '#ffffff', isColor: true, light: '#0d1117', name: 'preview-inverse-bg' },
-  { dark: '#d0d7de', isColor: true, light: '#30363d', name: 'preview-inverse-border' },
+  { dark: '#FFFFFF', isColor: true, light: '#0D1117', name: 'preview-inverse-bg' },
+  { dark: '#D0D7DE', isColor: true, light: '#30363D', name: 'preview-inverse-border' },
   // Isolux Pro syntax tokens.
-  { dark: '#8a8a8a', isColor: true, light: '#646464', name: 'hl-p' },
-  { dark: '#ffa4aa', isColor: true, light: '#c5002b', name: 'hl-op' },
-  { dark: '#7ceee3', isColor: true, light: '#2b7676', name: 'hl-alt' },
-  { dark: '#909fff', isColor: true, light: '#4f48ec', name: 'hl-url' },
-  { dark: '#bcfff7', isColor: true, light: '#214a4b', name: 'hl-key' },
-  { dark: '#d5acff', isColor: true, light: '#8a0be5', name: 'hl-val' },
-  { dark: '#93f0b0', isColor: true, light: '#367a44', name: 'hl-href' },
+  { dark: '#8A8A8A', isColor: true, light: '#646464', name: 'hl-p' },
+  { dark: '#FFA4AA', isColor: true, light: '#C5002B', name: 'hl-op' },
+  { dark: '#7CEEE3', isColor: true, light: '#2B7676', name: 'hl-alt' },
+  { dark: '#909FFF', isColor: true, light: '#4F48EC', name: 'hl-url' },
+  { dark: '#BCFFF7', isColor: true, light: '#214A4B', name: 'hl-key' },
+  { dark: '#D5ACFF', isColor: true, light: '#8A0BE5', name: 'hl-val' },
+  { dark: '#93F0B0', isColor: true, light: '#367A44', name: 'hl-href' },
   // Theme switch state (non-color tokens, so they never go through `light-dark()`).
   { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
   { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
@@ -794,7 +794,7 @@ function renderStylesheet(): string {
       align-items: center;
       justify-content: center;
       background: linear-gradient(135deg, ${BRAND_GRADIENT_START} 0%, ${BRAND_GRADIENT_END} 100%);
-      color: #ffffff;
+      color: #FFFFFF;
     }
 
     /* Horizontally scrolling navigation with edge fades while more links are hidden (classes set by the client script) */
@@ -2513,7 +2513,7 @@ export function renderFaviconSvg(): string {
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#bg)" />
-  <g transform="translate(6 6) scale(0.8333)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</g>
+  <g transform="translate(6 6) scale(0.8333)" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</g>
 </svg>`;
   return faviconSvgCache;
 }

@@ -22,7 +22,7 @@ import {
 
 describe('measureTextWidth & renderTextPathMarkup', () => {
   it('returns 0 width and empty path markup for empty or whitespace-only strings', () => {
-    const style = { anchorX: 50, baselineY: 15, fill: '#ffffff', fontSize: 11 };
+    const style = { anchorX: 50, baselineY: 15, fill: '#FFFFFF', fontSize: 11 };
     expect(measureTextWidth('')).toBe(0);
     expect(renderTextPathMarkup('', style)).toBe('');
     expect(renderTextPathMarkup('   ', style)).toBe('');
@@ -61,12 +61,12 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
     const centeredPath = renderTextPathMarkup('Production', {
       anchorX: 100,
       baselineY,
-      fill: '#ffffff',
+      fill: '#FFFFFF',
       fontSize: 14,
       isBold: true,
     });
     expect(centeredPath).toMatch(
-      /^<path transform="translate\([\d.-]+ 14\.91\)" d="M[\d.-]+ [\d.-]+.*" fill="#ffffff" \/>$/
+      /^<path transform="translate\([\d.-]+ 14\.91\)" d="M[\d.-]+ [\d.-]+.*" fill="#FFFFFF" \/>$/
     );
     expect(centeredPath).not.toContain('NaN');
 
@@ -74,7 +74,7 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       align: 'left',
       anchorX: 34,
       baselineY,
-      fill: '#818cf8',
+      fill: '#818CF8',
       fontSize: 12.6,
       isBold: true,
       isItalic: true,
@@ -83,12 +83,12 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
     const translateX = Number(/translate\((?<x>[\d.-]+) /.exec(leftItalicPath)?.groups?.x);
     const inkStartX = Number(/L(?<x>[\d.-]+) -3/.exec(leftItalicPath)?.groups?.x);
     expect(translateX + inkStartX).toBeCloseTo(34, 1);
-    expect(leftItalicPath).toContain('fill="#818cf8" />');
+    expect(leftItalicPath).toContain('fill="#818CF8" />');
     expect(leftItalicPath).not.toContain('NaN');
   });
 
   it('reuses the cached origin outline and only changes the translate offset between anchors', () => {
-    const style = { baselineY: 15, fill: '#ffffff', fontSize: 11 };
+    const style = { baselineY: 15, fill: '#FFFFFF', fontSize: 11 };
     const firstPath = renderTextPathMarkup('reuse', { ...style, anchorX: 10 });
     const secondPath = renderTextPathMarkup('reuse', { ...style, anchorX: 60 });
     const firstPathData = / d="(?<d>[^"]+)"/.exec(firstPath)?.groups?.d;
@@ -120,7 +120,7 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
     const longPath = renderTextPathMarkup(longText, {
       anchorX: 0,
       baselineY: 15,
-      fill: '#ffffff',
+      fill: '#FFFFFF',
       fontSize: 11,
     });
     expect(longPath).toContain('d="M');

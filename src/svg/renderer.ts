@@ -427,30 +427,30 @@ const STANDBY_DOT_STATES: ReadonlySet<DotState> = new Set([
 
 /** 10-stage smooth green, lime, yellow, amber, orange, red, and rose palette for dark strip capsules. */
 const STRIP_DARK_COLORS: Readonly<Record<StripTickState, string>> = {
-  '0': '#ff4d6d',
-  '1': '#ff6467',
-  '2': '#ff8904',
-  '3': '#ffb900',
-  '4': '#fdc700',
-  '5': '#ccda00',
-  '6': '#9ae600',
-  '7': '#52e339',
-  '8': '#05df72',
-  '9': '#00d294',
+  '0': '#FF4D6D',
+  '1': '#FF6467',
+  '2': '#FF8904',
+  '3': '#FFB900',
+  '4': '#FDC700',
+  '5': '#CCDA00',
+  '6': '#9AE600',
+  '7': '#52E339',
+  '8': '#05DF72',
+  '9': '#00D294',
 };
 
 /** 10-stage high-contrast light tint palette for solid primary (`v=1`, `v=b1`) strip capsules. */
 const STRIP_SOLID_COLORS: Readonly<Record<StripTickState, string>> = {
-  '0': '#fecdd3',
-  '1': '#fca5a5',
-  '2': '#fdba74',
-  '3': '#fde68a',
-  '4': '#fef08a',
-  '5': '#ecfccb',
-  '6': '#d9f99d',
-  '7': '#bbf7d0',
-  '8': '#dcfce7',
-  '9': '#ffffff',
+  '0': '#FECDD3',
+  '1': '#FCA5A5',
+  '2': '#FDBA74',
+  '3': '#FDE68A',
+  '4': '#FEF08A',
+  '5': '#ECFCCB',
+  '6': '#D9F99D',
+  '7': '#BBF7D0',
+  '8': '#DCFCE7',
+  '9': '#FFFFFF',
 };
 
 /** Memoized bar shimmer `<defs>` blocks keyed by surface kind (`'solid'` or `'tinted'`). */
@@ -582,7 +582,7 @@ function buildSparklineGeometry(
 
 /** Resolve the right-hand value text color for a badge or button variant. */
 function resolveValueColor(variant: BadgeVariant, palette: ThemePalette): string {
-  return variant === '1' ? '#ffffff' : palette.accentText;
+  return variant === '1' ? '#FFFFFF' : palette.accentText;
 }
 
 /** Resolve the contextual motion preset for a canonical icon slug when `auto` is requested. */
@@ -870,7 +870,7 @@ function renderRingWidgetMarkup(
 /** Resolve the fill color for a single tick (`'0'`–`'9'`) in a 10-stage segmented strip. */
 function resolveStripTickColor(state: StripTickState, isSolidCapsule: boolean): string {
   return isSolidCapsule
-    ? (STRIP_SOLID_COLORS[state] ?? '#ffffff')
+    ? (STRIP_SOLID_COLORS[state] ?? '#FFFFFF')
     : (STRIP_DARK_COLORS[state] ?? THEMES.emerald.accentText);
 }
 
@@ -902,10 +902,10 @@ function renderDeltaWidgetMarkup(deltaText: string, context: SpecialElementConte
   const isFlat = magnitude === 0 || !Number.isFinite(magnitude);
   const isNegative = !isFlat && magnitude < 0;
 
-  let deltaColor = isSolidCapsule ? '#ffffff' : THEMES.emerald.accentText;
+  let deltaColor = isSolidCapsule ? '#FFFFFF' : THEMES.emerald.accentText;
   let arrowPath = 'M2.5 7.5L7.5 2.5M4 2.5H7.5V6';
   if (isNegative) {
-    deltaColor = isSolidCapsule ? '#fecdd3' : THEMES.rose.accentText;
+    deltaColor = isSolidCapsule ? '#FECDD3' : THEMES.rose.accentText;
     arrowPath = 'M2.5 2.5L7.5 7.5M4 7.5H7.5V4';
   } else if (isFlat) {
     deltaColor = isSolidCapsule ? 'rgba(255,255,255,0.85)' : BASE_DARK.textMuted;
@@ -986,7 +986,7 @@ function renderSpecialElementMarkup(
 
 /** Render the `<linearGradient>` definition for the sparkline area fill. */
 function renderSparklineGradientDef(isSolidCapsule: boolean, color: ThemeColorName): string {
-  const stopColor = isSolidCapsule ? '#ffffff' : THEMES[color].accentText;
+  const stopColor = isSolidCapsule ? '#FFFFFF' : THEMES[color].accentText;
   const topOpacity = isSolidCapsule ? '0.32' : '0.38';
   return `<linearGradient id="${resolveSparklineGradientId(isSolidCapsule, color)}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stopColor}" stop-opacity="${topOpacity}" /><stop offset="100%" stop-color="${stopColor}" stop-opacity="0" /></linearGradient>`;
 }
@@ -1154,7 +1154,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
 
   const dotMarkup = renderDotMarkup(options.dot, layout.dotCx, height / 2, animMode);
   const leftIconMarkup = renderIconMarkup({
-    color: options.isLeftOnPrimary ? '#ffffff' : palette.iconColor,
+    color: options.isLeftOnPrimary ? '#FFFFFF' : palette.iconColor,
     iconSize,
     iconY,
     motion: leftMotion,
@@ -1163,7 +1163,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
     visualStartX: layout.leftIconX,
   });
   const rightIconMarkup = renderIconMarkup({
-    color: options.isRightOnPrimary ? '#ffffff' : palette.iconColor,
+    color: options.isRightOnPrimary ? '#FFFFFF' : palette.iconColor,
     iconSize,
     iconY,
     motion: rightMotion,
