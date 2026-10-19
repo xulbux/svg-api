@@ -131,17 +131,19 @@ code {
   pointer-events: none;
 }
 
-/* Text links: transparent underline by default, fades in to solid currentColor on hover */
+/* Text links: Always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover */
 
 .text-link {
   color: var(--c-text-1);
-  text-decoration: none;
-  border-block-end: 1px solid transparent;
-  transition: border-color 0.2s ease;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: text-decoration-color 0.2s ease;
 }
 
 .text-link:hover {
-  border-block-end-color: currentColor;
+  text-decoration-color: currentColor;
 }
 
 /* Reduced Motion: no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script) */

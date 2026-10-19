@@ -57,8 +57,8 @@ const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
   { label: 'Checker', value: 'checker' },
 ];
 
-/** Memoized header HTML keyed by active navigation tab. */
-const HEADER_HTML_CACHE = new Map<NavPageId, string>();
+/** Memoized header HTML keyed by active navigation tab and active sidebar path. */
+const HEADER_HTML_CACHE = new Map<string, string>();
 
 /** Memoized blocking `<head>` script (`undefined` until first rendered). */
 let headScriptHtmlCache: string | undefined = undefined;
@@ -121,9 +121,36 @@ function renderPreviewBgPicker(): string {
   return previewBgPickerHtmlCache;
 }
 
-/** Render (once per active tab) the sticky top navigation bar matching the VitePress text-link navbar style. */
-function renderHeaderNav(activeNav: NavPageId): string {
-  const cached = HEADER_HTML_CACHE.get(activeNav);
+/** Find the label of the active sidebar link (empty when no link matches the active path). */
+function findActiveSidebarLabel(sidebar: PageSidebar): string {
+  for (const group of sidebar.groups) {
+    for (const link of group.links) {
+      if (link.href === sidebar.activeHref) {
+        return link.label;
+      }
+    }
+  }
+  return '';
+}
+
+/**
+ * Render the narrow-screen sidebar drawer toggle shown in the header nav row: A panel icon followed by the
+ * current page title (hidden on wide screens, where the sidebar is a sticky column).
+ */
+function renderSidebarToggle(sidebar: PageSidebar): string {
+  const openLabel = escapeXml(`Open ${sidebar.label}`);
+  const activeLabel = escapeXml(findActiveSidebarLabel(sidebar));
+  return `<button type="button" class="sidebar-toggle" popovertarget="sidebar-drawer" aria-label="${openLabel}" title="${openLabel}">${renderUiIcon('panel-left', 16)}<span class="sidebar-toggle-label" aria-hidden="true">${activeLabel}</span></button>`;
+}
+
+/**
+ * Render (once per active tab and sidebar page) the sticky top navigation bar matching the VitePress text-link
+ * navbar style; On narrow screens, the nav row wraps below the brand and holds the sidebar drawer toggle.
+ */
+function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined): string {
+  // Sidebar pages are a fixed set, so the cache stays bounded by the number of pages.
+  const cacheKey = `${activeNav}|${sidebar?.activeHref ?? ''}`;
+  const cached = HEADER_HTML_CACHE.get(cacheKey);
   if (cached !== undefined) {
     return cached;
   }
@@ -137,6 +164,7 @@ function renderHeaderNav(activeNav: NavPageId): string {
   const sunIcon = renderUiIcon('sun', 12, 'theme-icon theme-label-light');
   const moonIcon = renderUiIcon('moon', 12, 'theme-icon theme-label-dark');
   const githubIcon = renderUiIcon('github', 20, 'gh-icon');
+  const sidebarToggleHtml = sidebar ? renderSidebarToggle(sidebar) : '';
 
   const headerHtml = `<header class="site-header">
     <div class="header-inner">
@@ -144,7 +172,10 @@ function renderHeaderNav(activeNav: NavPageId): string {
         <span class="brand-mark" aria-hidden="true">${brandIcon}</span>
         <span class="brand-name">svg.xul.is</span>
       </a>
-      <nav class="site-nav" aria-label="Main">${navItemsHtml}</nav>
+      <div class="header-nav-row">
+        ${sidebarToggleHtml}
+        <nav class="site-nav" aria-label="Main">${navItemsHtml}</nav>
+      </div>
       <div class="header-actions">
         <span class="header-divider" aria-hidden="true"></span>
         ${renderPreviewBgPicker()}
@@ -161,29 +192,25 @@ function renderHeaderNav(activeNav: NavPageId): string {
       </div>
     </div>
   </header>`;
-  HEADER_HTML_CACHE.set(activeNav, headerHtml);
+  HEADER_HTML_CACHE.set(cacheKey, headerHtml);
   return headerHtml;
 }
 
 /**
- * Render the grouped left sidebar (a sticky column on wide screens and a popover drawer on narrow screens)
- * and the narrow-screen local navigation bar that opens it.
+ * Render the grouped left sidebar (a sticky column on wide screens and a popover drawer on narrow screens,
+ * opened by the header's sidebar toggle).
  */
 function renderSidebar(sidebar: PageSidebar): string {
-  let activeLabel = '';
   let groupsHtml = '';
   for (let i = 0; i < sidebar.groups.length; i += 1) {
     const group = sidebar.groups[i];
     const titleId = `sidebar-group-${i}`;
     let linksHtml = '';
     for (const link of group.links) {
-      const isActive = link.href === sidebar.activeHref;
-      if (isActive) {
-        activeLabel = link.label;
-      }
-      const activeAttrs = isActive
-        ? ' class="sidebar-link is-active" aria-current="page"'
-        : ' class="sidebar-link"';
+      const activeAttrs =
+        link.href === sidebar.activeHref
+          ? ' class="sidebar-link is-active" aria-current="page"'
+          : ' class="sidebar-link"';
       linksHtml += `<li><a href="${escapeXml(link.href)}"${activeAttrs}>${escapeXml(link.label)}</a></li>`;
     }
     groupsHtml += `<section class="sidebar-group">
@@ -191,13 +218,8 @@ function renderSidebar(sidebar: PageSidebar): string {
           <ul class="sidebar-list" aria-labelledby="${titleId}">${linksHtml}</ul>
         </section>`;
   }
-  const escapedLabel = escapeXml(sidebar.label);
-  return `<div class="local-nav">
-      <button type="button" class="local-nav-toggle" popovertarget="sidebar-drawer" aria-label="Open ${escapedLabel}">${renderUiIcon('panel-left', 15)}<span class="local-nav-label">Menu</span></button>
-      <span class="local-nav-current">${escapeXml(activeLabel)}</span>
-    </div>
-    <aside class="sidebar" id="sidebar-drawer" popover>
-      <nav class="sidebar-nav" aria-label="${escapedLabel}">
+  return `<aside class="sidebar" id="sidebar-drawer" popover>
+      <nav class="sidebar-nav" aria-label="${escapeXml(sidebar.label)}">
         ${groupsHtml}
       </nav>
     </aside>`;
@@ -307,7 +329,7 @@ export function renderPageLayout(options: PageLayoutOptions): string {
 </head>
 <body${bodyClassAttr}>
   <a class="skip-link" href="#main-content">Skip to content</a>
-  ${renderHeaderNav(options.activeNav)}
+  ${renderHeaderNav(options.activeNav, options.sidebar)}
   <div class="page-shell">
     ${sidebarHtml}
     <main class="page-main" id="main-content" tabindex="-1">

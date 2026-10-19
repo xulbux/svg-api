@@ -46,11 +46,60 @@
   color: var(--c-btn-brand-text);
 }
 
+.header-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+  margin-inline-start: auto;
+}
+
 .site-nav {
   display: flex;
   align-items: center;
   gap: 2px;
   margin-inline-start: auto;
+}
+
+/* Sidebar Drawer Toggle: Only shown on narrow screens (left of the tabs), labeled with the current page title */
+
+.sidebar-toggle {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+  margin-inline-start: -8px;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-text-2);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.sidebar-toggle:hover {
+  background: var(--c-hover);
+  color: var(--c-text-1);
+}
+
+.sidebar-toggle:focus-visible {
+  outline-offset: -2px;
+}
+
+.sidebar-toggle .ui-icon {
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-link {
@@ -331,13 +380,32 @@
   visibility: visible;
 }
 
-@media (max-width: 640px) {
-  .site-nav {
+/* Narrow Screens: The nav row wraps below the brand on every page (sidebar toggle left, tabs right) */
+
+@media (max-width: 960px) {
+  :root {
+    --header-height: 104px;
+  }
+
+  .header-inner {
+    row-gap: 8px;
+  }
+
+  .header-nav-row {
     order: 3;
     inline-size: 100%;
     margin-inline-start: 0;
     padding-block-start: 8px;
     border-block-start: 1px solid var(--c-border-subtle);
+  }
+
+  .site-nav {
+    flex-shrink: 0;
+    margin-inline-end: -11px;
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
   }
 
   .header-actions > .header-divider:first-child {
@@ -450,11 +518,7 @@
   outline-offset: -2px;
 }
 
-/* Narrow-Screen Local Navigation Bar (opens the sidebar drawer) */
-
-.local-nav {
-  display: none;
-}
+/* Narrow Screens: The sidebar becomes a drawer opened by the header's sidebar toggle */
 
 @media (max-width: 960px) {
   .has-sidebar .page-shell {
@@ -463,43 +527,6 @@
 
   .has-sidebar .page-main {
     padding-inline-start: clamp(16px, 3.5vw, 32px);
-  }
-
-  .local-nav {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px clamp(16px, 3.5vw, 32px);
-    border-block-end: 1px solid var(--c-divider);
-    font-size: 0.82rem;
-    color: var(--c-text-2);
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
-  .local-nav-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 10px;
-    border-radius: 7px;
-    border: 1px solid var(--c-border-subtle);
-    background: var(--c-bg-soft);
-    color: var(--c-text-1);
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-    transition: border-color 0.18s ease;
-  }
-
-  .local-nav-toggle:hover {
-    border-color: var(--c-border-strong);
-  }
-
-  .local-nav-current {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .sidebar[popover] {
@@ -549,7 +576,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 20px;
 }
 
 .footer-feedback {

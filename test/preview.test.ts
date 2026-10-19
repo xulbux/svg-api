@@ -54,8 +54,13 @@ const HTML_TAG_RX = /<[^>]+>/g;
 /** Matches every top navigation link (`href` and active state). */
 const NAV_LINK_RX = /<a href="(?<href>[^"]+)" class="nav-link(?<active> is-active)?"/g;
 
-/** Matches every sidebar link (`href` and active state). */
-const SIDEBAR_LINK_RX = /<a href="(?<href>[^"]+)" class="sidebar-link(?<active> is-active)?"/g;
+/** Matches every sidebar link (`href`, active state, and label). */
+const SIDEBAR_LINK_RX =
+  /<a href="(?<href>[^"]+)" class="sidebar-link(?<active> is-active)?"[^>]*>(?<label>[^<]+)<\/a>/g;
+
+/** Matches the header's sidebar drawer toggle and its current page label. */
+const SIDEBAR_TOGGLE_RX =
+  /<button type="button" class="sidebar-toggle" popovertarget="sidebar-drawer"[^>]*>[\s\S]*?<span class="sidebar-toggle-label"[^>]*>(?<label>[^<]*)<\/span>/;
 
 /** Render the homepage, every documentation page, and every builder page. */
 function renderAllPages(): RenderedPage[] {
@@ -342,6 +347,7 @@ describe('documentation pages – navigation & static assets', () => {
     const [homePage, ...sidebarPages] = renderAllPages();
     expect(collectGroups(homePage.html, SIDEBAR_LINK_RX, 'href')).toEqual([]);
     expect(homePage.html).not.toContain('class="has-sidebar"');
+    expect(homePage.html).not.toContain('popovertarget="sidebar-drawer"');
 
     for (const page of sidebarPages) {
       const sidebarHrefs = collectGroups(page.html, SIDEBAR_LINK_RX, 'href');
@@ -353,7 +359,10 @@ describe('documentation pages – navigation & static assets', () => {
       expect(activeMatches, page.path).toHaveLength(1);
       expect(activeMatches[0]?.groups?.href, page.path).toBe(page.path);
       expect(page.html, page.path).toContain('<body class="has-sidebar">');
-      expect(page.html, page.path).toContain('popovertarget="sidebar-drawer"');
+      // The drawer toggle lives in the sticky header and shows the active page title.
+      const headerHtml = page.html.slice(0, page.html.indexOf('</header>'));
+      const toggleLabel = SIDEBAR_TOGGLE_RX.exec(headerHtml)?.groups?.label;
+      expect(toggleLabel, page.path).toBe(activeMatches[0]?.groups?.label);
     }
   });
 

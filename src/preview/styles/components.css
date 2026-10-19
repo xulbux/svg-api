@@ -41,7 +41,7 @@
 
 .doc-section {
   margin-block-end: 60px;
-  scroll-margin-block-start: 90px;
+  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
 .section-header {
@@ -79,7 +79,7 @@
   align-items: center;
   gap: 8px;
   margin-block: 52px 18px;
-  scroll-margin-block-start: 90px;
+  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
 .section-subhead {
@@ -188,7 +188,7 @@
 .card-container {
   content-visibility: auto;
   contain-intrinsic-block-size: auto 320px;
-  scroll-margin-block-start: 90px;
+  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
 /* Outer Card: Distinct divider border + soft surface */
