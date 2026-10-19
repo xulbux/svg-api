@@ -5,7 +5,15 @@
 /* oxlint-disable typescript/no-non-null-assertion */
 
 import { describe, expect, it } from 'vitest';
-import { resolveIcon, resolveStackIconColor } from '@/svg/icons';
+import {
+  FALLBACK_ICON_SLUG,
+  ICON_SLUG_ALIASES,
+  computeIconXBounds,
+  normalizeIconSlug,
+  resolveIcon,
+  resolveIconWithFallback,
+} from '@/svg/icons';
+import { resolveStackIconColor } from '@/svg/stack';
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -127,7 +135,90 @@ describe('resolveIcon', () => {
     expect(blenderBrand!.type).toBe('simple');
   });
 
-  it('returns undefined for unknown icon slugs', () => {
+  it('returns undefined for unknown icon slugs and Object.prototype keys', () => {
     expect(resolveIcon('definitely-not-a-real-icon-xyz')).toBeUndefined();
+    expect(() => resolveIcon('constructor')).not.toThrow();
+    expect(resolveStackIconColor('toString')).toBe('indigo');
+  });
+
+  it('resolves the postgres alias that already had a stack color (regression: rendered the fallback icon)', () => {
+    expect(resolveIcon('postgres', true)).toBeDefined();
+    expect(resolveIcon('postgres', true)).toBe(resolveIcon('postgresql', true));
+    expect(resolveStackIconColor('postgres')).toBe('blue');
+  });
+
+  it('never resolves Object.prototype keys through the Iconify or Lucide tables (regression: prototype-unsafe lookups)', () => {
+    for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      expect(resolveIcon(key)).toBeUndefined();
+      expect(resolveIcon(key, true)).toBeUndefined();
+    }
+  });
+
+  it('caches misses and rejects implausibly long slugs', () => {
+    expect(resolveIcon('still-not-a-real-icon')).toBeUndefined();
+    expect(resolveIcon('still-not-a-real-icon')).toBeUndefined();
+    expect(resolveIcon('star'.repeat(40))).toBeUndefined();
+  });
+
+  it('falls back to the requested fallback slug and finally to a plain circle', () => {
+    expect(resolveIconWithFallback('no-such-icon-at-all', FALLBACK_ICON_SLUG)).toBe(
+      resolveIcon(FALLBACK_ICON_SLUG)
+    );
+    const circleIcon = resolveIconWithFallback('no-such-icon-at-all', 'no-such-fallback');
+    expect(circleIcon.innerSvg).toBe('<circle cx="12" cy="12" r="9" />');
+    expect(circleIcon.type).toBe('lucide');
+  });
+
+  it('normalizes slugs by trimming, lowercasing, and resolving aliases', () => {
+    expect(normalizeIconSlug(' PY ')).toBe('python');
+    expect(normalizeIconSlug('cpp')).toBe('cplusplus');
+    expect(normalizeIconSlug('rocket')).toBe('rocket');
+    expect(ICON_SLUG_ALIASES.ts).toBe('typescript');
+  });
+});
+
+describe('computeIconXBounds', () => {
+  it('reads `width` instead of `stroke-width` on shapes (regression: word boundary matched stroke-width)', () => {
+    const bounds = computeIconXBounds(
+      '<rect stroke-width="20" x="2" y="2" width="10" height="4" />',
+      false
+    );
+    expect(bounds).toEqual({ maxX: 12, minX: 2 });
+  });
+
+  it('uses cubic and quadratic curve extrema instead of control points (regression: control points inflated widths)', () => {
+    const cubic = computeIconXBounds('<path d="M4 12 C0 0 24 0 20 12" />', false);
+    expect(cubic.minX).toBeCloseTo(3.55, 1);
+    expect(cubic.maxX).toBeCloseTo(20.45, 1);
+
+    const quad = computeIconXBounds('<path d="M4 12 Q0 0 4 -12" />', false);
+    expect(quad.minX).toBeCloseTo(2, 1);
+    expect(quad.maxX).toBe(4);
+
+    // The reflected `S` control point (`x = 16`) and its explicit control (`x = 24`) both lie outside the ink.
+    const smooth = computeIconXBounds('<path d="M4 12 C0 0 24 0 20 12 S24 24 4 24" />', false);
+    expect(smooth.maxX).toBeCloseTo(20.45, 1);
+  });
+
+  it('honors both radii, the rotation, and large arcs with tiny chords (regression: arcs measured as one apex)', () => {
+    const nearlyFullCircle = computeIconXBounds('<path d="M12 2 A10 10 0 1 1 11.99 2" />', false);
+    expect(nearlyFullCircle.minX).toBeCloseTo(2, 1);
+    expect(nearlyFullCircle.maxX).toBeCloseTo(22, 1);
+
+    const tallEllipse = computeIconXBounds('<path d="M12 2 A5 10 0 1 1 11.99 2" />', false);
+    expect(tallEllipse.minX).toBeCloseTo(7, 1);
+    expect(tallEllipse.maxX).toBeCloseTo(17, 1);
+
+    const rotatedEllipse = computeIconXBounds('<path d="M12 2 A10 5 90 1 1 11.99 2" />', false);
+    expect(rotatedEllipse.minX).toBeCloseTo(7, 1);
+    expect(rotatedEllipse.maxX).toBeCloseTo(17, 1);
+  });
+
+  it('pads stroked icons by half the stroke width and falls back for empty bodies', () => {
+    expect(computeIconXBounds('<line x1="4" y1="2" x2="20" y2="2" />', true)).toEqual({
+      maxX: 21.13,
+      minX: 2.88,
+    });
+    expect(computeIconXBounds('<g />', false)).toEqual({ maxX: 22, minX: 2 });
   });
 });

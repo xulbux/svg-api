@@ -1,24 +1,64 @@
 /**
  * Text measurement & vector path rendering – Exact OpenType glyph outline measurement and `<path>` generation using bundled Geist Sans `.ttf` binaries (`500` Medium, `600` SemiBold, `600` SemiBold Italic).
+ *
+ * Each distinct `text|fontSize|weight|style` combination is laid out once at the `(0, 0)` baseline;
+ * Its ink bounds and serialized outline are cached (LRU) and positioned with `transform="translate(…)"`.
+ * Probe measurements used while wrapping and truncating go through uncached helpers so they never evict hot entries.
  */
 
-import opentype, { type Font, type PathCommand, type RenderOptions } from 'opentype.js';
+import opentype from 'opentype.js';
+import type { Font, Path, PathCommand, RenderOptions } from 'opentype.js';
 import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
 import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
 import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
+import { createLruCache, readLruCache, writeLruCache } from '@/svg/shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Cached analytical ink bounding box metrics for a text string at `(0, 0)` baseline. */
-interface TextInkMetrics {
-  /** Whether the path contains zero visible contours (e.g. empty or whitespace-only text). */
+/** Ink bounding box metrics of a text string laid out at the `(0, 0)` baseline. */
+interface InkMetrics {
+  /** Whether the path contains zero visible contours (e.g., empty or whitespace-only text). */
   isEmpty: boolean;
-  /** Visible ink width (`x2 - x1`) or advance width for whitespace-only strings. */
+  /** Visible ink width (`x2 - x1`) or advance width for whitespace-only strings, in pixels. */
   width: number;
-  /** Leftmost visible ink X coordinate relative to `x = 0` origin. */
+  /** Leftmost visible ink X coordinate relative to the `x = 0` origin. */
   x1: number;
-  /** Rightmost visible ink X coordinate relative to `x = 0` origin. */
+  /** Rightmost visible ink X coordinate relative to the `x = 0` origin. */
   x2: number;
+}
+
+/** Cached ink metrics and serialized outline of a text string at the `(0, 0)` baseline. */
+interface TextOutline extends InkMetrics {
+  /** Serialized SVG path data at the `(0, 0)` baseline. */
+  pathData: string;
+}
+
+/** Lazily parsed Geist Sans `Font` singletons. */
+interface FontSingletons {
+  /** Geist Sans `600` SemiBold Italic. */
+  italic?: Font;
+  /** Geist Sans `500` Medium. */
+  medium?: Font;
+  /** Geist Sans `600` SemiBold. */
+  semiBold?: Font;
+}
+
+/** Options for `renderTextPathMarkup`. */
+interface TextPathOptions {
+  /** Horizontal alignment mode (`'center'` or `'left'`; Defaults to `'center'`). */
+  align?: 'center' | 'left';
+  /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`). */
+  anchorX: number;
+  /** Target vertical baseline Y coordinate in pixels. */
+  baselineY: number;
+  /** SVG `fill` color string. */
+  fill: string;
+  /** Font size in pixels. */
+  fontSize: number;
+  /** Whether to use Geist Sans SemiBold (`600`) instead of Medium (`500`). */
+  isBold?: boolean;
+  /** Whether to use Geist Sans SemiBold Italic (`600` italic). */
+  isItalic?: boolean;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -29,59 +69,70 @@ const PATH_OPTIONS: RenderOptions = { kerning: true, letterSpacing: -0.01 };
 /** Ratio of Geist Sans cap-height (`710 / 1000`) to `fontSize`, halved (`0.355`) for vertical baseline centering. */
 const HALF_CAP_HEIGHT_RATIO = 0.355;
 
-/** Maximum number of entries in the in-memory `TextInkMetrics` cache per Worker isolate. */
-const MAX_METRICS_CACHE_SIZE = 512;
+/** Maximum number of entries in the in-memory `TextOutline` cache per Worker isolate. */
+const MAX_OUTLINE_CACHE_SIZE = 512;
 
-// -------------------------------------- INTERNALS --------------------------------------
+/**
+ * Maximum summed `pathData` length in UTF-16 code units of the `TextOutline` cache; One 128-character
+ * label of complex glyphs at `28px` serializes to roughly `100k` code units, so the entry count alone
+ * cannot bound the isolate's memory.
+ */
+const MAX_OUTLINE_CACHE_WEIGHT = 4_000_000;
+
+/** Maximum text length in UTF-16 code units whose outline is cached (longer strings are laid out per request). */
+const MAX_CACHED_TEXT_LENGTH = 128;
 
 /** Lazily parsed Geist Sans `Font` singletons (`500` Medium, `600` SemiBold, `600` SemiBold Italic). */
-const fontSingletons: { italic?: Font; medium?: Font; semiBold?: Font } = {};
+const FONT_SINGLETONS: FontSingletons = {};
 
-/** Bounded in-memory lookup cache mapping `text|fontSize|bold|italic` to `TextInkMetrics`. */
-const metricsCache = new Map<string, TextInkMetrics>();
+/** Bounded LRU cache mapping `text|fontSize|bold|italic` to `TextOutline`, weighted by serialized path size. */
+const OUTLINE_CACHE = createLruCache<TextOutline>(
+  MAX_OUTLINE_CACHE_SIZE,
+  (outline) => outline.pathData.length,
+  MAX_OUTLINE_CACHE_WEIGHT
+);
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Return the lazily initialized Geist Sans `Font` instance for the requested weight and style. */
 function resolveGeistFont(isBold: boolean, isItalic: boolean): Font {
   if (isItalic) {
-    fontSingletons.italic ??= opentype.parse(geistSemiBoldItalicBuffer);
-    return fontSingletons.italic;
+    FONT_SINGLETONS.italic ??= opentype.parse(geistSemiBoldItalicBuffer);
+    return FONT_SINGLETONS.italic;
   }
   if (isBold) {
-    fontSingletons.semiBold ??= opentype.parse(geistSemiBoldBuffer);
-    return fontSingletons.semiBold;
+    FONT_SINGLETONS.semiBold ??= opentype.parse(geistSemiBoldBuffer);
+    return FONT_SINGLETONS.semiBold;
   }
-  fontSingletons.medium ??= opentype.parse(geistMediumBuffer);
-  return fontSingletons.medium;
+  FONT_SINGLETONS.medium ??= opentype.parse(geistMediumBuffer);
+  return FONT_SINGLETONS.medium;
 }
 
 /** Round a numeric coordinate to at most 2 decimal places (`15` instead of `15.00`). */
-function fmtCoord(value: number): number {
+function roundCoord(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
 /** Serialize an array of OpenType `PathCommand` objects into a compact, NaN-free SVG `d` string. */
 function serializePathCommands(commands: readonly PathCommand[]): string {
-  let d = '';
-  for (const cmd of commands) {
-    switch (cmd.type) {
-      case 'M': {
-        d += `M${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
-        break;
-      }
+  let pathData = '';
+  for (const command of commands) {
+    switch (command.type) {
+      case 'M':
       case 'L': {
-        d += `L${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        pathData += `${command.type}${roundCoord(command.x)} ${roundCoord(command.y)}`;
         break;
       }
       case 'Q': {
-        d += `Q${fmtCoord(cmd.x1)} ${fmtCoord(cmd.y1)} ${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        pathData += `Q${roundCoord(command.x1)} ${roundCoord(command.y1)} ${roundCoord(command.x)} ${roundCoord(command.y)}`;
         break;
       }
       case 'C': {
-        d += `C${fmtCoord(cmd.x1)} ${fmtCoord(cmd.y1)} ${fmtCoord(cmd.x2)} ${fmtCoord(cmd.y2)} ${fmtCoord(cmd.x)} ${fmtCoord(cmd.y)}`;
+        pathData += `C${roundCoord(command.x1)} ${roundCoord(command.y1)} ${roundCoord(command.x2)} ${roundCoord(command.y2)} ${roundCoord(command.x)} ${roundCoord(command.y)}`;
         break;
       }
       case 'Z': {
-        d += 'Z';
+        pathData += 'Z';
         break;
       }
       default: {
@@ -89,43 +140,58 @@ function serializePathCommands(commands: readonly PathCommand[]): string {
       }
     }
   }
-  return d;
+  return pathData;
 }
 
-/** Compute or retrieve cached analytical ink bounds (`x1`, `x2`, `width`) for `text` at `(0, 0)`. */
-function getTextInkMetrics(
-  text: string,
-  fontSize: number,
-  isBold: boolean,
-  isItalic: boolean
-): TextInkMetrics {
-  const cacheKey = `${text}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}`;
-  const cached = metricsCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const font = resolveGeistFont(isBold, isItalic);
-  const path = font.getPath(text, 0, 0, fontSize, PATH_OPTIONS);
+/** Compute the ink metrics of a laid-out path (advance width for whitespace-only text). */
+function computeInkMetrics(path: Path, font: Font, text: string, fontSize: number): InkMetrics {
   const isEmpty = path.commands.length === 0;
   const bbox = path.getBoundingBox();
   const rawWidth = isEmpty
     ? font.getAdvanceWidth(text, fontSize, PATH_OPTIONS)
     : Math.max(0, bbox.x2 - bbox.x1);
+  return { isEmpty, width: roundCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 };
+}
 
-  const metrics: TextInkMetrics = { isEmpty, width: fmtCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 };
+/** Lay out `text` at the `(0, 0)` baseline and serialize its outline (uncached). */
+function buildTextOutline(
+  text: string,
+  fontSize: number,
+  isBold: boolean,
+  isItalic: boolean
+): TextOutline {
+  const font = resolveGeistFont(isBold, isItalic);
+  const path = font.getPath(text, 0, 0, fontSize, PATH_OPTIONS);
+  return {
+    ...computeInkMetrics(path, font, text, fontSize),
+    pathData: serializePathCommands(path.commands),
+  };
+}
 
-  if (metricsCache.size >= MAX_METRICS_CACHE_SIZE) {
-    metricsCache.clear();
+/** Compute or retrieve the cached, serialized outline of `text` at the `(0, 0)` baseline. */
+function getTextOutline(
+  text: string,
+  fontSize: number,
+  isBold: boolean,
+  isItalic: boolean
+): TextOutline {
+  if (text.length > MAX_CACHED_TEXT_LENGTH) {
+    return buildTextOutline(text, fontSize, isBold, isItalic);
   }
-  metricsCache.set(cacheKey, metrics);
-  return metrics;
+  const cacheKey = `${text}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}`;
+  const cached = readLruCache(OUTLINE_CACHE, cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const outline = buildTextOutline(text, fontSize, isBold, isItalic);
+  writeLruCache(OUTLINE_CACHE, cacheKey, outline);
+  return outline;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string in Geist Sans.
+ * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string in Geist Sans (cached).
  * @param text       Text string to measure.
  * @param fontSize   Font size in pixels (defaults to `11`).
  * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
@@ -141,50 +207,81 @@ export function measureTextWidth(
   if (text.length === 0) {
     return 0;
   }
-  return getTextInkMetrics(text, fontSize, isBold, isItalic).width;
+  return getTextOutline(text, fontSize, isBold, isItalic).width;
 }
 
 /**
- * Render a text string directly as an SVG `<path d="..." fill="..." />` vector outline in Geist Sans.
+ * Calculate the exact visible pixel ink width of a text string without touching the outline cache.
+ * Used for throwaway probe strings (e.g., binary-search truncation candidates) that are never rendered.
+ * @param text       Text string to measure.
+ * @param fontSize   Font size in pixels.
+ * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
+ * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
+ * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
+ */
+export function measureTextWidthUncached(
+  text: string,
+  fontSize: number,
+  isBold = false,
+  isItalic = false
+): number {
+  if (text.length === 0) {
+    return 0;
+  }
+  const font = resolveGeistFont(isBold, isItalic);
+  return computeInkMetrics(font.getPath(text, 0, 0, fontSize, PATH_OPTIONS), font, text, fontSize)
+    .width;
+}
+
+/**
+ * Calculate the typographic advance width (including side bearings and tracking) of a text string.
+ * Much cheaper than an ink measurement because no glyph outlines are built; Advances of adjacent
+ * words and spaces add up, which makes it suitable for incremental line wrapping estimates.
+ * @param text       Text string to measure.
+ * @param fontSize   Font size in pixels.
+ * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
+ * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
+ * @returns Advance width in pixels (unrounded).
+ */
+export function measureTextAdvance(
+  text: string,
+  fontSize: number,
+  isBold = false,
+  isItalic = false
+): number {
+  if (text.length === 0) {
+    return 0;
+  }
+  return resolveGeistFont(isBold, isItalic).getAdvanceWidth(text, fontSize, PATH_OPTIONS);
+}
+
+/**
+ * Render a text string directly as an SVG `<path>` vector outline in Geist Sans.
  * Aligns the path using its exact analytical Bezier bounding box (`x1..x2`) so horizontal centering or
  * left-alignment has `0.00px` sidebearing error on every operating system and browser.
- * @param text       Raw unescaped text string to convert to an SVG `<path>`.
- * @param anchorX    Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`).
- * @param baselineY  Target vertical baseline Y coordinate in pixels.
- * @param fontSize   Font size in pixels.
- * @param fill       SVG `fill` color string.
- * @param isBold     Whether to use Geist Sans SemiBold (`600`) instead of Medium (`500`).
- * @param isItalic   Whether to use Geist Sans SemiBold Italic (`600` italic).
- * @param align      Horizontal alignment mode (`'center'` or `'left'`, defaults to `'center'`).
- * @returns `<path d="..." fill="..." />` SVG string, or `''` if `text` has no visible contours.
+ * @param text      Raw unescaped text string to convert to an SVG `<path>`.
+ * @param options   Anchor position, baseline, font size, fill, weight/style, and alignment.
+ * @returns `<path transform="…" d="…" fill="…" />` SVG string, or `''` if `text` has no visible contours.
  */
-export function renderTextPathMarkup(
-  text: string,
-  anchorX: number,
-  baselineY: number,
-  fontSize: number,
-  fill: string,
-  isBold = false,
-  isItalic = false,
-  align: 'center' | 'left' = 'center'
-): string {
+export function renderTextPathMarkup(text: string, options: TextPathOptions): string {
   if (text.length === 0) {
     return '';
   }
-  const metrics = getTextInkMetrics(text, fontSize, isBold, isItalic);
-  if (metrics.isEmpty) {
+  const { align = 'center', anchorX, baselineY, fill, fontSize } = options;
+  const outline = getTextOutline(
+    text,
+    fontSize,
+    options.isBold ?? false,
+    options.isItalic ?? false
+  );
+  if (outline.isEmpty || outline.pathData.length === 0) {
     return '';
   }
   const originX =
     align === 'center'
-      ? fmtCoord(anchorX - (metrics.x1 + metrics.x2) / 2)
-      : fmtCoord(anchorX - metrics.x1);
-  const y = fmtCoord(baselineY);
-  const font = resolveGeistFont(isBold, isItalic);
-  const pathData = serializePathCommands(
-    font.getPath(text, originX, y, fontSize, PATH_OPTIONS).commands
-  );
-  return pathData.length > 0 ? `<path d="${pathData}" fill="${fill}" />` : '';
+      ? roundCoord(anchorX - (outline.x1 + outline.x2) / 2)
+      : roundCoord(anchorX - outline.x1);
+  return `<path transform="translate(${originX} ${roundCoord(baselineY)})" d="${outline.pathData}" fill="${fill}" />`;
 }
 
 /**
@@ -194,5 +291,5 @@ export function renderTextPathMarkup(
  * @returns Baseline Y coordinate where the cap-height midpoint sits at `height / 2`.
  */
 export function computeCenteredBaselineY(height: number, fontSize: number): number {
-  return fmtCoord(height / 2 + fontSize * HALF_CAP_HEIGHT_RATIO);
+  return roundCoord(height / 2 + fontSize * HALF_CAP_HEIGHT_RATIO);
 }

@@ -1,8 +1,8 @@
 /**
- * Badge rendering, micro-animation, and special element types.
+ * Badge types – Badge and button rendering options, micro-animation modes, and special element shapes.
  */
 
-import type { BadgeVariant, DotState, ThemeColorName } from './theme';
+import type { BadgeVariant, DotState, SizePreset, ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -19,10 +19,10 @@ export type IconMotionMode =
 
 /**
  * Micro-animation mode for icons, status dots, and specular sheen.
- * - `'default'`: Status dots and progress bars animate; icons and surfaces remain static (default when `?anim=` is omitted).
+ * - `'default'`: Status dots and progress bars animate; Icons and surfaces remain static (default when `?anim=` is omitted).
  * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
  * - `'auto' | 'spin' | 'shake' | 'nudge' | 'pulse' | 'float'`: Enables contextual or explicit icon micro-animation.
- * - `'<left>,<right>'` (e.g. `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
+ * - `'<left>,<right>'` (e.g., `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
  * - `'sheen,<mode>'` or `'sheen,<left>,<right>'`: Combines surface sheen with single or per-icon animations.
  * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
  */
@@ -33,47 +33,60 @@ export type AnimationMode =
   | `${IconMotionMode},${IconMotionMode}`
   | `sheen,${IconMotionMode},${IconMotionMode}`;
 
-/**
- * Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald).
- */
+/** Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald). */
 export type StripTickState = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
+/** Inline horizontal capacity/progress bar special element. */
+export interface BarSpecialElement {
+  /** Optional override for whether the rightward shimmer wave is active (`true` by default unless `anim=none`). */
+  hasPulse?: boolean;
+  /** Special element discriminant (`'bar'`). */
+  type: 'bar';
+  /** Progress percentage (`0`–`100`). */
+  value: number;
+}
+
+/** Inline trend delta arrow and readout special element. */
+export interface DeltaSpecialElement {
+  /** Special element discriminant (`'delta'`). */
+  type: 'delta';
+  /** Formatted delta string (e.g., `'+14%'`, `'-3.2%'`, `'0%'`; Truncated with an ellipsis beyond `128` characters). */
+  value: string;
+}
+
+/** Compact `12x12px` circular ring gauge special element. */
+export interface RingSpecialElement {
+  /** Optional override to enable a subtle pulse on the circular ring gauge (`false` by default). */
+  hasPulse?: boolean;
+  /** Special element discriminant (`'ring'`). */
+  type: 'ring';
+  /** Progress percentage (`0`–`100`). */
+  value: number;
+}
+
+/** Inline trend sparkline with vertical area gradient fill special element. */
+export interface SparklineSpecialElement {
+  /** Special element discriminant (`'sparkline'`). */
+  type: 'sparkline';
+  /** Numeric series points (at least 2 values). */
+  values: number[];
+}
+
+/** Segmented uptime/health history strip special element. */
+export interface StripSpecialElement {
+  /** Up to 10 vertical status ticks from `'0'` to `'9'`. */
+  states: StripTickState[];
+  /** Special element discriminant (`'strip'`). */
+  type: 'strip';
+}
 
 /** Unified right-compartment special data visualization element. */
 export type BadgeSpecialElement =
-  | {
-      /** Optional override for whether the rightward shimmer wave is active (`true` by default unless `anim=none`). */
-      hasPulse?: boolean;
-      /** Percentage fill (`0`–`100`) for an inline horizontal capacity/progress bar. */
-      type: 'bar';
-      /** Progress percentage (`0`–`100`). */
-      value: number;
-    }
-  | {
-      /** Trend delta readout (e.g., `'+14%'`, `'-3.2%'`, `'0%'`). */
-      type: 'delta';
-      /** Formatted delta string. */
-      value: string;
-    }
-  | {
-      /** Optional override to enable a subtle pulse on the circular ring gauge (`false` by default). */
-      hasPulse?: boolean;
-      /** Percentage fill (`0`–`100`) for a compact `12x12px` circular ring gauge. */
-      type: 'ring';
-      /** Progress percentage (`0`–`100`). */
-      value: number;
-    }
-  | {
-      /** Inline trend sparkline with vertical area gradient fill. */
-      type: 'sparkline';
-      /** Numeric series points (at least 2 values). */
-      values: number[];
-    }
-  | {
-      /** Segmented uptime/health history strip (up to 10 vertical status ticks from `'0'` to `'9'`). */
-      states: StripTickState[];
-      /** Segmented health strip indicator. */
-      type: 'strip';
-    };
+  | BarSpecialElement
+  | DeltaSpecialElement
+  | RingSpecialElement
+  | SparklineSpecialElement
+  | StripSpecialElement;
 
 /** Options for rendering a `22px` badge SVG via `renderBadge`. */
 export interface BadgeRenderOptions {
@@ -85,18 +98,15 @@ export interface BadgeRenderOptions {
   dot?: DotState;
   /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
   icon?: string;
-  /** Left-hand label text (or single-part badge text). */
+  /** Left-hand label text, or single-part badge text (truncated with an ellipsis beyond `128` characters). */
   label: string;
   /** Optional right-hand special data visualization element (`bar`, `ring`, `strip`, `delta`, or `sparkline`). */
   special?: BadgeSpecialElement;
-  /** Right-hand value text (omitted on 1-segment badges). */
+  /** Right-hand value text, omitted on 1-segment badges (truncated with an ellipsis beyond `128` characters). */
   value?: string;
   /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary). */
   variant: BadgeVariant;
 }
-
-/** Named size scale preset for CTA buttons (`/button/*` and `/btn/*`). */
-export type ButtonSize = 'sm' | 'md' | 'lg' | 'xl';
 
 /** Options for rendering a CTA button SVG via `renderButton` (`/button/*` and `/btn/*`). */
 export interface ButtonRenderOptions {
@@ -108,12 +118,12 @@ export interface ButtonRenderOptions {
   dot?: DotState;
   /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
   icon?: string;
-  /** Primary button label text. */
+  /** Primary button label text (truncated with an ellipsis beyond `128` characters). */
   label: string;
-  /** Optional button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22`–`48`, defaults to `'md'` = `30px`). */
-  size?: ButtonSize | number;
+  /** Optional button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22`–`48`; Defaults to `'md'` = `30px`). */
+  size?: SizePreset | number;
   /** Optional secondary right-hand compartment text for split CTA buttons (`/button/:label/:value`). */
   value?: string;
-  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary; defaults to `'1'`). */
+  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary; Defaults to `'1'`). */
   variant: BadgeVariant;
 }

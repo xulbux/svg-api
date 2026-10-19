@@ -46,20 +46,15 @@ const MAX_SEARCH_CHROMA = 0.4;
 
 /** Base neutral dark carbon surface tokens (matching Isolux Pro Dark). */
 export const BASE_DARK: BaseDarkPalette = {
-  bevelHighlight: 'rgba(255, 255, 255, 0.28)',
   bgBottom: '#101010',
   bgTop: '#1a1a1a',
   borderNeutral: '#2c2c2c',
-  innerHighlight: 'rgba(255, 255, 255, 0.09)',
   textMuted: '#a3a3a3',
   textPrimary: '#f5f5f5',
 };
 
-/**
- * Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral),
- * sorted alphabetically.
- */
-const TAILWIND_V4_SCALES: Record<ThemeColorName, TailwindFamilyScale> = {
+/** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */
+const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> = {
   amber: {
     shade300: { chroma: 0.169, hue: 91.605, lightness: 87.9 },
     shade400: { chroma: 0.189, hue: 84.429, lightness: 82.8 },
@@ -235,11 +230,14 @@ function fromLinearChannel(channel: number): number {
   return channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
 }
 
-/** Convert a clamped `0`–`1` channel value into a 2-digit lowercase hex byte. */
+/** Convert a `0`–`1` channel value into a clamped `0`–`255` integer byte. */
+function toByte(channel: number): number {
+  return Math.round(Math.min(1, Math.max(0, channel)) * 255);
+}
+
+/** Convert a `0`–`1` channel value into a 2-digit lowercase hex byte. */
 function toHexByte(channel: number): string {
-  return Math.round(Math.min(1, Math.max(0, channel)) * 255)
-    .toString(16)
-    .padStart(2, '0');
+  return toByte(channel).toString(16).padStart(2, '0');
 }
 
 /** Convert OKLCH coordinates to linear-light sRGB channels (may exceed `[0, 1]` outside sRGB gamut). */
@@ -311,13 +309,9 @@ function oklchToHex(color: OklchColor): string {
   return `#${toHexByte(red)}${toHexByte(green)}${toHexByte(blue)}`;
 }
 
-/** Convert an OKLCH color and alpha opacity into a CSS `rgba(r, g, b, alpha)` string. */
-function oklchToRgba(color: OklchColor, alpha: number): string {
-  const [red, green, blue] = oklchToSrgbChannels(color);
-  const redByte = Math.round(Math.min(1, Math.max(0, red)) * 255);
-  const greenByte = Math.round(Math.min(1, Math.max(0, green)) * 255);
-  const blueByte = Math.round(Math.min(1, Math.max(0, blue)) * 255);
-  return `rgba(${redByte}, ${greenByte}, ${blueByte}, ${alpha})`;
+/** Format gamma-encoded sRGB channels (`0`–`1`) and an alpha opacity as a CSS `rgba(r, g, b, alpha)` string. */
+function formatRgba(channels: RgbTuple, alpha: number): string {
+  return `rgba(${toByte(channels[0])}, ${toByte(channels[1])}, ${toByte(channels[2])}, ${alpha})`;
 }
 
 /**
@@ -356,70 +350,68 @@ function getOrBuildPalette(colorName: ThemeColorName): ThemePalette {
   const scale = TAILWIND_V4_SCALES[colorName];
   const isNeutral = Boolean(scale.isNeutral);
   const brand = scale.shade600;
-  const tintSeed = isNeutral ? scale.shade400 : scale.shade500;
+  const tintChannels = oklchToSrgbChannels(isNeutral ? scale.shade400 : scale.shade500);
 
   const palette: ThemePalette = {
     accentText: oklchToHex(isNeutral ? scale.shade300 : scale.shade400),
-    borderColor: oklchToRgba(tintSeed, isNeutral ? 0.35 : 0.45),
+    borderColor: formatRgba(tintChannels, isNeutral ? 0.35 : 0.45),
     emphasisBg: oklchToHex(mixOklchWithWhite(brand, 0.3)),
     emphasisRing: oklchToHex(mixOklchWithBlack(brand, 0.1)),
     glowColor: oklchToHex(scale.shade500),
     gradEnd: oklchToHex(brand),
     gradStart: oklchToHex(mixOklchWithWhite(brand, 0.15)),
     iconColor: oklchToHex(scale.shade400),
-    tintBg: oklchToRgba(tintSeed, isNeutral ? 0.14 : 0.16),
+    tintBg: formatRgba(tintChannels, isNeutral ? 0.14 : 0.16),
   };
 
   PALETTE_CACHE[colorName] = palette;
   return palette;
 }
 
-/** Create a lazily-evaluated `Record<ThemeColorName, ThemePalette>` map with enumerable keys. */
-function createLazyThemesMap(): Record<ThemeColorName, ThemePalette> {
-  const target = {} as Record<ThemeColorName, ThemePalette>;
+/** Create a lazily-evaluated, enumerable `Record<ThemeColorName, T>` whose values are selected from each palette on access. */
+function createLazyPaletteMap<T>(
+  selectValue: (palette: ThemePalette) => T
+): Record<ThemeColorName, T> {
+  const target: Partial<Record<ThemeColorName, T>> = {};
   for (const colorName of THEME_COLOR_NAMES) {
     Object.defineProperty(target, colorName, {
       enumerable: true,
-      get(): ThemePalette {
-        return getOrBuildPalette(colorName);
+      get(): T {
+        return selectValue(getOrBuildPalette(colorName));
       },
     });
   }
-  return target;
+  // Every `ThemeColorName` key was defined as a getter above, so the record is complete.
+  return target as Record<ThemeColorName, T>;
 }
 
-/** Create a lazily-evaluated `Record<DotState, string>` map for pulsing status indicator dots. */
-function createLazyDotColorsMap(): Record<DotState, string> {
-  const target = {} as Record<DotState, string>;
-  for (const colorName of THEME_COLOR_NAMES) {
-    Object.defineProperty(target, colorName, {
-      enumerable: true,
-      get(): string {
-        return getOrBuildPalette(colorName).glowColor;
-      },
-    });
-  }
-  return target;
+/** Check whether an untrusted key is an own `ThemeColorName` key (inherited keys like `constructor` are rejected). */
+function isThemeColorName(key: string): key is ThemeColorName {
+  return Object.hasOwn(TAILWIND_V4_SCALES, key);
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Named Tailwind v4 theme color palettes, lazily computed in OKLCH on first access. */
-export const THEMES: Record<ThemeColorName, ThemePalette> = createLazyThemesMap();
+export const THEMES: Record<ThemeColorName, ThemePalette> = createLazyPaletteMap(
+  (palette) => palette
+);
 
 /** Hex colors for animated pulsing status indicator dots across all 22 Tailwind v4 families. */
-export const DOT_COLORS: Record<DotState, string> = createLazyDotColorsMap();
+export const DOT_COLORS: Record<DotState, string> = createLazyPaletteMap(
+  (palette) => palette.glowColor
+);
 
 /**
  * Resolve a raw color query parameter to a valid `ThemeColorName`.
- * @param input      Raw color query parameter (`?c=`).
+ * @param input      Raw `?color=` query parameter.
  * @param fallback   Fallback color token when `input` is missing or unknown.
  * @returns The resolved `ThemeColorName`.
  */
-export function resolveColor(input?: string, fallback: ThemeColorName = 'indigo'): ThemeColorName {
-  if (!input) {
-    return fallback;
-  }
-  const key = input.trim().toLowerCase() as ThemeColorName;
-  return key in TAILWIND_V4_SCALES ? key : fallback;
+export function resolveColor(
+  input?: string | null,
+  fallback: ThemeColorName = 'indigo'
+): ThemeColorName {
+  const key = (input ?? '').trim().toLowerCase();
+  return isThemeColorName(key) ? key : fallback;
 }

@@ -11,16 +11,18 @@ In accordance with the validation policy in `AGENTS.md` Section 4, use this skil
 
 ## 1. Architecture
 
-Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderButton`, `renderIcon`, `resolveColor`, `formatCompactNumber`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account.
+Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderButton`, `renderIcon`, `renderStack`, `renderQuote`, `resolveColor`, `formatCompactNumber`, the `src/routes/` parsers, the `src/preview/` page renderers) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account. Upstream APIs are never called: Mock `fetch` with `vi.spyOn(globalThis, 'fetch')`, and call `resetUpstreamCaches()` (`src/services/fetcher.ts`) in `afterEach` so the in-isolate memory cache never leaks between tests.
 
 ### Key Files
 
 | File                    | Purpose                                                                          |
 | ----------------------- | -------------------------------------------------------------------------------- |
-| `test/measure.test.ts`  | Text width calculation tests (`src/svg/measure.ts`)                              |
-| `test/icons.test.ts`    | Lucide & Simple Icons resolution tests (`src/svg/icons.ts`)                      |
-| `test/renderer.test.ts` | SSOT SVG rendering across badge/button variants, standalone icons, and widgets   |
-| `test/routes.test.ts`   | Hono route handling for `svg.xul.is` (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), overrides & redirects |
+| `test/measure.test.ts`  | Text width calculation, cached outline rendering (`src/svg/measure.ts`), and the shared count- and size-bounded LRU cache (`src/svg/shared.ts`) |
+| `test/icons.test.ts`    | Lucide, Simple Icons & Devicon Plain resolution, aliases, and ink bounds (`src/svg/icons.ts`) |
+| `test/renderer.test.ts` | SSOT SVG rendering across badge/button variants, standalone icons, stacks, quotes, widgets, size/DoS bounds, and docs drift guards |
+| `test/routes.test.ts`   | Hono routes and the `src/routes/` dispatcher (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), query DSL, docs pages & route regressions |
+| `test/services.test.ts` | Every service preset transform, request validation, upstream error and rate-limit badges, coalescing, the memory cache size budget, caching & redirects (`src/services/`) |
+| `test/preview.test.ts`  | Documentation website HTML validity, accessibility, head metadata, client script guards (theme, preview background picker), and docs drift guards (`src/preview/`) |
 | `vitest.config.mts`     | Vitest config with `@/` path alias                                               |
 
 ---
@@ -33,7 +35,8 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
     -   ✅ `'returns 302 redirect when Sec-Fetch-Dest is document'`
     -   ❌ `'test redirect'`
 4.  **Both Positive and Negative Assertions:** Test both valid inputs and fallback/error handling (e.g., unknown colors, restricted owners, invalid icons, XML escaping).
-5.  **Regression Tests:** Every bug fix must come with a test that reproduces the original bug.
+5.  **Regression Tests:** Required for every bug fix (see `AGENTS.md` Section 4). Name the original bug in the title (`'… (regression: <bug>)'`). For performance and DoS fixes, assert deterministic bounds (output size, identical output for over-long vs. capped input, number of `fetch` calls) instead of wall-clock timings, which are flaky in CI.
+6.  **Shared Helpers:** Repeated setup goes into hoisted `function` helpers in the file's `INTERNALS` section (e.g., `mockUpstream`, `requestBadge`), not into arrow functions inside `it()` blocks.
 
 ---
 
@@ -68,4 +71,3 @@ Test files may legitimately use patterns that are disallowed in production code.
 ```
 
 Keep these to the minimum necessary set of rules.
-

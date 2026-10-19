@@ -3,38 +3,61 @@
  */
 
 import { THEMES } from '@/config/theme';
-import type {
-  AnimationMode,
-  StackGroup,
-  StackRenderOptions,
-  ThemeColorName,
-  WidgetVariant,
-} from '@/types';
-import { resolveIcon, resolveStackIconColor, resolveStackIconTitle } from './icons';
+import { formatSlugTitle, normalizeIconSlug, resolveIconWithFallback } from '@/svg/icons';
 import {
   clampInt,
   escapeXml,
+  getOwnValue,
+  isSheenMode,
   renderDarkBgGradientDef,
+  renderIconGroup,
   renderKumoBoxSurface,
   renderSheenOverlay,
+  renderSvgDocument,
   renderThemeGradientDef,
-} from './shared';
+  truncateText,
+} from '@/svg/shared';
+import type {
+  AnimationMode,
+  BadgeVariant,
+  NumericRange,
+  ResolvedIcon,
+  StackGroup,
+  StackRenderOptions,
+  ThemeColorName,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
+/** Curated semantic theme color and display title for a tech stack icon. */
+interface StackIconMeta {
+  /** Semantic Tailwind v4 theme color used when no uniform `?color=` override is given. */
+  color: ThemeColorName;
+  /** Human-readable display title for the tile `<title>` tooltip. */
+  title: string;
+}
+
+/** A single stack tile slug and its canonical lookup key. */
+interface StackTile {
+  /** Canonical (alias-resolved) icon slug used for metadata lookups. */
+  key: string;
+  /** Requested icon slug (used for icon resolution, fallback titles, and the `aria-label`). */
+  slug: string;
+}
+
 /** Computed pixel dimensions and layout metadata for a single resolved `StackGroup`. */
 interface MeasuredStackGroup {
-  /** Number of columns in this group (`Math.min(icons.length, perLine)`). */
+  /** Number of columns in this group (`Math.min(tiles.length, perLine)`). */
   cols: number;
-  /** Total pixel height of this group (`rows * tileSize + (rows - 1) * gap`). */
+  /** Total height of this group in pixels (`rows * tileSize + (rows - 1) * gap`). */
   height: number;
-  /** Validated lowercase icon slugs in this group. */
-  icons: string[];
   /** Effective maximum tiles per line for this group. */
   perLine: number;
-  /** Number of rows in this group (`Math.ceil(icons.length / perLine)`). */
+  /** Number of rows in this group (`Math.ceil(tiles.length / perLine)`). */
   rows: number;
-  /** Total pixel width of this group (`cols * tileSize + (cols - 1) * gap`). */
+  /** Validated tiles in this group. */
+  tiles: StackTile[];
+  /** Total width of this group in pixels (`cols * tileSize + (cols - 1) * gap`). */
   width: number;
 }
 
@@ -42,59 +65,210 @@ interface MeasuredStackGroup {
 interface MeasuredStackBand {
   /** Side-by-side measured groups in this horizontal band. */
   groups: MeasuredStackGroup[];
-  /** Maximum group height in this horizontal band. */
+  /** Maximum group height in this horizontal band in pixels. */
   height: number;
-  /** Sum of group widths plus `(groups.length - 1) * groupGap`. */
+  /** Sum of group widths plus `(groups.length - 1) * groupGap` in pixels. */
   width: number;
+}
+
+/** Measured bands plus the flat list of rendered slugs. */
+interface MeasuredStackLayout {
+  /** Every rendered slug in reading order (for the `aria-label`). */
+  allSlugs: string[];
+  /** Measured horizontal bands, top to bottom. */
+  bands: MeasuredStackBand[];
+}
+
+/** Grid spacing used while measuring bands. */
+interface StackSpacing {
+  /** Default maximum tiles per line for groups without their own `perLine`. */
+  defaultPerLine: number;
+  /** Intra-group gap between adjacent tiles in pixels. */
+  gap: number;
+  /** Inter-group gap between side-by-side groups and vertical bands in pixels. */
+  groupGap: number;
+  /** Tile width and height in pixels. */
+  tileSize: number;
+}
+
+/** Shared per-render state for drawing stack tiles. */
+interface StackTileContext {
+  /** Optional uniform theme color override. */
+  colorOverride: ThemeColorName | undefined;
+  /** `<defs>` ID of every unique icon body referenced by the tiles (collected while rendering). */
+  iconBodyIds: Map<ResolvedIcon, string>;
+  /** Summed `innerSvg` length in UTF-16 code units of all collected icon bodies. */
+  iconBodyLength: number;
+  /** `<defs>` markup of the collected icon bodies (each body is emitted exactly once). */
+  iconDefs: string;
+  /** Scale factor from the `24x24` icon box to the rendered icon size. */
+  iconScale: number;
+  /** Rendered icon size in pixels. */
+  iconSize: number;
+  /** Tile corner radius in pixels. */
+  radius: number;
+  /** Tile width and height in pixels. */
+  tileSize: number;
+  /** Primary theme colors whose `<linearGradient>` must be emitted (collected while rendering). */
+  usedPrimaryColors: Set<ThemeColorName>;
+  /** Tile surface variant. */
+  variant: BadgeVariant;
+}
+
+/** Icon drawn on a stack tile and the `<defs>` ID of its body. */
+interface StackTileIcon {
+  /** `<defs>` ID of the icon body (`stack-icon-<n>`). */
+  bodyId: string;
+  /** Resolved icon data (bounds, type, and body). */
+  data: ResolvedIcon;
+}
+
+/** Icon list and optional `:N` column suffix of a single group token. */
+interface GroupTokenParts {
+  /** Comma/whitespace-separated icon list part. */
+  iconList: string;
+  /** Inline `perLine` override from a trailing `:N` suffix. */
+  perLine: number | undefined;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Default tile width and height in pixels for `/stack/:icons`. */
-const DEFAULT_STACK_TILE_SIZE = 42;
+/** Tile width and height bounds in pixels for `/stack/:icons?size=`. */
+export const STACK_TILE_SIZE_RANGE: NumericRange = { default: 42, max: 96, min: 24 };
 
-/** Minimum allowed tile size in pixels. */
-const MIN_STACK_TILE_SIZE = 24;
+/** Intra-group gap bounds in pixels between adjacent stack tiles (`?gap=`). */
+export const STACK_GAP_RANGE: NumericRange = { default: 8, max: 24, min: 2 };
 
-/** Maximum allowed tile size in pixels. */
-const MAX_STACK_TILE_SIZE = 96;
+/** Inter-group gap bounds in pixels between distinct groups (`?groupgap=`; Defaults to `round(gap * 3.25)`, clamped). */
+export const STACK_GROUP_GAP_RANGE: NumericRange = { default: 26, max: 64, min: 8 };
 
-/** Default intra-group gap in pixels between adjacent stack tiles. */
-const DEFAULT_STACK_GAP = 8;
+/** Ratio of the default inter-group gap to the intra-group gap. */
+export const GROUP_GAP_RATIO = 3.25;
 
-/** Minimum allowed intra-group gap in pixels between stack tiles. */
-const MIN_STACK_GAP = 2;
-
-/** Maximum allowed intra-group gap in pixels between stack tiles. */
-const MAX_STACK_GAP = 24;
-
-/** Minimum allowed inter-group gap in pixels between distinct groups. */
-const MIN_STACK_GROUP_GAP = 8;
-
-/** Maximum allowed inter-group gap in pixels between distinct groups. */
-const MAX_STACK_GROUP_GAP = 64;
-
-/** Default maximum number of tiles per row when not specified per group. */
-const DEFAULT_STACK_PER_LINE = 8;
-
-/** Minimum allowed tiles per row. */
-const MIN_STACK_PER_LINE = 1;
-
-/** Maximum allowed tiles per row. */
-const MAX_STACK_PER_LINE = 20;
+/** Tiles-per-row bounds when not specified per group (`?perline=`). */
+export const STACK_PER_LINE_RANGE: NumericRange = { default: 8, max: 20, min: 1 };
 
 /** Maximum total icons rendered across an entire stack SVG. */
 const MAX_STACK_ICONS = 128;
+
+/**
+ * Maximum summed length in UTF-16 code units of the unique icon bodies in one stack; Further unique
+ * icons render the fallback icon. Repeated icons are referenced via `<use>`, so this only caps
+ * pathological mixes of the largest brand bodies (up to ~54k code units each).
+ */
+const MAX_STACK_ICON_BODY_LENGTH = 400_000;
+
+/** Maximum length of a tile `<title>` derived from an uncurated slug. */
+const MAX_TILE_TITLE_LENGTH = 64;
+
+/** Lucide slug rendered for stack tiles whose slug cannot be resolved. */
+const STACK_FALLBACK_ICON_SLUG = 'code-xml';
+
+/** Stroke width of Lucide icons on stack tiles in `24x24` icon units. */
+const STACK_ICON_STROKE_WIDTH = 2.1;
+
+/** Opacity of white icons on vivid primary (`variant=1`) stack tiles. */
+const STACK_PRIMARY_ICON_OPACITY = 0.9;
+
+/** Curated semantic Tailwind v4 theme colors and display titles for tech stack icons, keyed by canonical slug. */
+const STACK_ICON_META: Readonly<Record<string, StackIconMeta>> = {
+  adobeaftereffects: { color: 'violet', title: 'Adobe After Effects' },
+  adobeillustrator: { color: 'orange', title: 'Adobe Illustrator' },
+  adobephotoshop: { color: 'sky', title: 'Adobe Photoshop' },
+  adobepremierepro: { color: 'purple', title: 'Adobe Premiere Pro' },
+  amazonwebservices: { color: 'amber', title: 'AWS' },
+  archlinux: { color: 'cyan', title: 'Arch Linux' },
+  arduino: { color: 'teal', title: 'Arduino' },
+  blender: { color: 'orange', title: 'Blender' },
+  c: { color: 'blue', title: 'C' },
+  cloudflare: { color: 'orange', title: 'Cloudflare' },
+  cmake: { color: 'red', title: 'CMake' },
+  codepen: { color: 'slate', title: 'CodePen' },
+  cplusplus: { color: 'blue', title: 'C++' },
+  csharp: { color: 'violet', title: 'C#' },
+  css3: { color: 'sky', title: 'CSS3' },
+  dart: { color: 'sky', title: 'Dart' },
+  deno: { color: 'slate', title: 'Deno' },
+  docker: { color: 'sky', title: 'Docker' },
+  dotnet: { color: 'purple', title: '.NET' },
+  elixir: { color: 'violet', title: 'Elixir' },
+  figma: { color: 'pink', title: 'Figma' },
+  firebase: { color: 'amber', title: 'Firebase' },
+  flutter: { color: 'sky', title: 'Flutter' },
+  git: { color: 'orange', title: 'Git' },
+  github: { color: 'slate', title: 'GitHub' },
+  githubactions: { color: 'blue', title: 'GitHub Actions' },
+  gitlab: { color: 'orange', title: 'GitLab' },
+  gnubash: { color: 'emerald', title: 'Bash' },
+  go: { color: 'cyan', title: 'Go' },
+  gtk: { color: 'emerald', title: 'GTK' },
+  html5: { color: 'orange', title: 'HTML5' },
+  java: { color: 'orange', title: 'Java' },
+  javascript: { color: 'yellow', title: 'JavaScript' },
+  kotlin: { color: 'violet', title: 'Kotlin' },
+  laravel: { color: 'red', title: 'Laravel' },
+  latex: { color: 'teal', title: 'LaTeX' },
+  linux: { color: 'amber', title: 'Linux' },
+  lua: { color: 'indigo', title: 'Lua' },
+  markdown: { color: 'slate', title: 'Markdown' },
+  microsoftazure: { color: 'sky', title: 'Microsoft Azure' },
+  mysql: { color: 'sky', title: 'MySQL' },
+  netlify: { color: 'teal', title: 'Netlify' },
+  nodedotjs: { color: 'green', title: 'Node.js' },
+  notion: { color: 'slate', title: 'Notion' },
+  npm: { color: 'red', title: 'npm' },
+  obsidian: { color: 'violet', title: 'Obsidian' },
+  php: { color: 'indigo', title: 'PHP' },
+  pinia: { color: 'yellow', title: 'Pinia' },
+  postgresql: { color: 'blue', title: 'PostgreSQL' },
+  powershell: { color: 'sky', title: 'PowerShell' },
+  pypi: { color: 'sky', title: 'PyPI' },
+  python: { color: 'amber', title: 'Python' },
+  raspberrypi: { color: 'rose', title: 'Raspberry Pi' },
+  react: { color: 'cyan', title: 'React' },
+  redis: { color: 'red', title: 'Redis' },
+  regex: { color: 'indigo', title: 'RegEx' },
+  ruby: { color: 'red', title: 'Ruby' },
+  rust: { color: 'orange', title: 'Rust' },
+  sass: { color: 'pink', title: 'Sass' },
+  sqlite: { color: 'sky', title: 'SQLite' },
+  svelte: { color: 'orange', title: 'Svelte' },
+  swift: { color: 'orange', title: 'Swift' },
+  symfony: { color: 'slate', title: 'Symfony' },
+  tailwindcss: { color: 'cyan', title: 'Tailwind CSS' },
+  tauri: { color: 'amber', title: 'Tauri' },
+  terraform: { color: 'violet', title: 'Terraform' },
+  threedotjs: { color: 'slate', title: 'Three.js' },
+  typescript: { color: 'blue', title: 'TypeScript' },
+  unity: { color: 'slate', title: 'Unity' },
+  unrealengine: { color: 'slate', title: 'Unreal Engine' },
+  visualstudio: { color: 'purple', title: 'Visual Studio' },
+  visualstudiocode: { color: 'sky', title: 'VS Code' },
+  vite: { color: 'violet', title: 'Vite' },
+  vuedotjs: { color: 'emerald', title: 'Vue.js' },
+  windows: { color: 'sky', title: 'Windows' },
+  wordpress: { color: 'sky', title: 'WordPress' },
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches comma or whitespace separators between icon slugs inside a group. */
 const SLUG_SPLIT_RX = /[,\s]+/;
 
-/** Matches an optional trailing `:<perLine>` suffix at the end of a group specification (e.g., `figma,ai,ps:3`). */
-const GROUP_PER_LINE_SUFFIX_RX = /^(?<list>[\s\S]+?):(?<cols>\d+)$/;
+/** Matches a string consisting only of ASCII digits. */
+const DIGITS_ONLY_RX = /^\d+$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Split an optional trailing `:<perLine>` suffix off a group token (e.g., `figma,ai,ps:3`). */
+function splitGroupToken(token: string): GroupTokenParts {
+  const colonIndex = token.lastIndexOf(':');
+  const suffix = colonIndex > 0 ? token.slice(colonIndex + 1) : '';
+  if (!DIGITS_ONLY_RX.test(suffix)) {
+    return { iconList: token, perLine: undefined };
+  }
+  return { iconList: token.slice(0, colonIndex), perLine: Number(suffix) };
+}
 
 /** Parse a single group token (`icon1,icon2:6`) and return its cleaned icon list and optional `perLine` override. */
 function parseSingleGroupToken(
@@ -107,12 +281,9 @@ function parseSingleGroupToken(
     return undefined;
   }
 
-  const suffixMatch = GROUP_PER_LINE_SUFFIX_RX.exec(trimmed);
-  const iconListPart = suffixMatch?.groups?.list ?? trimmed;
-  const inlinePerLine = suffixMatch?.groups?.cols ? Number(suffixMatch.groups.cols) : undefined;
-
+  const { iconList, perLine } = splitGroupToken(trimmed);
   const slugs: string[] = [];
-  for (const part of iconListPart.split(SLUG_SPLIT_RX)) {
+  for (const part of iconList.split(SLUG_SPLIT_RX)) {
     const clean = part.trim().toLowerCase();
     if (clean.length > 0 && slugs.length < remainingBudget) {
       slugs.push(clean);
@@ -123,7 +294,159 @@ function parseSingleGroupToken(
     return undefined;
   }
 
-  return { icons: slugs, perLine: inlinePerLine ?? fallbackPerLine };
+  return { icons: slugs, perLine: perLine ?? fallbackPerLine };
+}
+
+/** Measure `StackGroup` bands into pixel dimensions, capping the total tile count at `MAX_STACK_ICONS`. */
+function buildMeasuredBands(
+  rawBands: readonly StackGroup[][],
+  spacing: StackSpacing
+): MeasuredStackLayout {
+  const { defaultPerLine, gap, groupGap, tileSize } = spacing;
+  const allSlugs: string[] = [];
+  const bands: MeasuredStackBand[] = [];
+
+  for (const rawBand of rawBands) {
+    const measuredGroups: MeasuredStackGroup[] = [];
+    for (const rawGroup of rawBand) {
+      const tiles: StackTile[] = [];
+      for (const slug of rawGroup.icons) {
+        const key = normalizeIconSlug(slug);
+        if (key.length > 0 && allSlugs.length < MAX_STACK_ICONS) {
+          tiles.push({ key, slug });
+          allSlugs.push(slug);
+        }
+      }
+      if (tiles.length > 0) {
+        const groupPerLine = clampInt(rawGroup.perLine, STACK_PER_LINE_RANGE, defaultPerLine);
+        const cols = Math.min(tiles.length, groupPerLine);
+        const rows = Math.ceil(tiles.length / groupPerLine);
+        measuredGroups.push({
+          cols,
+          height: rows * tileSize + (rows - 1) * gap,
+          perLine: groupPerLine,
+          rows,
+          tiles,
+          width: cols * tileSize + (cols - 1) * gap,
+        });
+      }
+    }
+
+    if (measuredGroups.length > 0) {
+      let bandWidth = 0;
+      let bandHeight = 0;
+      for (let i = 0; i < measuredGroups.length; i += 1) {
+        bandWidth += measuredGroups[i].width + (i > 0 ? groupGap : 0);
+        if (measuredGroups[i].height > bandHeight) {
+          bandHeight = measuredGroups[i].height;
+        }
+      }
+      bands.push({ groups: measuredGroups, height: bandHeight, width: bandWidth });
+    }
+  }
+
+  if (bands.length === 0) {
+    allSlugs.push('sparkles');
+    bands.push({
+      groups: [
+        {
+          cols: 1,
+          height: tileSize,
+          perLine: defaultPerLine,
+          rows: 1,
+          tiles: [{ key: 'sparkles', slug: 'sparkles' }],
+          width: tileSize,
+        },
+      ],
+      height: tileSize,
+      width: tileSize,
+    });
+  }
+
+  return { allSlugs, bands };
+}
+
+/**
+ * Resolve a tile's icon and register its body once in the shared `<defs>`, switching to the fallback
+ * icon once the unique-body length budget (`MAX_STACK_ICON_BODY_LENGTH`) is spent.
+ */
+function resolveStackTileIcon(slug: string, context: StackTileContext): StackTileIcon {
+  let data = resolveIconWithFallback(slug, STACK_FALLBACK_ICON_SLUG, true);
+  let bodyId = context.iconBodyIds.get(data);
+  if (bodyId !== undefined) {
+    return { bodyId, data };
+  }
+  if (context.iconBodyLength + data.innerSvg.length > MAX_STACK_ICON_BODY_LENGTH) {
+    data = resolveIconWithFallback(STACK_FALLBACK_ICON_SLUG, STACK_FALLBACK_ICON_SLUG);
+    bodyId = context.iconBodyIds.get(data);
+    if (bodyId !== undefined) {
+      return { bodyId, data };
+    }
+  }
+  bodyId = `stack-icon-${context.iconBodyIds.size}`;
+  context.iconBodyIds.set(data, bodyId);
+  context.iconBodyLength += data.innerSvg.length;
+  context.iconDefs += `<g id="${bodyId}">${data.innerSvg}</g>`;
+  return { bodyId, data };
+}
+
+/** Render a single Kumo 3D stack tile `<g>` with its `<title>` tooltip, surface layers, and an icon centered by its visible bounds. */
+function renderSingleStackTile(
+  tile: StackTile,
+  tileX: number,
+  tileY: number,
+  context: StackTileContext
+): string {
+  const { iconScale, iconSize, radius, tileSize, variant } = context;
+  const meta = getOwnValue(STACK_ICON_META, tile.key);
+  const themeColor = context.colorOverride ?? meta?.color ?? 'indigo';
+  const isPrimary = variant === '1';
+  if (isPrimary) {
+    context.usedPrimaryColors.add(themeColor);
+  }
+
+  const icon = resolveStackTileIcon(tile.slug, context);
+  // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile.
+  const visualCenterX = ((icon.data.minX + icon.data.maxX) / 2) * iconScale;
+  const iconX = Number((tileX + tileSize / 2 - visualCenterX).toFixed(2));
+  const iconY = Number((tileY + (tileSize - iconSize) / 2).toFixed(2));
+  const surfaceMarkup = renderKumoBoxSurface({
+    boxX: tileX,
+    boxY: tileY,
+    color: themeColor,
+    height: tileSize,
+    radius,
+    variant,
+    width: tileSize,
+  });
+  const iconMarkup = renderIconGroup({
+    color: isPrimary ? '#ffffff' : THEMES[themeColor].iconColor,
+    innerSvg: `<use href="#${icon.bodyId}" />`,
+    opacity: isPrimary ? STACK_PRIMARY_ICON_OPACITY : undefined,
+    strokeWidth: STACK_ICON_STROKE_WIDTH,
+    transform:
+      iconScale === 1
+        ? `translate(${iconX}, ${iconY})`
+        : `translate(${iconX}, ${iconY}) scale(${iconScale})`,
+    type: icon.data.type,
+  });
+  const titleText = escapeXml(
+    meta?.title ?? truncateText(formatSlugTitle(tile.slug), MAX_TILE_TITLE_LENGTH)
+  );
+
+  return `<g><title>${titleText}</title>${surfaceMarkup}${iconMarkup}</g>`;
+}
+
+// -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug.
+ * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'vue'`).
+ * @param fallback   Optional explicit theme color override.
+ * @returns The resolved `ThemeColorName` (`'indigo'` for uncurated slugs).
+ */
+export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
+  return fallback ?? getOwnValue(STACK_ICON_META, normalizeIconSlug(slug))?.color ?? 'indigo';
 }
 
 /**
@@ -170,190 +493,60 @@ export function parseStackGroups(rawInput: string, perLineList?: number[]): Stac
   return bands;
 }
 
-/** Normalize `StackRenderOptions` (`groups` or `icons`) into a 2D array of measured bands. */
-function buildMeasuredBands(
-  options: StackRenderOptions,
-  tileSize: number,
-  gap: number,
-  groupGap: number,
-  defaultPerLine: number
-): { allSlugs: string[]; bands: MeasuredStackBand[] } {
-  const rawBands: StackGroup[][] =
-    options.groups && options.groups.length > 0
-      ? options.groups
-      : parseStackGroups((options.icons ?? []).join(','));
-
-  const allSlugs: string[] = [];
-  const bands: MeasuredStackBand[] = [];
-
-  for (const rawBand of rawBands) {
-    const measuredGroups: MeasuredStackGroup[] = [];
-    for (const rawGroup of rawBand) {
-      const cleanIcons: string[] = [];
-      for (const slug of rawGroup.icons) {
-        const clean = slug.trim().toLowerCase();
-        if (clean.length > 0 && allSlugs.length < MAX_STACK_ICONS) {
-          cleanIcons.push(clean);
-          allSlugs.push(clean);
-        }
-      }
-      if (cleanIcons.length > 0) {
-        const groupPerLine = clampInt(
-          rawGroup.perLine,
-          MIN_STACK_PER_LINE,
-          MAX_STACK_PER_LINE,
-          defaultPerLine
-        );
-        const cols = Math.min(cleanIcons.length, groupPerLine);
-        const rows = Math.ceil(cleanIcons.length / groupPerLine);
-        const width = cols * tileSize + (cols - 1) * gap;
-        const height = rows * tileSize + (rows - 1) * gap;
-        measuredGroups.push({
-          cols,
-          height,
-          icons: cleanIcons,
-          perLine: groupPerLine,
-          rows,
-          width,
-        });
-      }
-    }
-
-    if (measuredGroups.length > 0) {
-      let bandWidth = 0;
-      let bandHeight = 0;
-      for (let i = 0; i < measuredGroups.length; i += 1) {
-        bandWidth += measuredGroups[i].width + (i > 0 ? groupGap : 0);
-        if (measuredGroups[i].height > bandHeight) {
-          bandHeight = measuredGroups[i].height;
-        }
-      }
-      bands.push({ groups: measuredGroups, height: bandHeight, width: bandWidth });
-    }
-  }
-
-  if (bands.length === 0) {
-    allSlugs.push('sparkles');
-    bands.push({
-      groups: [
-        {
-          cols: 1,
-          height: tileSize,
-          icons: ['sparkles'],
-          perLine: defaultPerLine,
-          rows: 1,
-          width: tileSize,
-        },
-      ],
-      height: tileSize,
-      width: tileSize,
-    });
-  }
-
-  return { allSlugs, bands };
-}
-
-/** Render a single Kumo 3D stack tile `<g>` with its `<title>` tooltip, surface layers, and centered icon. */
-function renderSingleStackTile(
-  slug: string,
-  tileX: number,
-  tileY: number,
-  tileSize: number,
-  radius: number,
-  iconPad: number,
-  iconScale: number,
-  variant: WidgetVariant,
-  colorOverride: ThemeColorName | undefined,
-  usedPrimaryColors: Set<ThemeColorName>
-): string {
-  const iconX = Number((tileX + iconPad).toFixed(2));
-  const iconY = Number((tileY + iconPad).toFixed(2));
-  const themeColor = resolveStackIconColor(slug, colorOverride);
-  const palette = THEMES[themeColor] || THEMES.indigo;
-  const gradId = `grad-${themeColor}`;
-  if (variant === '1') {
-    usedPrimaryColors.add(themeColor);
-  }
-
-  const iconData = resolveIcon(slug, true) ?? resolveIcon('code-xml');
-  const innerSvg = iconData ? iconData.innerSvg : '<circle cx="12" cy="12" r="9" />';
-  const surfaceMarkup = renderKumoBoxSurface(
-    tileX,
-    tileY,
-    tileSize,
-    tileSize,
-    radius,
-    variant,
-    palette,
-    gradId
-  );
-
-  const transformAttr =
-    iconScale === 1
-      ? `translate(${iconX}, ${iconY})`
-      : `translate(${iconX}, ${iconY}) scale(${iconScale})`;
-  const iconFillOrStroke = variant === '1' ? '#ffffff' : palette.iconColor;
-  const iconOpacityAttr = variant === '1' ? ' opacity="0.9"' : '';
-  const iconMarkup =
-    iconData?.type === 'lucide'
-      ? `<g transform="${transformAttr}" fill="none" stroke="${iconFillOrStroke}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"${iconOpacityAttr}>${innerSvg}</g>`
-      : `<g transform="${transformAttr}" fill="${iconFillOrStroke}"${iconOpacityAttr}>${innerSvg}</g>`;
-  const titleText = escapeXml(resolveStackIconTitle(slug));
-
-  return `<g><title>${titleText}</title>${surfaceMarkup}${iconMarkup}</g>`;
-}
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 /**
  * Render a standalone SVG tech stack icon row, grid, or multi-group layout (`svg.xul.is/stack/:icons`).
  * @param options   Stack grid rendering configuration (`icons`, `groups`, `perLine`, `size`, `gap`, `groupGap`, `variant`, `color`, `anim`).
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderStack(options: StackRenderOptions): string {
-  const tileSize = clampInt(
-    options.size,
-    MIN_STACK_TILE_SIZE,
-    MAX_STACK_TILE_SIZE,
-    DEFAULT_STACK_TILE_SIZE
-  );
-  const gap = clampInt(options.gap, MIN_STACK_GAP, MAX_STACK_GAP, DEFAULT_STACK_GAP);
+  const tileSize = clampInt(options.size, STACK_TILE_SIZE_RANGE);
+  const gap = clampInt(options.gap, STACK_GAP_RANGE);
   const groupGap = clampInt(
     options.groupGap,
-    MIN_STACK_GROUP_GAP,
-    MAX_STACK_GROUP_GAP,
-    Math.round(gap * 3.25)
+    STACK_GROUP_GAP_RANGE,
+    Math.round(gap * GROUP_GAP_RATIO)
   );
-  const defaultPerLine = clampInt(
-    options.perLine,
-    MIN_STACK_PER_LINE,
-    MAX_STACK_PER_LINE,
-    DEFAULT_STACK_PER_LINE
-  );
-  const variant: WidgetVariant = options.variant ?? '2';
+  const defaultPerLine = clampInt(options.perLine, STACK_PER_LINE_RANGE);
+  const variant: BadgeVariant = options.variant ?? '2';
   const animMode: AnimationMode = options.anim ?? 'default';
-  const hasSheen = animMode === 'sheen' || animMode.startsWith('sheen,');
+  const hasSheen = isSheenMode(animMode);
 
-  const { allSlugs, bands } = buildMeasuredBands(options, tileSize, gap, groupGap, defaultPerLine);
+  const rawBands =
+    options.groups && options.groups.length > 0
+      ? options.groups
+      : parseStackGroups((options.icons ?? []).join(','));
+  const { allSlugs, bands } = buildMeasuredBands(rawBands, {
+    defaultPerLine,
+    gap,
+    groupGap,
+    tileSize,
+  });
 
   let totalWidth = 0;
   let totalHeight = 0;
-  for (let b = 0; b < bands.length; b += 1) {
-    if (bands[b].width > totalWidth) {
-      totalWidth = bands[b].width;
-    }
-    totalHeight += bands[b].height + (b > 0 ? groupGap : 0);
+  for (let i = 0; i < bands.length; i += 1) {
+    totalWidth = Math.max(totalWidth, bands[i].width);
+    totalHeight += bands[i].height + (i > 0 ? groupGap : 0);
   }
 
   const radius = Math.max(5, Math.round(tileSize * 0.24));
   const iconSize = Math.round(tileSize * (24 / 42));
-  const iconScale = Number((iconSize / 24).toFixed(4));
-  const iconPad = Number(((tileSize - iconSize) / 2).toFixed(2));
+  const tileContext: StackTileContext = {
+    colorOverride: options.color,
+    iconBodyIds: new Map<ResolvedIcon, string>(),
+    iconBodyLength: 0,
+    iconDefs: '',
+    iconScale: Number((iconSize / 24).toFixed(4)),
+    iconSize,
+    radius,
+    tileSize,
+    usedPrimaryColors: new Set<ThemeColorName>(),
+    variant,
+  };
 
   let tilesMarkup = '';
   let clipRects = '';
   let bandOriginY = 0;
-  const usedPrimaryColors = new Set<ThemeColorName>();
 
   for (const band of bands) {
     const bandOffsetX = Number(((totalWidth - band.width) / 2).toFixed(1));
@@ -362,10 +555,10 @@ export function renderStack(options: StackRenderOptions): string {
     for (const group of band.groups) {
       const groupOriginY = bandOriginY + Number(((band.height - group.height) / 2).toFixed(1));
 
-      for (let i = 0; i < group.icons.length; i += 1) {
+      for (let i = 0; i < group.tiles.length; i += 1) {
         const rowIdx = Math.floor(i / group.perLine);
         const colIdx = i % group.perLine;
-        const rowCount = Math.min(group.perLine, group.icons.length - rowIdx * group.perLine);
+        const rowCount = Math.min(group.perLine, group.tiles.length - rowIdx * group.perLine);
         const rowOffsetX =
           group.rows > 1
             ? Number((((group.cols - rowCount) * (tileSize + gap)) / 2).toFixed(1))
@@ -374,18 +567,7 @@ export function renderStack(options: StackRenderOptions): string {
         const tileX = Number((groupOriginX + rowOffsetX + colIdx * (tileSize + gap)).toFixed(1));
         const tileY = Number((groupOriginY + rowIdx * (tileSize + gap)).toFixed(1));
 
-        tilesMarkup += renderSingleStackTile(
-          group.icons[i],
-          tileX,
-          tileY,
-          tileSize,
-          radius,
-          iconPad,
-          iconScale,
-          variant,
-          options.color,
-          usedPrimaryColors
-        );
+        tilesMarkup += renderSingleStackTile(group.tiles[i], tileX, tileY, tileContext);
 
         if (hasSheen) {
           clipRects += `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
@@ -399,25 +581,24 @@ export function renderStack(options: StackRenderOptions): string {
   }
 
   let gradientDefs = variant === '1' ? '' : renderDarkBgGradientDef();
-  for (const colorName of usedPrimaryColors) {
-    gradientDefs += renderThemeGradientDef(`grad-${colorName}`, THEMES[colorName] || THEMES.indigo);
+  for (const colorName of tileContext.usedPrimaryColors) {
+    gradientDefs += renderThemeGradientDef(colorName);
   }
 
-  const sheen = renderSheenOverlay(
+  const sheen = renderSheenOverlay({
     animMode,
-    totalWidth,
-    totalHeight,
+    clipContent: clipRects,
+    height: totalHeight,
+    idPrefix: 'stack-sheen',
     radius,
-    'stack-sheen',
-    clipRects
-  );
-  const ariaLabel = escapeXml(`tech stack: ${allSlugs.join(', ')}`);
+    width: totalWidth,
+  });
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${totalHeight}" viewBox="0 0 ${totalWidth} ${totalHeight}" fill="none" role="img" aria-label="${ariaLabel}">
-  <defs>
-    ${gradientDefs}
-    ${sheen.clipDef}
-  </defs>
-  ${tilesMarkup}${sheen.overlay}
-</svg>`;
+  return renderSvgDocument({
+    ariaLabel: `tech stack: ${allSlugs.join(', ')}`,
+    body: `${tilesMarkup}${sheen.overlay}`,
+    defs: `${gradientDefs}${tileContext.iconDefs}${sheen.clipDef}`,
+    height: totalHeight,
+    width: totalWidth,
+  });
 }

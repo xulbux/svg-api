@@ -1,328 +1,86 @@
 /**
- * Worker entrypoint – Hono router for `svg.xul.is` (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), readable query DSL, smart document redirects, and Tier-2 SVG edge caching.
+ * Worker entrypoint – Hono router for `svg.xul.is`: documentation pages, SVG routes (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), smart document redirects, and Tier-2 SVG edge caching.
  */
 
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { STATUS_PRESET_MAP } from '@/config/services';
-import { DOT_COLORS, resolveColor } from '@/config/theme';
+import { DEFAULT_ENV, FALLBACK_REDIRECT_URL } from '@/config/site';
 import { renderFaviconSvg } from '@/preview/layout';
-import type { DocsSectionSlug } from '@/preview/page';
-import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
-import { getEdgeCache, putInEdgeCache, resolveServiceMetric } from '@/services/fetcher';
 import {
-  parseStackGroups,
-  renderBadge,
-  renderButton,
-  renderIcon,
-  renderQuote,
-  renderStack,
-} from '@/svg/renderer';
-import type {
-  AnimationMode,
-  BadgeSpecialElement,
-  BadgeVariant,
-  ButtonSize,
-  DotState,
-  Env,
-  QuoteLayout,
-  QuoteSize,
-  StripTickState,
-  ThemeColorName,
-  WaitUntilContext,
-  WidgetVariant,
-} from '@/types';
+  DEFAULT_DOCS_SECTION,
+  isDocsSectionSlug,
+  renderDocsHtml,
+  renderHomeHtml,
+} from '@/preview/page';
+import { renderServiceBadge, resolveSvgRoute } from '@/routes/svg';
+import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
+import { resolveServiceMetric, resolveServiceRedirectUrl } from '@/services/fetcher';
+import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Default fallback values for a badge route before applying URL query overrides. */
-interface RouteBadgeDefaults {
-  /** Default theme color token. */
-  color?: ThemeColorName;
-  /** Default status dot state. */
-  dot?: DotState;
-  /** Default icon slug. */
-  icon?: string;
-  /** Default left-hand label text. */
-  label: string;
-  /** Default right-hand special element. */
-  special?: BadgeSpecialElement;
-  /** Default right-hand value text. */
-  value?: string;
-  /** Default badge variant (`1`, `2`, `3`). */
-  variant: BadgeVariant;
+/** Hono request context with Worker bindings. */
+type AppContext = Context<{ Bindings: Env }>;
+
+/** Memoized documentation page with its precomputed entity tag. */
+interface MemoizedHtmlPage {
+  /** Weak `ETag` header value computed once from `html`. */
+  etag: string;
+  /** Complete HTML document. */
+  html: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Default redirect destination when preview pages are disabled in production. */
-const ROOT_REDIRECT_URL = 'https://xul.is';
+/** Route prefixes served by the SVG dispatcher (`/<prefix>` and `/<prefix>/*`). */
+const SVG_ROUTE_PREFIXES: readonly string[] = ['badge', 'btn', 'button', 'icon', 'quote', 'stack'];
 
-/** Set of valid documentation subpage slugs under `/docs/:section`. */
-const VALID_DOCS_SECTIONS: ReadonlySet<DocsSectionSlug> = new Set([
-  'badges',
-  'buttons',
-  'colors',
-  'icons',
-  'quotes',
-  'services',
-  'stack',
-]);
+/** `Cache-Control` header for the deterministic, memoized documentation HTML pages. */
+const HTML_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
 
-/** Set of valid badge and button variant identifiers (`'1'`, `'2'`, `'3'`). */
-const VALID_VARIANTS: ReadonlySet<BadgeVariant> = new Set(['1', '2', '3']);
+/** Security headers attached to every HTML documentation response. */
+const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-Content-Type-Options': 'nosniff',
+};
 
-/** Set of valid standalone widget variants (`'1'`, `'2'`, `'3'`). */
-const VALID_WIDGET_VARIANTS: ReadonlySet<WidgetVariant> = new Set(['1', '2', '3']);
+/**
+ * Restrictive `Content-Security-Policy` for SVG responses (defense in depth against SVG XSS when a
+ * badge is opened directly): No scripts or external resources; Inline style attributes and SMIL
+ * animations keep working.
+ */
+const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'";
 
-/** Set of valid per-icon motion tokens for `?anim=`. */
-const VALID_ICON_MOTIONS: ReadonlySet<string> = new Set([
-  'auto',
-  'default',
-  'float',
-  'none',
-  'nudge',
-  'pulse',
-  'shake',
-  'spin',
-]);
+/** Shared edge cache TTL in seconds for successfully resolved service preset badges. */
+const SERVICE_TTL_SECONDS = 600;
 
-/** Set of valid 10-stage (`'0'`–`'9'`) strip tick characters. */
-const VALID_STRIP_STAGES: ReadonlySet<StripTickState> = new Set([
-  '0',
-  '1',
-  '2',
-  '3',
-  '4',
-  '5',
-  '6',
-  '7',
-  '8',
-  '9',
-]);
+/** Shared edge cache TTL in seconds for failed, pending, or invalid service preset badges. */
+const SERVICE_ERROR_TTL_SECONDS = 60;
 
-// ------------------------------------ REGEX PATTERNS -----------------------------------
+/** Shared edge cache TTL in seconds for the favicon. */
+const FAVICON_TTL_SECONDS = 86_400;
 
-/** Matches `+` characters in URL path segments for space decoding. */
-const PLUS_SIGN_RX = /\+/g;
+/** Multiplier of the polynomial rolling hash used for entity tags. */
+const ETAG_HASH_MULTIPLIER = 31;
 
-/** Matches comma or whitespace separators in list-style payloads. */
-const LIST_SEPARATOR_RX = /[,\s]+/;
+/** Modulus of the polynomial rolling hash (largest prime below `2^32`; Keeps every step a safe integer). */
+const ETAG_HASH_MODULUS = 4_294_967_291;
 
-/** Matches trailing `%` sign on percentage strings. */
-const TRAILING_PERCENT_RX = /%$/;
+/** Memoized documentation pages and their entity tags keyed by page id (`home`, `docs/<section>`). */
+const HTML_PAGE_CACHE = new Map<string, MemoizedHtmlPage>();
+
+/** Lazily rendered favicon SVG markup (rendered once per isolate). */
+let faviconSvg: string | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Safely decode a URL segment, converting `+` into spaces and handling already-decoded `%` characters. */
-function decodeSegment(raw: string): string {
-  const withSpaces = raw.replace(PLUS_SIGN_RX, ' ');
-  try {
-    return decodeURIComponent(withSpaces);
-  } catch {
-    return withSpaces;
-  }
-}
-
-/** Parse a comma-separated list of numbers for a sparkline. */
-function parseSparklineNumbers(rawPayload: string): number[] | undefined {
-  const parts = rawPayload.trim().split(LIST_SEPARATOR_RX);
-  const values: number[] = [];
-  for (const part of parts) {
-    if (part.length > 0) {
-      const num = Number(part);
-      if (Number.isFinite(num)) {
-        values.push(num);
-      }
-    }
-  }
-  return values.length >= 2 ? values : undefined;
-}
-
-/**
- * Parse a 10-stage strip payload (`'0'`–`'9'`, e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]`.
- */
-function parseStripStates(rawPayload: string): StripTickState[] | undefined {
-  const trimmed = rawPayload.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const tokens = LIST_SEPARATOR_RX.test(trimmed) ? trimmed.split(LIST_SEPARATOR_RX) : [...trimmed];
-  const states: StripTickState[] = [];
-  for (const token of tokens) {
-    const clean = token.trim() as StripTickState;
-    if (VALID_STRIP_STAGES.has(clean)) {
-      states.push(clean);
-    }
-  }
-  return states.length > 0 ? states.slice(0, 10) : undefined;
-}
-
-/** Parse a percentage payload with an optional `:pulse` / `:static` modifier (e.g., `'99.4'`, `'78:pulse'`, `'90:static'`). */
-function parsePercentageAndPulse(
-  rawPayload: string
-): { hasPulse?: boolean; value: number } | undefined {
-  const colonIdx = rawPayload.indexOf(':');
-  const numberPart = colonIdx !== -1 ? rawPayload.slice(0, colonIdx) : rawPayload;
-  const modifierPart =
-    colonIdx !== -1
-      ? rawPayload
-          .slice(colonIdx + 1)
-          .trim()
-          .toLowerCase()
-      : '';
-  const cleaned = numberPart.trim().replace(TRAILING_PERCENT_RX, '');
-  if (!cleaned) {
-    return undefined;
-  }
-  const num = Number(cleaned);
-  if (!Number.isFinite(num)) {
-    return undefined;
-  }
-  let hasPulse: boolean | undefined = undefined;
-  if (modifierPart === 'pulse') {
-    hasPulse = true;
-  } else if (modifierPart === 'static') {
-    hasPulse = false;
-  }
-  return { hasPulse, value: num };
-}
-
-/** Parse a `<kind>:<payload>` pair into a `BadgeSpecialElement`. */
-function parseSpecialKindAndPayload(
-  kind: string,
-  payload: string
-): BadgeSpecialElement | undefined {
-  switch (kind) {
-    case 'sparkline': {
-      const values = parseSparklineNumbers(payload);
-      return values ? { type: 'sparkline', values } : undefined;
-    }
-    case 'bar': {
-      const parsed = parsePercentageAndPulse(payload);
-      return parsed ? { hasPulse: parsed.hasPulse, type: 'bar', value: parsed.value } : undefined;
-    }
-    case 'ring': {
-      const parsed = parsePercentageAndPulse(payload);
-      return parsed ? { hasPulse: parsed.hasPulse, type: 'ring', value: parsed.value } : undefined;
-    }
-    case 'strip': {
-      const states = parseStripStates(payload);
-      return states ? { states, type: 'strip' } : undefined;
-    }
-    case 'delta': {
-      return payload.length > 0 ? { type: 'delta', value: payload } : undefined;
-    }
-    default: {
-      return undefined;
-    }
-  }
-}
-
-/** Parse an optional finite number query parameter (e.g., `?size=24`, `?stroke=2.25`). */
-function parseOptionalNumber(raw?: string): number | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  const cleaned = raw.trim();
-  if (!cleaned) {
-    return undefined;
-  }
-  const parsed = Number(cleaned);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/** Resolve a raw `?dot=` query parameter (color name or status preset name like `'online'`, `'maintenance'`, `'standby'`). */
-function resolveDotState(input?: string, fallback?: DotState): DotState | undefined {
-  if (!input) {
-    return fallback;
-  }
-  const clean = input.trim().toLowerCase();
-  if (clean === 'none') {
-    return undefined;
-  }
-  const preset = STATUS_PRESET_MAP[clean];
-  if (preset) {
-    return preset.dot;
-  }
-  if (clean in DOT_COLORS) {
-    return clean as DotState;
-  }
-  return fallback;
-}
-
-/** Resolve a raw `?variant=` query parameter for stack/quote widgets (`'1'`, `'2'`, `'3'`). */
-function resolveWidgetVariant(input?: string, fallback: WidgetVariant = '2'): WidgetVariant {
-  if (!input) {
-    return fallback;
-  }
-  const candidate = input.trim() as WidgetVariant;
-  return VALID_WIDGET_VARIANTS.has(candidate) ? candidate : fallback;
-}
-
-/** Parse a single number or comma-separated list of numbers for `?perline=` (e.g., `?perline=8` or `?perline=8,6,6,4,3,3`). */
-function parsePerLineList(raw?: string): number[] | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  const values: number[] = [];
-  for (const part of raw.split(LIST_SEPARATOR_RX)) {
-    const parsed = Number(part.trim());
-    if (Number.isFinite(parsed) && parsed >= 1) {
-      values.push(Math.round(parsed));
-    }
-  }
-  return values.length > 0 ? values : undefined;
-}
-
-/** Resolve the quote card layout (`'horizontal'` or `'vertical'`) from `?layout=`, `?type=`, or `?center=`. */
-function resolveQuoteLayout(
-  layoutParam?: string,
-  typeParam?: string,
-  centerParam?: string
-): QuoteLayout {
-  const candidate = (layoutParam ?? typeParam ?? '').trim().toLowerCase();
-  if (candidate === 'vertical' || candidate === 'center' || candidate === 'v') {
-    return 'vertical';
-  }
-  if (centerParam === 'true' || centerParam === '1') {
-    return 'vertical';
-  }
-  return 'horizontal';
-}
-
-/** Resolve the quote card size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel font size from `?size=`. */
-function resolveQuoteSize(raw?: string): QuoteSize | number | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  const clean = raw.trim().toLowerCase();
-  if (clean === 'sm' || clean === 'md' || clean === 'lg' || clean === 'xl') {
-    return clean;
-  }
-  const numeric = Number(clean);
-  return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-/** Resolve the button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22` to `48`) from `?size=`. */
-function resolveButtonSize(raw?: string): ButtonSize | number | undefined {
-  if (!raw) {
-    return undefined;
-  }
-  const clean = raw.trim().toLowerCase();
-  if (clean === 'sm' || clean === 'md' || clean === 'lg' || clean === 'xl') {
-    return clean;
-  }
-  const numeric = Number(clean);
-  return Number.isFinite(numeric) ? numeric : undefined;
-}
-
-/** Build an HTTP `200` SVG response with edge cache headers. */
-function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
+/** Build an HTTP `200` SVG response with edge cache and security headers. */
+function buildSvgResponse(svg: string, ttlSeconds: number): Response {
   return new Response(svg, {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': `public, max-age=60, s-maxage=${ttlSeconds}, stale-while-revalidate=600`,
+      'Content-Security-Policy': SVG_CONTENT_SECURITY_POLICY,
       'Content-Type': 'image/svg+xml; charset=utf-8',
       'X-Content-Type-Options': 'nosniff',
     },
@@ -330,10 +88,62 @@ function buildSvgResponse(svg: string, ttlSeconds = 600): Response {
   });
 }
 
+/** Compute a weak entity tag (`W/"<hash>-<length>"`) for a document with a polynomial rolling hash. */
+function computeEtag(content: string): string {
+  let hash = 0;
+  for (let i = 0; i < content.length; i += 1) {
+    hash = (hash * ETAG_HASH_MULTIPLIER + content.charCodeAt(i)) % ETAG_HASH_MODULUS;
+  }
+  return `W/"${hash.toString(16)}-${content.length.toString(16)}"`;
+}
+
+/** Strip the weak validator prefix (`W/`) so entity tags compare weakly (RFC 9110 `If-None-Match`). */
+function stripWeakPrefix(etag: string): string {
+  return etag.startsWith('W/') ? etag.slice(2) : etag;
+}
+
+/** Check whether an `If-None-Match` request header matches `etag`. */
+function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
+  if (!ifNoneMatch) {
+    return false;
+  }
+  const opaqueTag = stripWeakPrefix(etag);
+  for (const candidate of ifNoneMatch.split(',')) {
+    const trimmed = candidate.trim();
+    if (trimmed === '*' || stripWeakPrefix(trimmed) === opaqueTag) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Resolve a memoized documentation page, computing its entity tag only once. */
+function getMemoizedPage(pageId: string, render: () => string): MemoizedHtmlPage {
+  let page = HTML_PAGE_CACHE.get(pageId);
+  if (!page) {
+    const html = render();
+    page = { etag: computeEtag(html), html };
+    HTML_PAGE_CACHE.set(pageId, page);
+  }
+  return page;
+}
+
+/** Serve a memoized documentation page with security headers, answering matching revalidations with `304`. */
+function buildHtmlResponse(context: AppContext, pageId: string, render: () => string): Response {
+  const page = getMemoizedPage(pageId, render);
+  const headers = {
+    ...HTML_SECURITY_HEADERS,
+    'Cache-Control': HTML_CACHE_CONTROL,
+    ETag: page.etag,
+  };
+  if (isEtagMatch(context.req.header('If-None-Match'), page.etag)) {
+    return new Response(undefined, { headers, status: 304 });
+  }
+  return context.html(page.html, 200, headers);
+}
+
 /** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
-function getSafeExecutionContext(
-  context: Context<{ Bindings: Env }>
-): WaitUntilContext | undefined {
+function getSafeExecutionContext(context: AppContext): WaitUntilContext | undefined {
   try {
     return context.executionCtx;
   } catch {
@@ -342,37 +152,32 @@ function getSafeExecutionContext(
 }
 
 /** Validate and return an HTTP/HTTPS redirect URL, or `undefined` if unsafe/invalid. */
-function sanitizeRedirectUrl(rawUrl?: string): string | undefined {
-  if (!rawUrl) {
-    return undefined;
-  }
+function sanitizeRedirectUrl(rawUrl: string): string | undefined {
   const trimmed = rawUrl.trim();
-  if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
-    return trimmed;
+  return trimmed.startsWith('https://') || trimmed.startsWith('http://') ? trimmed : undefined;
+}
+
+/** Check whether the homepage and documentation pages are disabled in production. */
+function isPreviewDisabled(context: AppContext): boolean {
+  return context.env?.ALLOW_PREVIEW_IN_PROD === 'false';
+}
+
+/**
+ * Extract the raw (still percent-encoded) pathname Hono routes on. The SVG dispatcher decodes every
+ * segment itself, and Hono's default decoded path made wildcard routes miss line terminators
+ * (`%0A`, `%0D`, `%E2%80%A8`), turning such badges into `404`s.
+ */
+function getRawPathname(request: Request): string {
+  const { url } = request;
+  const pathStart = url.indexOf('/', url.indexOf('://') + 3);
+  if (pathStart === -1) {
+    return '/';
   }
-  return undefined;
+  const queryStart = url.indexOf('?', pathStart);
+  return queryStart === -1 ? url.slice(pathStart) : url.slice(pathStart, queryStart);
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
-
-/**
- * Parse the unified `?special=<type>:<payload>` query parameter into a structured `BadgeSpecialElement`.
- * @param specialRaw   Raw `?special=` query parameter (e.g., `'bar:82'`, `'strip:9876425789'`).
- * @returns Parsed `BadgeSpecialElement`, or `undefined` if none is specified or valid.
- */
-export function parseSpecialParam(specialRaw?: string): BadgeSpecialElement | undefined {
-  if (!specialRaw) {
-    return undefined;
-  }
-  const trimmed = specialRaw.trim();
-  const colonIndex = trimmed.indexOf(':');
-  if (colonIndex <= 0) {
-    return undefined;
-  }
-  const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
-  const payload = trimmed.slice(colonIndex + 1).trim();
-  return parseSpecialKindAndPayload(kind, payload);
-}
 
 /**
  * Determine whether an incoming HTTP request is a top-level browser document navigation
@@ -388,152 +193,32 @@ export function isDocumentNavigation(request: Request): boolean {
   if (fetchDest === 'image') {
     return false;
   }
-  const accept = request.headers.get('Accept') || '';
+  const accept = request.headers.get('Accept') ?? '';
   return accept.includes('text/html') && !accept.startsWith('image/');
-}
-
-/**
- * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant` (`'1'`, `'2'`, `'3'`).
- * @param input      Raw `?variant=` query parameter value (`1`, `2`, `3`).
- * @param fallback   Default variant when `input` is omitted or invalid.
- * @returns Validated `BadgeVariant`.
- */
-export function resolveVariant(input?: string, fallback: BadgeVariant = '1'): BadgeVariant {
-  if (!input) {
-    return fallback;
-  }
-  const candidate = input.trim().toLowerCase() as BadgeVariant;
-  return VALID_VARIANTS.has(candidate) ? candidate : fallback;
-}
-
-/**
- * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
- * Supports single modes (`sheen`, `auto`, `spin`, `shake`, `nudge`, `pulse`, `float`, `none`),
- * per-icon pairs (`none,nudge`, `shake,nudge`), and combined sheen (`sheen,auto`, `sheen,none,nudge`).
- * @param input      Raw `?anim=` query parameter value.
- * @param fallback   Default animation mode when `input` is omitted or invalid.
- * @returns Validated `AnimationMode`.
- */
-export function resolveAnimationMode(
-  input?: string,
-  fallback: AnimationMode = 'default'
-): AnimationMode {
-  if (!input) {
-    return fallback;
-  }
-  const raw = input.trim().toLowerCase();
-  if (!raw) {
-    return fallback;
-  }
-  const tokens = raw.split(LIST_SEPARATOR_RX).filter((t) => t.length > 0);
-  const hasSheen = tokens.includes('sheen');
-  const motionTokens = tokens.filter((t) => t !== 'sheen');
-
-  if (motionTokens.length === 0) {
-    return hasSheen ? 'sheen' : fallback;
-  }
-  const [firstMotion, secondMotion] = motionTokens;
-  if (motionTokens.length === 1 && VALID_ICON_MOTIONS.has(firstMotion)) {
-    if (hasSheen && (firstMotion === 'none' || firstMotion === 'default')) {
-      return 'sheen';
-    }
-    return (hasSheen ? `sheen,${firstMotion}` : firstMotion) as AnimationMode;
-  }
-  if (
-    motionTokens.length === 2 &&
-    VALID_ICON_MOTIONS.has(firstMotion) &&
-    VALID_ICON_MOTIONS.has(secondMotion)
-  ) {
-    const pair = `${firstMotion},${secondMotion}`;
-    return (hasSheen ? `sheen,${pair}` : pair) as AnimationMode;
-  }
-  return fallback;
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
 
-/** Return a `302` redirect response if the request is a document navigation and a valid service redirect URL exists. */
-function tryRedirectOnDocumentNav(
-  context: Context<{ Bindings: Env }>,
-  serviceRedirectUrl?: string
-): Response | undefined {
-  if (!isDocumentNavigation(context.req.raw)) {
-    return undefined;
-  }
-  const redirectUrl = sanitizeRedirectUrl(serviceRedirectUrl);
-  return redirectUrl ? context.redirect(redirectUrl, 302) : undefined;
-}
-
-/** Resolve `?icon=` query overrides, preserving `defaultIcon` on the left when `,right` shorthand is used on service presets. */
-function resolveIconQueryParam(
-  iconParam: string | undefined,
-  defaultIcon?: string
-): string | undefined {
-  if (iconParam === undefined) {
-    return defaultIcon;
-  }
-  const trimmed = iconParam.trim();
-  if (trimmed.startsWith(',') && defaultIcon) {
-    return `${defaultIcon}${trimmed}`;
-  }
-  return trimmed;
-}
-
-/** Apply canonical query overrides (`color`, `variant`, `icon`, `dot`, `anim`, `special`, and `label` when `allowLabelOverride` is `true`) and render a badge SVG. */
-function renderBadgeWithQueryOverrides(
-  context: Context<{ Bindings: Env }>,
-  defaults: RouteBadgeDefaults,
-  allowLabelOverride = false
-): string {
-  const colorParam = context.req.query('color');
-  const variantParam = context.req.query('variant');
-  const iconParam = context.req.query('icon');
-  const labelParam = allowLabelOverride ? context.req.query('label') : undefined;
-  const dotParam = context.req.query('dot');
-  const animParam = context.req.query('anim');
-  const specialParam = context.req.query('special');
-
-  const color = resolveColor(colorParam, defaults.color ?? 'indigo');
-  const variant = resolveVariant(variantParam, defaults.variant);
-  const icon = resolveIconQueryParam(iconParam, defaults.icon);
-  const label = labelParam ? decodeSegment(labelParam) : defaults.label;
-  const dot = resolveDotState(dotParam, defaults.dot);
-  const anim = resolveAnimationMode(animParam, 'default');
-  const special = parseSpecialParam(specialParam) ?? defaults.special;
-
-  return renderBadge({ anim, color, dot, icon, label, special, value: defaults.value, variant });
-}
-
-/** Apply canonical button query overrides (`color`, `variant`, `size`, `icon`, `dot`, `anim`) and render a button SVG. */
-function renderButtonWithQueryOverrides(
-  context: Context<{ Bindings: Env }>,
-  label: string,
-  value?: string
-): string {
-  const color = resolveColor(context.req.query('color'), 'indigo');
-  const variant = resolveVariant(context.req.query('variant'), '1');
-  const size = resolveButtonSize(context.req.query('size'));
-  const icon = resolveIconQueryParam(context.req.query('icon'));
-  const dot = resolveDotState(context.req.query('dot'));
-  const anim = resolveAnimationMode(context.req.query('anim'), 'default');
-
-  return renderButton({ anim, color, dot, icon, label, size, value, variant });
-}
-
-/** Handle 3-segment and 4-segment external service preset routes (`/badge/gh/*`, `/badge/pypi/*`, `/badge/npm/*`, `/badge/ovsx/*`, `/badge/crates/*`, `/badge/docker/*`). */
-async function handleServicePreset(
-  context: Context<{ Bindings: Env }>,
-  service: string,
-  owner: string | undefined,
-  target: string,
-  metric: string
+/** Handle a service preset badge: redirect document navigations, otherwise serve from the edge cache or upstream. */
+async function handleServiceRoute(
+  context: AppContext,
+  url: URL,
+  request: ServiceRequest
 ): Promise<Response> {
-  const isDocNav = isDocumentNavigation(context.req.raw);
-  const edgeCache = getEdgeCache();
-  const cacheKey = new Request(context.req.url, { method: 'GET' });
+  const env = context.env ?? DEFAULT_ENV;
 
-  // Tier 2 Rendered SVG Cache Lookup (fast path for `<img src="...">` requests).
-  if (!isDocNav && edgeCache) {
+  // Document navigations only need the redirect target; Skip the upstream fetch entirely.
+  if (isDocumentNavigation(context.req.raw)) {
+    const redirectUrl = sanitizeRedirectUrl(resolveServiceRedirectUrl(request, env));
+    if (redirectUrl) {
+      return context.redirect(redirectUrl, 302);
+    }
+  }
+
+  // Tier-2 rendered SVG cache lookup (fast path for `<img src="...">` requests).
+  const edgeCache = getEdgeCache();
+  const cacheKey = new Request(url.toString());
+  if (edgeCache) {
     const cachedSvg = await edgeCache.match(cacheKey);
     if (cachedSvg) {
       return cachedSvg;
@@ -541,274 +226,78 @@ async function handleServicePreset(
   }
 
   const executionCtx = getSafeExecutionContext(context);
-  const envBindings: Env = context.env ?? { DEFAULT_GH_OWNER: 'xulbux' };
-
-  const { result, status } = await resolveServiceMetric(
-    service,
-    owner,
-    target,
-    metric,
-    envBindings,
-    executionCtx
+  const { result, status } = await resolveServiceMetric(request, env, executionCtx);
+  const isSuccess = status === 200;
+  const response = buildSvgResponse(
+    renderServiceBadge(result, url.searchParams),
+    isSuccess ? SERVICE_TTL_SECONDS : SERVICE_ERROR_TTL_SECONDS
   );
-
-  const redirectResponse = tryRedirectOnDocumentNav(context, result.redirectUrl);
-  if (redirectResponse) {
-    return redirectResponse;
-  }
-
-  const svg = renderBadgeWithQueryOverrides(
-    context,
-    {
-      color: result.color,
-      dot: result.dot,
-      icon: result.icon,
-      label: result.label,
-      special: result.special,
-      value: result.value,
-      variant: '1',
-    },
-    true
-  );
-
-  const ttlSeconds = status === 200 ? 600 : 60;
-  const response = buildSvgResponse(svg, ttlSeconds);
-  if (edgeCache && status === 200) {
+  if (edgeCache && isSuccess) {
     await putInEdgeCache(edgeCache, cacheKey, response.clone(), executionCtx);
   }
   return response;
 }
 
-/** Handle `/favicon.svg` and `/favicon.ico` routes with the brand SVG mark. */
+/** Handle every SVG route (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`). */
+function handleSvgRoute(context: AppContext): Response | Promise<Response> {
+  const url = new URL(context.req.url);
+  const match = resolveSvgRoute(url);
+  if (!match) {
+    return context.notFound();
+  }
+  if (match.kind === 'service') {
+    return handleServiceRoute(context, url, match.request);
+  }
+  return buildSvgResponse(match.svg, match.ttlSeconds);
+}
+
+/** Handle `/favicon.svg` and `/favicon.ico` routes with the memoized brand SVG mark. */
 function handleFaviconRoute(): Response {
-  return buildSvgResponse(renderFaviconSvg(), 86_400);
+  faviconSvg ??= renderFaviconSvg();
+  return buildSvgResponse(faviconSvg, FAVICON_TTL_SECONDS);
 }
 
-/** Handle root `/` homepage route (redirects to `ROOT_REDIRECT_URL` only if preview/docs are disabled). */
-function handleRootRoute(context: Context<{ Bindings: Env }>): Response {
-  if (context.env?.ALLOW_PREVIEW_IN_PROD === 'false') {
-    return context.redirect(ROOT_REDIRECT_URL, 302);
+/** Handle the `/` homepage route (redirects to `FALLBACK_REDIRECT_URL` when preview pages are disabled). */
+function handleRootRoute(context: AppContext): Response {
+  if (isPreviewDisabled(context)) {
+    return context.redirect(FALLBACK_REDIRECT_URL, 302);
   }
-  return context.html(renderHomeHtml());
+  return buildHtmlResponse(context, 'home', renderHomeHtml);
 }
 
-/** Handle `/docs` and `/preview` routes by redirecting to the first documentation section (`/docs/badges`). */
-function handlePreviewRoute(context: Context<{ Bindings: Env }>): Response {
-  if (context.env?.ALLOW_PREVIEW_IN_PROD === 'false') {
-    return context.redirect(ROOT_REDIRECT_URL, 302);
+/** Handle `/docs` and `/preview` by redirecting to the first documentation section. */
+function handleDocsIndexRoute(context: AppContext): Response {
+  if (isPreviewDisabled(context)) {
+    return context.redirect(FALLBACK_REDIRECT_URL, 302);
   }
-  return context.redirect('/docs/badges', 302);
+  return context.redirect(`/docs/${DEFAULT_DOCS_SECTION}`, 302);
 }
 
-/** Handle `/docs/:section` dedicated element documentation subpage route. */
-function handleDocsSectionRoute(context: Context<{ Bindings: Env }>): Response {
-  if (context.env?.ALLOW_PREVIEW_IN_PROD === 'false') {
-    return context.redirect(ROOT_REDIRECT_URL, 302);
+/** Handle the `/docs/:section` documentation subpage route. */
+function handleDocsSectionRoute(context: AppContext): Response {
+  if (isPreviewDisabled(context)) {
+    return context.redirect(FALLBACK_REDIRECT_URL, 302);
   }
-  const rawSection = (context.req.param('section') ?? '').trim().toLowerCase() as DocsSectionSlug;
-  if (!VALID_DOCS_SECTIONS.has(rawSection)) {
-    return context.redirect('/docs/badges', 302);
+  const section = (context.req.param('section') ?? '').trim().toLowerCase();
+  if (!isDocsSectionSlug(section)) {
+    return context.redirect(`/docs/${DEFAULT_DOCS_SECTION}`, 302);
   }
-  return context.html(renderDocsHtml(rawSection));
+  return buildHtmlResponse(context, `docs/${section}`, () => renderDocsHtml(section));
 }
 
-/** Handle `/badge/status/:state/:text` status preset route. */
-function handleStatusRoute(context: Context<{ Bindings: Env }>): Response {
-  const stateKey = (context.req.param('state') ?? '').toLowerCase();
-  const text = decodeSegment(context.req.param('text') ?? '');
-  const preset = STATUS_PRESET_MAP[stateKey] || STATUS_PRESET_MAP.online;
+const app = new Hono<{ Bindings: Env }>({ getPath: getRawPathname });
 
-  const svg = renderBadgeWithQueryOverrides(context, {
-    color: preset.color,
-    dot: preset.dot,
-    label: preset.defaultLabel,
-    value: text,
-    variant: '2',
-  });
-
-  return buildSvgResponse(svg, 300);
-}
-
-/** Handle 3-segment service route `/badge/:service{gh|pypi|npm|ovsx|crates|docker}/:target/:metric`. */
-function handleDefaultOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
-  return handleServicePreset(
-    context,
-    context.req.param('service') ?? '',
-    undefined,
-    context.req.param('target') ?? '',
-    context.req.param('metric') ?? ''
-  );
-}
-
-/** Handle 4-segment service route `/badge/:service{gh|pypi|npm|ovsx|crates|docker}/:owner/:target/:metric`. */
-function handleExplicitOwnerServiceRoute(context: Context<{ Bindings: Env }>): Promise<Response> {
-  return handleServicePreset(
-    context,
-    context.req.param('service') ?? '',
-    context.req.param('owner'),
-    context.req.param('target') ?? '',
-    context.req.param('metric') ?? ''
-  );
-}
-
-/** Handle static 2-segment badge route `/badge/:label/:value`. */
-function handleTwoSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
-  const svg = renderBadgeWithQueryOverrides(context, {
-    color: 'indigo',
-    label: decodeSegment(context.req.param('label') ?? ''),
-    value: decodeSegment(context.req.param('value') ?? ''),
-    variant: '1',
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle 1-segment `22px` badge route `/badge/:label`. */
-function handleSingleSegmentBadgeRoute(context: Context<{ Bindings: Env }>): Response {
-  const svg = renderBadgeWithQueryOverrides(context, {
-    color: 'indigo',
-    label: decodeSegment(context.req.param('label') ?? ''),
-    variant: '1',
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle 2-segment split CTA button route `/button/:label/:value` and `/btn/:label/:value`. */
-function handleTwoSegmentButtonRoute(context: Context<{ Bindings: Env }>): Response {
-  const svg = renderButtonWithQueryOverrides(
-    context,
-    decodeSegment(context.req.param('label') ?? ''),
-    decodeSegment(context.req.param('value') ?? '')
-  );
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle 1-segment CTA button route `/button/:label` and `/btn/:label`. */
-function handleSingleSegmentButtonRoute(context: Context<{ Bindings: Env }>): Response {
-  const svg = renderButtonWithQueryOverrides(
-    context,
-    decodeSegment(context.req.param('label') ?? '')
-  );
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle standalone icon route `/icon/:icon`. */
-function handleStandaloneIconRoute(context: Context<{ Bindings: Env }>): Response {
-  const colorParam = context.req.query('color');
-  const sizeParam = context.req.query('size');
-  const strokeParam = context.req.query('stroke');
-  const animParam = context.req.query('anim');
-
-  const svg = renderIcon({
-    anim: resolveAnimationMode(animParam, 'default'),
-    color: resolveColor(colorParam, 'indigo'),
-    icon: decodeSegment(context.req.param('icon') ?? ''),
-    size: parseOptionalNumber(sizeParam),
-    strokeWidth: parseOptionalNumber(strokeParam),
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle tech stack icon row/grid/multi-group route `/stack/:icons` and `/stack`. */
-function handleStackRoute(context: Context<{ Bindings: Env }>): Response {
-  const rawIcons =
-    context.req.param('icons') ??
-    context.req.query('icons') ??
-    context.req.query('i') ??
-    context.req.query('groups') ??
-    '';
-  const decodedIcons = decodeSegment(rawIcons);
-  const perLineList = parsePerLineList(context.req.query('perline'));
-  const groups = parseStackGroups(decodedIcons, perLineList);
-  const colorParam = context.req.query('color');
-  const groupGapParam = context.req.query('groupgap') ?? context.req.query('ggap');
-
-  const svg = renderStack({
-    anim: resolveAnimationMode(context.req.query('anim'), 'default'),
-    color: colorParam ? resolveColor(colorParam, 'indigo') : undefined,
-    gap: parseOptionalNumber(context.req.query('gap')),
-    groupGap: parseOptionalNumber(groupGapParam),
-    groups,
-    perLine: perLineList?.[0],
-    size: parseOptionalNumber(context.req.query('size')),
-    variant: resolveWidgetVariant(context.req.query('variant'), '2'),
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-/** Handle quote card route `/quote/:author/:text`, `/quote/:text`, and `/quote`. */
-function handleQuoteRoute(context: Context<{ Bindings: Env }>): Response {
-  const rawAuthor = context.req.param('author') ?? context.req.query('author');
-  const pathText = context.req.param('text');
-  const queryText = context.req.query('text') ?? context.req.query('quote') ?? '';
-
-  const text = pathText ? decodeSegment(pathText) : decodeSegment(queryText);
-  const author = rawAuthor ? decodeSegment(rawAuthor) : undefined;
-  const layout = resolveQuoteLayout(
-    context.req.query('layout'),
-    context.req.query('type'),
-    context.req.query('center')
-  );
-  const size = resolveQuoteSize(context.req.query('size'));
-
-  const svg = renderQuote({
-    anim: resolveAnimationMode(context.req.query('anim'), 'default'),
-    author,
-    color: resolveColor(context.req.query('color'), 'indigo'),
-    layout,
-    size,
-    text,
-    variant: resolveWidgetVariant(context.req.query('variant'), '2'),
-    width: parseOptionalNumber(context.req.query('width')),
-  });
-
-  return buildSvgResponse(svg, 3600);
-}
-
-const app = new Hono<{ Bindings: Env }>();
-
-// 1. Homepage, Interactive Docs & SSOT Live Preview Studio.
+// 1. Homepage, documentation pages & favicon.
 app.get('/', handleRootRoute);
 app.get('/favicon.svg', handleFaviconRoute);
 app.get('/favicon.ico', handleFaviconRoute);
-app.get('/docs', handlePreviewRoute);
+app.get('/docs', handleDocsIndexRoute);
 app.get('/docs/:section', handleDocsSectionRoute);
-app.get('/preview', handlePreviewRoute);
+app.get('/preview', handleDocsIndexRoute);
 
-// 2. Badge Routes (/badge/*).
-app.get('/badge/status/:state/:text', handleStatusRoute);
-app.get(
-  '/badge/:service{gh|pypi|npm|ovsx|crates|docker}/:target/:metric',
-  handleDefaultOwnerServiceRoute
-);
-app.get(
-  '/badge/:service{gh|pypi|npm|ovsx|crates|docker}/:owner/:target/:metric',
-  handleExplicitOwnerServiceRoute
-);
-app.get('/badge/:label/:value', handleTwoSegmentBadgeRoute);
-app.get('/badge/:label', handleSingleSegmentBadgeRoute);
-
-// 3. CTA Button Routes (/button/* & /btn/*).
-app.get('/button/:label/:value', handleTwoSegmentButtonRoute);
-app.get('/button/:label', handleSingleSegmentButtonRoute);
-app.get('/btn/:label/:value', handleTwoSegmentButtonRoute);
-app.get('/btn/:label', handleSingleSegmentButtonRoute);
-
-// 4. Standalone Icon Route (/icon/:icon).
-app.get('/icon/:icon', handleStandaloneIconRoute);
-
-// 5. Tech Stack Icon Grid Routes (/stack/:icons & /stack).
-app.get('/stack/:icons', handleStackRoute);
-app.get('/stack', handleStackRoute);
-
-// 6. Quote Card Routes (/quote/:author/:text, /quote/:text, & /quote).
-app.get('/quote/:author/:text', handleQuoteRoute);
-app.get('/quote/:text', handleQuoteRoute);
-app.get('/quote', handleQuoteRoute);
+// 2. SVG routes (badges, service presets, buttons, icons, stacks & quotes).
+for (const prefix of SVG_ROUTE_PREFIXES) {
+  app.get(`/${prefix}/*`, handleSvgRoute);
+}
 
 export default app;

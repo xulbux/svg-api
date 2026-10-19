@@ -1,31 +1,80 @@
 /**
- * Icon resolver – Resolves Lucide (stroke) and Iconify brand/tech (`@iconify-json/devicon-plain` + `@iconify-json/simple-icons`) SVG paths.
+ * Icon resolver – Resolves Lucide (stroke) and Iconify brand/tech (`@iconify-json/devicon-plain` + `@iconify-json/simple-icons`) SVG paths and their exact horizontal ink bounds.
  */
 
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 import * as lucideIcons from 'lucide-static';
-import type { ResolvedIcon, ThemeColorName } from '@/types';
+import { createLruCache, getOwnValue, readLruCache, writeLruCache } from '@/svg/shared';
+import type { ResolvedIcon } from '@/types';
 
-// ------------------------------------ REGEX PATTERNS -----------------------------------
+// ---------------------------------------- TYPES ----------------------------------------
 
-/** Matches hyphen or underscore word separators in icon slugs. */
-const SLUG_SEPARATOR_RX = /[-_]/g;
+/** Mutable scan position inside an SVG path `d` string. */
+interface PathCursor {
+  /** Current character index. */
+  index: number;
+  /** Complete path data being scanned. */
+  pathData: string;
+}
 
-/** Matches hyphen, underscore, or dot characters in brand icon slugs. */
-const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+/** Mutable pen state while scanning an SVG path. */
+interface PathPen {
+  /** Active (possibly implicit) path command letter. */
+  command: string;
+  /** Current pen X coordinate. */
+  currentX: number;
+  /** Current pen Y coordinate. */
+  currentY: number;
+  /** Absolute X coordinate of the previous `C`/`S` segment's second control point (reflected by `S`). */
+  lastCubicControlX: number | undefined;
+  /** Absolute X coordinate of the previous `Q`/`T` segment's control point (reflected by `T`). */
+  lastQuadControlX: number | undefined;
+  /** X coordinate of the current subpath start (restored by `Z`). */
+  subpathStartX: number;
+  /** Y coordinate of the current subpath start (restored by `Z`). */
+  subpathStartY: number;
+}
 
-/** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="...">` controls color and sheen. */
-const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
+/** Running horizontal ink bounds in `24x24` icon space. */
+interface IconXBounds {
+  /** Rightmost visible X coordinate. */
+  maxX: number;
+  /** Leftmost visible X coordinate. */
+  minX: number;
+}
 
-/** Matches the inner content of an `<svg>...</svg>` element. */
-const INNER_SVG_RX = /<svg[^>]*>(?<inner>[\s\S]*?)<\/svg>/i;
+/** Absolute endpoint parameters of an SVG elliptical arc segment (`A`/`a`). */
+interface ArcSegment {
+  /** Arc end X coordinate. */
+  endX: number;
+  /** Arc end Y coordinate. */
+  endY: number;
+  /** Whether the large-arc flag is set. */
+  isLargeArc: boolean;
+  /** Whether the sweep flag is set (positive-angle direction). */
+  isSweep: boolean;
+  /** Ellipse X radius. */
+  radiusX: number;
+  /** Ellipse Y radius. */
+  radiusY: number;
+  /** Ellipse X-axis rotation in degrees. */
+  rotationDeg: number;
+  /** Arc start X coordinate. */
+  startX: number;
+  /** Arc start Y coordinate. */
+  startY: number;
+}
+
+/** Lazily built fallback icons. */
+interface LazyIconCache {
+  /** Plain stroked circle used when even the fallback slug cannot be resolved. */
+  circle?: ResolvedIcon;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/**
- * Scale factor normalizing `@iconify-json/devicon-plain`'s `128x128` coordinate space to `24x24` (`24 / 128 = 0.1875`).
- */
+/** Scale factor normalizing `@iconify-json/devicon-plain`'s `128x128` coordinate space to `24x24` (`24 / 128 = 0.1875`). */
 const DEVICON_SCALE = 0.1875;
 
 /**
@@ -44,7 +93,7 @@ const DEVICON_PREFERRED_SLUGS: ReadonlySet<string> = new Set([
 ]);
 
 /** Common icon slug aliases mapped to their canonical Lucide, Simple Icons, or Devicon Plain slugs. */
-const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
+export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   ae: 'adobeaftereffects',
   ai: 'adobeillustrator',
   aws: 'amazonwebservices',
@@ -64,6 +113,7 @@ const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   md: 'markdown',
   microchip: 'cpu',
   nodejs: 'nodedotjs',
+  postgres: 'postgresql',
   pr: 'adobepremierepro',
   ps: 'adobephotoshop',
   'puzzle-piece': 'puzzle',
@@ -80,106 +130,46 @@ const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   vue: 'vuedotjs',
 };
 
-/**
- * Curated semantic Tailwind v4 theme colors for tech stack icons on `/stack/:icons`.
- * Used when no explicit uniform `?color=` query parameter is specified.
- */
-const STACK_ICON_COLORS: Readonly<Record<string, ThemeColorName>> = {
-  adobeaftereffects: 'violet',
-  adobeillustrator: 'orange',
-  adobephotoshop: 'sky',
-  adobepremierepro: 'purple',
-  ae: 'violet',
-  ai: 'orange',
-  amazonwebservices: 'amber',
-  archlinux: 'cyan',
-  arduino: 'teal',
-  aws: 'amber',
-  azure: 'sky',
-  bash: 'emerald',
-  blender: 'orange',
-  c: 'blue',
-  cloudflare: 'orange',
-  cmake: 'red',
-  codepen: 'slate',
-  cplusplus: 'blue',
-  cpp: 'blue',
-  cs: 'violet',
-  csharp: 'violet',
-  css: 'sky',
-  css3: 'sky',
-  docker: 'sky',
-  dotnet: 'purple',
-  figma: 'pink',
-  firebase: 'amber',
-  git: 'orange',
-  github: 'slate',
-  githubactions: 'blue',
-  gnubash: 'emerald',
-  go: 'cyan',
-  gtk: 'emerald',
-  html: 'orange',
-  html5: 'orange',
-  java: 'orange',
-  javascript: 'yellow',
-  js: 'yellow',
-  kotlin: 'violet',
-  laravel: 'red',
-  latex: 'teal',
-  linux: 'amber',
-  lua: 'indigo',
-  markdown: 'slate',
-  md: 'slate',
-  microsoftazure: 'sky',
-  mysql: 'sky',
-  netlify: 'teal',
-  nodedotjs: 'green',
-  nodejs: 'green',
-  notion: 'slate',
-  npm: 'red',
-  obsidian: 'violet',
-  php: 'indigo',
-  pinia: 'yellow',
-  postgres: 'blue',
-  postgresql: 'blue',
-  powershell: 'sky',
-  pr: 'purple',
-  ps: 'sky',
-  py: 'amber',
-  pypi: 'sky',
-  python: 'amber',
-  raspberrypi: 'rose',
-  react: 'cyan',
-  redis: 'red',
-  regex: 'indigo',
-  rust: 'orange',
-  sass: 'pink',
-  sqlite: 'sky',
-  svelte: 'orange',
-  swift: 'orange',
-  symfony: 'slate',
-  tailwind: 'cyan',
-  tailwindcss: 'cyan',
-  tauri: 'amber',
-  terraform: 'violet',
-  threedotjs: 'slate',
-  threejs: 'slate',
-  ts: 'blue',
-  typescript: 'blue',
-  unity: 'slate',
-  unreal: 'slate',
-  unrealengine: 'slate',
-  visualstudio: 'purple',
-  visualstudiocode: 'sky',
-  vite: 'violet',
-  vscode: 'sky',
-  vue: 'emerald',
-  vuedotjs: 'emerald',
-  windows: 'sky',
-  wordpress: 'sky',
-};
+/** Lucide slug rendered by standalone `/icon/:icon` requests whose slug cannot be resolved. */
+export const FALLBACK_ICON_SLUG = 'circle-help';
 
-// -------------------------------------- INTERNALS --------------------------------------
+/** Inner SVG of the last-resort fallback icon (a plain `24x24` circle). */
+const FALLBACK_CIRCLE_SVG = '<circle cx="12" cy="12" r="9" />';
+
+/** Horizontal bounds used when an icon body contains no measurable geometry. */
+const DEFAULT_ICON_X_BOUNDS: Readonly<IconXBounds> = { maxX: 22, minX: 2 };
+
+/** Half of the default Lucide stroke width (`2.25 / 2`) added to stroked icon bounds. */
+const STROKE_BOUNDS_PAD = 1.125;
+
+/** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
+const MAX_ICON_SLUG_LENGTH = 64;
+
+/**
+ * Maximum number of resolved icons in the icon cache per Worker isolate. Misses are never cached: They
+ * are a few cheap map lookups, and caching them would let junk slugs evict hot entries.
+ */
+const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
+
+/** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
+const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
+
+/** Bounded LRU cache of resolved icons keyed by `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`. */
+const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(MAX_RESOLVED_ICON_CACHE_SIZE);
+
+/** Lazily built fallback icons. */
+const LAZY_ICONS: LazyIconCache = {};
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches hyphen or underscore word separators in icon slugs. */
+const SLUG_SEPARATOR_RX = /[-_]/g;
+
+/** Matches hyphen, underscore, or dot characters in brand icon slugs. */
+const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+
+/** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="...">` controls color and sheen. */
+const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
 
 /** Matches `<circle ...>` elements in SVG markup. */
 const CIRCLE_TAG_RX = /<circle\b[^>]*>/g;
@@ -199,23 +189,43 @@ const POLY_POINTS_RX = /<(?:polyline|polygon)\b[^>]*\bpoints="(?<pts>[^"]+)"/g;
 /** Matches `d="..."` path data attributes in SVG markup. */
 const PATH_D_RX = /\bd="(?<d>[^"]+)"/g;
 
+/** Matches a whitespace-delimited `cx="…"` attribute. */
+const CX_ATTR_RX = /(?:^|\s)cx="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `r="…"` attribute. */
+const R_ATTR_RX = /(?:^|\s)r="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `rx="…"` attribute. */
+const RX_ATTR_RX = /(?:^|\s)rx="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `x="…"` attribute. */
+const X_ATTR_RX = /(?:^|\s)x="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `width="…"` attribute (never `stroke-width="…"`). */
+const WIDTH_ATTR_RX = /(?:^|\s)width="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `x1="…"` attribute. */
+const X1_ATTR_RX = /(?:^|\s)x1="(?<value>[^"]+)"/;
+
+/** Matches a whitespace-delimited `x2="…"` attribute. */
+const X2_ATTR_RX = /(?:^|\s)x2="(?<value>[^"]+)"/;
+
 /** Matches whitespace or comma separators inside SVG coordinate lists. */
 const COORD_SPLIT_RX = /[\s,]+/;
 
-/** Matches a leading SVG path number token (integer, decimal, or scientific notation). */
-const LEADING_NUMBER_RX = /^[-+]?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/i;
+/** Matches an SVG path number token (integer, decimal, or scientific notation) at `lastIndex` (sticky). */
+const PATH_NUMBER_RX = /[-+]?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/iy;
 
-/** In-memory cache of resolved icons keyed by `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`. */
-const RESOLVED_ICON_CACHE = new Map<string, ResolvedIcon>();
+// -------------------------------------- INTERNALS --------------------------------------
 
-/** Extract a numeric attribute value (`attr="12.5"`) from an SVG tag string. */
-function extractNumericAttr(tag: string, attrName: string): number {
-  const match = new RegExp(`\\b${attrName}="([^"]+)"`).exec(tag);
-  return match ? Number(match[1]) : 0;
+/** Extract a numeric attribute value (`attr="12.5"`) from an SVG tag string (`0` when absent). */
+function extractNumericAttr(tag: string, attrRx: RegExp): number {
+  const value = attrRx.exec(tag)?.groups?.value;
+  return value === undefined ? 0 : Number(value);
 }
 
 /** Update running `[minX, maxX]` bounds with a candidate X coordinate in `24x24` space. */
-function updateBounds(bounds: { maxX: number; minX: number }, rawX: number, scale: number): void {
+function updateBounds(bounds: IconXBounds, rawX: number, scale: number): void {
   const scaled = rawX * scale;
   if (Number.isFinite(scaled)) {
     if (scaled < bounds.minX) {
@@ -228,179 +238,367 @@ function updateBounds(bounds: { maxX: number; minX: number }, rawX: number, scal
 }
 
 /** Record horizontal bounds for basic SVG geometric primitives (`circle`, `ellipse`, `rect`, `line`, `polyline`, `polygon`). */
-function recordShapeBounds(
-  svgStr: string,
-  scale: number,
-  bounds: { maxX: number; minX: number }
-): void {
+function recordShapeBounds(svgStr: string, scale: number, bounds: IconXBounds): void {
   for (const match of svgStr.matchAll(CIRCLE_TAG_RX)) {
-    const cx = extractNumericAttr(match[0], 'cx');
-    const r = extractNumericAttr(match[0], 'r');
-    updateBounds(bounds, cx - r, scale);
-    updateBounds(bounds, cx + r, scale);
+    const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
+    const radius = extractNumericAttr(match[0], R_ATTR_RX);
+    updateBounds(bounds, centerX - radius, scale);
+    updateBounds(bounds, centerX + radius, scale);
   }
   for (const match of svgStr.matchAll(ELLIPSE_TAG_RX)) {
-    const cx = extractNumericAttr(match[0], 'cx');
-    const rx = extractNumericAttr(match[0], 'rx');
-    updateBounds(bounds, cx - rx, scale);
-    updateBounds(bounds, cx + rx, scale);
+    const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
+    const radiusX = extractNumericAttr(match[0], RX_ATTR_RX);
+    updateBounds(bounds, centerX - radiusX, scale);
+    updateBounds(bounds, centerX + radiusX, scale);
   }
   for (const match of svgStr.matchAll(RECT_TAG_RX)) {
-    const x = extractNumericAttr(match[0], 'x');
-    const width = extractNumericAttr(match[0], 'width');
-    updateBounds(bounds, x, scale);
-    updateBounds(bounds, x + width, scale);
+    const rectX = extractNumericAttr(match[0], X_ATTR_RX);
+    const width = extractNumericAttr(match[0], WIDTH_ATTR_RX);
+    updateBounds(bounds, rectX, scale);
+    updateBounds(bounds, rectX + width, scale);
   }
   for (const match of svgStr.matchAll(LINE_TAG_RX)) {
-    updateBounds(bounds, extractNumericAttr(match[0], 'x1'), scale);
-    updateBounds(bounds, extractNumericAttr(match[0], 'x2'), scale);
+    updateBounds(bounds, extractNumericAttr(match[0], X1_ATTR_RX), scale);
+    updateBounds(bounds, extractNumericAttr(match[0], X2_ATTR_RX), scale);
   }
   for (const match of svgStr.matchAll(POLY_POINTS_RX)) {
-    const pts = (match.groups?.pts ?? '').trim().split(COORD_SPLIT_RX);
-    for (let i = 0; i < pts.length; i += 2) {
-      updateBounds(bounds, Number(pts[i]), scale);
+    const points = (match.groups?.pts ?? '').trim().split(COORD_SPLIT_RX);
+    for (let i = 0; i < points.length; i += 2) {
+      updateBounds(bounds, Number(points[i]), scale);
     }
   }
 }
 
-/** Record the horizontal bulge and endpoint of an SVG elliptical arc command (`A` or `a`). */
-function recordArcXBounds(
-  x0: number,
-  y0: number,
-  rx: number,
-  ry: number,
-  largeArc: number,
-  sweep: number,
-  x1: number,
-  y1: number,
+/** Evaluate a 1D cubic Bezier polynomial at curve parameter `progress` (`0`–`1`). */
+function evaluateCubic(
+  startX: number,
+  control1X: number,
+  control2X: number,
+  endX: number,
+  progress: number
+): number {
+  const inverse = 1 - progress;
+  return (
+    inverse * inverse * inverse * startX +
+    3 * inverse * inverse * progress * control1X +
+    3 * inverse * progress * progress * control2X +
+    progress * progress * progress * endX
+  );
+}
+
+/** Record the interior horizontal extrema of a cubic Bezier segment (the end points are recorded by the caller). */
+function recordCubicXBounds(
+  startX: number,
+  control1X: number,
+  control2X: number,
+  endX: number,
   scale: number,
-  bounds: { maxX: number; minX: number }
+  bounds: IconXBounds
 ): void {
-  updateBounds(bounds, x1, scale);
-  if (rx <= 0 || ry <= 0) {
+  // Roots of the derivative `3 * (a * t² + b * t + c)` are the interior extrema candidates.
+  const coefA = -startX + 3 * control1X - 3 * control2X + endX;
+  const coefB = 2 * (startX - 2 * control1X + control2X);
+  const coefC = control1X - startX;
+  const roots: number[] = [];
+  if (Math.abs(coefA) < 1e-12) {
+    if (Math.abs(coefB) > 1e-12) {
+      roots.push(-coefC / coefB);
+    }
+  } else {
+    const discriminant = coefB * coefB - 4 * coefA * coefC;
+    if (discriminant >= 0) {
+      const sqrtDiscriminant = Math.sqrt(discriminant);
+      roots.push(
+        (-coefB + sqrtDiscriminant) / (2 * coefA),
+        (-coefB - sqrtDiscriminant) / (2 * coefA)
+      );
+    }
+  }
+  for (const progress of roots) {
+    if (progress > 0 && progress < 1) {
+      updateBounds(bounds, evaluateCubic(startX, control1X, control2X, endX, progress), scale);
+    }
+  }
+}
+
+/** Record the interior horizontal extremum of a quadratic Bezier segment (the end points are recorded by the caller). */
+function recordQuadXBounds(
+  startX: number,
+  controlX: number,
+  endX: number,
+  scale: number,
+  bounds: IconXBounds
+): void {
+  const denominator = startX - 2 * controlX + endX;
+  if (Math.abs(denominator) < 1e-12) {
     return;
   }
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const chord = Math.hypot(dx, dy);
-  if (chord < 1e-4) {
+  const progress = (startX - controlX) / denominator;
+  if (progress > 0 && progress < 1) {
+    const inverse = 1 - progress;
+    updateBounds(
+      bounds,
+      inverse * inverse * startX + 2 * inverse * progress * controlX + progress * progress * endX,
+      scale
+    );
+  }
+}
+
+/** Check whether `angle` lies on the arc that starts at `startAngle` and sweeps by `deltaAngle` radians. */
+function isAngleOnArc(angle: number, startAngle: number, deltaAngle: number): boolean {
+  const fullTurn = 2 * Math.PI;
+  const offset = deltaAngle >= 0 ? angle - startAngle : startAngle - angle;
+  return ((offset % fullTurn) + fullTurn) % fullTurn <= Math.abs(deltaAngle);
+}
+
+/**
+ * Record the exact horizontal extrema of an SVG elliptical arc (endpoint recorded by the caller), honoring
+ * both radii, the X-axis rotation, and out-of-range radius scaling (SVG 1.1 implementation notes, F.6.5–F.6.6).
+ */
+function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): void {
+  let radiusX = Math.abs(arc.radiusX);
+  let radiusY = Math.abs(arc.radiusY);
+  const halfDeltaX = (arc.startX - arc.endX) / 2;
+  const halfDeltaY = (arc.startY - arc.endY) / 2;
+  if (radiusX === 0 || radiusY === 0 || (halfDeltaX === 0 && halfDeltaY === 0)) {
+    // Zero radii draw a straight line and coincident endpoints draw nothing.
     return;
   }
-  const radius = Math.max(rx, chord / 2);
-  const halfChord = Math.min(radius, chord / 2);
-  const centerDist = Math.sqrt(Math.max(0, radius * radius - halfChord * halfChord));
-  const sagitta = largeArc === 1 ? radius + centerDist : radius - centerDist;
-  const sign = largeArc === sweep ? -1 : 1;
-  const normalX = sign * (-dy / chord);
-  updateBounds(bounds, (x0 + x1) / 2 + normalX * sagitta, scale);
+
+  const rotation = (arc.rotationDeg * Math.PI) / 180;
+  const cosRotation = Math.cos(rotation);
+  const sinRotation = Math.sin(rotation);
+  const primeX = cosRotation * halfDeltaX + sinRotation * halfDeltaY;
+  const primeY = -sinRotation * halfDeltaX + cosRotation * halfDeltaY;
+
+  const radiiScale =
+    (primeX * primeX) / (radiusX * radiusX) + (primeY * primeY) / (radiusY * radiusY);
+  if (radiiScale > 1) {
+    radiusX *= Math.sqrt(radiiScale);
+    radiusY *= Math.sqrt(radiiScale);
+  }
+
+  const radiusXSq = radiusX * radiusX;
+  const radiusYSq = radiusY * radiusY;
+  const numerator =
+    radiusXSq * radiusYSq - radiusXSq * primeY * primeY - radiusYSq * primeX * primeX;
+  const denominator = radiusXSq * primeY * primeY + radiusYSq * primeX * primeX;
+  const centerSign = arc.isLargeArc === arc.isSweep ? -1 : 1;
+  const centerFactor = centerSign * Math.sqrt(Math.max(0, numerator / denominator));
+  const centerPrimeX = (centerFactor * radiusX * primeY) / radiusY;
+  const centerPrimeY = (-centerFactor * radiusY * primeX) / radiusX;
+  const centerX =
+    cosRotation * centerPrimeX - sinRotation * centerPrimeY + (arc.startX + arc.endX) / 2;
+
+  const startAngle = Math.atan2(
+    (primeY - centerPrimeY) / radiusY,
+    (primeX - centerPrimeX) / radiusX
+  );
+  const endAngle = Math.atan2(
+    (-primeY - centerPrimeY) / radiusY,
+    (-primeX - centerPrimeX) / radiusX
+  );
+  let deltaAngle = endAngle - startAngle;
+  if (arc.isSweep && deltaAngle < 0) {
+    deltaAngle += 2 * Math.PI;
+  } else if (!arc.isSweep && deltaAngle > 0) {
+    deltaAngle -= 2 * Math.PI;
+  }
+
+  // `x(θ) = cx + rx·cos(φ)·cos(θ) − ry·sin(φ)·sin(θ)` is extremal where its derivative vanishes.
+  const extremumAngle = Math.atan2(-radiusY * sinRotation, radiusX * cosRotation);
+  for (const angle of [extremumAngle, extremumAngle + Math.PI]) {
+    if (isAngleOnArc(angle, startAngle, deltaAngle)) {
+      updateBounds(
+        bounds,
+        centerX + radiusX * cosRotation * Math.cos(angle) - radiusY * sinRotation * Math.sin(angle),
+        scale
+      );
+    }
+  }
+}
+
+/** Advance `cursor` past whitespace and comma separators. */
+function skipPathSeparators(cursor: PathCursor): void {
+  while (
+    cursor.index < cursor.pathData.length &&
+    ' ,\n\t\r'.includes(cursor.pathData[cursor.index])
+  ) {
+    cursor.index += 1;
+  }
+}
+
+/** Read the next number token at `cursor` (`NaN` when none is present). */
+function readPathNumber(cursor: PathCursor): number {
+  skipPathSeparators(cursor);
+  PATH_NUMBER_RX.lastIndex = cursor.index;
+  const numMatch = PATH_NUMBER_RX.exec(cursor.pathData);
+  if (!numMatch) {
+    return Number.NaN;
+  }
+  cursor.index += numMatch[0].length;
+  return Number(numMatch[0]);
+}
+
+/** Read an arc flag at `cursor`, which may be packed without separators (e.g., `a1 1 0 011 1`). */
+function readPathArcFlag(cursor: PathCursor): number {
+  skipPathSeparators(cursor);
+  const char = cursor.pathData[cursor.index];
+  if (char === '0' || char === '1') {
+    cursor.index += 1;
+    return Number(char);
+  }
+  return readPathNumber(cursor);
+}
+
+/** Read the X coordinate of a control or end point and skip its Y coordinate. */
+function readPathPointX(cursor: PathCursor, originX: number): number {
+  const pointX = originX + readPathNumber(cursor);
+  readPathNumber(cursor);
+  return pointX;
+}
+
+/** Read an end point into the pen's current position. */
+function readPathEndPoint(
+  cursor: PathCursor,
+  pen: PathPen,
+  originX: number,
+  originY: number
+): void {
+  pen.currentX = originX + readPathNumber(cursor);
+  pen.currentY = originY + readPathNumber(cursor);
+}
+
+/** Consume the coordinates of one path command (`pen.command`) and record its exact horizontal extent. */
+function applyPathCommand(
+  cursor: PathCursor,
+  pen: PathPen,
+  scale: number,
+  bounds: IconXBounds
+): void {
+  const upper = pen.command.toUpperCase();
+  const isAbsolute = pen.command === upper;
+  const originX = isAbsolute ? 0 : pen.currentX;
+  const originY = isAbsolute ? 0 : pen.currentY;
+  const startX = pen.currentX;
+  const { lastCubicControlX, lastQuadControlX } = pen;
+  // Smooth curves only reflect the control point of the immediately preceding segment.
+  pen.lastCubicControlX = undefined;
+  pen.lastQuadControlX = undefined;
+
+  switch (upper) {
+    case 'M':
+    case 'L': {
+      readPathEndPoint(cursor, pen, originX, originY);
+      if (upper === 'M') {
+        pen.subpathStartX = pen.currentX;
+        pen.subpathStartY = pen.currentY;
+        // Implicit coordinate pairs after a moveto are linetos.
+        pen.command = isAbsolute ? 'L' : 'l';
+      }
+      break;
+    }
+    case 'H': {
+      pen.currentX = originX + readPathNumber(cursor);
+      break;
+    }
+    case 'V': {
+      pen.currentY = originY + readPathNumber(cursor);
+      return;
+    }
+    case 'C':
+    case 'S': {
+      const control1X =
+        upper === 'C'
+          ? readPathPointX(cursor, originX)
+          : 2 * startX - (lastCubicControlX ?? startX);
+      const control2X = readPathPointX(cursor, originX);
+      readPathEndPoint(cursor, pen, originX, originY);
+      recordCubicXBounds(startX, control1X, control2X, pen.currentX, scale, bounds);
+      pen.lastCubicControlX = control2X;
+      break;
+    }
+    case 'Q':
+    case 'T': {
+      const controlX =
+        upper === 'Q' ? readPathPointX(cursor, originX) : 2 * startX - (lastQuadControlX ?? startX);
+      readPathEndPoint(cursor, pen, originX, originY);
+      recordQuadXBounds(startX, controlX, pen.currentX, scale, bounds);
+      pen.lastQuadControlX = controlX;
+      break;
+    }
+    case 'A': {
+      const radiusX = readPathNumber(cursor);
+      const radiusY = readPathNumber(cursor);
+      const rotationDeg = readPathNumber(cursor);
+      const isLargeArc = readPathArcFlag(cursor) === 1;
+      const isSweep = readPathArcFlag(cursor) === 1;
+      const startY = pen.currentY;
+      readPathEndPoint(cursor, pen, originX, originY);
+      recordArcXBounds(
+        {
+          endX: pen.currentX,
+          endY: pen.currentY,
+          isLargeArc,
+          isSweep,
+          radiusX,
+          radiusY,
+          rotationDeg,
+          startX,
+          startY,
+        },
+        scale,
+        bounds
+      );
+      break;
+    }
+    case 'Z': {
+      pen.currentX = pen.subpathStartX;
+      pen.currentY = pen.subpathStartY;
+      return;
+    }
+    default: {
+      return;
+    }
+  }
+  updateBounds(bounds, pen.currentX, scale);
 }
 
 /** Parse a single SVG `<path d="...">` string and update `[minX, maxX]` bounds. */
-function recordSinglePathD(d: string, scale: number, bounds: { maxX: number; minX: number }): void {
-  let idx = 0;
-  let cmd = '';
-  let cx = 0;
-  let cy = 0;
-  let sx = 0;
-  let sy = 0;
+function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds): void {
+  const cursor: PathCursor = { index: 0, pathData };
+  const pen: PathPen = {
+    command: '',
+    currentX: 0,
+    currentY: 0,
+    lastCubicControlX: undefined,
+    lastQuadControlX: undefined,
+    subpathStartX: 0,
+    subpathStartY: 0,
+  };
 
-  function skipSeparators(): void {
-    while (idx < d.length && ' ,\n\t\r'.includes(d[idx])) {
-      idx += 1;
-    }
-  }
-
-  function readNum(): number {
-    skipSeparators();
-    const numMatch = LEADING_NUMBER_RX.exec(d.slice(idx));
-    if (!numMatch) {
-      return Number.NaN;
-    }
-    idx += numMatch[0].length;
-    return Number(numMatch[0]);
-  }
-
-  function readArcFlag(): number {
-    skipSeparators();
-    const ch = d[idx];
-    if (ch === '0' || ch === '1') {
-      idx += 1;
-      return Number(ch);
-    }
-    return readNum();
-  }
-
-  while (idx < d.length) {
-    skipSeparators();
-    if (idx >= d.length) {
+  while (cursor.index < pathData.length) {
+    skipPathSeparators(cursor);
+    if (cursor.index >= pathData.length) {
       break;
     }
-    const ch = d[idx];
-    if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
-      cmd = ch;
-      idx += 1;
+    const iterationStart = cursor.index;
+    const char = pathData[cursor.index];
+    if ((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')) {
+      pen.command = char;
+      cursor.index += 1;
     }
-    const upper = cmd.toUpperCase();
-    const ox = cmd === upper ? 0 : cx;
-    const oy = cmd === upper ? 0 : cy;
-
-    if (upper === 'M') {
-      cx = ox + readNum();
-      cy = oy + readNum();
-      sx = cx;
-      sy = cy;
-      updateBounds(bounds, cx, scale);
-      cmd = cmd === 'M' ? 'L' : 'l';
-    } else if (upper === 'L' || upper === 'T') {
-      cx = ox + readNum();
-      cy = oy + readNum();
-      updateBounds(bounds, cx, scale);
-    } else if (upper === 'H') {
-      cx = ox + readNum();
-      updateBounds(bounds, cx, scale);
-    } else if (upper === 'V') {
-      cy = oy + readNum();
-    } else if (upper === 'C') {
-      updateBounds(bounds, ox + readNum(), scale);
-      readNum();
-      updateBounds(bounds, ox + readNum(), scale);
-      readNum();
-      cx = ox + readNum();
-      cy = oy + readNum();
-      updateBounds(bounds, cx, scale);
-    } else if (upper === 'S' || upper === 'Q') {
-      updateBounds(bounds, ox + readNum(), scale);
-      readNum();
-      cx = ox + readNum();
-      cy = oy + readNum();
-      updateBounds(bounds, cx, scale);
-    } else if (upper === 'A') {
-      const rx = readNum();
-      const ry = readNum();
-      readNum();
-      const largeArc = readArcFlag();
-      const sweep = readArcFlag();
-      const ex = ox + readNum();
-      const ey = oy + readNum();
-      recordArcXBounds(cx, cy, rx, ry, largeArc, sweep, ex, ey, scale, bounds);
-      cx = ex;
-      cy = ey;
-    } else if (upper === 'Z') {
-      cx = sx;
-      cy = sy;
-    } else {
-      idx += 1;
+    applyPathCommand(cursor, pen, scale, bounds);
+    // Skip unknown commands and malformed tokens so the scan always makes progress.
+    if (cursor.index === iterationStart) {
+      cursor.index += 1;
     }
   }
 }
 
-/** Compute the horizontal visual bounding box `[minX, maxX]` in `24x24` coordinate space for an icon SVG body. */
-function computeIconXBounds(
-  svgStr: string,
-  isStroke: boolean,
-  coordScale = 1
-): { maxX: number; minX: number } {
-  const bounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
+/** Compute the exact horizontal visual bounding box `[minX, maxX]` in `24x24` coordinate space for an icon SVG body. */
+function measureIconXBounds(svgStr: string, isStroke: boolean, coordScale: number): IconXBounds {
+  const bounds: IconXBounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
   recordShapeBounds(svgStr, coordScale, bounds);
   for (const match of svgStr.matchAll(PATH_D_RX)) {
     recordSinglePathD(match.groups?.d ?? '', coordScale, bounds);
@@ -410,251 +608,197 @@ function computeIconXBounds(
     !Number.isFinite(bounds.maxX) ||
     bounds.maxX <= bounds.minX
   ) {
-    return { maxX: 22, minX: 2 };
+    return { ...DEFAULT_ICON_X_BOUNDS };
   }
-  const strokePad = isStroke ? 1.125 : 0;
+  const strokePad = isStroke ? STROKE_BOUNDS_PAD : 0;
   return {
     maxX: Number(Math.min(24, bounds.maxX + strokePad).toFixed(2)),
     minX: Number(Math.max(0, bounds.minX - strokePad).toFixed(2)),
   };
 }
 
-/** Convert a kebab-case or snake_case slug into PascalCase. */
-function toPascalCase(slug: string): string {
-  const parts = slug.split(SLUG_SEPARATOR_RX);
+/** Capitalize the first letter of every `-`/`_`-separated slug part and join the parts with `joiner`. */
+function capitalizeSlugParts(slug: string, joiner: string): string {
   let result = '';
-  for (const part of parts) {
+  for (const part of slug.split(SLUG_SEPARATOR_RX)) {
     if (part.length > 0) {
-      result += part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      result += `${result.length > 0 ? joiner : ''}${part.charAt(0).toUpperCase()}${part.slice(1)}`;
     }
   }
   return result;
 }
 
+/** Extract the inner markup of the outermost `<svg …>…</svg>` element (`undefined` when malformed). */
+function extractInnerSvg(rawSvg: string): string | undefined {
+  const openStart = rawSvg.indexOf('<svg');
+  const openEnd = openStart === -1 ? -1 : rawSvg.indexOf('>', openStart);
+  const closeStart = rawSvg.lastIndexOf('</svg>');
+  if (openEnd === -1 || closeStart <= openEnd) {
+    return undefined;
+  }
+  return rawSvg.slice(openEnd + 1, closeStart).trim();
+}
+
 /** Look up a `128x128` icon in `@iconify-json/devicon-plain` and normalize it to `24x24`. */
 function lookupDeviconPlain(slug: string): ResolvedIcon | undefined {
-  const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-  const entry = deviconPlainSet.icons[slug] ?? deviconPlainSet.icons[normalized];
+  const entry =
+    getOwnValue(deviconPlainSet.icons, slug) ??
+    getOwnValue(deviconPlainSet.icons, slug.replace(BRAND_SLUG_CLEAN_RX, ''));
   if (!entry?.body) {
     return undefined;
   }
   const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
-  const { maxX, minX } = computeIconXBounds(cleanBody, false, DEVICON_SCALE);
   return {
+    coordScale: DEVICON_SCALE,
     innerSvg: `<g transform="scale(${DEVICON_SCALE})">${cleanBody}</g>`,
-    maxX,
-    minX,
+    ...measureIconXBounds(cleanBody, false, DEVICON_SCALE),
     type: 'simple',
   };
 }
 
-/** Look up a `24x24` icon in `@iconify-json/simple-icons`. */
+/** Look up a `24x24` icon in `@iconify-json/simple-icons` (including its alias table). */
 function lookupSimpleIcon(slug: string): ResolvedIcon | undefined {
   const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+  const aliases = simpleIconSet.aliases ?? {};
   const aliasParent =
-    simpleIconSet.aliases?.[slug]?.parent ?? simpleIconSet.aliases?.[normalized]?.parent;
+    getOwnValue(aliases, slug)?.parent ?? getOwnValue(aliases, normalized)?.parent;
   const entry =
-    simpleIconSet.icons[slug] ??
-    simpleIconSet.icons[normalized] ??
-    (aliasParent ? simpleIconSet.icons[aliasParent] : undefined);
+    getOwnValue(simpleIconSet.icons, slug) ??
+    getOwnValue(simpleIconSet.icons, normalized) ??
+    (aliasParent ? getOwnValue(simpleIconSet.icons, aliasParent) : undefined);
   if (!entry?.body) {
     return undefined;
   }
   const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
-  const { maxX, minX } = computeIconXBounds(cleanBody, false, 1);
-  return { innerSvg: cleanBody, maxX, minX, type: 'simple' };
+  return {
+    coordScale: 1,
+    innerSvg: cleanBody,
+    ...measureIconXBounds(cleanBody, false, 1),
+    type: 'simple',
+  };
 }
 
 /** Look up a brand/tech slug in `@iconify-json/devicon-plain` and `@iconify-json/simple-icons`. */
-function lookupBrandIcon(cleanSlug: string): ResolvedIcon | undefined {
-  if (DEVICON_PREFERRED_SLUGS.has(cleanSlug)) {
-    return lookupDeviconPlain(cleanSlug) ?? lookupSimpleIcon(cleanSlug);
+function lookupBrandIcon(slug: string): ResolvedIcon | undefined {
+  if (DEVICON_PREFERRED_SLUGS.has(slug)) {
+    return lookupDeviconPlain(slug) ?? lookupSimpleIcon(slug);
   }
-  return lookupSimpleIcon(cleanSlug) ?? lookupDeviconPlain(cleanSlug);
+  return lookupSimpleIcon(slug) ?? lookupDeviconPlain(slug);
 }
 
 /** Look up a UI stroke icon slug in `lucide-static`. */
-function lookupLucideIcon(cleanSlug: string): ResolvedIcon | undefined {
-  const lucideKey = toPascalCase(cleanSlug);
-  const lucideMap = lucideIcons as Record<string, string>;
-  if (lucideKey in lucideMap && typeof lucideMap[lucideKey] === 'string') {
-    const rawSvg = lucideMap[lucideKey];
-    const innerMatch = INNER_SVG_RX.exec(rawSvg);
-    const innerContent = innerMatch?.groups?.inner;
-    if (innerContent) {
-      const trimmed = innerContent.trim();
-      const { maxX, minX } = computeIconXBounds(trimmed, true, 1);
-      return { innerSvg: trimmed, maxX, minX, type: 'lucide' };
-    }
+function lookupLucideIcon(slug: string): ResolvedIcon | undefined {
+  const rawSvg = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
+  if (typeof rawSvg !== 'string') {
+    return undefined;
   }
-  return undefined;
+  const innerContent = extractInnerSvg(rawSvg);
+  if (!innerContent) {
+    return undefined;
+  }
+  return {
+    coordScale: 1,
+    innerSvg: innerContent,
+    ...measureIconXBounds(innerContent, true, 1),
+    type: 'lucide',
+  };
+}
+
+/** Run `lookup` with the canonical slug, then with the raw (pre-alias) slug when it differs. */
+function lookupWithAlias(
+  cleanSlug: string,
+  rawSlug: string,
+  lookup: (slug: string) => ResolvedIcon | undefined
+): ResolvedIcon | undefined {
+  return lookup(cleanSlug) ?? (cleanSlug === rawSlug ? undefined : lookup(rawSlug));
+}
+
+/** Return the lazily built last-resort fallback icon (a plain stroked circle). */
+function getCircleFallbackIcon(): ResolvedIcon {
+  LAZY_ICONS.circle ??= {
+    coordScale: 1,
+    innerSvg: FALLBACK_CIRCLE_SVG,
+    ...measureIconXBounds(FALLBACK_CIRCLE_SVG, true, 1),
+    type: 'lucide',
+  };
+  return LAZY_ICONS.circle;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
+ * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
+ * @param svgStr       Inner SVG markup of the icon body.
+ * @param isStroke     Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
+ * @param coordScale   Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
+ * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
+ */
+export function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): IconXBounds {
+  return measureIconXBounds(svgStr, isStroke, coordScale);
+}
+
+/**
+ * Normalize an icon slug to its canonical lookup key (trimmed, lowercase, alias-resolved).
+ * @param slug   Raw icon slug (e.g., `' PY '`, `'cpp'`, `'rocket-launch'`).
+ * @returns Canonical slug (e.g., `'python'`, `'cplusplus'`, `'rocket'`).
+ */
+export function normalizeIconSlug(slug: string): string {
+  const rawSlug = slug.trim().toLowerCase();
+  return getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
+}
+
+/**
  * Resolve an icon slug to its inner SVG markup and horizontal visual bounds from `lucide-static`, `@iconify-json/simple-icons`, or `@iconify-json/devicon-plain`.
- * @param slug            Icon slug (e.g., `'star'`, `'globe-code'`, `'rust'`, `'archlinux'`) or `'none'`.
- * @param isBrandFirst    When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
- * @returns The resolved icon data, or `undefined` if `'none'`, empty, or not found.
+ * @param slug           Icon slug (e.g., `'star'`, `'globe-code'`, `'rust'`, `'archlinux'`) or `'none'`.
+ * @param isBrandFirst   When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
+ * @returns The resolved icon data, or `undefined` if `'none'`, empty, too long, or not found.
  */
 export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon | undefined {
-  if (!slug || slug === 'none') {
+  if (!slug) {
     return undefined;
   }
   const rawSlug = slug.trim().toLowerCase();
-  if (!rawSlug || rawSlug === 'none') {
+  if (!rawSlug || rawSlug === 'none' || rawSlug.length > MAX_ICON_SLUG_LENGTH) {
     return undefined;
   }
-  const cleanSlug = ICON_SLUG_ALIASES[rawSlug] ?? rawSlug;
+  const cleanSlug = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
   const cacheKey = `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`;
-  const cached = RESOLVED_ICON_CACHE.get(cacheKey);
+  const cached = readLruCache(RESOLVED_ICON_CACHE, cacheKey);
   if (cached) {
     return cached;
   }
 
   const resolved = isBrandFirst
-    ? (lookupBrandIcon(cleanSlug) ??
-      lookupBrandIcon(rawSlug) ??
-      lookupLucideIcon(cleanSlug) ??
-      lookupLucideIcon(rawSlug))
-    : (lookupLucideIcon(cleanSlug) ??
-      lookupLucideIcon(rawSlug) ??
-      lookupBrandIcon(cleanSlug) ??
-      lookupBrandIcon(rawSlug));
-
+    ? (lookupWithAlias(cleanSlug, rawSlug, lookupBrandIcon) ??
+      lookupWithAlias(cleanSlug, rawSlug, lookupLucideIcon))
+    : (lookupWithAlias(cleanSlug, rawSlug, lookupLucideIcon) ??
+      lookupWithAlias(cleanSlug, rawSlug, lookupBrandIcon));
   if (resolved) {
-    RESOLVED_ICON_CACHE.set(cacheKey, resolved);
+    writeLruCache(RESOLVED_ICON_CACHE, cacheKey, resolved);
   }
   return resolved;
 }
 
-/** Human-readable display titles for tech stack tooltips (`<title>`). */
-const STACK_ICON_TITLES: Readonly<Record<string, string>> = {
-  adobeaftereffects: 'Adobe After Effects',
-  adobeillustrator: 'Adobe Illustrator',
-  adobephotoshop: 'Adobe Photoshop',
-  adobepremierepro: 'Adobe Premiere Pro',
-  ae: 'Adobe After Effects',
-  ai: 'Adobe Illustrator',
-  amazonwebservices: 'AWS',
-  archlinux: 'Arch Linux',
-  arduino: 'Arduino',
-  aws: 'AWS',
-  azure: 'Microsoft Azure',
-  bash: 'Bash',
-  blender: 'Blender',
-  c: 'C',
-  cloudflare: 'Cloudflare',
-  cmake: 'CMake',
-  codepen: 'CodePen',
-  cplusplus: 'C++',
-  cpp: 'C++',
-  cs: 'C#',
-  csharp: 'C#',
-  css: 'CSS3',
-  css3: 'CSS3',
-  docker: 'Docker',
-  dotnet: '.NET',
-  figma: 'Figma',
-  firebase: 'Firebase',
-  git: 'Git',
-  github: 'GitHub',
-  githubactions: 'GitHub Actions',
-  gnubash: 'Bash',
-  go: 'Go',
-  gtk: 'GTK',
-  html: 'HTML5',
-  html5: 'HTML5',
-  java: 'Java',
-  javascript: 'JavaScript',
-  js: 'JavaScript',
-  kotlin: 'Kotlin',
-  laravel: 'Laravel',
-  latex: 'LaTeX',
-  linux: 'Linux',
-  lua: 'Lua',
-  markdown: 'Markdown',
-  md: 'Markdown',
-  microsoftazure: 'Microsoft Azure',
-  mysql: 'MySQL',
-  netlify: 'Netlify',
-  nodedotjs: 'Node.js',
-  nodejs: 'Node.js',
-  notion: 'Notion',
-  npm: 'npm',
-  obsidian: 'Obsidian',
-  php: 'PHP',
-  pinia: 'Pinia',
-  postgres: 'PostgreSQL',
-  postgresql: 'PostgreSQL',
-  powershell: 'PowerShell',
-  pr: 'Adobe Premiere Pro',
-  ps: 'Adobe Photoshop',
-  py: 'Python',
-  pypi: 'PyPI',
-  python: 'Python',
-  raspberrypi: 'Raspberry Pi',
-  react: 'React',
-  redis: 'Redis',
-  regex: 'RegEx',
-  rust: 'Rust',
-  sass: 'Sass',
-  sqlite: 'SQLite',
-  svelte: 'Svelte',
-  swift: 'Swift',
-  symfony: 'Symfony',
-  tailwind: 'Tailwind CSS',
-  tailwindcss: 'Tailwind CSS',
-  tauri: 'Tauri',
-  terraform: 'Terraform',
-  threedotjs: 'Three.js',
-  threejs: 'Three.js',
-  ts: 'TypeScript',
-  typescript: 'TypeScript',
-  unity: 'Unity',
-  unreal: 'Unreal Engine',
-  unrealengine: 'Unreal Engine',
-  visualstudio: 'Visual Studio',
-  visualstudiocode: 'VS Code',
-  vite: 'Vite',
-  vscode: 'VS Code',
-  vue: 'Vue.js',
-  vuedotjs: 'Vue.js',
-  windows: 'Windows',
-  wordpress: 'WordPress',
-};
-
 /**
- * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug.
- * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'vue'`).
- * @param fallback   Optional explicit theme color override.
- * @returns The resolved `ThemeColorName`.
+ * Resolve an icon slug, falling back to `fallbackSlug` (Lucide-first) and finally to a plain circle so a glyph is always drawn.
+ * @param slug           Requested icon slug.
+ * @param fallbackSlug   Icon slug rendered when `slug` cannot be resolved (e.g., `FALLBACK_ICON_SLUG`).
+ * @param isBrandFirst   When `true`, checks brand icons before Lucide stroke icons for `slug`.
+ * @returns The resolved icon data (never `undefined`).
  */
-export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
-  if (fallback) {
-    return fallback;
-  }
-  const rawSlug = slug.trim().toLowerCase();
-  const cleanSlug = ICON_SLUG_ALIASES[rawSlug] ?? rawSlug;
-  return STACK_ICON_COLORS[rawSlug] ?? STACK_ICON_COLORS[cleanSlug] ?? 'indigo';
+export function resolveIconWithFallback(
+  slug: string,
+  fallbackSlug: string,
+  isBrandFirst = false
+): ResolvedIcon {
+  return resolveIcon(slug, isBrandFirst) ?? resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
 }
 
 /**
- * Resolve a human-readable display title for a tech stack icon slug (used in `<title>` hover tooltips).
- * @param slug   Raw or canonical icon slug (e.g., `'cpp'` -> `'C++'`, `'vscode'` -> `'VS Code'`).
- * @returns Human-readable technology title.
+ * Build a human-readable title from a slug by capitalizing its `-`/`_`-separated parts (e.g., `'my-tool'` to `'My Tool'`).
+ * @param slug   Lowercase icon slug.
+ * @returns Space-separated title-cased words.
  */
-export function resolveStackIconTitle(slug: string): string {
-  const rawSlug = slug.trim().toLowerCase();
-  const cleanSlug = ICON_SLUG_ALIASES[rawSlug] ?? rawSlug;
-  const mapped = STACK_ICON_TITLES[rawSlug] ?? STACK_ICON_TITLES[cleanSlug];
-  if (mapped) {
-    return mapped;
-  }
-  return rawSlug
-    .split(SLUG_SEPARATOR_RX)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
+export function formatSlugTitle(slug: string): string {
+  return capitalizeSlugParts(slug, ' ');
 }

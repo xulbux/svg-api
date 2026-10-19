@@ -1,33 +1,57 @@
 /**
- * SVG renderer – Single Source of Truth generator for badges, micro-buttons, standalone icons, tech stacks, and quote cards (`svg.xul.is`).
+ * SVG renderer – Single Source of Truth generator for badges, micro-buttons, and standalone icons (`svg.xul.is`).
  */
 
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
+import {
+  FALLBACK_ICON_SLUG,
+  normalizeIconSlug,
+  resolveIcon,
+  resolveIconWithFallback,
+} from '@/svg/icons';
+import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from '@/svg/measure';
+import {
+  BG_DARK_ID,
+  PRIMARY_FOREGROUND_OPACITY,
+  buildRightCapsulePath,
+  buildThemeGradientId,
+  buildTopCrescentPath,
+  clampInt,
+  clampNumber,
+  getOwnValue,
+  hasOwnKey,
+  isAnimationDisabled,
+  isSheenMode,
+  prepareDisplayText,
+  renderDarkBgGradientDef,
+  renderIconGroup,
+  renderIconPaintAttrs,
+  renderKumoBoxSurface,
+  renderSheenOverlay,
+  renderSvgDocument,
+  renderThemeGradientDef,
+  renderWhiteBandStops,
+  resolveIconMotionTokens,
+  resolveSurfaceTextColor,
+  truncateText,
+} from '@/svg/shared';
 import type {
   AnimationMode,
   BadgeRenderOptions,
   BadgeSpecialElement,
   BadgeVariant,
+  BandStop,
   ButtonRenderOptions,
-  ButtonSize,
   DotState,
+  IconMotionMode,
   IconRenderOptions,
+  NumericRange,
   ResolvedIcon,
+  SizePreset,
   StripTickState,
+  ThemeColorName,
   ThemePalette,
 } from '@/types';
-import { resolveIcon } from './icons';
-import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from './measure';
-import {
-  buildTopCrescentPath,
-  clampInt,
-  clampNumber,
-  escapeXml,
-  renderDarkBgGradientDef,
-  renderKumoBoxSurface,
-  renderSheenOverlay,
-  renderThemeGradientDef,
-} from './shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -53,83 +77,217 @@ interface SparklineGeometry {
   linePoints: string;
 }
 
-/** Horizontal layout dimensions and coordinates for left and right badge segments. */
-interface BadgeLayout {
+/** Measured content widths that drive the horizontal capsule layout of badges and buttons. */
+interface CapsuleLayoutInput {
+  /** Gap between adjacent items inside a compartment in pixels. */
+  gap: number;
+  /** Whether a status dot is rendered. */
+  hasDot: boolean;
+  /** Measured label ink width in pixels. */
+  labelWidth: number;
+  /** Measured leading icon width in pixels. */
+  leftIconWidth: number;
+  /** Minimum left compartment width in pixels (`0` lets an empty left compartment collapse). */
+  minLeftWidth: number;
+  /** Horizontal edge padding of each compartment in pixels. */
+  padX: number;
+  /** Measured trailing icon width in pixels. */
+  rightIconWidth: number;
+  /** Width of the right-hand special element in pixels (`0` for buttons). */
+  specialWidth: number;
+  /** Measured value ink width in pixels. */
+  valueWidth: number;
+}
+
+/** Horizontal layout dimensions and coordinates for the left and right compartments of a badge or button. */
+interface CapsuleLayout {
   /** Center X coordinate of the pulsing status dot. */
   dotCx: number;
-  /** Whether the badge is split into both a left and a right compartment. */
+  /** Whether the capsule is split into both a left and a right compartment. */
   isSplit: boolean;
   /** Center X coordinate of the left-side label text. */
   labelCenterX: number;
   /** Visual starting X coordinate of the leading icon. */
   leftIconX: number;
-  /** Width of the left segment in pixels. */
+  /** Width of the left compartment in pixels. */
   leftWidth: number;
   /** Visual starting X coordinate of the trailing icon. */
   rightIconX: number;
-  /** Width of the right segment in pixels. */
+  /** Width of the right compartment in pixels. */
   rightWidth: number;
-  /** Width of the right-hand special element box in pixels. */
-  specialWidth: number;
   /** Starting X coordinate of the right-hand special element. */
   specialX: number;
-  /** Total width of the badge SVG in pixels. */
+  /** Total width of the SVG in pixels. */
   totalWidth: number;
   /** Center X coordinate of the right-side value text. */
   valueCenterX: number;
 }
 
-/** Horizontal layout dimensions and coordinates for a CTA button. */
-interface ButtonLayout {
-  /** Center X coordinate of the pulsing status dot. */
-  dotCx: number;
-  /** Whether the button is split into both a left and a right compartment. */
-  isSplit: boolean;
-  /** Center X coordinate of the left-side label text. */
-  labelCenterX: number;
-  /** Visual starting X coordinate of the leading icon. */
-  leftIconX: number;
-  /** Width of the left segment in pixels. */
-  leftWidth: number;
-  /** Visual starting X coordinate of the trailing icon. */
-  rightIconX: number;
-  /** Total width of the button SVG in pixels. */
-  totalWidth: number;
-  /** Center X coordinate of the right-side value text. */
-  valueCenterX: number;
+/** Item offsets and total width of a packed compartment. */
+interface PackedCompartment {
+  /** Visual start X coordinate of every item (zero-width items share the next item's offset). */
+  offsets: number[];
+  /** Rounded total compartment width in pixels (`0` when every item is empty). */
+  width: number;
 }
 
-/** Resolved left and right icon pair from `?icon=name`, `?icon=left,right`, or `?icon=none,right`. */
+/** A requested icon slot of a badge or button. */
+interface IconSlot {
+  /** Resolved icon data (`undefined` for `'none'`, empty, or unknown slugs). */
+  data: ResolvedIcon | undefined;
+  /** Canonical (alias-resolved) slug used for contextual animation lookups. */
+  key: string;
+  /** Trimmed requested slug (used as the accessible fallback name). */
+  slug: string;
+}
+
+/** Resolved left and right icon slots from `?icon=name`, `?icon=left,right`, or `?icon=none,right`. */
 interface ResolvedIconPair {
-  /** Resolved leading left-hand icon data. */
-  leftData: ResolvedIcon | undefined;
-  /** Leading left-hand icon slug. */
-  leftSlug: string | undefined;
-  /** Resolved trailing right-hand icon data. */
-  rightData: ResolvedIcon | undefined;
-  /** Trailing right-hand icon slug. */
-  rightSlug: string | undefined;
+  /** Leading left-hand icon slot. */
+  left: Readonly<IconSlot>;
+  /** Trailing right-hand icon slot. */
+  right: Readonly<IconSlot>;
 }
+
+/** Independent micro-animation tokens for the left and right icons. */
+interface IconAnimationPair {
+  /** Motion applied to the leading icon. */
+  leftMotion: IconMotionMode;
+  /** Motion applied to the trailing icon. */
+  rightMotion: IconMotionMode;
+}
+
+/** Options for `renderIconMarkup`. */
+interface IconMarkupOptions {
+  /** Stroke or fill color. */
+  color: string;
+  /** Rendered icon size in pixels. */
+  iconSize: number;
+  /** Top Y coordinate of the icon box. */
+  iconY: number;
+  /** Micro-animation applied to the icon. */
+  motion: IconMotionMode;
+  /** Optional group opacity (`0`–`1`). */
+  opacity: number | undefined;
+  /** Icon slot to render. */
+  slot: Readonly<IconSlot>;
+  /** X coordinate where the icon's leftmost visible pixel starts. */
+  visualStartX: number;
+}
+
+/** Track and active paint of a bar or ring gauge. */
+interface GaugePaint {
+  /** Color of the filled (active) part. */
+  activeColor: string;
+  /** Paint attributes of the empty track. */
+  trackAttrs: string;
+}
+
+/** Shared geometry and style state for rendering a right-compartment special element. */
+interface SpecialElementContext {
+  /** Active animation mode. */
+  animMode: AnimationMode;
+  /** Theme color token of the badge. */
+  color: ThemeColorName;
+  /** Badge font size in pixels. */
+  fontSize: number;
+  /** Badge height in pixels. */
+  height: number;
+  /** Whether the element sits on a vivid primary (`variant=1`) capsule. */
+  isSolidCapsule: boolean;
+  /** Resolved theme palette of `color`. */
+  palette: ThemePalette;
+  /** Width of the special element box in pixels. */
+  specialWidth: number;
+  /** Starting X coordinate of the special element box. */
+  specialX: number;
+}
+
+/** Options for `renderBadgeSurface`. */
+interface BadgeSurfaceOptions {
+  /** Theme color token. */
+  color: ThemeColorName;
+  /** Badge height in pixels. */
+  height: number;
+  /** Computed capsule layout. */
+  layout: CapsuleLayout;
+  /** Corner radius in pixels. */
+  radiusX: number;
+  /** Visual variant. */
+  variant: BadgeVariant;
+}
+
+/** Options for `renderCapsuleBody`, shared by badges and buttons. */
+interface CapsuleBodyOptions {
+  /** Active animation mode. */
+  animMode: AnimationMode;
+  /** Optional status dot state. */
+  dot: DotState | undefined;
+  /** Resolved icon slots. */
+  icons: ResolvedIconPair;
+  /** Whether the label uses semi-bold (`600`) weight. */
+  isLabelBold: boolean;
+  /** Whether the leading icon and label sit on a vivid primary surface. */
+  isLeftOnPrimary: boolean;
+  /** Whether the trailing icon sits on a vivid primary surface. */
+  isRightOnPrimary: boolean;
+  /** Label text. */
+  labelText: string;
+  /** Computed capsule layout. */
+  layout: CapsuleLayout;
+  /** Size metrics. */
+  metrics: VariantMetrics;
+  /** Resolved theme palette. */
+  palette: ThemePalette;
+  /** Special element markup inserted between the label and the value (`''` for none). */
+  specialMarkup: string;
+  /** Value text color. */
+  valueColor: string;
+  /** Value text. */
+  valueText: string;
+  /** Visual variant. */
+  variant: BadgeVariant;
+}
+
+/** Nudge vector shape (`[deltaX, deltaY]` in `24x24` icon units). */
+type NudgeVector = readonly [deltaX: number, deltaY: number];
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Default rendered size in pixels for standalone SVG icons (`svg.xul.is/icon/:icon`). */
-const DEFAULT_ICON_SIZE = 24;
+/** Rendered size bounds in pixels for standalone SVG icons (`svg.xul.is/icon/:icon?size=`). */
+export const ICON_SIZE_RANGE: NumericRange = { default: 24, max: 256, min: 8 };
 
-/** Minimum allowed size in pixels for standalone SVG icons. */
-const MIN_ICON_SIZE = 8;
+/** Stroke width bounds in `24x24` viewBox units for standalone Lucide SVG icons (`?stroke=`). */
+export const ICON_STROKE_RANGE: NumericRange = { default: 2.25, max: 4, min: 1 };
 
-/** Maximum allowed size in pixels for standalone SVG icons. */
-const MAX_ICON_SIZE = 256;
+/** Custom pixel height bounds for CTA buttons (`/button/*?size=<px>`; Defaults to the `md` preset). */
+export const BUTTON_HEIGHT_RANGE: NumericRange = { default: 30, max: 48, min: 22 };
 
-/** Default stroke width in 24x24 viewBox units for standalone Lucide SVG icons. */
-const DEFAULT_ICON_STROKE_WIDTH = 2.25;
+/** Maximum badge/button label, value, and delta length in UTF-16 code units before ellipsis truncation. */
+export const MAX_LABEL_LENGTH = 128;
 
-/** Minimum allowed stroke width for standalone Lucide SVG icons. */
-const MIN_ICON_STROKE_WIDTH = 1;
+/** Maximum number of ticks in a `strip:` special element. */
+export const MAX_STRIP_TICKS = 10;
 
-/** Maximum allowed stroke width for standalone Lucide SVG icons. */
-const MAX_ICON_STROKE_WIDTH = 4;
+/** Maximum number of points in a `sparkline:` special element. */
+export const MAX_SPARKLINE_POINTS = 64;
+
+/** Bounds of `bar:` and `ring:` gauge percentages. */
+const PERCENT_RANGE: NumericRange = { default: 0, max: 100, min: 0 };
+
+/**
+ * Largest absolute sparkline value; Keeps `max - min` finite (`1e308 - -1e308` overflows to `Infinity`
+ * and would turn every point into `NaN`).
+ */
+const MAX_SPARKLINE_MAGNITUDE = 1e12;
+
+/** Named size scale presets for CTA buttons (`/button/*` and `/btn/*`). */
+export const BUTTON_SIZE_PRESETS: Readonly<Record<SizePreset, VariantMetrics>> = {
+  lg: { fontSize: 14, height: 36, iconSize: 17, padX: 18, radiusX: 11 },
+  md: { fontSize: 12.5, height: 30, iconSize: 15, padX: 14, radiusX: 9 },
+  sm: { fontSize: 11.5, height: 26, iconSize: 14, padX: 12, radiusX: 7 },
+  xl: { fontSize: 15.5, height: 42, iconSize: 19, padX: 22, radiusX: 13 },
+};
 
 /** Size metrics for standard `22px` badges (`variant=1`, `variant=2`, `variant=3`). */
 const BADGE_METRICS: VariantMetrics = {
@@ -140,13 +298,35 @@ const BADGE_METRICS: VariantMetrics = {
   radiusX: 6,
 };
 
-/** Named size scale presets for CTA buttons (`/button/*` and `/btn/*`). */
-const BUTTON_SIZE_PRESETS: Readonly<Record<ButtonSize, VariantMetrics>> = {
-  lg: { fontSize: 14, height: 36, iconSize: 17, padX: 18, radiusX: 11 },
-  md: { fontSize: 12.5, height: 30, iconSize: 15, padX: 14, radiusX: 9 },
-  sm: { fontSize: 11.5, height: 26, iconSize: 14, padX: 12, radiusX: 7 },
-  xl: { fontSize: 15.5, height: 42, iconSize: 19, padX: 22, radiusX: 13 },
+/** Stroke width of Lucide icons inside badges and buttons in `24x24` icon units. */
+const CAPSULE_ICON_STROKE_WIDTH = ICON_STROKE_RANGE.default;
+
+/** Horizontal slot width in pixels reserved for the status dot. */
+const DOT_SLOT_WIDTH = 7;
+
+/** Slug rendered by standalone `/icon/` requests with an empty slug. */
+const DEFAULT_STANDALONE_ICON_SLUG = 'sparkles';
+
+/** ID of the standalone icon body group referenced by the sheen pass (`<use href="#icon-body">`). */
+const ICON_BODY_ID = 'icon-body';
+
+/** Empty icon slot for missing left/right icons. */
+const EMPTY_ICON_SLOT: Readonly<IconSlot> = { data: undefined, key: '', slug: '' };
+
+/** Static (non-animated) icon motion pair. */
+const STATIC_ICON_MOTIONS: Readonly<IconAnimationPair> = {
+  leftMotion: 'none',
+  rightMotion: 'none',
 };
+
+/** White highlight stops of the standalone icon sheen band. */
+const ICON_SHEEN_BAND_STOPS: readonly BandStop[] = [
+  [0, '0'],
+  [24, '0.12'],
+  [50, '0.45'],
+  [76, '0.12'],
+  [100, '0'],
+];
 
 /** Icons that automatically receive a smooth 360-degree continuous rotation in `'auto'` mode. */
 const AUTO_SPIN_ICONS: ReadonlySet<string> = new Set([
@@ -200,8 +380,8 @@ const AUTO_FLOAT_ICONS: ReadonlySet<string> = new Set([
   'package',
 ]);
 
-/** Directional nudge vectors (`[dx, dy]` in 24x24 icon units) for action icons in `'auto'` mode. */
-const AUTO_NUDGE_VECTORS: Readonly<Record<string, readonly [dx: number, dy: number]>> = {
+/** Directional nudge vectors for action icons in `'auto'` mode. */
+const AUTO_NUDGE_VECTORS: Readonly<Record<string, NudgeVector>> = {
   'arrow-down': [0, 2.2],
   'arrow-right': [2.2, 0],
   'arrow-up': [0, -2.2],
@@ -220,6 +400,9 @@ const AUTO_NUDGE_VECTORS: Readonly<Record<string, readonly [dx: number, dy: numb
   'trending-up': [1.8, -1.8],
   upload: [0, -2.2],
 };
+
+/** Rightward nudge vector for icons without a directional entry in `AUTO_NUDGE_VECTORS`. */
+const DEFAULT_NUDGE_VECTOR: NudgeVector = [2.2, 0];
 
 /** Critical dot color states that use an urgent fast outward radar beacon. */
 const CRITICAL_DOT_STATES: ReadonlySet<DotState> = new Set(['red', 'rose']);
@@ -242,7 +425,7 @@ const STANDBY_DOT_STATES: ReadonlySet<DotState> = new Set([
   'zinc',
 ]);
 
-/** 10-stage smooth green -> lime -> yellow -> amber -> orange -> red -> rose palette for dark strip capsules. */
+/** 10-stage smooth green, lime, yellow, amber, orange, red, and rose palette for dark strip capsules. */
 const STRIP_DARK_COLORS: Readonly<Record<StripTickState, string>> = {
   '0': '#ff4d6d',
   '1': '#ff6467',
@@ -270,9 +453,20 @@ const STRIP_SOLID_COLORS: Readonly<Record<StripTickState, string>> = {
   '9': '#ffffff',
 };
 
+/** Memoized bar shimmer `<defs>` blocks keyed by surface kind (`'solid'` or `'tinted'`). */
+const BAR_SHIMMER_DEF_CACHE = new Map<string, string>();
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches percent signs, plus signs, and whitespace that decorate a numeric delta readout. */
+const DELTA_DECORATION_RX = /[%+\s]/g;
+
+/** Matches the Unicode minus sign (`U+2212`), normalized to an ASCII hyphen before parsing deltas. */
+const UNICODE_MINUS_RX = /\u2212/g;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Measure the horizontal width in pixels required by the active special element. */
+/** Measure the horizontal width in pixels required by the active (sanitized) special element. */
 function measureSpecialElementWidth(
   special: BadgeSpecialElement | undefined,
   fontSize: number
@@ -291,14 +485,55 @@ function measureSpecialElementWidth(
       return 12;
     }
     case 'strip': {
-      const tickCount = Math.min(10, Math.max(1, special.states.length));
-      return Math.ceil(tickCount * 2.5 + (tickCount - 1) * 2);
+      const tickCount = special.states.length;
+      return tickCount === 0 ? 0 : Math.ceil(tickCount * 2.5 + (tickCount - 1) * 2);
     }
     case 'delta': {
       return 13 + measureTextWidth(special.value, fontSize - 0.5, true);
     }
     default: {
       return 0;
+    }
+  }
+}
+
+/** Keep the finite sparkline values (at most `MAX_SPARKLINE_POINTS`), clamped to `±MAX_SPARKLINE_MAGNITUDE`. */
+function sanitizeSparklineValues(values: readonly number[]): number[] {
+  const sanitized: number[] = [];
+  for (const value of values) {
+    if (Number.isFinite(value) && sanitized.length < MAX_SPARKLINE_POINTS) {
+      sanitized.push(Math.min(MAX_SPARKLINE_MAGNITUDE, Math.max(-MAX_SPARKLINE_MAGNITUDE, value)));
+    }
+  }
+  return sanitized;
+}
+
+/**
+ * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON): Sparkline
+ * values become finite and bounded, gauge percentages are clamped to `0`–`100` (`NaN` becomes `0`),
+ * strips keep at most `MAX_STRIP_TICKS` ticks, and delta text is normalized, trimmed, and capped.
+ */
+function sanitizeSpecialElement(
+  special: BadgeSpecialElement | undefined
+): BadgeSpecialElement | undefined {
+  switch (special?.type) {
+    case 'sparkline': {
+      return { type: 'sparkline', values: sanitizeSparklineValues(special.values) };
+    }
+    case 'bar':
+    case 'ring': {
+      return { ...special, value: clampNumber(special.value, PERCENT_RANGE) };
+    }
+    case 'strip': {
+      return special.states.length <= MAX_STRIP_TICKS
+        ? special
+        : { states: special.states.slice(0, MAX_STRIP_TICKS), type: 'strip' };
+    }
+    case 'delta': {
+      return { type: 'delta', value: prepareDisplayText(special.value, MAX_LABEL_LENGTH).trim() };
+    }
+    default: {
+      return undefined;
     }
   }
 }
@@ -317,17 +552,22 @@ function buildSparklineGeometry(
   if (values.length < 2) {
     return undefined;
   }
-  const minVal = Math.min(...values);
-  const maxVal = Math.max(...values);
-  const range = maxVal - minVal || 1;
+  let [minValue] = values;
+  let maxValue = minValue;
+  for (const value of values) {
+    minValue = Math.min(minValue, value);
+    maxValue = Math.max(maxValue, value);
+  }
+  const range = maxValue - minValue;
   const strokeHeight = height - 2;
   const strokeTopY = startY + 1;
   const coordinates: string[] = [];
 
   for (let i = 0; i < values.length; i += 1) {
-    const val = values[i];
     const pointX = startX + (i / (values.length - 1)) * width;
-    const pointY = strokeTopY + strokeHeight - ((val - minVal) / range) * strokeHeight;
+    // Flat series (all values equal) are drawn through the vertical center instead of the bottom edge.
+    const normalized = range > 0 ? (values[i] - minValue) / range : 0.5;
+    const pointY = strokeTopY + strokeHeight - normalized * strokeHeight;
     coordinates.push(`${pointX.toFixed(1)},${pointY.toFixed(1)}`);
   }
 
@@ -345,32 +585,21 @@ function resolveValueColor(variant: BadgeVariant, palette: ThemePalette): string
   return variant === '1' ? '#ffffff' : palette.accentText;
 }
 
-/** Resolve the left-side label text color for the active variant. */
-function resolveLabelColor(variant: BadgeVariant, isPrimarySolid: boolean): string {
-  if (isPrimarySolid) {
-    return '#ffffff';
-  }
-  if (variant === '3') {
-    return BASE_DARK.textMuted;
-  }
-  return BASE_DARK.textPrimary;
-}
-
-/** Resolve the contextual motion preset for an icon slug when `auto` is requested. */
-function resolveAutoIconMotion(cleanSlug: string): string | undefined {
-  if (AUTO_SPIN_ICONS.has(cleanSlug)) {
+/** Resolve the contextual motion preset for a canonical icon slug when `auto` is requested. */
+function resolveAutoIconMotion(iconKey: string): IconMotionMode | undefined {
+  if (AUTO_SPIN_ICONS.has(iconKey)) {
     return 'spin';
   }
-  if (AUTO_SHAKE_ICONS.has(cleanSlug)) {
+  if (AUTO_SHAKE_ICONS.has(iconKey)) {
     return 'shake';
   }
-  if (AUTO_NUDGE_VECTORS[cleanSlug] !== undefined) {
+  if (hasOwnKey(AUTO_NUDGE_VECTORS, iconKey)) {
     return 'nudge';
   }
-  if (AUTO_PULSE_ICONS.has(cleanSlug)) {
+  if (AUTO_PULSE_ICONS.has(iconKey)) {
     return 'pulse';
   }
-  if (AUTO_FLOAT_ICONS.has(cleanSlug)) {
+  if (AUTO_FLOAT_ICONS.has(iconKey)) {
     return 'float';
   }
   return undefined;
@@ -379,15 +608,13 @@ function resolveAutoIconMotion(cleanSlug: string): string | undefined {
 /** Wrap inner icon SVG paths with contextual or explicit SMIL micro-animation elements. */
 function wrapIconWithAnimation(
   innerSvg: string,
-  iconSlug: string | undefined,
-  iconMotion: string
+  iconKey: string,
+  iconMotion: IconMotionMode
 ): string {
-  if (iconMotion === 'none' || iconMotion === 'default' || iconMotion === 'sheen') {
+  if (iconMotion === 'none' || iconMotion === 'default') {
     return innerSvg;
   }
-  const rawMode = iconMotion.startsWith('sheen,') ? iconMotion.slice(6) : iconMotion;
-  const cleanSlug = (iconSlug ?? '').trim().toLowerCase();
-  const motion = rawMode === 'auto' ? resolveAutoIconMotion(cleanSlug) : rawMode;
+  const motion = iconMotion === 'auto' ? resolveAutoIconMotion(iconKey) : iconMotion;
 
   switch (motion) {
     case 'spin': {
@@ -397,8 +624,8 @@ function wrapIconWithAnimation(
       return `<g transform="translate(12, 12)"><g><animateTransform attributeName="transform" type="scale" values="1;1;1.15;1.15;1.15;1.15;1;1" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" dur="3.2s" repeatCount="indefinite" /><animateTransform attributeName="transform" type="rotate" values="0;0;-11;11;-9;7;0;0" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" dur="3.2s" additive="sum" repeatCount="indefinite" /><g transform="translate(-12, -12)">${innerSvg}</g></g></g>`;
     }
     case 'nudge': {
-      const [dx, dy] = AUTO_NUDGE_VECTORS[cleanSlug] ?? [2.2, 0];
-      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 0;${dx} ${dy};0 0;0 0" keyTimes="0;0.65;0.78;0.92;1" dur="2.8s" repeatCount="indefinite" />${innerSvg}</g>`;
+      const [deltaX, deltaY] = getOwnValue(AUTO_NUDGE_VECTORS, iconKey) ?? DEFAULT_NUDGE_VECTOR;
+      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 0;${deltaX} ${deltaY};0 0;0 0" keyTimes="0;0.65;0.78;0.92;1" dur="2.8s" repeatCount="indefinite" />${innerSvg}</g>`;
     }
     case 'pulse': {
       return `<g transform="translate(12, 12)"><g><animateTransform attributeName="transform" type="scale" values="1;1;1.18;0.96;1.14;1;1" keyTimes="0;0.58;0.68;0.76;0.84;0.94;1" dur="2.6s" repeatCount="indefinite" /><g transform="translate(-12, -12)">${innerSvg}</g></g></g>`;
@@ -420,33 +647,26 @@ function wrapIconWithAnimation(
  */
 function resolveIconAnimationPair(
   animMode: AnimationMode,
-  leftSlug: string | undefined,
-  rightSlug: string | undefined,
-  hasLeftIcon: boolean,
-  hasRightIcon: boolean
-): { leftMotion: string; rightMotion: string } {
+  icons: ResolvedIconPair
+): IconAnimationPair {
   if (animMode === 'none' || animMode === 'default' || animMode === 'sheen') {
-    return { leftMotion: 'none', rightMotion: 'none' };
+    return STATIC_ICON_MOTIONS;
   }
-  const tokens = animMode
-    .split(',')
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0 && t !== 'sheen');
-
+  const tokens = resolveIconMotionTokens(animMode);
   if (tokens.length === 0) {
-    return { leftMotion: 'none', rightMotion: 'none' };
+    return STATIC_ICON_MOTIONS;
   }
   const [firstToken, secondToken] = tokens;
   if (tokens.length >= 2) {
     return { leftMotion: firstToken, rightMotion: secondToken };
   }
 
-  if (firstToken === 'auto' || !hasLeftIcon || !hasRightIcon) {
+  if (firstToken === 'auto' || !icons.left.data || !icons.right.data) {
     return { leftMotion: firstToken, rightMotion: firstToken };
   }
 
-  const leftNatural = resolveAutoIconMotion((leftSlug ?? '').trim().toLowerCase());
-  const rightNatural = resolveAutoIconMotion((rightSlug ?? '').trim().toLowerCase());
+  const leftNatural = resolveAutoIconMotion(icons.left.key);
+  const rightNatural = resolveAutoIconMotion(icons.right.key);
   if (rightNatural === firstToken && leftNatural !== firstToken) {
     return { leftMotion: 'none', rightMotion: firstToken };
   }
@@ -458,28 +678,24 @@ function resolveIconAnimationPair(
     : { leftMotion: firstToken, rightMotion: 'none' };
 }
 
-/** Parse an icon specification (`'name'`, `'left,right'`, or `'none,right'`) into resolved left and right icons. */
+/** Resolve a single requested icon slug into an icon slot (empty slugs become `'none'`). */
+function resolveIconSlot(rawSlug: string): IconSlot {
+  const slug = rawSlug.trim() || 'none';
+  return { data: resolveIcon(slug), key: normalizeIconSlug(slug), slug };
+}
+
+/** Parse an icon specification (`'name'`, `'left,right'`, or `'none,right'`) into resolved left and right icon slots. */
 function resolveIconPair(iconSpec: string | undefined): ResolvedIconPair {
   if (!iconSpec) {
-    return { leftData: undefined, leftSlug: undefined, rightData: undefined, rightSlug: undefined };
+    return { left: EMPTY_ICON_SLOT, right: EMPTY_ICON_SLOT };
   }
   const commaIdx = iconSpec.indexOf(',');
   if (commaIdx === -1) {
-    const leftSlug = iconSpec.trim();
-    return {
-      leftData: resolveIcon(leftSlug),
-      leftSlug,
-      rightData: undefined,
-      rightSlug: undefined,
-    };
+    return { left: resolveIconSlot(iconSpec), right: EMPTY_ICON_SLOT };
   }
-  const leftSlug = iconSpec.slice(0, commaIdx).trim() || 'none';
-  const rightSlug = iconSpec.slice(commaIdx + 1).trim() || 'none';
   return {
-    leftData: resolveIcon(leftSlug),
-    leftSlug,
-    rightData: resolveIcon(rightSlug),
-    rightSlug,
+    left: resolveIconSlot(iconSpec.slice(0, commaIdx)),
+    right: resolveIconSlot(iconSpec.slice(commaIdx + 1)),
   };
 }
 
@@ -491,205 +707,182 @@ function measureIconVisualWidth(iconData: ResolvedIcon | undefined, iconSize: nu
   return Number(((iconData.maxX - iconData.minX) * (iconSize / 24)).toFixed(2));
 }
 
-/** Render the SVG `<g>` markup for a resolved Lucide or Simple Icons icon, aligned so its leftmost visible pixel starts at `visualStartX`. */
-function renderIconMarkup(
-  iconData: ResolvedIcon | undefined,
-  iconSlug: string | undefined,
-  visualStartX: number,
-  iconY: number,
-  iconSize: number,
-  iconColor: string,
-  iconMotion: string,
-  opacity?: number
-): string {
+/** Render the SVG `<g>` markup for a resolved icon slot, aligned so its leftmost visible pixel starts at `visualStartX`. */
+function renderIconMarkup(options: IconMarkupOptions): string {
+  const iconData = options.slot.data;
   if (!iconData) {
     return '';
   }
-  const scaleNum = iconSize / 24;
+  const scaleNum = options.iconSize / 24;
   const scale = Number(scaleNum.toFixed(4));
-  const translateX = Number((visualStartX - iconData.minX * scaleNum).toFixed(2));
-  const opacityAttr = opacity !== undefined && opacity < 1 ? ` opacity="${opacity}"` : '';
-  const animatedInner = wrapIconWithAnimation(iconData.innerSvg, iconSlug, iconMotion);
-  return iconData.type === 'lucide'
-    ? `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="none" stroke="${iconColor}" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"${opacityAttr}>${animatedInner}</g>`
-    : `<g transform="translate(${translateX}, ${iconY}) scale(${scale})" fill="${iconColor}"${opacityAttr}>${animatedInner}</g>`;
+  const translateX = Number((options.visualStartX - iconData.minX * scaleNum).toFixed(2));
+  return renderIconGroup({
+    color: options.color,
+    innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),
+    opacity: options.opacity,
+    strokeWidth: CAPSULE_ICON_STROKE_WIDTH,
+    transform: `translate(${translateX}, ${options.iconY}) scale(${scale})`,
+    type: iconData.type,
+  });
 }
 
-/**
- * Render the SVG markup for an animated status indicator dot with an outward-only radar ripple
- * or breathing pattern tailored to the status state.
- */
+/** Check whether a status dot state is renderable. */
+function isRenderableDot(dot: DotState | undefined): dot is DotState {
+  return dot !== undefined && hasOwnKey(DOT_COLORS, dot);
+}
+
+/** Render an animated status indicator dot with an outward-only radar ripple or breathing pattern tailored to the status state. */
 function renderDotMarkup(
   dot: DotState | undefined,
   dotCx: number,
   centerY: number,
   animMode: AnimationMode
 ): string {
-  if (!dot || !(dot in DOT_COLORS)) {
+  if (!isRenderableDot(dot)) {
     return '';
   }
   const dotHex = DOT_COLORS[dot];
-  if (animMode === 'none') {
-    return `<circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}" />`;
+  const position = `cx="${dotCx}" cy="${centerY}"`;
+  const staticCore = `<circle ${position} r="3" fill="${dotHex}" />`;
+  if (isAnimationDisabled(animMode)) {
+    return staticCore;
   }
 
   // 1. Critical / Offline (red, rose): urgent 1.15s outward beacon + core pulse.
   if (CRITICAL_DOT_STATES.has(dot)) {
-    return `
-      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
-        <animate attributeName="r" values="2.6;7.2" dur="1.15s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.75;0" dur="1.15s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
-        <animate attributeName="opacity" values="1;0.55;1" dur="1.15s" repeatCount="indefinite" />
-      </circle>
-    `;
+    return `<circle ${position} r="2.6" fill="${dotHex}" opacity="0"><animate attributeName="r" values="2.6;7.2" dur="1.15s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.75;0" dur="1.15s" repeatCount="indefinite" /></circle><circle ${position} r="3" fill="${dotHex}"><animate attributeName="opacity" values="1;0.55;1" dur="1.15s" repeatCount="indefinite" /></circle>`;
   }
 
   // 2. Incident / Overloaded (orange): faster 1.45s double-beat outward ripple + subtle core pulse.
   if (INCIDENT_DOT_STATES.has(dot)) {
-    return `
-      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
-        <animate attributeName="r" values="2.6;6.6;2.6;7.0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.72;0;0.55;0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
-        <animate attributeName="opacity" values="1;0.68;1" dur="1.45s" repeatCount="indefinite" />
-      </circle>
-    `;
+    return `<circle ${position} r="2.6" fill="${dotHex}" opacity="0"><animate attributeName="r" values="2.6;6.6;2.6;7.0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.72;0;0.55;0" keyTimes="0;0.44;0.45;1" dur="1.45s" repeatCount="indefinite" /></circle><circle ${position} r="3" fill="${dotHex}"><animate attributeName="opacity" values="1;0.68;1" dur="1.45s" repeatCount="indefinite" /></circle>`;
   }
 
   // 3. Degraded / Warning (amber, yellow): 1.8s double-beat outward radar ripple.
   if (WARNING_DOT_STATES.has(dot)) {
-    return `
-      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
-        <animate attributeName="r" values="2.6;6.4;2.6;6.8" keyTimes="0;0.45;0.46;1" dur="1.8s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.65;0;0.5;0" keyTimes="0;0.45;0.46;1" dur="1.8s" repeatCount="indefinite" />
-      </circle>
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}" />
-    `;
+    return `<circle ${position} r="2.6" fill="${dotHex}" opacity="0"><animate attributeName="r" values="2.6;6.4;2.6;6.8" keyTimes="0;0.45;0.46;1" dur="1.8s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.65;0;0.5;0" keyTimes="0;0.45;0.46;1" dur="1.8s" repeatCount="indefinite" /></circle>${staticCore}`;
   }
 
   // 4. Maintenance / Deploying / Syncing (sky, blue, cyan, indigo): active-work breathing core + soft outward halo.
   if (ACTIVE_WORK_DOT_STATES.has(dot)) {
-    return `
-      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
-        <animate attributeName="r" values="2.6;5.8" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.5;0" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" />
-      </circle>
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
-        <animate attributeName="r" values="2.4;3.2;2.4" dur="2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.75;1;0.75" dur="2s" repeatCount="indefinite" />
-      </circle>
-    `;
+    return `<circle ${position} r="2.6" fill="${dotHex}" opacity="0"><animate attributeName="r" values="2.6;5.8" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" /><animate attributeName="opacity" values="0.5;0" dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1" repeatCount="indefinite" /></circle><circle ${position} r="3" fill="${dotHex}"><animate attributeName="r" values="2.4;3.2;2.4" dur="2s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.75;1;0.75" dur="2s" repeatCount="indefinite" /></circle>`;
   }
 
   // 5. Standby / Paused / Idle (slate, gray, zinc, neutral, stone): calm 3.4s deep-sleep core breath without radar ring.
   if (STANDBY_DOT_STATES.has(dot)) {
-    return `
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}">
-        <animate attributeName="opacity" values="0.9;0.32;0.9" dur="3.4s" repeatCount="indefinite" />
-      </circle>
-    `;
+    return `<circle ${position} r="3" fill="${dotHex}"><animate attributeName="opacity" values="0.9;0.32;0.9" dur="3.4s" repeatCount="indefinite" /></circle>`;
   }
 
   // 6. Operational / Online & Beta / Preview (green, emerald, violet, purple, etc.): calm 2.3s outward spline wave.
-  return `
-      <circle cx="${dotCx}" cy="${centerY}" r="2.6" fill="${dotHex}" opacity="0">
-        <animate attributeName="r" values="2.6;6.8" dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1" repeatCount="indefinite" />
-        <animate attributeName="opacity" values="0.6;0" dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1" repeatCount="indefinite" />
-      </circle>
-      <circle cx="${dotCx}" cy="${centerY}" r="3" fill="${dotHex}" />
-    `;
+  return `<circle ${position} r="2.6" fill="${dotHex}" opacity="0"><animate attributeName="r" values="2.6;6.8" dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1" repeatCount="indefinite" /><animate attributeName="opacity" values="0.6;0" dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1" repeatCount="indefinite" /></circle>${staticCore}`;
+}
+
+/** Resolve the empty-track and active paint of a bar (`fill`) or ring (`stroke`) gauge. */
+function resolveGaugePaint(
+  paintAttr: 'fill' | 'stroke',
+  trackOpacity: string,
+  activeOpacity: number,
+  context: SpecialElementContext
+): GaugePaint {
+  return context.isSolidCapsule
+    ? {
+        activeColor: `rgba(255,255,255,${activeOpacity})`,
+        trackAttrs: `${paintAttr}="rgba(0,0,0,0.28)"`,
+      }
+    : {
+        activeColor: context.palette.accentText,
+        trackAttrs: `${paintAttr}="${context.palette.accentText}" ${paintAttr}-opacity="${trackOpacity}"`,
+      };
+}
+
+/** Build the ID of the bar shimmer `<linearGradient>` (`bar-shimmer-w` on primary capsules, `bar-shimmer-c` otherwise). */
+function buildBarShimmerId(isSolidCapsule: boolean): string {
+  return `bar-shimmer-${isSolidCapsule ? 'w' : 'c'}`;
+}
+
+/** Render (once per surface kind) the animated bar shimmer `<defs>` block (white band on primary capsules, softer otherwise). */
+function renderBarShimmerDef(isSolidCapsule: boolean): string {
+  const cacheKey = isSolidCapsule ? 'solid' : 'tinted';
+  const cached = BAR_SHIMMER_DEF_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const shimmerStops = renderWhiteBandStops([
+    [0, '0'],
+    [50, isSolidCapsule ? '0.95' : '0.52'],
+    [100, '0'],
+  ]);
+  const shimmerDef = `<defs><linearGradient id="${buildBarShimmerId(isSolidCapsule)}" x1="-0.75" y1="0" x2="0" y2="0">${shimmerStops}<animate attributeName="x1" values="-0.75;1.05;1.05" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /><animate attributeName="x2" values="0;1.8;1.8" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /></linearGradient></defs>`;
+  BAR_SHIMMER_DEF_CACHE.set(cacheKey, shimmerDef);
+  return shimmerDef;
 }
 
 /**
- * Render an inline horizontal progress/capacity bar.
+ * Render an inline horizontal progress/capacity bar from a sanitized `0`–`100` percentage.
  * The empty track uses a dark translucent accent color, and the rightward shimmer wave is applied
  * directly as a fill on the filled `<rect>` so it can never enter the empty part of the bar.
  */
 function renderBarWidgetMarkup(
   percentValue: number,
   hasPulse: boolean,
-  isSolidCapsule: boolean,
-  palette: ThemePalette,
-  specialX: number,
-  height: number,
-  specialWidth: number
+  context: SpecialElementContext
 ): string {
-  const clampedPct = Math.min(100, Math.max(0, percentValue));
-  const barY = (height - 6) / 2;
-  const trackAttrs = isSolidCapsule
-    ? 'fill="rgba(0,0,0,0.28)"'
-    : `fill="${palette.accentText}" fill-opacity="0.20"`;
-  const barFill = isSolidCapsule ? 'rgba(255,255,255,0.82)' : palette.accentText;
+  const { isSolidCapsule, specialWidth, specialX } = context;
+  const barY = (context.height - 6) / 2;
+  const paint = resolveGaugePaint('fill', '0.20', PRIMARY_FOREGROUND_OPACITY, context);
+  const trackRect = `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" ${paint.trackAttrs} />`;
   const fillWidth =
-    clampedPct <= 0 ? 0 : Math.max(4, Number(((clampedPct / 100) * specialWidth).toFixed(1)));
+    percentValue <= 0 ? 0 : Math.max(4, Number(((percentValue / 100) * specialWidth).toFixed(1)));
   if (fillWidth <= 0) {
-    return `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" ${trackAttrs} />`;
+    return trackRect;
   }
 
-  const baseRect = `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="6" rx="3" ${trackAttrs} /><rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="${barFill}" />`;
+  const filledRect = `<rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="${paint.activeColor}" />`;
   if (!hasPulse) {
-    return baseRect;
+    return `${trackRect}${filledRect}`;
   }
-
-  const gradId = `bar-shimmer-${specialX}-${isSolidCapsule ? 'w' : 'c'}`;
-  const shimmerPeak = isSolidCapsule ? '0.95' : '0.52';
-  const shimmerDef = `<defs><linearGradient id="${gradId}" x1="-0.75" y1="0" x2="0" y2="0"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="50%" stop-color="#ffffff" stop-opacity="${shimmerPeak}" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-0.75;1.05;1.05" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /><animate attributeName="x2" values="0;1.8;1.8" keyTimes="0;0.54;1" calcMode="spline" keySplines="0.4 0 0.2 1;0 0 1 1" dur="2.3s" repeatCount="indefinite" /></linearGradient></defs>`;
-  const shimmerRect = `<rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="url(#${gradId})" />`;
-  return `${baseRect}${shimmerDef}${shimmerRect}`;
+  const shimmerRect = `<rect x="${specialX}" y="${barY}" width="${fillWidth}" height="6" rx="3" fill="url(#${buildBarShimmerId(isSolidCapsule)})" />`;
+  return `${trackRect}${filledRect}${renderBarShimmerDef(isSolidCapsule)}${shimmerRect}`;
 }
 
-/**
- * Render an inline `12x12px` circular ring/donut gauge with a dark translucent accent track
- * and optional pulse.
- */
+/** Render an inline `12x12px` circular ring/donut gauge (sanitized `0`–`100` percentage) with a dark translucent accent track and optional pulse. */
 function renderRingWidgetMarkup(
   percentValue: number,
   hasPulse: boolean,
-  isSolidCapsule: boolean,
-  palette: ThemePalette,
-  specialX: number,
-  height: number
+  context: SpecialElementContext
 ): string {
-  const clampedPct = Math.min(100, Math.max(0, percentValue));
-  const ringCx = specialX + 6;
-  const ringCy = height / 2;
+  const ringCx = context.specialX + 6;
+  const ringCy = context.height / 2;
   const circumference = 28.27;
-  const arcLength = Number(((clampedPct / 100) * circumference).toFixed(2));
-  const trackAttrs = isSolidCapsule
-    ? 'stroke="rgba(0,0,0,0.28)"'
-    : `stroke="${palette.accentText}" stroke-opacity="0.24"`;
-  const arcStroke = isSolidCapsule ? 'rgba(255,255,255,0.85)' : palette.accentText;
+  const arcLength = Number(((percentValue / 100) * circumference).toFixed(2));
+  const paint = resolveGaugePaint('stroke', '0.24', 0.85, context);
+  const trackCircle = `<circle cx="${ringCx}" cy="${ringCy}" r="4.5" ${paint.trackAttrs} stroke-width="2" />`;
+  if (arcLength <= 0) {
+    // A zero-length dash with a round line cap would still draw a dot.
+    return trackCircle;
+  }
   const pulseAnim = hasPulse
     ? '<animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" />'
     : '';
-  return `<circle cx="${ringCx}" cy="${ringCy}" r="4.5" ${trackAttrs} stroke-width="2" /><circle cx="${ringCx}" cy="${ringCy}" r="4.5" stroke="${arcStroke}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
+  return `${trackCircle}<circle cx="${ringCx}" cy="${ringCy}" r="4.5" stroke="${paint.activeColor}" stroke-width="2" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
 }
 
-/** Resolve the fill color for a single tick in a 10-stage (`0`–`9` or `down`/`warn`/`up`) segmented strip. */
+/** Resolve the fill color for a single tick (`'0'`–`'9'`) in a 10-stage segmented strip. */
 function resolveStripTickColor(state: StripTickState, isSolidCapsule: boolean): string {
   return isSolidCapsule
     ? (STRIP_SOLID_COLORS[state] ?? '#ffffff')
     : (STRIP_DARK_COLORS[state] ?? THEMES.emerald.accentText);
 }
 
-/** Render a segmented uptime/health history strip. */
-function renderStripWidgetMarkup(
-  rawStates: StripTickState[],
-  isSolidCapsule: boolean,
-  specialX: number,
-  height: number,
-  animMode: AnimationMode
-): string {
-  const states = rawStates.slice(0, 10);
-  const tickY = (height - 10) / 2;
+/** Render a segmented uptime/health history strip (sanitized to at most `MAX_STRIP_TICKS` ticks). */
+function renderStripWidgetMarkup(states: StripTickState[], context: SpecialElementContext): string {
+  const tickY = (context.height - 10) / 2;
+  const isAnimated = !isAnimationDisabled(context.animMode);
   let ticksMarkup = '';
   for (let i = 0; i < states.length; i += 1) {
-    const tickX = (specialX + i * 4.5).toFixed(1);
-    const tickColor = resolveStripTickColor(states[i], isSolidCapsule);
-    const isAnimatedLast = i === states.length - 1 && animMode !== 'none';
+    const tickX = (context.specialX + i * 4.5).toFixed(1);
+    const tickColor = resolveStripTickColor(states[i], context.isSolidCapsule);
+    const isAnimatedLast = isAnimated && i === states.length - 1;
     ticksMarkup += isAnimatedLast
       ? `<rect x="${tickX}" y="${tickY}" width="2.5" height="10" rx="1.25" fill="${tickColor}"><animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite" /></rect>`
       : `<rect x="${tickX}" y="${tickY}" width="2.5" height="10" rx="1.25" fill="${tickColor}" />`;
@@ -697,18 +890,17 @@ function renderStripWidgetMarkup(
   return ticksMarkup;
 }
 
-/** Render an inline trend delta arrow and delta readout. */
-function renderDeltaWidgetMarkup(
-  rawValue: string,
-  isSolidCapsule: boolean,
-  specialX: number,
-  height: number,
-  fontSize: number,
-  specialWidth: number
-): string {
-  const rawDelta = rawValue.trim();
-  const isNegative = rawDelta.startsWith('-');
-  const isFlat = rawDelta === '0' || rawDelta === '0%' || rawDelta === '+0%';
+/**
+ * Render an inline trend delta arrow and readout from sanitized delta text: Up for positive, down for
+ * negative, and flat for zero or non-numeric readouts (e.g., `'-0%'`, `'0.0'`, `'n/a'`).
+ */
+function renderDeltaWidgetMarkup(deltaText: string, context: SpecialElementContext): string {
+  const { height, isSolidCapsule, specialX } = context;
+  const magnitude = Number.parseFloat(
+    deltaText.replace(UNICODE_MINUS_RX, '-').replace(DELTA_DECORATION_RX, '')
+  );
+  const isFlat = magnitude === 0 || !Number.isFinite(magnitude);
+  const isNegative = !isFlat && magnitude < 0;
 
   let deltaColor = isSolidCapsule ? '#ffffff' : THEMES.emerald.accentText;
   let arrowPath = 'M2.5 7.5L7.5 2.5M4 2.5H7.5V6';
@@ -721,86 +913,70 @@ function renderDeltaWidgetMarkup(
   }
 
   const arrowY = (height - 10) / 2;
-  const arrowOpacityAttr = isSolidCapsule ? ' opacity="0.82"' : '';
+  const arrowOpacityAttr = isSolidCapsule ? ` opacity="${PRIMARY_FOREGROUND_OPACITY}"` : '';
   const arrowMarkup = `<g transform="translate(${specialX}, ${arrowY})" fill="none" stroke="${deltaColor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"${arrowOpacityAttr}><path d="${arrowPath}" /></g>`;
-  const textWidth = specialWidth - 13;
-  const textCenterX = Number((specialX + 13 + textWidth / 2).toFixed(2));
-  const deltaFontSize = fontSize - 0.5;
-  const deltaBaselineY = computeCenteredBaselineY(height, deltaFontSize);
-  const deltaTextMarkup = renderTextPathMarkup(
-    rawDelta,
-    textCenterX,
-    deltaBaselineY,
-    deltaFontSize,
-    deltaColor,
-    true
-  );
+  const textWidth = context.specialWidth - 13;
+  const deltaFontSize = context.fontSize - 0.5;
+  const deltaTextMarkup = renderTextPathMarkup(deltaText, {
+    anchorX: Number((specialX + 13 + textWidth / 2).toFixed(2)),
+    baselineY: computeCenteredBaselineY(height, deltaFontSize),
+    fill: deltaColor,
+    fontSize: deltaFontSize,
+    isBold: true,
+  });
   return `${arrowMarkup}${deltaTextMarkup}`;
+}
+
+/** Resolve the ID of the sparkline area-fill `<linearGradient>` (white on primary capsules, accent-colored otherwise). */
+function resolveSparklineGradientId(isSolidCapsule: boolean, color: ThemeColorName): string {
+  return isSolidCapsule ? 'spark-fill-white' : `spark-fill-${color}`;
+}
+
+/** Render an inline trend sparkline with a vertical area gradient fill. */
+function renderSparklineWidgetMarkup(values: number[], context: SpecialElementContext): string {
+  const sparkY = (context.height - 11) / 2;
+  const geometry = buildSparklineGeometry(
+    values,
+    context.specialX,
+    sparkY,
+    context.specialWidth,
+    11
+  );
+  if (!geometry) {
+    return '';
+  }
+  const sparkStroke = context.isSolidCapsule
+    ? 'rgba(255,255,255,0.86)'
+    : context.palette.accentText;
+  const sparkGradId = resolveSparklineGradientId(context.isSolidCapsule, context.color);
+  return `<polygon points="${geometry.areaPoints}" fill="url(#${sparkGradId})" /><polyline points="${geometry.linePoints}" fill="none" stroke="${sparkStroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`;
 }
 
 /** Render the active right-compartment special element (`sparkline`, `bar`, `ring`, `strip`, or `delta`). */
 function renderSpecialElementMarkup(
   special: BadgeSpecialElement | undefined,
-  variant: BadgeVariant,
-  color: BadgeRenderOptions['color'],
-  palette: ThemePalette,
-  specialX: number,
-  height: number,
-  fontSize: number,
-  specialWidth: number,
-  animMode: AnimationMode
+  context: SpecialElementContext
 ): string {
-  if (!special || specialWidth <= 0) {
+  if (!special || context.specialWidth <= 0) {
     return '';
   }
-  const isSolidCapsule = variant === '1';
-
   switch (special.type) {
     case 'sparkline': {
-      const sparkY = (height - 11) / 2;
-      const geometry = buildSparklineGeometry(special.values, specialX, sparkY, specialWidth, 11);
-      if (!geometry) {
-        return '';
-      }
-      const sparkStroke = isSolidCapsule ? 'rgba(255,255,255,0.86)' : palette.accentText;
-      const sparkGradId = isSolidCapsule ? 'spark-fill-white' : `spark-fill-${color}`;
-      return `<polygon points="${geometry.areaPoints}" fill="url(#${sparkGradId})" /><polyline points="${geometry.linePoints}" fill="none" stroke="${sparkStroke}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />`;
+      return renderSparklineWidgetMarkup(special.values, context);
     }
     case 'bar': {
-      const hasBarShimmer = animMode !== 'none' && special.hasPulse !== false;
-      return renderBarWidgetMarkup(
-        special.value,
-        hasBarShimmer,
-        isSolidCapsule,
-        palette,
-        specialX,
-        height,
-        specialWidth
-      );
+      const hasBarShimmer = !isAnimationDisabled(context.animMode) && special.hasPulse !== false;
+      return renderBarWidgetMarkup(special.value, hasBarShimmer, context);
     }
     case 'ring': {
-      const hasRingPulse = animMode !== 'none' && Boolean(special.hasPulse);
-      return renderRingWidgetMarkup(
-        special.value,
-        hasRingPulse,
-        isSolidCapsule,
-        palette,
-        specialX,
-        height
-      );
+      const hasRingPulse = !isAnimationDisabled(context.animMode) && Boolean(special.hasPulse);
+      return renderRingWidgetMarkup(special.value, hasRingPulse, context);
     }
     case 'strip': {
-      return renderStripWidgetMarkup(special.states, isSolidCapsule, specialX, height, animMode);
+      return renderStripWidgetMarkup(special.states, context);
     }
     case 'delta': {
-      return renderDeltaWidgetMarkup(
-        special.value,
-        isSolidCapsule,
-        specialX,
-        height,
-        fontSize,
-        specialWidth
-      );
+      return renderDeltaWidgetMarkup(special.value, context);
     }
     default: {
       return '';
@@ -808,103 +984,73 @@ function renderSpecialElementMarkup(
   }
 }
 
-/** Render the `<linearGradient>` definition for the sparkline area fill when active. */
-function renderSparklineGradientDef(
-  hasSparkline: boolean,
-  variant: BadgeVariant,
-  color: BadgeRenderOptions['color'],
-  palette: ThemePalette
-): string {
-  if (!hasSparkline) {
-    return '';
-  }
-  const isSolidCapsule = variant === '1';
-  const sparkGradId = isSolidCapsule ? 'spark-fill-white' : `spark-fill-${color}`;
-  const stopColor = isSolidCapsule ? '#ffffff' : palette.accentText;
+/** Render the `<linearGradient>` definition for the sparkline area fill. */
+function renderSparklineGradientDef(isSolidCapsule: boolean, color: ThemeColorName): string {
+  const stopColor = isSolidCapsule ? '#ffffff' : THEMES[color].accentText;
   const topOpacity = isSolidCapsule ? '0.32' : '0.38';
-  return `<linearGradient id="${sparkGradId}" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="${stopColor}" stop-opacity="${topOpacity}" />
-      <stop offset="100%" stop-color="${stopColor}" stop-opacity="0" />
-    </linearGradient>`;
+  return `<linearGradient id="${resolveSparklineGradientId(isSolidCapsule, color)}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stopColor}" stop-opacity="${topOpacity}" /><stop offset="100%" stop-color="${stopColor}" stop-opacity="0" /></linearGradient>`;
 }
 
-/**
- * Render all background fills, upper-edge 3D Kumo crescents, and outer border rings for a `22px` badge.
- */
-function renderSurfaceAndBorderLayers(
-  variant: BadgeVariant,
-  color: BadgeRenderOptions['color'],
-  palette: ThemePalette,
-  totalWidth: number,
-  leftWidth: number,
-  rightWidth: number,
-  height: number,
-  radiusX: number
-): string {
-  const themeGradId = `grad-${color}`;
-  const isSplit = leftWidth > 0 && rightWidth > 0;
-  const splitLineX = isSplit ? leftWidth : undefined;
+/** Render all background fills, upper-edge Kumo 3D crescents, dividers, and outer border rings for a `22px` badge. */
+function renderBadgeSurface(options: BadgeSurfaceOptions): string {
+  const { color, height, layout, radiusX, variant } = options;
+  const { isSplit, leftWidth, totalWidth } = layout;
 
-  // 1. Single-part Primary badge (v=1): Kumo 3D brand gradient surface.
-  if (variant === '1' && !isSplit) {
-    return renderKumoBoxSurface(
-      0,
-      0,
-      totalWidth,
-      height,
-      radiusX,
-      '1',
-      palette,
-      themeGradId,
-      splitLineX
-    );
-  }
-
-  // 2. Split Primary Badge (v=1): neutral dark left compartment + 3D Kumo colored right capsule.
+  // Split Primary badge (v=1): neutral dark left compartment + 3D Kumo colored right capsule.
   if (variant === '1' && isSplit) {
+    const palette = THEMES[color];
+    const innerRadius = radiusX - 0.5;
     const leftFillPath = `M ${leftWidth} 0 H ${radiusX} A ${radiusX} ${radiusX} 0 0 0 0 ${radiusX} V ${height - radiusX} A ${radiusX} ${radiusX} 0 0 0 ${radiusX} ${height} H ${leftWidth} Z`;
-    const leftBorderPath = `M ${leftWidth} 0.5 H ${radiusX} A ${radiusX - 0.5} ${radiusX - 0.5} 0 0 0 0.5 ${radiusX} V ${height - radiusX} A ${radiusX - 0.5} ${radiusX - 0.5} 0 0 0 ${radiusX} ${height - 0.5} H ${leftWidth}`;
-
-    const rightFillPath = `M ${leftWidth} 0 H ${totalWidth - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${totalWidth} ${radiusX} V ${height - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${totalWidth - radiusX} ${height} H ${leftWidth} Z`;
+    const leftBorderPath = `M ${leftWidth} 0.5 H ${radiusX} A ${innerRadius} ${innerRadius} 0 0 0 0.5 ${radiusX} V ${height - radiusX} A ${innerRadius} ${innerRadius} 0 0 0 ${radiusX} ${height - 0.5} H ${leftWidth}`;
+    const rightFillPath = buildRightCapsulePath(leftWidth, totalWidth, height, radiusX);
     const rightCrescentPath = buildTopCrescentPath(leftWidth, totalWidth, radiusX, false);
-    const rightRingPath = `M ${leftWidth + 0.5} 0.5 H ${totalWidth - radiusX} A ${radiusX - 0.5} ${radiusX - 0.5} 0 0 1 ${totalWidth - 0.5} ${radiusX} V ${height - radiusX} A ${radiusX - 0.5} ${radiusX - 0.5} 0 0 1 ${totalWidth - radiusX} ${height - 0.5} H ${leftWidth + 0.5} Z`;
+    const rightRingPath = buildRightCapsulePath(
+      leftWidth + 0.5,
+      totalWidth - 0.5,
+      height - 1,
+      innerRadius,
+      0.5
+    );
 
     return (
-      `<path d="${leftFillPath}" fill="url(#bg-dark)" />` +
+      `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
       `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
-      `<path d="${rightFillPath}" fill="url(#${themeGradId})" />` +
+      `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(color)})" />` +
       `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
       `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
     );
   }
 
-  // 3. Flat Secondary and Tertiary Badges (v=2, v=3).
-  let layers = `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="url(#bg-dark)" />`;
-  const outerBorder = variant === '2' ? palette.borderColor : BASE_DARK.borderNeutral;
+  // Single-part Primary and all Secondary/Tertiary badges share the Kumo surface; Split v2 badges tint
+  // and 3D-highlight only the right capsule (split v3 dividers stop short of the edges, so v3 keeps its full crescent).
+  const splitX = isSplit ? leftWidth : undefined;
+  return renderKumoBoxSurface({
+    color,
+    height,
+    radius: radiusX,
+    rightCapsuleStartX: splitX,
+    splitLineX: splitX,
+    variant,
+    width: totalWidth,
+  });
+}
 
-  if (variant === '2' && !isSplit) {
-    layers += `<rect width="${totalWidth}" height="${height}" rx="${radiusX}" fill="${palette.tintBg}" />`;
-  } else if (isSplit) {
-    if (variant === '2') {
-      const rightCapsulePath = `M ${leftWidth} 0 H ${totalWidth - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${totalWidth} ${radiusX} V ${height - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${totalWidth - radiusX} ${height} H ${leftWidth} Z`;
-      layers += `<path d="${rightCapsulePath}" fill="${palette.tintBg}" />`;
-      layers += `<line x1="${leftWidth}" y1="0" x2="${leftWidth}" y2="${height}" stroke="${palette.borderColor}" stroke-width="1" />`;
-    } else {
-      layers += `<line x1="${leftWidth}" y1="4" x2="${leftWidth}" y2="${height - 4}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />`;
-    }
-  }
-
-  layers += `<rect x="0.5" y="0.5" width="${totalWidth - 1}" height="${height - 1}" rx="${radiusX - 0.5}" stroke="${outerBorder}" stroke-width="1" />`;
-  return layers;
+/** Render the `<defs>` gradients a badge or button surface references. */
+function renderSurfaceGradientDefs(
+  color: ThemeColorName,
+  hasDarkBg: boolean,
+  hasThemeGradient: boolean
+): string {
+  return `${hasDarkBg ? renderDarkBgGradientDef() : ''}${hasThemeGradient ? renderThemeGradientDef(color) : ''}`;
 }
 
 /** Resolve button geometry metrics (`height`, `fontSize`, `iconSize`, `padX`, `radiusX`) from `size`. */
-function resolveButtonMetrics(sizeOption: ButtonSize | number | undefined): VariantMetrics {
-  if (typeof sizeOption === 'string' && sizeOption in BUTTON_SIZE_PRESETS) {
+function resolveButtonMetrics(sizeOption: SizePreset | number | undefined): VariantMetrics {
+  if (typeof sizeOption === 'string' && hasOwnKey(BUTTON_SIZE_PRESETS, sizeOption)) {
     return BUTTON_SIZE_PRESETS[sizeOption];
   }
   if (typeof sizeOption === 'number' && Number.isFinite(sizeOption)) {
-    const height = clampInt(sizeOption, 22, 48, 30);
+    const height = clampInt(sizeOption, BUTTON_HEIGHT_RANGE);
     return {
       fontSize: Number((height * 0.415).toFixed(1)),
       height,
@@ -923,77 +1069,68 @@ function packCompartment(
   leftPad: number,
   rightPad = leftPad,
   extraFirstGap = 0
-): { offsets: number[]; width: number } {
+): PackedCompartment {
   let rawWidth = 0;
   let activeCount = 0;
-  for (const w of itemWidths) {
-    if (w > 0) {
+  for (const itemWidth of itemWidths) {
+    if (itemWidth > 0) {
       if (activeCount > 0) {
         rawWidth += gap;
       }
-      rawWidth += w;
+      rawWidth += itemWidth;
       activeCount += 1;
     }
   }
   if (itemWidths[0] > 0 && activeCount > 1) {
     rawWidth += extraFirstGap;
   }
-  if (activeCount === 0) {
-    return { offsets: itemWidths.map(() => leftPad), width: 0 };
-  }
-  const width = Math.round(leftPad + rawWidth + rightPad);
-  const roundDelta = (width - (leftPad + rawWidth + rightPad)) / 2;
-  let cursor = leftPad + roundDelta;
+  // Empty compartments collapse to zero width; Their offsets all stay at the left padding.
+  const paddedWidth = leftPad + rawWidth + rightPad;
+  const width = activeCount === 0 ? 0 : Math.round(paddedWidth);
+  let cursor = activeCount === 0 ? leftPad : leftPad + (width - paddedWidth) / 2;
   const offsets: number[] = [];
-  for (let idx = 0; idx < itemWidths.length; idx += 1) {
-    const w = itemWidths[idx];
+  for (let i = 0; i < itemWidths.length; i += 1) {
+    const itemWidth = itemWidths[i];
     offsets.push(Number(cursor.toFixed(2)));
-    if (w > 0) {
-      cursor += w + gap + (idx === 0 ? extraFirstGap : 0);
+    if (itemWidth > 0) {
+      cursor += itemWidth + gap + (i === 0 ? extraFirstGap : 0);
     }
   }
   return { offsets, width };
 }
 
-/** Compute horizontal compartment widths and coordinate offsets for a `22px` badge. */
-function computeBadgeLayout(
-  labelText: string,
-  valueText: string,
-  hasDot: boolean,
-  leftIconWidth: number,
-  rightIconWidth: number,
-  specialWidth: number,
-  metrics: VariantMetrics
-): BadgeLayout {
-  const { fontSize, padX } = metrics;
-  const innerGap = 6;
-  const labelWidth = labelText.length > 0 ? measureTextWidth(labelText, fontSize, false) : 0;
-  const valueWidth = valueText.length > 0 ? measureTextWidth(valueText, fontSize, true) : 0;
+/**
+ * Compute horizontal compartment widths and coordinate offsets for a badge or button.
+ * The left compartment packs `[dot, leftIcon, label, rightIcon]` (the trailing icon moves right when a
+ * right compartment exists), and the right compartment packs `[special, value, rightIcon]`.
+ */
+function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
+  const { gap, labelWidth, padX, rightIconWidth, specialWidth, valueWidth } = input;
   const hasRightCompartment = valueWidth > 0 || specialWidth > 0;
 
   const leftPack = packCompartment(
-    [hasDot ? 7 : 0, leftIconWidth, labelWidth, hasRightCompartment ? 0 : rightIconWidth],
-    innerGap,
-    padX,
+    [
+      input.hasDot ? DOT_SLOT_WIDTH : 0,
+      input.leftIconWidth,
+      labelWidth,
+      hasRightCompartment ? 0 : rightIconWidth,
+    ],
+    gap,
     padX
   );
-
   const rightPack = packCompartment(
     hasRightCompartment ? [specialWidth, valueWidth, rightIconWidth] : [0, 0, 0],
-    innerGap,
+    gap,
     padX,
     padX,
     1
   );
 
-  const leftWidth = leftPack.width;
+  const leftWidth = leftPack.width > 0 ? leftPack.width : input.minLeftWidth;
   const rightWidth = rightPack.width;
-  const totalWidth = leftWidth + rightWidth || padX * 2;
-  const isSplit = leftWidth > 0 && rightWidth > 0;
-
   return {
-    dotCx: Number((leftPack.offsets[0] + 3.5).toFixed(2)),
-    isSplit,
+    dotCx: Number((leftPack.offsets[0] + DOT_SLOT_WIDTH / 2).toFixed(2)),
+    isSplit: leftWidth > 0 && rightWidth > 0,
     labelCenterX: Number((leftPack.offsets[2] + labelWidth / 2).toFixed(2)),
     leftIconX: leftPack.offsets[1],
     leftWidth,
@@ -1001,74 +1138,92 @@ function computeBadgeLayout(
       ? Number((leftWidth + rightPack.offsets[2]).toFixed(2))
       : leftPack.offsets[3],
     rightWidth,
-    specialWidth,
     specialX: Number((leftWidth + rightPack.offsets[0]).toFixed(2)),
-    totalWidth,
+    totalWidth: leftWidth + rightWidth || padX * 2,
     valueCenterX: Number((leftWidth + rightPack.offsets[1] + valueWidth / 2).toFixed(2)),
   };
 }
 
-/** Compute horizontal compartment widths and coordinate offsets for a CTA button. */
-function computeButtonLayout(
-  labelText: string,
-  valueText: string,
-  hasDot: boolean,
-  leftIconWidth: number,
-  rightIconWidth: number,
-  metrics: VariantMetrics
-): ButtonLayout {
-  const { fontSize, height, padX } = metrics;
-  const isSplit = valueText.length > 0;
-  const innerGap = Math.max(6, Math.round(height * 0.24));
-  const labelWidth = labelText.length > 0 ? measureTextWidth(labelText, fontSize, true) : 0;
-  const valueWidth = isSplit ? measureTextWidth(valueText, fontSize, true) : 0;
+/** Render the dot, icons, label, special element, and value of a badge or button in paint order. */
+function renderCapsuleBody(options: CapsuleBodyOptions): string {
+  const { animMode, icons, layout, metrics, palette } = options;
+  const { fontSize, height, iconSize } = metrics;
+  const textY = computeCenteredBaselineY(height, fontSize);
+  const iconY = Number(((height - iconSize) / 2).toFixed(2));
+  const { leftMotion, rightMotion } = resolveIconAnimationPair(animMode, icons);
 
-  const leftPack = packCompartment(
-    [hasDot ? 7 : 0, leftIconWidth, labelWidth, isSplit ? 0 : rightIconWidth],
-    innerGap,
-    padX,
-    padX
-  );
-  const leftWidth = leftPack.width || padX * 2;
-
-  const rightPack = packCompartment(
-    isSplit ? [valueWidth, rightIconWidth] : [0, 0],
-    innerGap,
-    padX,
-    padX
-  );
-  const totalWidth = leftWidth + rightPack.width;
-
-  return {
-    dotCx: Number((leftPack.offsets[0] + 3.5).toFixed(2)),
-    isSplit,
-    labelCenterX: Number((leftPack.offsets[2] + labelWidth / 2).toFixed(2)),
-    leftIconX: leftPack.offsets[1],
-    leftWidth,
-    rightIconX: isSplit
-      ? Number((leftWidth + rightPack.offsets[1]).toFixed(2))
-      : leftPack.offsets[3],
-    totalWidth,
-    valueCenterX: Number((leftWidth + rightPack.offsets[0] + valueWidth / 2).toFixed(2)),
-  };
+  const dotMarkup = renderDotMarkup(options.dot, layout.dotCx, height / 2, animMode);
+  const leftIconMarkup = renderIconMarkup({
+    color: options.isLeftOnPrimary ? '#ffffff' : palette.iconColor,
+    iconSize,
+    iconY,
+    motion: leftMotion,
+    opacity: options.isLeftOnPrimary ? PRIMARY_FOREGROUND_OPACITY : undefined,
+    slot: icons.left,
+    visualStartX: layout.leftIconX,
+  });
+  const rightIconMarkup = renderIconMarkup({
+    color: options.isRightOnPrimary ? '#ffffff' : palette.iconColor,
+    iconSize,
+    iconY,
+    motion: rightMotion,
+    opacity: options.isRightOnPrimary ? PRIMARY_FOREGROUND_OPACITY : undefined,
+    slot: icons.right,
+    visualStartX: layout.rightIconX,
+  });
+  const labelMarkup = renderTextPathMarkup(options.labelText, {
+    anchorX: layout.labelCenterX,
+    baselineY: textY,
+    fill: resolveSurfaceTextColor(options.variant, options.isLeftOnPrimary),
+    fontSize,
+    isBold: options.isLabelBold,
+  });
+  const valueMarkup = renderTextPathMarkup(options.valueText, {
+    anchorX: layout.valueCenterX,
+    baselineY: textY,
+    fill: options.valueColor,
+    fontSize,
+    isBold: true,
+  });
+  return `${dotMarkup}${leftIconMarkup}${labelMarkup}${options.specialMarkup}${valueMarkup}${rightIconMarkup}`;
 }
 
-/** Build the accessible `aria-label` string for the rendered SVG element. */
+/** Build the raw accessible `aria-label` text (`label: value`, either part alone, or the first visible icon/dot name). */
 function buildAriaLabel(
   labelText: string,
   valueText: string,
-  fallbackName: string | undefined
+  icons: ResolvedIconPair,
+  dot: DotState | undefined
 ): string {
   if (labelText.length > 0 && valueText.length > 0) {
-    return `${escapeXml(labelText)}: ${escapeXml(valueText)}`;
+    return `${labelText}: ${valueText}`;
   }
-  if (labelText.length > 0) {
-    return escapeXml(labelText);
+  if (labelText.length > 0 || valueText.length > 0) {
+    return labelText || valueText;
   }
-  if (valueText.length > 0) {
-    return escapeXml(valueText);
+  if (icons.left.data) {
+    return icons.left.slug;
   }
-  return escapeXml(fallbackName || 'badge');
+  if (icons.right.data) {
+    return icons.right.slug;
+  }
+  return dot ?? 'badge';
+}
+
+/** Build the content-addressed ID of the standalone icon sheen gradient (`'icon-sheen'`, or suffixed for scaled icon bodies). */
+function buildIconSheenId(coordScale: number): string {
+  return coordScale === 1 ? 'icon-sheen' : `icon-sheen-s${Math.round(1000 / coordScale)}`;
+}
+
+/**
+ * Render the standalone icon sheen `<linearGradient>`.
+ * The gradient uses `userSpaceOnUse` coordinates of the painted paths, so icon bodies drawn in a scaled
+ * coordinate space (Devicon's `128x128` grid) get an inverse `gradientTransform` to sweep the full `24x24` box.
+ */
+function renderIconSheenGradientDef(sheenId: string, coordScale: number): string {
+  const transformAttr =
+    coordScale === 1 ? '' : ` gradientTransform="scale(${Number((1 / coordScale).toFixed(4))})"`;
+  return `<linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"${transformAttr}>${renderWhiteBandStops(ICON_SHEEN_BAND_STOPS)}<animate attributeName="x1" values="-58;58;58" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><animate attributeName="x2" values="-32;84;84" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /></linearGradient>`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -1076,136 +1231,76 @@ function buildAriaLabel(
 /**
  * Render a complete `22px` badge SVG string from `BadgeRenderOptions`.
  * @param options   Badge rendering configuration (label, value, color, variant, icon, dot, special, anim).
- * @returns Complete SVG markup string.
+ * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderBadge(options: BadgeRenderOptions): string {
-  const palette = THEMES[options.color] || THEMES.indigo;
+  const { color, variant } = options;
+  const palette = THEMES[color];
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = BADGE_METRICS;
-  const { fontSize, height, iconSize, radiusX } = metrics;
+  const { fontSize, height, iconSize, padX, radiusX } = metrics;
 
-  const labelText = options.label;
-  const valueText = options.value ?? '';
-  const hasLabel = labelText.length > 0;
-  const hasValue = valueText.length > 0;
-
-  const { leftData, leftSlug, rightData, rightSlug } = resolveIconPair(options.icon);
-  const leftIconWidth = measureIconVisualWidth(leftData, iconSize);
-  const rightIconWidth = measureIconVisualWidth(rightData, iconSize);
-  const hasDot = Boolean(options.dot && options.dot in DOT_COLORS);
-  const specialElement = options.special;
-  const specialWidth = measureSpecialElementWidth(specialElement, fontSize);
-
-  const layout = computeBadgeLayout(
-    labelText,
-    valueText,
-    hasDot,
-    leftIconWidth,
-    rightIconWidth,
+  const labelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
+  const valueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const special = sanitizeSpecialElement(options.special);
+  const icons = resolveIconPair(options.icon);
+  const specialWidth = measureSpecialElementWidth(special, fontSize);
+  const layout = computeCapsuleLayout({
+    gap: 6,
+    hasDot: isRenderableDot(options.dot),
+    labelWidth: measureTextWidth(labelText, fontSize, false),
+    leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
+    minLeftWidth: 0,
+    padX,
+    rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
     specialWidth,
-    metrics
-  );
-  const {
-    dotCx,
-    isSplit,
-    labelCenterX,
-    leftIconX,
-    leftWidth,
-    rightIconX,
-    rightWidth,
-    specialX,
-    totalWidth,
-    valueCenterX,
-  } = layout;
+    valueWidth: measureTextWidth(valueText, fontSize, true),
+  });
 
-  const centerY = height / 2;
-  const textY = computeCenteredBaselineY(height, fontSize);
-  const iconY = (height - iconSize) / 2;
-  const dotMarkup = renderDotMarkup(options.dot, dotCx, centerY, animMode);
-
-  const isPrimarySolid = options.variant === '1' && !isSplit;
-  const leftIconColor = isPrimarySolid ? '#ffffff' : palette.iconColor;
-  const rightIconColor = options.variant === '1' ? '#ffffff' : palette.iconColor;
-  const leftIconOpacity = isPrimarySolid ? 0.82 : undefined;
-  const rightIconOpacity = options.variant === '1' ? 0.82 : undefined;
-  const labelColor = resolveLabelColor(options.variant, isPrimarySolid);
-  const valueColor = resolveValueColor(options.variant, palette);
-  const gradId = `grad-${options.color}`;
-  const { leftMotion, rightMotion } = resolveIconAnimationPair(
+  const isSolidCapsule = variant === '1';
+  const hasSparkline = special?.type === 'sparkline' && special.values.length >= 2;
+  const specialMarkup = renderSpecialElementMarkup(special, {
     animMode,
-    leftSlug,
-    rightSlug,
-    Boolean(leftData),
-    Boolean(rightData)
-  );
-
-  const leftIconMarkup = renderIconMarkup(
-    leftData,
-    leftSlug,
-    leftIconX,
-    iconY,
-    iconSize,
-    leftIconColor,
-    leftMotion,
-    leftIconOpacity
-  );
-  const rightIconMarkup = renderIconMarkup(
-    rightData,
-    rightSlug,
-    rightIconX,
-    iconY,
-    iconSize,
-    rightIconColor,
-    rightMotion,
-    rightIconOpacity
-  );
-  const specialMarkup = renderSpecialElementMarkup(
-    specialElement,
-    options.variant,
-    options.color,
-    palette,
-    specialX,
-    height,
+    color,
     fontSize,
-    specialWidth,
-    animMode
-  );
-  const hasSparkline = specialElement?.type === 'sparkline' && specialElement.values.length >= 2;
-  const sparkGradDef = renderSparklineGradientDef(
-    hasSparkline,
-    options.variant,
-    options.color,
-    palette
-  );
-  const surfaceAndBorderLayers = renderSurfaceAndBorderLayers(
-    options.variant,
-    options.color,
-    palette,
-    totalWidth,
-    leftWidth,
-    rightWidth,
     height,
-    radiusX
+    isSolidCapsule,
+    palette,
+    specialWidth,
+    specialX: layout.specialX,
+  });
+  const body = renderCapsuleBody({
+    animMode,
+    dot: options.dot,
+    icons,
+    isLabelBold: false,
+    isLeftOnPrimary: isSolidCapsule && !layout.isSplit,
+    isRightOnPrimary: isSolidCapsule,
+    labelText,
+    layout,
+    metrics,
+    palette,
+    specialMarkup,
+    valueColor: resolveValueColor(variant, palette),
+    valueText,
+    variant,
+  });
+  const surface = renderBadgeSurface({ color, height, layout, radiusX, variant });
+  const sheen = renderSheenOverlay({ animMode, height, radius: radiusX, width: layout.totalWidth });
+  const surfaceDefs = renderSurfaceGradientDefs(
+    color,
+    !isSolidCapsule || layout.isSplit,
+    isSolidCapsule
   );
-  const sheen = renderSheenOverlay(animMode, totalWidth, height, radiusX);
-  const labelMarkup = hasLabel
-    ? renderTextPathMarkup(labelText, labelCenterX, textY, fontSize, labelColor, false)
-    : '';
-  const valueMarkup = hasValue
-    ? renderTextPathMarkup(valueText, valueCenterX, textY, fontSize, valueColor, true)
-    : '';
-  const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
+  const sparkGradDef = hasSparkline ? renderSparklineGradientDef(isSolidCapsule, color) : '';
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
-  <defs>
-    ${renderDarkBgGradientDef()}
-    ${renderThemeGradientDef(gradId, palette)}
-    ${sparkGradDef}
-    ${sheen.clipDef}
-  </defs>
-  ${surfaceAndBorderLayers}
-  ${dotMarkup}${leftIconMarkup}${labelMarkup}${specialMarkup}${valueMarkup}${rightIconMarkup}${sheen.overlay}
-</svg>`;
+  return renderSvgDocument({
+    ariaLabel: buildAriaLabel(labelText, valueText, icons, options.dot),
+    body: `${surface}${body}${sheen.overlay}`,
+    defs: `${surfaceDefs}${sparkGradDef}${sheen.clipDef}`,
+    height,
+    width: layout.totalWidth,
+  });
 }
 
 /**
@@ -1213,109 +1308,65 @@ export function renderBadge(options: BadgeRenderOptions): string {
  * Supports size presets (`sm`, `md`, `lg`, `xl` or custom pixel height), unified `icon` (`'left'`, `'left,right'`, `'none,right'`),
  * status `dot`, optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
  * @param options   Button rendering configuration.
- * @returns Complete SVG markup string.
+ * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderButton(options: ButtonRenderOptions): string {
-  const palette = THEMES[options.color] || THEMES.indigo;
+  const { color, variant } = options;
+  const palette = THEMES[color];
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveButtonMetrics(options.size);
-  const { fontSize, height, iconSize, radiusX } = metrics;
+  const { fontSize, height, iconSize, padX, radiusX } = metrics;
 
-  const labelText = options.label;
-  const valueText = options.value ?? '';
-  const { leftData, leftSlug, rightData, rightSlug } = resolveIconPair(options.icon);
-  const leftIconWidth = measureIconVisualWidth(leftData, iconSize);
-  const rightIconWidth = measureIconVisualWidth(rightData, iconSize);
-  const hasDot = Boolean(options.dot && options.dot in DOT_COLORS);
+  const labelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
+  const valueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const icons = resolveIconPair(options.icon);
+  const layout = computeCapsuleLayout({
+    gap: Math.max(6, Math.round(height * 0.24)),
+    hasDot: isRenderableDot(options.dot),
+    labelWidth: measureTextWidth(labelText, fontSize, true),
+    leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
+    minLeftWidth: padX * 2,
+    padX,
+    rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
+    specialWidth: 0,
+    valueWidth: measureTextWidth(valueText, fontSize, true),
+  });
 
-  const layout = computeButtonLayout(
-    labelText,
-    valueText,
-    hasDot,
-    leftIconWidth,
-    rightIconWidth,
-    metrics
-  );
-  const {
-    dotCx,
-    isSplit,
-    labelCenterX,
-    leftIconX,
-    leftWidth,
-    rightIconX,
-    totalWidth,
-    valueCenterX,
-  } = layout;
-
-  const textY = computeCenteredBaselineY(height, fontSize);
-  const iconY = Number(((height - iconSize) / 2).toFixed(2));
-  const dotMarkup = renderDotMarkup(options.dot, dotCx, height / 2, animMode);
-  const isPrimary = options.variant === '1';
-  const iconColor = isPrimary ? '#ffffff' : palette.iconColor;
-  const iconOpacity = isPrimary ? 0.82 : undefined;
-  const labelColor = resolveLabelColor(options.variant, isPrimary);
-  const valueColor =
-    isPrimary && isSplit ? 'rgba(255,255,255,0.88)' : resolveValueColor(options.variant, palette);
-  const gradId = `grad-${options.color}`;
-  const { leftMotion, rightMotion } = resolveIconAnimationPair(
+  const isPrimary = variant === '1';
+  const body = renderCapsuleBody({
     animMode,
-    leftSlug,
-    rightSlug,
-    Boolean(leftData),
-    Boolean(rightData)
-  );
-
-  const leftIconMarkup = renderIconMarkup(
-    leftData,
-    leftSlug,
-    leftIconX,
-    iconY,
-    iconSize,
-    iconColor,
-    leftMotion,
-    iconOpacity
-  );
-  const rightIconMarkup = renderIconMarkup(
-    rightData,
-    rightSlug,
-    rightIconX,
-    iconY,
-    iconSize,
-    iconColor,
-    rightMotion,
-    iconOpacity
-  );
-  const surfaceLayers = renderKumoBoxSurface(
-    0,
-    0,
-    totalWidth,
-    height,
-    radiusX,
-    options.variant,
+    dot: options.dot,
+    icons,
+    isLabelBold: true,
+    isLeftOnPrimary: isPrimary,
+    isRightOnPrimary: isPrimary,
+    labelText,
+    layout,
+    metrics,
     palette,
-    gradId,
-    isSplit ? leftWidth : undefined
-  );
-  const sheen = renderSheenOverlay(animMode, totalWidth, height, radiusX);
-  const labelMarkup =
-    labelText.length > 0
-      ? renderTextPathMarkup(labelText, labelCenterX, textY, fontSize, labelColor, true)
-      : '';
-  const valueMarkup =
-    valueText.length > 0
-      ? renderTextPathMarkup(valueText, valueCenterX, textY, fontSize, valueColor, true)
-      : '';
-  const ariaLabel = buildAriaLabel(labelText, valueText, leftSlug || rightSlug || options.dot);
+    specialMarkup: '',
+    valueColor:
+      isPrimary && layout.isSplit ? 'rgba(255,255,255,0.88)' : resolveValueColor(variant, palette),
+    valueText,
+    variant,
+  });
+  const surface = renderKumoBoxSurface({
+    color,
+    height,
+    radius: radiusX,
+    splitLineX: layout.isSplit ? layout.leftWidth : undefined,
+    variant,
+    width: layout.totalWidth,
+  });
+  const sheen = renderSheenOverlay({ animMode, height, radius: radiusX, width: layout.totalWidth });
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${totalWidth}" height="${height}" viewBox="0 0 ${totalWidth} ${height}" fill="none" role="img" aria-label="${ariaLabel}">
-  <defs>
-    ${renderDarkBgGradientDef()}
-    ${renderThemeGradientDef(gradId, palette)}
-    ${sheen.clipDef}
-  </defs>
-  ${surfaceLayers}
-  ${dotMarkup}${leftIconMarkup}${labelMarkup}${valueMarkup}${rightIconMarkup}${sheen.overlay}
-</svg>`;
+  return renderSvgDocument({
+    ariaLabel: buildAriaLabel(labelText, valueText, icons, options.dot),
+    body: `${surface}${body}${sheen.overlay}`,
+    defs: `${renderSurfaceGradientDefs(color, !isPrimary, isPrimary)}${sheen.clipDef}`,
+    height,
+    width: layout.totalWidth,
+  });
 }
 
 /**
@@ -1326,44 +1377,36 @@ export function renderButton(options: ButtonRenderOptions): string {
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderIcon(options: IconRenderOptions): string {
-  const palette = THEMES[options.color] || THEMES.indigo;
-  const { iconColor } = palette;
+  const { iconColor } = THEMES[options.color];
   const animMode: AnimationMode = options.anim ?? 'default';
-  const size = clampInt(options.size, MIN_ICON_SIZE, MAX_ICON_SIZE, DEFAULT_ICON_SIZE);
-  const strokeWidth = Number(
-    clampNumber(
-      options.strokeWidth,
-      MIN_ICON_STROKE_WIDTH,
-      MAX_ICON_STROKE_WIDTH,
-      DEFAULT_ICON_STROKE_WIDTH
-    ).toFixed(2)
-  );
+  const size = clampInt(options.size, ICON_SIZE_RANGE);
+  const strokeWidth = Number(clampNumber(options.strokeWidth, ICON_STROKE_RANGE).toFixed(2));
 
-  const cleanSlug = options.icon.trim().toLowerCase() || 'sparkles';
-  const iconData = resolveIcon(cleanSlug) ?? resolveIcon('circle-help');
-  const rawInner = iconData ? iconData.innerSvg : '<circle cx="12" cy="12" r="9" />';
-  const ariaLabel = escapeXml(cleanSlug);
+  const slug = options.icon.trim().toLowerCase() || DEFAULT_STANDALONE_ICON_SLUG;
+  const iconData = resolveIconWithFallback(slug, FALLBACK_ICON_SLUG);
+  const slot: IconSlot = { data: iconData, key: normalizeIconSlug(slug), slug };
+  // Per-icon pairs (e.g., `nudge,shake`) apply their first motion to the single standalone icon.
+  const { leftMotion } = resolveIconAnimationPair(animMode, { left: slot, right: EMPTY_ICON_SLOT });
 
-  const hasSheen = animMode === 'sheen' || animMode.startsWith('sheen,');
-  const sheenId = `icon-sheen-${cleanSlug}-${options.color}-${size}`;
-  const sheenDefs = hasSheen
-    ? `<defs><linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"><stop offset="0%" stop-color="#ffffff" stop-opacity="0" /><stop offset="24%" stop-color="#ffffff" stop-opacity="0.12" /><stop offset="50%" stop-color="#ffffff" stop-opacity="0.45" /><stop offset="76%" stop-color="#ffffff" stop-opacity="0.12" /><stop offset="100%" stop-color="#ffffff" stop-opacity="0" /><animate attributeName="x1" values="-58;58;58" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><animate attributeName="x2" values="-32;84;84" keyTimes="0;0.38;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /></linearGradient></defs>`
-    : '';
-
-  if (iconData?.type === 'simple') {
-    const combinedSimple = hasSheen
-      ? `${rawInner}<g fill="url(#${sheenId})">${rawInner}</g>`
-      : rawInner;
-    const animatedSimple = wrapIconWithAnimation(combinedSimple, cleanSlug, animMode);
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-3 -3 30 30" fill="${iconColor}" role="img" aria-label="${ariaLabel}">${sheenDefs}${animatedSimple}</svg>`;
+  let sheenDef = '';
+  let body = iconData.innerSvg;
+  if (isSheenMode(animMode)) {
+    // The sheen ID depends only on the gradient content, never on the (untrusted) slug.
+    const sheenId = buildIconSheenId(iconData.coordScale);
+    const sheenPaint =
+      iconData.type === 'lucide' ? `stroke="url(#${sheenId})"` : `fill="url(#${sheenId})"`;
+    sheenDef = renderIconSheenGradientDef(sheenId, iconData.coordScale);
+    // Reference the body instead of inlining it twice (bodies may carry their own `id` attributes).
+    body = `<g id="${ICON_BODY_ID}">${iconData.innerSvg}</g><use href="#${ICON_BODY_ID}" ${sheenPaint} />`;
   }
 
-  const combinedLucide = hasSheen
-    ? `${rawInner}<g stroke="url(#${sheenId})">${rawInner}</g>`
-    : rawInner;
-  const animatedLucide = wrapIconWithAnimation(combinedLucide, cleanSlug, animMode);
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-3 -3 30 30" fill="none" stroke="${iconColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="${ariaLabel}">${sheenDefs}${animatedLucide}</svg>`;
+  return renderSvgDocument({
+    ariaLabel: truncateText(slug, MAX_LABEL_LENGTH),
+    body: wrapIconWithAnimation(body, slot.key, leftMotion),
+    defs: sheenDef,
+    height: size,
+    paintAttrs: renderIconPaintAttrs(iconData.type, iconColor, strokeWidth),
+    viewBox: '-3 -3 30 30',
+    width: size,
+  });
 }
-
-export { renderQuote } from './quote';
-export { parseStackGroups, renderStack } from './stack';

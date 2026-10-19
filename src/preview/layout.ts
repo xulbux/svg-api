@@ -1,124 +1,340 @@
 /**
- * Preview and documentation layout: Shared responsive HTML shell, XulbuX CSS design system, Lucide UI icons, parameter tables, and expandable Markdown code drawers.
+ * Documentation layout – Shared responsive HTML shell, XulbuX CSS design system, Lucide UI icons, parameter tables, and expandable Markdown code drawers.
+ *
+ * Page-independent fragments (stylesheet, client script, footer, header with the preview background
+ * picker, favicon) are rendered lazily on first use and then reused by every page rendered in the same
+ * Worker isolate.
  */
 
+import { SITE_ORIGIN } from '@/config/site';
+import { renderSvgPath, resolveSvgPathRedirectUrl } from '@/routes/svg';
 import { resolveIcon } from '@/svg/icons';
 import { escapeXml } from '@/svg/shared';
+import type {
+  DocsSectionMeta,
+  NavPageId,
+  PageLayoutOptions,
+  ParamTableRow,
+  SectionHeaderOptions,
+  ShowcaseCardConfig,
+  ShowcaseItem,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Valid navigation tab identifiers across the `svg.xul.is` web interface. */
-export type NavPageId =
-  | 'badges'
-  | 'buttons'
-  | 'colors'
-  | 'home'
-  | 'icons'
-  | 'quotes'
-  | 'services'
-  | 'stack';
-
-/** Single rendered SVG item paired with its canonical Markdown embed snippet. */
-export interface ShowcaseItem {
-  /** Accessible alt text used in the generated Markdown snippet (`![alt](url)`). */
-  alt: string;
-  /** Optional outer link target (`[![alt](url)](href)`). */
-  href?: string;
-  /** Canonical path and query string on `https://svg.xul.is` (e.g., `'/badge/pypi/xulbux/v'`). */
-  path: string;
-  /** Rendered inline `<svg>...</svg>` markup from the SSOT engine. */
-  svg: string;
-}
-
-/** Configuration for a visual showcase card with an expandable Markdown code drawer. */
-export interface ShowcaseCardConfig {
-  /** Whether to center the rendered SVGs inside the preview stage. */
-  isCentered?: boolean;
-  /** List of rendered SVG items and their Markdown paths. */
-  items: ShowcaseItem[];
-  /** Optional descriptive subtitle explaining the option or pattern shown. */
-  subtitle?: string;
-  /** Card header title or route pattern. */
-  title: string;
-}
-
-/** Single row in a documentation parameter or route reference table. */
-export interface ParamTableRow {
-  /** Default value when omitted (prefix with `~` for a non-code descriptive note). */
-  defaultVal: string;
-  /** Explanation of what the parameter or segment controls. */
-  description: string;
-  /** Parameter or route segment name (e.g., `?variant=`, `:icon`). */
+/** Light and dark values of a single `--c-*` design token. */
+interface ThemeToken {
+  /** Value in the dark color scheme. */
+  dark: string;
+  /** Whether the value is a color and can therefore be combined with `light-dark()`. */
+  isColor: boolean;
+  /** Value in the light color scheme. */
+  light: string;
+  /** Token name without the `--c-` prefix (e.g., `'bg'`, `'text-1'`). */
   name: string;
-  /** Accepted values or type signature (prefix with `~` for a non-code descriptive note). */
-  values: string;
 }
 
-/** Options for rendering the full HTML document shell. */
-export interface PageLayoutOptions {
-  /** Active navigation tab identifier. */
-  activePage: NavPageId;
-  /** Inner `<main>` HTML content. */
-  bodyHtml: string;
-  /** Meta description for search engines and link previews. */
-  description: string;
-  /** Document `<title>` text. */
-  title: string;
+/** Selectable preview stage background (persisted in `localStorage` under `preview-bg`). */
+interface PreviewBackgroundOption {
+  /** Visible option label. */
+  label: string;
+  /** Stored value and `data-preview-bg` attribute value on `<html>` (`'auto'` removes the attribute). */
+  value: string;
 }
+
+/** Leading and trailing parts of a `main (parenthetical)` string. */
+interface TrailingParenthetical {
+  /** Text before the trailing parenthetical group. */
+  main: string;
+  /** Text inside the trailing parenthetical group. */
+  paren: string;
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/**
+ * Documentation sections in navigation and pager order.
+ * Single source of truth for the top navigation, the previous/next pager, page titles, and meta descriptions.
+ */
+export const DOCS_SECTIONS: readonly DocsSectionMeta[] = [
+  {
+    description:
+      'Static and status badges with pulsing radar dots, inline data widgets, icons, and micro-animations, plus the full query parameter reference.',
+    navLabel: 'Badges',
+    pagerLabel: 'Status Badges',
+    slug: 'badges',
+    title: 'Status Badges',
+  },
+  {
+    description:
+      '3D CTA buttons with size presets, leading and trailing icons, status dots, sheen and icon animations, and split two-segment layouts.',
+    navLabel: 'Buttons',
+    pagerLabel: 'CTA Buttons',
+    slug: 'buttons',
+    title: 'CTA Buttons',
+  },
+  {
+    description:
+      'Live package registry, CDN, and forge metric badges with edge caching and 302 redirects to the upstream page, generated from the service registry.',
+    navLabel: 'Services',
+    pagerLabel: 'Live Service Badges',
+    slug: 'services',
+    title: 'Live Service Badges',
+  },
+  {
+    description:
+      'Standalone Lucide UI icons and Simple Icons / Devicon brand logos as tinted SVGs with intrinsic pixel sizing, stroke control, aliases, and animations.',
+    navLabel: 'Icons',
+    pagerLabel: 'Standalone Icons',
+    slug: 'icons',
+    title: 'Standalone Icons',
+  },
+  {
+    description:
+      'Grouped tech stack icon grids with per-group columns, side-by-side groups, row bands, tile variants, and spacing controls.',
+    navLabel: 'Tech Stack',
+    pagerLabel: 'Tech Stack Grids',
+    slug: 'stack',
+    title: 'Tech Stack Grids',
+  },
+  {
+    description:
+      'Auto-wrapping README quote cards in horizontal and vertical layouts with size presets, accent colors, surface tiers, and sheen.',
+    navLabel: 'Quotes',
+    pagerLabel: 'Quote Cards',
+    slug: 'quotes',
+    title: 'Quote Cards',
+  },
+  {
+    description:
+      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across badges, buttons, icons, tech stacks, and quote cards.',
+    navLabel: 'Colors',
+    pagerLabel: 'Theme Colors',
+    slug: 'colors',
+    title: 'Theme Color Tokens',
+  },
+];
+
+/** Page background in the light color scheme (also the light `theme-color`). */
+const LIGHT_BG = '#ffffff';
+
+/** Page background in the dark color scheme (also the dark `theme-color`). */
+const DARK_BG = '#101010';
+
+/** Start color of the indigo brand gradient (navbar brand mark and favicon). */
+const BRAND_GRADIENT_START = '#818cf8';
+
+/** End color of the indigo brand gradient (navbar brand mark and favicon). */
+const BRAND_GRADIENT_END = '#4f46e5';
+
+/** Shared SVG root attributes of every inline UI icon. */
+const UI_ICON_SVG_ATTRS =
+  'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"';
+
+/** Additional SVG root attributes of Lucide stroke UI icons. */
+const LUCIDE_STROKE_ATTRS =
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+
+/** `localStorage` key of the persisted color scheme override (`'dark'` or `'light'`). */
+const COLOR_SCHEME_STORAGE_KEY = 'color-scheme';
+
+/** `localStorage` key of the persisted preview stage background. */
+const PREVIEW_BG_STORAGE_KEY = 'preview-bg';
+
+/** Preview stage background options; The first option is the default and follows the page theme. */
+const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
+  { label: 'Match page', value: 'auto' },
+  { label: 'Inverted', value: 'inverse' },
+  { label: 'Checker', value: 'checker' },
+];
+
+/**
+ * Design tokens bound to `--c-*` custom properties for both color schemes.
+ * Tokens with identical light and dark values are emitted once.
+ */
+const THEME_TOKENS: readonly ThemeToken[] = [
+  { dark: DARK_BG, isColor: true, light: LIGHT_BG, name: 'bg' },
+  { dark: '#000000', isColor: true, light: '#fafafa', name: 'bg-alt' },
+  { dark: '#1a1a1a', isColor: true, light: '#f0f0f0', name: 'bg-elv' },
+  { dark: '#000000', isColor: true, light: '#fafafa', name: 'bg-soft' },
+  { dark: '#262626', isColor: true, light: '#ededed', name: 'divider' },
+  { dark: 'rgba(255 255 255 / 0.9)', isColor: true, light: 'rgba(0 0 0 / 0.88)', name: 'text-1' },
+  { dark: 'rgba(255 255 255 / 0.6)', isColor: true, light: 'rgba(0 0 0 / 0.6)', name: 'text-2' },
+  // WCAG AA (≥ 4.5:1) for small text on both `bg` and `bg-soft`.
+  { dark: 'rgba(255 255 255 / 0.5)', isColor: true, light: 'rgba(0 0 0 / 0.55)', name: 'text-3' },
+  { dark: BRAND_GRADIENT_START, isColor: true, light: BRAND_GRADIENT_END, name: 'brand-1' },
+  { dark: '#6366f1', isColor: true, light: '#6366f1', name: 'brand-2' },
+  { dark: BRAND_GRADIENT_END, isColor: true, light: BRAND_GRADIENT_START, name: 'brand-3' },
+  {
+    dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
+    isColor: true,
+    light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
+    name: 'nav-bg',
+  },
+  { dark: BRAND_GRADIENT_END, isColor: true, light: BRAND_GRADIENT_END, name: 'btn-brand-bg' },
+  { dark: '#ffffff', isColor: true, light: '#ffffff', name: 'btn-brand-text' },
+  {
+    dark: `color-mix(in srgb, #6366f1, ${BRAND_GRADIENT_END} 50%)`,
+    isColor: true,
+    light: `color-mix(in srgb, #6366f1, ${BRAND_GRADIENT_END} 50%)`,
+    name: 'btn-brand-hover-bg',
+  },
+  { dark: '#26262a', isColor: true, light: '#f0f0f0', name: 'switch-bg' },
+  { dark: '#000000', isColor: true, light: '#ffffff', name: 'switch-thumb-bg' },
+  // Inverted preview stage: GitHub's README canvas of the opposite color scheme.
+  { dark: '#ffffff', isColor: true, light: '#0d1117', name: 'preview-inverse-bg' },
+  { dark: '#d0d7de', isColor: true, light: '#30363d', name: 'preview-inverse-border' },
+  // Isolux Pro syntax tokens.
+  { dark: '#8a8a8a', isColor: true, light: '#646464', name: 'hl-p' },
+  { dark: '#ffa4aa', isColor: true, light: '#c5002b', name: 'hl-op' },
+  { dark: '#7ceee3', isColor: true, light: '#2b7676', name: 'hl-alt' },
+  { dark: '#909fff', isColor: true, light: '#4f48ec', name: 'hl-url' },
+  { dark: '#bcfff7', isColor: true, light: '#214a4b', name: 'hl-key' },
+  { dark: '#d5acff', isColor: true, light: '#8a0be5', name: 'hl-val' },
+  { dark: '#93f0b0', isColor: true, light: '#367a44', name: 'hl-href' },
+  // Theme switch state (non-color tokens, so they never go through `light-dark()`).
+  { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
+  { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
+  { dark: 'inline-flex', isColor: false, light: 'none', name: 'theme-dark-display' },
+];
+
+/** Preferred monospace font stack for code, route pills, and parameter names. */
+const MONO_FONT_STACK =
+  "'JetBrains Mono NF', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
+
+/** Memoized inline UI icon HTML keyed by `slug|size|extraClass`. */
+const UI_ICON_HTML_CACHE = new Map<string, string>();
+
+/** Memoized header HTML keyed by active navigation tab. */
+const HEADER_HTML_CACHE = new Map<NavPageId, string>();
+
+/** Memoized `<style>` element (`undefined` until first rendered). */
+let stylesheetHtmlCache: string | undefined = undefined;
+
+/** Memoized client `<script>` element (`undefined` until first rendered). */
+let clientScriptHtmlCache: string | undefined = undefined;
+
+/** Memoized blocking `<head>` script (`undefined` until first rendered). */
+let headScriptHtmlCache: string | undefined = undefined;
+
+/** Memoized footer HTML (`undefined` until first rendered). */
+let footerHtmlCache: string | undefined = undefined;
+
+/** Memoized header preview background picker HTML (`undefined` until first rendered). */
+let previewBgPickerHtmlCache: string | undefined = undefined;
+
+/** Memoized standalone favicon SVG (`undefined` until first rendered). */
+let faviconSvgCache: string | undefined = undefined;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches a trailing parenthetical group at the end of a string (e.g., `Primary Badge (Default)`). */
-const TRAILING_PAREN_RX = /^(?<main>.+?)\s+\((?<paren>[^()]+)\)$/;
 
 /** Matches comma-separated items inside a card title parenthetical. */
 const COMMA_SPLIT_RX = /,\s*/;
 
-/** Matches operator/separator tokens (` | `, ` / `, ` to `, `...`) inside parameter code cells. */
-const PARAM_CODE_TOKEN_RX = /(?<sep>\s\|\s|\s\/\s|\sto\s|\.\.\.)/g;
+/** Matches separator tokens (` | `, ` / `, ` to `, `...`) and bracketed alias suffixes (` [l]`) inside parameter code cells. */
+const PARAM_CODE_TOKEN_RX = /\s\|\s|\s\/\s|\sto\s|\.\.\.|\s\[[^\]]*\]/g;
 
-// ---------------------------------------- CONSTS ---------------------------------------
+/** Matches SVG `id="…"` attributes and their `url(#…)` / `href="#…"` references for per-instance ID scoping. */
+const SVG_ID_REFERENCE_RX = /(?<prefix>\sid="|url\(#|href="#)(?<name>[^")]+)/g;
 
-/** Canonical production origin used in copyable Markdown snippets. */
-const BASE_ORIGIN = 'https://svg.xul.is';
+/** Matches runs of characters that are not allowed in generated anchor IDs. */
+const SLUG_INVALID_RX = /[^a-z0-9]+/g;
 
-/** Navigation links displayed in the sticky top header (VitePress text-only style). */
-const NAV_LINKS: readonly { href: string; id: NavPageId; label: string }[] = [
-  { href: '/', id: 'home', label: 'Home' },
-  { href: '/docs/badges', id: 'badges', label: 'Badges' },
-  { href: '/docs/buttons', id: 'buttons', label: 'Buttons' },
-  { href: '/docs/services', id: 'services', label: 'Services' },
-  { href: '/docs/icons', id: 'icons', label: 'Icons' },
-  { href: '/docs/stack', id: 'stack', label: 'Tech Stack' },
-  { href: '/docs/quotes', id: 'quotes', label: 'Quotes' },
-  { href: '/docs/colors', id: 'colors', label: 'Colors' },
-];
+/** Matches a single leading or trailing dash left over after slug normalization. */
+const SLUG_EDGE_DASH_RX = /^-|-$/g;
+
+/** Matches inline `` `code` `` markup in section titles, descriptions, and subheads. */
+const INLINE_CODE_RX = /`(?<code>[^`]+)`/g;
+
+/** Matches inline `**strong**` markup in section titles and descriptions. */
+const INLINE_STRONG_RX = /\*\*(?<strong>[^*]+)\*\*/g;
+
+/** Matches inline markup characters (backticks and double asterisks) for plain-text labels. */
+const INLINE_MARKUP_CHARS_RX = /`|\*\*/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Build an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`. */
-function buildUiIcon(slug: string, size = 16, extraClass = ''): string {
-  const resolved = resolveIcon(slug);
-  if (!resolved) {
-    return '';
+/** Serialize the allowed preview background values as a JSON array literal for the inline scripts. */
+function formatPreviewBgValuesJson(): string {
+  const values: string[] = [];
+  for (const option of PREVIEW_BG_OPTIONS) {
+    values.push(option.value);
   }
-  const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
-  if (resolved.type === 'lucide') {
-    return `<svg class="${classAttr}" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${resolved.innerSvg}</svg>`;
-  }
-  return `<svg class="${classAttr}" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${resolved.innerSvg}</svg>`;
+  return JSON.stringify(values);
 }
 
-/** Highlight a URL's base path and query parameters (`?key=val&...`) for Markdown code drawers. */
+/**
+ * Render an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`.
+ * Exported for the catalog and pages; It lives here because the shell itself depends on it (`no-use-before-define`).
+ * @param slug         Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`).
+ * @param size         Width and height in pixels (defaults to `16`).
+ * @param extraClass   Optional additional CSS class name(s) appended to `ui-icon`.
+ * @returns Inline `<svg>` HTML string, or empty string if the slug is not found.
+ */
+export function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
+  const cacheKey = `${slug}|${size}|${extraClass}`;
+  const cached = UI_ICON_HTML_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = resolveIcon(slug);
+  const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
+  const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : 'fill="currentColor"';
+  const iconHtml = resolved
+    ? `<svg class="${classAttr}" ${UI_ICON_SVG_ATTRS} width="${size}" height="${size}" ${paintAttrs}>${resolved.innerSvg}</svg>`
+    : '';
+  UI_ICON_HTML_CACHE.set(cacheKey, iconHtml);
+  return iconHtml;
+}
+
+/** Convert free text into a URL-fragment-safe anchor ID (e.g., `'variant=1 · Primary'` -> `'variant-1-primary'`). */
+function slugifyText(text: string): string {
+  return text.toLowerCase().replace(SLUG_INVALID_RX, '-').replace(SLUG_EDGE_DASH_RX, '');
+}
+
+/** Hash text into a short, deterministic base-36 token (polynomial rolling hash modulo a 31-bit prime). */
+function hashText(text: string): string {
+  let hash = 7;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + (text.codePointAt(i) ?? 0)) % 2_147_483_647;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * Prefix every `id` and internal `url(#…)` / `href="#…"` reference of an inline SVG with a unique scope,
+ * so many inlined previews never share element IDs (gradient, clip, and sheen definitions).
+ */
+function scopeSvgIds(svg: string, scope: string): string {
+  return svg.replace(SVG_ID_REFERENCE_RX, `$<prefix>${scope}-$<name>`);
+}
+
+/** Escape text and convert inline `` `code` `` and `**strong**` markup into HTML. */
+function formatInlineMarkupHtml(text: string): string {
+  return escapeXml(text)
+    .replace(INLINE_CODE_RX, '<code>$<code></code>')
+    .replace(INLINE_STRONG_RX, '<strong>$<strong></strong>');
+}
+
+/** Strip inline markup characters for plain-text labels and anchor IDs. */
+function stripInlineMarkup(text: string): string {
+  return text.replace(INLINE_MARKUP_CHARS_RX, '');
+}
+
+/** Render a hover/focus `#` permalink to an in-page anchor. */
+function renderAnchorLink(targetId: string, label: string): string {
+  return `<a class="anchor-link" href="#${escapeXml(targetId)}" aria-label="Link to “${escapeXml(label)}”">#</a>`;
+}
+
+/** Highlight a URL's base path and query parameters (`?key=value&...`) for Markdown code drawers. */
 function highlightUrlHtml(rawUrl: string): string {
-  const qIdx = rawUrl.indexOf('?');
-  if (qIdx === -1) {
+  const queryIndex = rawUrl.indexOf('?');
+  if (queryIndex === -1) {
     return `<span class="hl-url">${escapeXml(rawUrl)}</span>`;
   }
 
-  const basePath = rawUrl.slice(0, qIdx);
-  const queryStr = rawUrl.slice(qIdx + 1);
-  const pairs = queryStr.split('&');
+  const basePath = rawUrl.slice(0, queryIndex);
+  const pairs = rawUrl.slice(queryIndex + 1).split('&');
   let queryHtml = '';
 
   for (let i = 0; i < pairs.length; i += 1) {
@@ -126,13 +342,13 @@ function highlightUrlHtml(rawUrl: string): string {
       queryHtml += '<span class="hl-op">&amp;</span>';
     }
     const pair = pairs[i];
-    const eqIdx = pair.indexOf('=');
-    if (eqIdx === -1) {
+    const equalsIndex = pair.indexOf('=');
+    if (equalsIndex === -1) {
       queryHtml += `<span class="hl-key">${escapeXml(pair)}</span>`;
     } else {
-      const key = pair.slice(0, eqIdx);
-      const val = pair.slice(eqIdx + 1);
-      queryHtml += `<span class="hl-key">${escapeXml(key)}</span><span class="hl-op">=</span><span class="hl-val">${escapeXml(val)}</span>`;
+      const key = pair.slice(0, equalsIndex);
+      const value = pair.slice(equalsIndex + 1);
+      queryHtml += `<span class="hl-key">${escapeXml(key)}</span><span class="hl-op">=</span><span class="hl-val">${escapeXml(value)}</span>`;
     }
   }
 
@@ -141,28 +357,50 @@ function highlightUrlHtml(rawUrl: string): string {
 
 /** Format a `ShowcaseItem` into a syntax-highlighted GitHub README Markdown line whose `.textContent` is exact Markdown. */
 function formatHighlightedMarkdownSnippet(item: ShowcaseItem): string {
-  const fullUrl = `${BASE_ORIGIN}${item.path}`;
-  const imgHtml = `<span class="hl-p">![</span><span class="hl-alt">${escapeXml(item.alt)}</span><span class="hl-p">](</span>${highlightUrlHtml(fullUrl)}<span class="hl-p">)</span>`;
-  if (!item.href) {
-    return imgHtml;
+  const fullUrl = `${SITE_ORIGIN}${item.path}`;
+  const imageHtml = `<span class="hl-p">![</span><span class="hl-alt">${escapeXml(item.alt)}</span><span class="hl-p">](</span>${highlightUrlHtml(fullUrl)}<span class="hl-p">)</span>`;
+  const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
+  if (!href) {
+    return imageHtml;
   }
-  return `<span class="hl-p">[</span>${imgHtml}<span class="hl-p">](</span><span class="hl-href">${escapeXml(item.href)}</span><span class="hl-p">)</span>`;
+  return `<span class="hl-p">[</span>${imageHtml}<span class="hl-p">](</span><span class="hl-href">${escapeXml(href)}</span><span class="hl-p">)</span>`;
+}
+
+/**
+ * Split a trailing ` (parenthetical)` group off a string without regex backtracking.
+ * @param text   Trimmed input text (e.g., `'Primary Badge (Default)'`).
+ * @returns Main text and parenthetical content, or `undefined` when there is no trailing group.
+ */
+function splitTrailingParenthetical(text: string): TrailingParenthetical | undefined {
+  if (!text.endsWith(')')) {
+    return undefined;
+  }
+  const openIndex = text.lastIndexOf(' (');
+  if (openIndex <= 0) {
+    return undefined;
+  }
+  const paren = text.slice(openIndex + 2, -1).trim();
+  const main = text.slice(0, openIndex).trim();
+  if (!paren || !main || paren.includes('(') || paren.includes(')')) {
+    return undefined;
+  }
+  return { main, paren };
 }
 
 /**
  * Format a card title string into hierarchical HTML with a primary heading, optional leading code badge, and optional trailing meta/status pills.
+ * @param rawTitle   Card title (`code · Text (meta, pill)`, every part optional except `Text`).
+ * @returns Inner HTML of the card title heading.
  */
 function formatCardTitleHtml(rawTitle: string): string {
   let remainder = rawTitle.trim();
   let trailingPillHtml = '';
 
-  // 1. Extract trailing parenthetical group first so inner symbols never interfere with ` · ` prefix splitting.
-  const parenMatch = TRAILING_PAREN_RX.exec(remainder);
-  if (parenMatch?.groups) {
-    remainder = parenMatch.groups.main.trim();
-    const parenContent = parenMatch.groups.paren.trim();
-    const parts = parenContent.split(COMMA_SPLIT_RX);
-    for (const part of parts) {
+  // 1. Extract the trailing parenthetical group first so inner symbols never interfere with ` · ` prefix splitting.
+  const trailing = splitTrailingParenthetical(remainder);
+  if (trailing) {
+    remainder = trailing.main;
+    for (const part of trailing.paren.split(COMMA_SPLIT_RX)) {
       const cleanPart = part.trim();
       if (cleanPart.length > 0) {
         const isCodeMeta =
@@ -177,7 +415,7 @@ function formatCardTitleHtml(rawTitle: string): string {
     }
   }
 
-  // 2. Extract leading `code · ` prefix if present on the main title text.
+  // 2. Extract the leading `code · ` prefix if present on the main title text.
   let prefixBadgeHtml = '';
   const dotSeparatorIndex = remainder.indexOf(' · ');
   if (dotSeparatorIndex !== -1) {
@@ -189,18 +427,19 @@ function formatCardTitleHtml(rawTitle: string): string {
   return `${prefixBadgeHtml}<span class="card-title-text">${escapeXml(remainder)}</span>${trailingPillHtml}`;
 }
 
-/** Render a `<code class="param-code">` block with dimmed, non-selectable operator tokens (`|`, `/`, `to`, `...`). */
+/** Render a `<code class="param-code">` block with dimmed, non-selectable separators and alias notes. */
 function renderCodeWithDimmedSeparators(rawCode: string): string {
-  const tokens = rawCode.split(PARAM_CODE_TOKEN_RX);
   let innerHtml = '';
-  for (let i = 0; i < tokens.length; i += 1) {
-    const tok = tokens[i];
-    if (i % 2 === 1) {
-      innerHtml += `<span class="param-sep">${escapeXml(tok)}</span>`;
-    } else if (tok.length > 0) {
-      innerHtml += escapeXml(tok);
-    }
+  let cursor = 0;
+  for (const match of rawCode.matchAll(PARAM_CODE_TOKEN_RX)) {
+    const [token] = match;
+    innerHtml += escapeXml(rawCode.slice(cursor, match.index));
+    innerHtml += token.endsWith(']')
+      ? ` <span class="param-alias">(${escapeXml(token.trim().slice(1, -1))})</span>`
+      : `<span class="param-sep">${escapeXml(token)}</span>`;
+    cursor = match.index + token.length;
   }
+  innerHtml += escapeXml(rawCode.slice(cursor));
   return `<code class="param-code">${innerHtml}</code>`;
 }
 
@@ -210,11 +449,9 @@ function renderParamSegmentHtml(segment: string): string {
   if (trimmed.startsWith('~')) {
     return `<span class="param-note">${escapeXml(trimmed.slice(1).trim())}</span>`;
   }
-  const parenMatch = TRAILING_PAREN_RX.exec(trimmed);
-  if (parenMatch?.groups) {
-    const codePart = parenMatch.groups.main.trim();
-    const notePart = parenMatch.groups.paren.trim();
-    return `${renderCodeWithDimmedSeparators(codePart)} <span class="param-note">(${escapeXml(notePart)})</span>`;
+  const trailing = splitTrailingParenthetical(trimmed);
+  if (trailing) {
+    return `${renderCodeWithDimmedSeparators(trailing.main)} <span class="param-note">(${escapeXml(trailing.paren)})</span>`;
   }
   return renderCodeWithDimmedSeparators(trimmed);
 }
@@ -222,34 +459,73 @@ function renderParamSegmentHtml(segment: string): string {
 /** Format a parameter table `Values` or `Default` cell with dimmed pipes/ranges and separated explanatory notes. */
 function formatParamCellHtml(raw: string): string {
   const trimmed = raw.trim();
-  if (trimmed.includes(') / ')) {
-    const slashParts = trimmed.split(' / ');
-    const renderedParts: string[] = [];
-    for (const part of slashParts) {
-      renderedParts.push(renderParamSegmentHtml(part));
-    }
-    return renderedParts.join(' <span class="param-sep">/</span> ');
+  if (!trimmed.includes(') / ')) {
+    return renderParamSegmentHtml(trimmed);
   }
-  return renderParamSegmentHtml(trimmed);
+  const renderedParts: string[] = [];
+  for (const part of trimmed.split(' / ')) {
+    renderedParts.push(renderParamSegmentHtml(part));
+  }
+  return renderedParts.join(' <span class="param-sep">/</span> ');
 }
 
-/** Render the sticky top navigation bar matching the VitePress text-link navbar style. */
+/** Render a single top navigation link. */
+function renderNavLink(href: string, label: string, isActive: boolean): string {
+  const activeAttrs = isActive
+    ? ' class="nav-link is-active" aria-current="page"'
+    : ' class="nav-link"';
+  return `<a href="${escapeXml(href)}"${activeAttrs}><span class="nav-text">${escapeXml(label)}</span></a>`;
+}
+
+/**
+ * Render (once per isolate) the header preview background picker: A compact swatch trigger that opens a
+ * native popover radio group (Match page / Inverted / Checker), persisted by the client script.
+ */
+function renderPreviewBgPicker(): string {
+  if (previewBgPickerHtmlCache !== undefined) {
+    return previewBgPickerHtmlCache;
+  }
+  let optionsHtml = '';
+  for (let i = 0; i < PREVIEW_BG_OPTIONS.length; i += 1) {
+    const option = PREVIEW_BG_OPTIONS[i];
+    const checkedAttr = i === 0 ? ' checked' : '';
+    optionsHtml += `<label class="bg-picker-option"><input class="bg-picker-input" type="radio" name="preview-bg" value="${option.value}"${checkedAttr} /><span class="bg-swatch" data-bg="${option.value}" aria-hidden="true"></span><span class="bg-picker-label">${escapeXml(option.label)}</span>${renderUiIcon('check', 13, 'bg-picker-check')}</label>`;
+  }
+  const chevronIcon = renderUiIcon('chevron-down', 12, 'bg-picker-chevron');
+  previewBgPickerHtmlCache = `<div class="bg-picker">
+          <button type="button" class="bg-picker-trigger" id="bg-picker-trigger" popovertarget="bg-picker-menu" aria-label="Preview background" title="Preview background">
+            <span class="bg-swatch bg-swatch-current" aria-hidden="true"></span>${chevronIcon}
+          </button>
+          <div class="bg-picker-menu" id="bg-picker-menu" popover role="radiogroup" aria-labelledby="bg-picker-title">
+            <span class="bg-picker-title" id="bg-picker-title">Preview background</span>
+            ${optionsHtml}
+          </div>
+        </div>`;
+  return previewBgPickerHtmlCache;
+}
+
+/** Render (once per active tab) the sticky top navigation bar matching the VitePress text-link navbar style. */
 function renderHeaderNav(activePage: NavPageId): string {
-  let navItemsHtml = '';
-  for (const link of NAV_LINKS) {
-    const isActive = link.id === activePage;
-    const activeAttr = isActive
-      ? ' class="nav-link is-active" aria-current="page"'
-      : ' class="nav-link"';
-    navItemsHtml += `<a href="${link.href}"${activeAttr}><span class="nav-text">${escapeXml(link.label)}</span></a>`;
+  const cached = HEADER_HTML_CACHE.get(activePage);
+  if (cached !== undefined) {
+    return cached;
   }
 
-  const brandIcon = buildUiIcon('sparkles', 15, 'brand-sparkle');
-  const sunIcon = buildUiIcon('sun', 12, 'theme-icon theme-label-light');
-  const moonIcon = buildUiIcon('moon', 12, 'theme-icon theme-label-dark');
-  const githubIcon = buildUiIcon('github', 20, 'gh-icon');
+  let navItemsHtml = renderNavLink('/', 'Home', activePage === 'home');
+  for (const section of DOCS_SECTIONS) {
+    navItemsHtml += renderNavLink(
+      `/docs/${section.slug}`,
+      section.navLabel,
+      section.slug === activePage
+    );
+  }
 
-  return `<header class="site-header">
+  const brandIcon = renderUiIcon('sparkles', 15, 'brand-sparkle');
+  const sunIcon = renderUiIcon('sun', 12, 'theme-icon theme-label-light');
+  const moonIcon = renderUiIcon('moon', 12, 'theme-icon theme-label-dark');
+  const githubIcon = renderUiIcon('github', 20, 'gh-icon');
+
+  const headerHtml = `<header class="site-header">
     <div class="header-inner">
       <a href="/" class="brand-link">
         <span class="brand-mark" aria-hidden="true">${brandIcon}</span>
@@ -258,7 +534,8 @@ function renderHeaderNav(activePage: NavPageId): string {
       <nav class="site-nav" aria-label="Documentation sections">${navItemsHtml}</nav>
       <div class="header-actions">
         <span class="header-divider" aria-hidden="true"></span>
-        <button type="button" class="theme-switch" id="theme-toggle" role="switch" aria-label="Toggle color scheme">
+        ${renderPreviewBgPicker()}
+        <button type="button" class="theme-switch" id="theme-toggle" role="switch" aria-checked="false" aria-label="Dark color scheme" title="Toggle dark color scheme">
           <span class="theme-switch-thumb">
             ${sunIcon}
             ${moonIcon}
@@ -271,12 +548,17 @@ function renderHeaderNav(activePage: NavPageId): string {
       </div>
     </div>
   </header>`;
+  HEADER_HTML_CACHE.set(activePage, headerHtml);
+  return headerHtml;
 }
 
-/** Render the site footer matching the XulbuX documentation aesthetic. */
+/** Render (once per isolate) the site footer matching the XulbuX documentation aesthetic. */
 function renderFooter(): string {
-  const sparkleIcon = buildUiIcon('sparkles', 14, 'footer-sparkle');
-  return `<footer class="site-footer">
+  if (footerHtmlCache !== undefined) {
+    return footerHtmlCache;
+  }
+  const sparkleIcon = renderUiIcon('sparkles', 14, 'footer-sparkle');
+  footerHtmlCache = `<footer class="site-footer">
     <div class="footer-inner">
       <p class="footer-feedback">
         Missing a public API service, vector icon, or even a whole new SVG element? Feel free to <a href="mailto:hi@xul.is" class="text-link">send an email to hi@xul.is</a> and let me know!
@@ -291,216 +573,71 @@ function renderFooter(): string {
       </div>
     </div>
   </footer>`;
+  return footerHtmlCache;
 }
 
-/** Render the shared CSS stylesheet using XulbuX dark/light surface tokens, indigo accent palette, and layered border hierarchy. */
+/** Render the `--c-*` bindings of one color scheme (`includeShared` also emits scheme-independent tokens). */
+function renderThemeTokenBindings(scheme: 'dark' | 'light', includeShared: boolean): string {
+  let css = '';
+  for (const token of THEME_TOKENS) {
+    if (includeShared || token.light !== token.dark) {
+      css += `--c-${token.name}: ${token[scheme]};\n`;
+    }
+  }
+  return css;
+}
+
+/** Render the `light-dark()` bindings of every scheme-dependent color token. */
+function renderLightDarkTokenBindings(): string {
+  let css = '';
+  for (const token of THEME_TOKENS) {
+    if (token.isColor && token.light !== token.dark) {
+      css += `--c-${token.name}: light-dark(${token.light}, ${token.dark});\n`;
+    }
+  }
+  return css;
+}
+
+/** Build the `color-scheme` meta selector for an explicit scheme override. */
+function buildSchemeOverrideSelector(scheme: 'dark' | 'light'): string {
+  return `&:has(> head > meta[name="color-scheme"][content="${scheme}"])`;
+}
+
+/** Render (once per isolate) the shared CSS stylesheet using XulbuX surface tokens, indigo accent palette, and layered border hierarchy. */
 function renderStylesheet(): string {
-  return `<style>
+  if (stylesheetHtmlCache !== undefined) {
+    return stylesheetHtmlCache;
+  }
+  stylesheetHtmlCache = `<style>
     @view-transition {
       navigation: auto;
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      @view-transition {
-        navigation: none;
-      }
     }
 
     :root {
       interpolate-size: allow-keywords;
       color-scheme: light dark;
-
-      /* Indigo Accent Base */
-      --base-brand: #4f46e5;
-
-      /* Light Theme Tokens (from python-lib-xulbux website with Indigo accent) */
-      --vp-c-bg: #ffffff;
-      --vp-c-bg-alt: #fafafa;
-      --vp-c-bg-elv: #f0f0f0;
-      --vp-c-bg-soft: #fafafa;
-      --vp-c-divider: #ededed;
-      --vp-c-text-1: rgba(0 0 0 / 0.88);
-      --vp-c-text-2: rgba(0 0 0 / 0.6);
-      --vp-c-text-3: rgba(0 0 0 / 0.38);
-      --vp-c-brand-1: #4f46e5;
-      --vp-c-brand-2: #6366f1;
-      --vp-c-brand-3: #818cf8;
-      --vp-nav-bg-color: color-mix(in srgb, var(--vp-c-bg) 75%, transparent);
-      --vp-button-brand-bg: var(--vp-c-brand-1);
-      --vp-button-brand-text: #ffffff;
-      --vp-button-brand-hover-bg: color-mix(in srgb, var(--vp-c-brand-2), var(--vp-c-brand-1) 50%);
-      --vp-switch-bg: #f0f0f0;
-      --vp-switch-thumb-bg: #ffffff;
-      /* Isolux Pro Light Syntax Tokens */
-      --vp-c-hl-p: #646464;
-      --vp-c-hl-op: #c5002b;
-      --vp-c-hl-alt: #2b7676;
-      --vp-c-hl-url: #4f48ec;
-      --vp-c-hl-key: #214a4b;
-      --vp-c-hl-val: #8a0be5;
-      --vp-c-hl-href: #367a44;
-
-      /* Dark Theme Tokens (from python-lib-xulbux website with Indigo accent) */
-      --dvp-c-bg: #101010;
-      --dvp-c-bg-alt: #000000;
-      --dvp-c-bg-elv: #1a1a1a;
-      --dvp-c-bg-soft: #000000;
-      --dvp-c-divider: #262626;
-      --dvp-c-text-1: rgba(255 255 255 / 0.9);
-      --dvp-c-text-2: rgba(255 255 255 / 0.6);
-      --dvp-c-text-3: rgba(255 255 255 / 0.38);
-      --dvp-c-brand-1: #818cf8;
-      --dvp-c-brand-2: #6366f1;
-      --dvp-c-brand-3: #4f46e5;
-      --dvp-nav-bg-color: color-mix(in srgb, var(--dvp-c-bg) 64%, transparent);
-      --dvp-button-brand-bg: var(--dvp-c-brand-3);
-      --dvp-button-brand-text: #ffffff;
-      --dvp-button-brand-hover-bg: color-mix(in srgb, var(--dvp-c-brand-2), var(--dvp-c-brand-3) 50%);
-      --dvp-switch-bg: #26262a;
-      --dvp-switch-thumb-bg: #000000;
-      /* Isolux Pro Dark Syntax Tokens */
-      --dvp-c-hl-p: #8a8a8a;
-      --dvp-c-hl-op: #ffa4aa;
-      --dvp-c-hl-alt: #7ceee3;
-      --dvp-c-hl-url: #909fff;
-      --dvp-c-hl-key: #bcfff7;
-      --dvp-c-hl-val: #d5acff;
-      --dvp-c-hl-href: #93f0b0;
+      --base-brand: ${BRAND_GRADIENT_END};
+      --font-mono: ${MONO_FONT_STACK};
 
       /* Active Theme Bindings (Default Light) */
-      --c-bg: var(--vp-c-bg);
-      --c-bg-alt: var(--vp-c-bg-alt);
-      --c-bg-elv: var(--vp-c-bg-elv);
-      --c-bg-soft: var(--vp-c-bg-soft);
-      --c-divider: var(--vp-c-divider);
-      --c-text-1: var(--vp-c-text-1);
-      --c-text-2: var(--vp-c-text-2);
-      --c-text-3: var(--vp-c-text-3);
-      --c-brand-1: var(--vp-c-brand-1);
-      --c-brand-2: var(--vp-c-brand-2);
-      --c-brand-3: var(--vp-c-brand-3);
-      --c-nav-bg: var(--vp-nav-bg-color);
-      --c-btn-brand-bg: var(--vp-button-brand-bg);
-      --c-btn-brand-text: var(--vp-button-brand-text);
-      --c-btn-brand-hover-bg: var(--vp-button-brand-hover-bg);
-      --c-switch-bg: var(--vp-switch-bg);
-      --c-switch-thumb-bg: var(--vp-switch-thumb-bg);
-      --c-hl-p: var(--vp-c-hl-p);
-      --c-hl-op: var(--vp-c-hl-op);
-      --c-hl-alt: var(--vp-c-hl-alt);
-      --c-hl-url: var(--vp-c-hl-url);
-      --c-hl-key: var(--vp-c-hl-key);
-      --c-hl-val: var(--vp-c-hl-val);
-      --c-hl-href: var(--vp-c-hl-href);
+      ${renderThemeTokenBindings('light', true)}
 
       @media (prefers-color-scheme: dark) {
-        --c-bg: var(--dvp-c-bg);
-        --c-bg-alt: var(--dvp-c-bg-alt);
-        --c-bg-elv: var(--dvp-c-bg-elv);
-        --c-bg-soft: var(--dvp-c-bg-soft);
-        --c-divider: var(--dvp-c-divider);
-        --c-text-1: var(--dvp-c-text-1);
-        --c-text-2: var(--dvp-c-text-2);
-        --c-text-3: var(--dvp-c-text-3);
-        --c-brand-1: var(--dvp-c-brand-1);
-        --c-brand-2: var(--dvp-c-brand-2);
-        --c-brand-3: var(--dvp-c-brand-3);
-        --c-nav-bg: var(--dvp-nav-bg-color);
-        --c-btn-brand-bg: var(--dvp-button-brand-bg);
-        --c-btn-brand-text: var(--dvp-button-brand-text);
-        --c-btn-brand-hover-bg: var(--dvp-button-brand-hover-bg);
-        --c-switch-bg: var(--dvp-switch-bg);
-        --c-switch-thumb-bg: var(--dvp-switch-thumb-bg);
-        --c-hl-p: var(--dvp-c-hl-p);
-        --c-hl-op: var(--dvp-c-hl-op);
-        --c-hl-alt: var(--dvp-c-hl-alt);
-        --c-hl-url: var(--dvp-c-hl-url);
-        --c-hl-key: var(--dvp-c-hl-key);
-        --c-hl-val: var(--dvp-c-hl-val);
-        --c-hl-href: var(--dvp-c-hl-href);
+        ${renderThemeTokenBindings('dark', false)}
       }
 
-      &:has(> head > meta[name="color-scheme"][content="dark"]) {
+      ${buildSchemeOverrideSelector('dark')} {
         color-scheme: dark;
-        --c-bg: var(--dvp-c-bg);
-        --c-bg-alt: var(--dvp-c-bg-alt);
-        --c-bg-elv: var(--dvp-c-bg-elv);
-        --c-bg-soft: var(--dvp-c-bg-soft);
-        --c-divider: var(--dvp-c-divider);
-        --c-text-1: var(--dvp-c-text-1);
-        --c-text-2: var(--dvp-c-text-2);
-        --c-text-3: var(--dvp-c-text-3);
-        --c-brand-1: var(--dvp-c-brand-1);
-        --c-brand-2: var(--dvp-c-brand-2);
-        --c-brand-3: var(--dvp-c-brand-3);
-        --c-nav-bg: var(--dvp-nav-bg-color);
-        --c-btn-brand-bg: var(--dvp-button-brand-bg);
-        --c-btn-brand-text: var(--dvp-button-brand-text);
-        --c-btn-brand-hover-bg: var(--dvp-button-brand-hover-bg);
-        --c-switch-bg: var(--dvp-switch-bg);
-        --c-switch-thumb-bg: var(--dvp-switch-thumb-bg);
-        --c-hl-p: var(--dvp-c-hl-p);
-        --c-hl-op: var(--dvp-c-hl-op);
-        --c-hl-alt: var(--dvp-c-hl-alt);
-        --c-hl-url: var(--dvp-c-hl-url);
-        --c-hl-key: var(--dvp-c-hl-key);
-        --c-hl-val: var(--dvp-c-hl-val);
-        --c-hl-href: var(--dvp-c-hl-href);
+        ${renderThemeTokenBindings('dark', false)}
       }
 
-      &:has(> head > meta[name="color-scheme"][content="light"]) {
+      ${buildSchemeOverrideSelector('light')} {
         color-scheme: light;
-        --c-bg: var(--vp-c-bg);
-        --c-bg-alt: var(--vp-c-bg-alt);
-        --c-bg-elv: var(--vp-c-bg-elv);
-        --c-bg-soft: var(--vp-c-bg-soft);
-        --c-divider: var(--vp-c-divider);
-        --c-text-1: var(--vp-c-text-1);
-        --c-text-2: var(--vp-c-text-2);
-        --c-text-3: var(--vp-c-text-3);
-        --c-brand-1: var(--vp-c-brand-1);
-        --c-brand-2: var(--vp-c-brand-2);
-        --c-brand-3: var(--vp-c-brand-3);
-        --c-nav-bg: var(--vp-nav-bg-color);
-        --c-btn-brand-bg: var(--vp-button-brand-bg);
-        --c-btn-brand-text: var(--vp-button-brand-text);
-        --c-btn-brand-hover-bg: var(--vp-button-brand-hover-bg);
-        --c-switch-bg: var(--vp-switch-bg);
-        --c-switch-thumb-bg: var(--vp-switch-thumb-bg);
-        --c-hl-p: var(--vp-c-hl-p);
-        --c-hl-op: var(--vp-c-hl-op);
-        --c-hl-alt: var(--vp-c-hl-alt);
-        --c-hl-url: var(--vp-c-hl-url);
-        --c-hl-key: var(--vp-c-hl-key);
-        --c-hl-val: var(--vp-c-hl-val);
-        --c-hl-href: var(--vp-c-hl-href);
+        ${renderThemeTokenBindings('light', false)}
       }
 
       @supports (color: light-dark(white, black)) {
-        --c-bg: light-dark(var(--vp-c-bg), var(--dvp-c-bg));
-        --c-bg-alt: light-dark(var(--vp-c-bg-alt), var(--dvp-c-bg-alt));
-        --c-bg-elv: light-dark(var(--vp-c-bg-elv), var(--dvp-c-bg-elv));
-        --c-bg-soft: light-dark(var(--vp-c-bg-soft), var(--dvp-c-bg-soft));
-        --c-divider: light-dark(var(--vp-c-divider), var(--dvp-c-divider));
-        --c-text-1: light-dark(var(--vp-c-text-1), var(--dvp-c-text-1));
-        --c-text-2: light-dark(var(--vp-c-text-2), var(--dvp-c-text-2));
-        --c-text-3: light-dark(var(--vp-c-text-3), var(--dvp-c-text-3));
-        --c-brand-1: light-dark(var(--vp-c-brand-1), var(--dvp-c-brand-1));
-        --c-brand-2: light-dark(var(--vp-c-brand-2), var(--dvp-c-brand-2));
-        --c-brand-3: light-dark(var(--vp-c-brand-3), var(--dvp-c-brand-3));
-        --c-nav-bg: light-dark(var(--vp-nav-bg-color), var(--dvp-nav-bg-color));
-        --c-btn-brand-bg: light-dark(var(--vp-button-brand-bg), var(--dvp-button-brand-bg));
-        --c-btn-brand-text: light-dark(var(--vp-button-brand-text), var(--dvp-button-brand-text));
-        --c-btn-brand-hover-bg: light-dark(var(--vp-button-brand-hover-bg), var(--dvp-button-brand-hover-bg));
-        --c-switch-bg: light-dark(var(--vp-switch-bg), var(--dvp-switch-bg));
-        --c-switch-thumb-bg: light-dark(var(--vp-switch-thumb-bg), var(--dvp-switch-thumb-bg));
-        --c-hl-p: light-dark(var(--vp-c-hl-p), var(--dvp-c-hl-p));
-        --c-hl-op: light-dark(var(--vp-c-hl-op), var(--dvp-c-hl-op));
-        --c-hl-alt: light-dark(var(--vp-c-hl-alt), var(--dvp-c-hl-alt));
-        --c-hl-url: light-dark(var(--vp-c-hl-url), var(--dvp-c-hl-url));
-        --c-hl-key: light-dark(var(--vp-c-hl-key), var(--dvp-c-hl-key));
-        --c-hl-val: light-dark(var(--vp-c-hl-val), var(--dvp-c-hl-val));
-        --c-hl-href: light-dark(var(--vp-c-hl-href), var(--dvp-c-hl-href));
+        ${renderLightDarkTokenBindings()}
       }
 
       /* 3-Tier Border Hierarchy: Outer Divider > Standard Border > Inner Subtle Border */
@@ -517,25 +654,6 @@ function renderStylesheet(): string {
 
     ::selection {
       background-color: color-mix(in srgb, var(--c-brand-2) 40%, transparent);
-    }
-
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    ::-webkit-scrollbar-track,
-    ::-webkit-scrollbar-corner {
-      background: transparent;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      border-radius: 4px;
-      background: color-mix(in srgb, var(--c-text-1) 24%, transparent);
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: color-mix(in srgb, var(--c-text-1) 32%, transparent);
     }
 
     *, *::before, *::after {
@@ -564,9 +682,51 @@ function renderStylesheet(): string {
     }
 
     pre, code {
-      font-family: 'JetBrains Mono NF', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+      font-family: var(--font-mono);
       font-feature-settings: 'calt' 1, 'liga' 1;
       font-variant-ligatures: normal;
+    }
+
+    /* Keyboard Focus Rings */
+    :where(a, button, summary, [tabindex]):focus-visible {
+      outline: 2px solid var(--c-brand-1);
+      outline-offset: 2px;
+    }
+
+    .page-main:focus-visible {
+      outline: none;
+    }
+
+    .visually-hidden {
+      position: absolute !important;
+      inline-size: 1px !important;
+      block-size: 1px !important;
+      margin: -1px !important;
+      padding: 0 !important;
+      overflow: hidden !important;
+      clip-path: inset(50%) !important;
+      white-space: nowrap !important;
+      border: 0 !important;
+    }
+
+    /* Skip Link: hidden until focused by keyboard */
+    .skip-link {
+      position: fixed;
+      inset-block-start: 10px;
+      inset-inline-start: 10px;
+      z-index: 50;
+      padding: 8px 14px;
+      border-radius: 8px;
+      background: var(--c-btn-brand-bg);
+      color: var(--c-btn-brand-text);
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      translate: 0 calc(-100% - 20px);
+    }
+
+    .skip-link:focus-visible {
+      translate: 0 0;
     }
 
     .ui-icon {
@@ -633,17 +793,30 @@ function renderStylesheet(): string {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #818cf8 0%, #4f46e5 100%);
+      background: linear-gradient(135deg, ${BRAND_GRADIENT_START} 0%, ${BRAND_GRADIENT_END} 100%);
       color: #ffffff;
     }
 
+    /* Horizontally scrolling navigation with edge fades while more links are hidden (classes set by the client script) */
     .site-nav {
+      --nav-fade-start: 0px;
+      --nav-fade-end: 0px;
       display: flex;
       align-items: center;
       gap: 2px;
       overflow-x: auto;
       scrollbar-width: none;
       margin-inline-start: auto;
+      -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--nav-fade-start), #000 calc(100% - var(--nav-fade-end)), transparent);
+      mask-image: linear-gradient(to right, transparent, #000 var(--nav-fade-start), #000 calc(100% - var(--nav-fade-end)), transparent);
+    }
+
+    .site-nav.can-scroll-start {
+      --nav-fade-start: 32px;
+    }
+
+    .site-nav.can-scroll-end {
+      --nav-fade-end: 32px;
     }
 
     .nav-link {
@@ -654,8 +827,13 @@ function renderStylesheet(): string {
       font-size: 0.875rem;
       font-weight: 500;
       padding: 4px 11px;
+      border-radius: 6px;
       white-space: nowrap;
       transition: color 0.25s ease;
+    }
+
+    .nav-link:focus-visible {
+      outline-offset: -2px;
     }
 
     .nav-link:hover {
@@ -693,6 +871,7 @@ function renderStylesheet(): string {
       border-color: var(--c-text-3);
     }
 
+    /* The thumb position and sun/moon icon follow the active scheme tokens without requiring JS */
     .theme-switch-thumb {
       position: absolute;
       inset-block-start: 1px;
@@ -706,6 +885,7 @@ function renderStylesheet(): string {
       display: inline-flex;
       align-items: center;
       justify-content: center;
+      translate: var(--c-switch-thumb-shift) 0;
       transition: translate 0.25s ease, background-color 0.25s ease, color 0.25s ease;
     }
 
@@ -713,20 +893,13 @@ function renderStylesheet(): string {
       color: var(--c-text-1);
     }
 
-    /* Slide thumb right and swap sun/moon icon in dark mode without requiring JS */
-    .theme-label-dark { display: none; }
-    .theme-label-light { display: inline-flex; }
-    @media (prefers-color-scheme: dark) {
-      .theme-label-dark { display: inline-flex; }
-      .theme-label-light { display: none; }
-      .theme-switch-thumb { translate: 18px 0; }
+    .theme-label-light {
+      display: var(--c-theme-light-display);
     }
-    :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-label-dark { display: inline-flex; }
-    :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-label-light { display: none; }
-    :root:has(> head > meta[name="color-scheme"][content="dark"]) .theme-switch-thumb { translate: 18px 0; }
-    :root:has(> head > meta[name="color-scheme"][content="light"]) .theme-label-dark { display: none; }
-    :root:has(> head > meta[name="color-scheme"][content="light"]) .theme-label-light { display: inline-flex; }
-    :root:has(> head > meta[name="color-scheme"][content="light"]) .theme-switch-thumb { translate: 0 0; }
+
+    .theme-label-dark {
+      display: var(--c-theme-dark-display);
+    }
 
     .header-divider {
       inline-size: 1px;
@@ -741,6 +914,7 @@ function renderStylesheet(): string {
       justify-content: center;
       inline-size: 32px;
       block-size: 32px;
+      border-radius: 6px;
       color: var(--c-text-2);
       text-decoration: none;
       transition: color 0.2s ease;
@@ -748,6 +922,160 @@ function renderStylesheet(): string {
 
     .gh-link:hover {
       color: var(--c-text-1);
+    }
+
+    /* Header Preview Background Picker (native popover, anchored below its trigger where supported) */
+    .bg-picker {
+      position: relative;
+      display: inline-flex;
+    }
+
+    .bg-picker-trigger {
+      anchor-name: --bg-picker;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      block-size: 22px;
+      padding: 0 5px 0 3px;
+      border-radius: 11px;
+      border: 1px solid var(--c-divider);
+      background: var(--c-switch-bg);
+      color: var(--c-text-2);
+      cursor: pointer;
+      transition: border-color 0.25s ease, color 0.25s ease;
+    }
+
+    .bg-picker-trigger:hover,
+    .bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-trigger {
+      border-color: var(--c-text-3);
+      color: var(--c-text-1);
+    }
+
+    .bg-picker-chevron {
+      transition: rotate 0.2s ease;
+    }
+
+    .bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-chevron {
+      rotate: 180deg;
+    }
+
+    /* Swatches: Options show their own background; The trigger mirrors the active one */
+    .bg-swatch {
+      inline-size: 14px;
+      block-size: 14px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 1px solid var(--c-border);
+      background: var(--c-bg);
+    }
+
+    .bg-swatch[data-bg="inverse"],
+    :root[data-preview-bg="inverse"] .bg-swatch-current {
+      background: var(--c-preview-inverse-bg);
+      border-color: var(--c-preview-inverse-border);
+    }
+
+    .bg-swatch[data-bg="checker"],
+    :root[data-preview-bg="checker"] .bg-swatch-current {
+      background:
+        repeating-conic-gradient(color-mix(in srgb, var(--c-text-1) 24%, transparent) 0 25%, transparent 0 50%) 0 0 / 6px 6px,
+        var(--c-bg);
+    }
+
+    .bg-picker-menu {
+      position: fixed;
+      inset: auto;
+      margin: 0;
+      min-inline-size: 176px;
+      padding: 6px;
+      border: 1px solid var(--c-divider);
+      border-radius: 10px;
+      background: var(--c-bg-soft);
+      color: var(--c-text-1);
+      box-shadow: 0 10px 30px rgba(0 0 0 / 0.18);
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .bg-picker-menu:where(:popover-open, .is-open) {
+      display: flex;
+    }
+
+    .bg-picker-menu:not(:where(:popover-open, .is-open)) {
+      display: none;
+    }
+
+    /* Fallback without the Popover API: The menu stays in flow, so position it below the trigger */
+    .bg-picker-menu.is-open {
+      position: absolute;
+      inset-block-start: calc(100% + 8px);
+      inset-inline-end: 0;
+    }
+
+    @supports (position-area: block-end) {
+      .bg-picker-menu {
+        position-anchor: --bg-picker;
+        position-area: block-end span-inline-start;
+        position-try-fallbacks: flip-inline;
+        margin-block-start: 8px;
+      }
+    }
+
+    .bg-picker-title {
+      padding: 4px 8px 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--c-text-3);
+    }
+
+    .bg-picker-option {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: var(--c-text-2);
+      cursor: pointer;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+
+    .bg-picker-option:hover {
+      background: color-mix(in srgb, var(--c-text-1) 6%, transparent);
+      color: var(--c-text-1);
+    }
+
+    .bg-picker-option:has(:checked) {
+      color: var(--c-brand-1);
+    }
+
+    .bg-picker-option:has(:focus-visible) {
+      outline: 2px solid var(--c-brand-1);
+      outline-offset: -2px;
+    }
+
+    .bg-picker-input {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .bg-picker-label {
+      flex: 1;
+    }
+
+    .bg-picker-check {
+      visibility: hidden;
+    }
+
+    .bg-picker-option:has(:checked) .bg-picker-check {
+      visibility: visible;
     }
 
     @media (max-width: 860px) {
@@ -777,7 +1105,6 @@ function renderStylesheet(): string {
     .hero {
       position: relative;
       overflow: hidden;
-      container-type: inline-size;
       background: var(--c-bg-soft);
       border: 1px solid var(--c-divider);
       border-radius: 14px;
@@ -880,8 +1207,8 @@ function renderStylesheet(): string {
     }
 
     .feature-icon {
-      width: fit-content;
-      height: auto;
+      inline-size: fit-content;
+      block-size: auto;
       display: inline-flex;
       align-items: center;
       justify-content: flex-start;
@@ -938,18 +1265,57 @@ function renderStylesheet(): string {
       font-size: 0.86em;
     }
 
+    .subhead-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-block: 52px 18px;
+      scroll-margin-block-start: 90px;
+    }
+
     .section-subhead {
       display: flex;
       align-items: center;
       gap: 9px;
       font-size: 1.05rem;
       font-weight: 700;
-      margin-block: 52px 18px;
       color: var(--c-text-1);
     }
 
     .section-subhead .ui-icon {
       color: var(--c-brand-1);
+    }
+
+    /* Hover/Focus Deep-Link Anchors */
+    .anchor-link {
+      flex-shrink: 0;
+      padding-inline: 4px;
+      border-radius: 4px;
+      color: var(--c-text-3);
+      font-weight: 600;
+      text-decoration: none;
+      opacity: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: opacity 0.15s ease, color 0.15s ease;
+    }
+
+    .anchor-link:hover {
+      color: var(--c-brand-1);
+    }
+
+    .subhead-row:hover .anchor-link,
+    .card-title-row:hover .anchor-link,
+    .anchor-link:focus-visible,
+    :target > .anchor-link,
+    :target .card-title-row .anchor-link {
+      opacity: 1;
+    }
+
+    @media (hover: none) {
+      .anchor-link {
+        opacity: 0.7;
+      }
     }
 
     .route-pills {
@@ -1004,8 +1370,11 @@ function renderStylesheet(): string {
       margin-block-start: 20px;
     }
 
+    /* Skip layout and paint of off-screen cards (most of each page's weight is inline SVG previews) */
     .card-container {
-      container-type: inline-size;
+      content-visibility: auto;
+      contain-intrinsic-block-size: auto 320px;
+      scroll-margin-block-start: 90px;
     }
 
     /* Outer Card: Distinct divider border + soft surface */
@@ -1018,12 +1387,24 @@ function renderStylesheet(): string {
       flex-direction: column;
       gap: 16px;
       block-size: 100%;
+      transition: border-color 0.2s ease;
+    }
+
+    .card-container:target .card {
+      border-color: var(--c-brand-border);
     }
 
     .card-head {
       display: flex;
       flex-direction: column;
       gap: 6px;
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
     }
 
     .card-title {
@@ -1095,6 +1476,18 @@ function renderStylesheet(): string {
       max-inline-size: 100%;
       user-select: none;
       -webkit-user-select: none;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    :root[data-preview-bg="inverse"] .preview-stage {
+      background: var(--c-preview-inverse-bg);
+      border-color: var(--c-preview-inverse-border);
+    }
+
+    :root[data-preview-bg="checker"] .preview-stage {
+      background:
+        repeating-conic-gradient(color-mix(in srgb, var(--c-text-1) 9%, transparent) 0 25%, transparent 0 50%) 0 0 / 16px 16px,
+        var(--c-bg);
     }
 
     .preview-stage.is-centered {
@@ -1259,6 +1652,11 @@ function renderStylesheet(): string {
       background: var(--c-brand-soft);
     }
 
+    .copy-btn.is-failed {
+      border-color: color-mix(in srgb, var(--c-hl-op) 40%, transparent);
+      color: var(--c-hl-op);
+    }
+
     .copy-btn .icon-check {
       display: none;
     }
@@ -1315,6 +1713,12 @@ function renderStylesheet(): string {
       );
     }
 
+    .code-pre:focus-visible {
+      outline-offset: -2px;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+
     .code-pre::-webkit-scrollbar {
       display: none;
     }
@@ -1359,6 +1763,10 @@ function renderStylesheet(): string {
       margin-block-end: 0;
     }
 
+    .table-wrapper:focus-visible {
+      outline-offset: -2px;
+    }
+
     .param-table {
       inline-size: 100%;
       border-collapse: separate;
@@ -1370,9 +1778,6 @@ function renderStylesheet(): string {
     }
 
     .param-table thead {
-      position: sticky;
-      inset-block-start: 0;
-      z-index: 1;
       background: var(--c-bg-elv);
       user-select: none;
       -webkit-user-select: none;
@@ -1400,7 +1805,7 @@ function renderStylesheet(): string {
     }
 
     .param-table tbody th {
-      font-family: 'JetBrains Mono NF', 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-family: var(--font-mono);
       font-weight: 600;
       color: var(--c-brand-1);
       white-space: nowrap;
@@ -1428,6 +1833,11 @@ function renderStylesheet(): string {
       pointer-events: none;
     }
 
+    .param-alias {
+      color: var(--c-text-3);
+      font-weight: 400;
+    }
+
     .param-note {
       color: var(--c-text-3);
       font-size: 0.76rem;
@@ -1436,6 +1846,34 @@ function renderStylesheet(): string {
       pointer-events: none;
     }
 
+    /* Compact Alias Grid (e.g., icon slug aliases) */
+    .alias-list {
+      list-style: none;
+      margin: 0;
+      padding: 16px 18px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+      gap: 10px 18px;
+      background: var(--c-bg-soft);
+      border: 1px solid var(--c-divider);
+      border-radius: 12px;
+    }
+
+    .alias-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-inline-size: 0;
+      font-size: 0.83rem;
+    }
+
+    .alias-arrow {
+      color: var(--c-text-3);
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Narrow containers: stack rows into labelled cards (explicit ARIA roles keep table semantics) */
     @container (width < 600px) {
       .param-table,
       .param-table thead,
@@ -1456,11 +1894,9 @@ function renderStylesheet(): string {
       }
 
       .param-table tbody th {
-        position: sticky;
-        inset-block-start: 0;
-        z-index: 2;
         padding: 0 0 6px;
         border-block-end: none;
+        white-space: normal;
       }
 
       .param-table td {
@@ -1501,14 +1937,16 @@ function renderStylesheet(): string {
       -webkit-user-select: none;
     }
 
+    .pager-row.is-end {
+      justify-content: flex-end;
+    }
+
     /* Site Footer (Matching python-lib-xulbux) */
     .site-footer {
       border-block-start: 1px solid var(--c-divider);
       background: var(--c-bg-soft);
       padding: 24px clamp(16px, 3.5vw, 32px);
       text-align: center;
-      user-select: none;
-      -webkit-user-select: none;
     }
 
     .footer-inner {
@@ -1547,189 +1985,390 @@ function renderStylesheet(): string {
       color: var(--c-brand-1);
     }
 
+    /* Reduced Motion: no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script) */
     @media (prefers-reduced-motion: reduce) {
-      .drawer-chevron,
-      .nav-link,
-      .theme-switch,
-      .theme-switch-thumb,
-      .gh-link,
-      .btn-primary,
-      .btn-secondary,
-      details.code-drawer > summary,
+      @view-transition {
+        navigation: none;
+      }
+
+      *, *::before, *::after {
+        transition: none !important;
+        animation: none !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
       details.code-drawer::details-content {
         transition: none !important;
       }
     }
   </style>`;
+  return stylesheetHtmlCache;
 }
 
-/** Render the client-side script for color-scheme toggling, code block scroll buttons, and plain-text clipboard copying. */
+/** Render (once per isolate) the render-blocking `<head>` script that applies stored, whitelisted preferences before first paint. */
+function renderHeadScript(): string {
+  if (headScriptHtmlCache !== undefined) {
+    return headScriptHtmlCache;
+  }
+  const previewBgValues = formatPreviewBgValuesJson();
+  headScriptHtmlCache = `<script>try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}</script>`;
+  return headScriptHtmlCache;
+}
+
+/** Render (once per isolate) the client-side script for color-scheme toggling, preview backgrounds, reduced motion, nav fades, code scrolling, and clipboard copying. */
 function renderClientScript(): string {
-  return `<script>
+  if (clientScriptHtmlCache !== undefined) {
+    return clientScriptHtmlCache;
+  }
+  const previewBgValues = formatPreviewBgValuesJson();
+  clientScriptHtmlCache = `<script>
     (function () {
-      var meta = document.querySelector('meta[name="color-scheme"]');
-      var toggleBtn = document.getElementById('theme-toggle');
+      var SCHEME_STORAGE_KEY = '${COLOR_SCHEME_STORAGE_KEY}';
+      var PREVIEW_BG_STORAGE_KEY = '${PREVIEW_BG_STORAGE_KEY}';
+      var PREVIEW_BG_VALUES = ${previewBgValues};
+      var rootElement = document.documentElement;
+      var schemeMeta = document.querySelector('meta[name="color-scheme"]');
+      var themeToggle = document.getElementById('theme-toggle');
+      var siteNav = document.querySelector('.site-nav');
+      var darkSchemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      var reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var copyResetTimers = new WeakMap();
+
+      function readStorage(key) {
+        try { return localStorage.getItem(key); } catch { return null; }
+      }
+
+      function writeStorage(key, value) {
+        try {
+          if (value === null) {
+            localStorage.removeItem(key);
+          } else {
+            localStorage.setItem(key, value);
+          }
+        } catch {}
+      }
+
+      /* Color scheme: only 'dark' and 'light' are ever written into the color-scheme meta tag. */
+      function sanitizeScheme(value) {
+        return value === 'dark' || value === 'light' ? value : null;
+      }
 
       function getSystemScheme() {
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        return darkSchemeQuery.matches ? 'dark' : 'light';
       }
 
-      function getRenderedScheme() {
-        var stored = null;
-        try { stored = localStorage.getItem('color-scheme'); } catch {}
-        if (stored === 'dark' || stored === 'light') {
-          return stored;
+      function applyScheme(storedScheme) {
+        if (schemeMeta) {
+          schemeMeta.content = storedScheme || 'light dark';
         }
-        return getSystemScheme();
+        if (themeToggle) {
+          themeToggle.setAttribute('aria-checked', String((storedScheme || getSystemScheme()) === 'dark'));
+        }
       }
 
-      if (toggleBtn && meta) {
-        toggleBtn.addEventListener('click', function () {
-          var current = getRenderedScheme();
-          var target = current === 'dark' ? 'light' : 'dark';
-          var sys = getSystemScheme();
-          if (target === sys) {
-            try { localStorage.removeItem('color-scheme'); } catch {}
-            meta.content = 'light dark';
-          } else {
-            try { localStorage.setItem('color-scheme', target); } catch {}
-            meta.content = target;
+      applyScheme(sanitizeScheme(readStorage(SCHEME_STORAGE_KEY)));
+
+      if (themeToggle) {
+        themeToggle.addEventListener('click', function () {
+          var renderedScheme = sanitizeScheme(readStorage(SCHEME_STORAGE_KEY)) || getSystemScheme();
+          var targetScheme = renderedScheme === 'dark' ? 'light' : 'dark';
+          var storedScheme = targetScheme === getSystemScheme() ? null : targetScheme;
+          writeStorage(SCHEME_STORAGE_KEY, storedScheme);
+          applyScheme(storedScheme);
+        });
+      }
+
+      darkSchemeQuery.addEventListener('change', function () {
+        applyScheme(sanitizeScheme(readStorage(SCHEME_STORAGE_KEY)));
+      });
+
+      /* Preview stage background (Match page / Inverted / Checker). */
+      function sanitizePreviewBg(value) {
+        return PREVIEW_BG_VALUES.indexOf(value) === -1 ? PREVIEW_BG_VALUES[0] : value;
+      }
+
+      function applyPreviewBg(previewBg) {
+        if (previewBg === PREVIEW_BG_VALUES[0]) {
+          rootElement.removeAttribute('data-preview-bg');
+        } else {
+          rootElement.setAttribute('data-preview-bg', previewBg);
+        }
+        var radioInputs = document.querySelectorAll('input[name="preview-bg"]');
+        for (var i = 0; i < radioInputs.length; i += 1) {
+          radioInputs[i].checked = radioInputs[i].value === previewBg;
+        }
+      }
+
+      applyPreviewBg(sanitizePreviewBg(readStorage(PREVIEW_BG_STORAGE_KEY)));
+
+      document.addEventListener('change', function (event) {
+        var input = event.target;
+        if (input && input.name === 'preview-bg') {
+          var previewBg = sanitizePreviewBg(input.value);
+          writeStorage(PREVIEW_BG_STORAGE_KEY, previewBg === PREVIEW_BG_VALUES[0] ? null : previewBg);
+          applyPreviewBg(previewBg);
+        }
+      });
+
+      /* Preview background picker: Native popover with a JS fallback for anchor positioning and the Popover API. */
+      var bgPickerTrigger = document.getElementById('bg-picker-trigger');
+      var bgPickerMenu = document.getElementById('bg-picker-menu');
+      var hasPopoverApi = typeof HTMLElement !== 'undefined' && 'popover' in HTMLElement.prototype;
+      var hasAnchorPositioning = !!(window.CSS && CSS.supports && CSS.supports('position-area', 'block-end'));
+
+      function isBgPickerOpen() {
+        if (!bgPickerMenu) return false;
+        return hasPopoverApi ? bgPickerMenu.matches(':popover-open') : bgPickerMenu.classList.contains('is-open');
+      }
+
+      function closeBgPicker() {
+        if (!isBgPickerOpen()) return;
+        if (hasPopoverApi) {
+          bgPickerMenu.hidePopover();
+        } else {
+          bgPickerMenu.classList.remove('is-open');
+          if (bgPickerTrigger) bgPickerTrigger.setAttribute('aria-expanded', 'false');
+        }
+      }
+
+      if (bgPickerTrigger && bgPickerMenu) {
+        if (hasPopoverApi && !hasAnchorPositioning) {
+          bgPickerMenu.addEventListener('beforetoggle', function (event) {
+            if (event.newState !== 'open') return;
+            var triggerRect = bgPickerTrigger.getBoundingClientRect();
+            bgPickerMenu.style.top = (triggerRect.bottom + 8) + 'px';
+            bgPickerMenu.style.right = Math.max(8, rootElement.clientWidth - triggerRect.right) + 'px';
+          });
+        }
+
+        if (!hasPopoverApi) {
+          bgPickerTrigger.setAttribute('aria-expanded', 'false');
+          bgPickerTrigger.addEventListener('click', function () {
+            var isOpen = bgPickerMenu.classList.toggle('is-open');
+            bgPickerTrigger.setAttribute('aria-expanded', String(isOpen));
+          });
+          document.addEventListener('click', function (event) {
+            if (!event.target.closest || !event.target.closest('.bg-picker')) closeBgPicker();
+          });
+          document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && isBgPickerOpen()) {
+              closeBgPicker();
+              bgPickerTrigger.focus();
+            }
+          });
+        }
+
+        /* Pointer selections close the menu; Keyboard arrow selections (click detail 0) keep it open. */
+        bgPickerMenu.addEventListener('click', function (event) {
+          if (event.detail > 0 && event.target.closest && event.target.closest('.bg-picker-option')) {
+            closeBgPicker();
           }
         });
       }
 
       window.addEventListener('storage', function (event) {
-        if (event.key === 'color-scheme' && meta) {
-          meta.content = event.newValue || 'light dark';
+        if (event.key === SCHEME_STORAGE_KEY) {
+          applyScheme(sanitizeScheme(event.newValue));
+        } else if (event.key === PREVIEW_BG_STORAGE_KEY) {
+          applyPreviewBg(sanitizePreviewBg(event.newValue));
         }
       });
 
-      function updateScrollButtons(drawer) {
-        if (!drawer) return;
-        var pre = drawer.querySelector('.code-pre');
-        var leftBtn = drawer.querySelector('.scroll-btn-left');
-        var rightBtn = drawer.querySelector('.scroll-btn-right');
-        if (!pre || !leftBtn || !rightBtn) return;
+      /* Reduced motion: CSS cannot stop SMIL, so pause every inline preview SVG at its first frame. */
+      function syncPreviewAnimations() {
+        var previewSvgs = document.querySelectorAll('.preview-stage svg');
+        for (var i = 0; i < previewSvgs.length; i += 1) {
+          var previewSvg = previewSvgs[i];
+          if (typeof previewSvg.pauseAnimations !== 'function') continue;
+          if (reducedMotionQuery.matches) {
+            previewSvg.pauseAnimations();
+            previewSvg.setCurrentTime(0);
+          } else {
+            previewSvg.unpauseAnimations();
+          }
+        }
+      }
 
-        var isScrollable = pre.scrollWidth > pre.clientWidth + 1;
-        leftBtn.classList.toggle('is-visible', isScrollable);
-        rightBtn.classList.toggle('is-visible', isScrollable);
+      if (reducedMotionQuery.matches) {
+        syncPreviewAnimations();
+      }
+      reducedMotionQuery.addEventListener('change', syncPreviewAnimations);
+
+      function getScrollBehavior() {
+        return reducedMotionQuery.matches ? 'auto' : 'smooth';
+      }
+
+      /* Navigation edge fades while links are scrolled out of view. */
+      function updateNavFade() {
+        if (!siteNav) return;
+        var maxScrollLeft = siteNav.scrollWidth - siteNav.clientWidth;
+        siteNav.classList.toggle('can-scroll-start', siteNav.scrollLeft > 1);
+        siteNav.classList.toggle('can-scroll-end', siteNav.scrollLeft < maxScrollLeft - 1);
+      }
+
+      if (siteNav) {
+        siteNav.addEventListener('scroll', updateNavFade, { passive: true });
+        updateNavFade();
+      }
+
+      /* Code drawer scroll buttons. */
+      function updateScrollButtons(drawerBody) {
+        if (!drawerBody) return;
+        var codePre = drawerBody.querySelector('.code-pre');
+        var leftButton = drawerBody.querySelector('.scroll-btn-left');
+        var rightButton = drawerBody.querySelector('.scroll-btn-right');
+        if (!codePre || !leftButton || !rightButton) return;
+
+        var isScrollable = codePre.scrollWidth > codePre.clientWidth + 1;
+        leftButton.classList.toggle('is-visible', isScrollable);
+        rightButton.classList.toggle('is-visible', isScrollable);
         if (isScrollable) {
-          leftBtn.classList.toggle('is-disabled', !(pre.scrollLeft > 0));
-          rightBtn.classList.toggle('is-disabled', !(pre.scrollLeft < pre.scrollWidth - pre.clientWidth - 1));
+          leftButton.classList.toggle('is-disabled', !(codePre.scrollLeft > 0));
+          rightButton.classList.toggle('is-disabled', !(codePre.scrollLeft < codePre.scrollWidth - codePre.clientWidth - 1));
         }
       }
 
       document.addEventListener('toggle', function (event) {
-        var target = event.target;
-        if (target && target.classList && target.classList.contains('code-drawer') && target.open) {
-          var body = target.querySelector('.code-drawer-body');
-          setTimeout(function () { updateScrollButtons(body); }, 30);
+        var drawer = event.target;
+        if (drawer && drawer.classList && drawer.classList.contains('code-drawer') && drawer.open) {
+          var drawerBody = drawer.querySelector('.code-drawer-body');
+          setTimeout(function () { updateScrollButtons(drawerBody); }, 30);
         }
       }, true);
 
       window.addEventListener('resize', function () {
-        var openDrawers = document.querySelectorAll('details.code-drawer[open] .code-drawer-body');
-        for (var i = 0; i < openDrawers.length; i += 1) {
-          updateScrollButtons(openDrawers[i]);
+        updateNavFade();
+        var openDrawerBodies = document.querySelectorAll('details.code-drawer[open] .code-drawer-body');
+        for (var i = 0; i < openDrawerBodies.length; i += 1) {
+          updateScrollButtons(openDrawerBodies[i]);
         }
       });
 
       document.addEventListener('scroll', function (event) {
-        var target = event.target;
-        if (target && target.classList && target.classList.contains('code-pre')) {
-          updateScrollButtons(target.closest('.code-drawer-body'));
+        var scrolledElement = event.target;
+        if (scrolledElement && scrolledElement.classList && scrolledElement.classList.contains('code-pre')) {
+          updateScrollButtons(scrolledElement.closest('.code-drawer-body'));
         }
       }, true);
 
-      document.addEventListener('click', function (event) {
-        var target = event.target;
-        if (!target || !target.closest) return;
+      /* Clipboard: async Clipboard API with a selection + execCommand fallback and announced feedback. */
+      function copyWithSelection(sourceElement) {
+        var selection = window.getSelection ? window.getSelection() : null;
+        if (!selection) return false;
+        var range = document.createRange();
+        range.selectNodeContents(sourceElement);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        var isCopied = false;
+        try { isCopied = document.execCommand('copy'); } catch { isCopied = false; }
+        selection.removeAllRanges();
+        return isCopied;
+      }
 
-        var scrollBtn = target.closest('.scroll-btn');
-        if (scrollBtn) {
-          var drawerBody = scrollBtn.closest('.code-drawer-body');
-          var scrollPre = drawerBody ? drawerBody.querySelector('.code-pre') : null;
+      function showCopyFeedback(copyButton, isCopied) {
+        var labelElement = copyButton.querySelector('.copy-btn-text');
+        clearTimeout(copyResetTimers.get(copyButton));
+        copyButton.classList.toggle('is-copied', isCopied);
+        copyButton.classList.toggle('is-failed', !isCopied);
+        if (labelElement) labelElement.textContent = isCopied ? 'Copied' : 'Copy failed';
+        copyResetTimers.set(copyButton, setTimeout(function () {
+          copyButton.classList.remove('is-copied', 'is-failed');
+          if (labelElement) labelElement.textContent = 'Copy';
+        }, 1500));
+      }
+
+      function copySnippet(copyButton, codePre) {
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(codePre.textContent || '').then(function () {
+            showCopyFeedback(copyButton, true);
+          }, function () {
+            showCopyFeedback(copyButton, copyWithSelection(codePre));
+          });
+        } else {
+          showCopyFeedback(copyButton, copyWithSelection(codePre));
+        }
+      }
+
+      document.addEventListener('click', function (event) {
+        var clickTarget = event.target;
+        if (!clickTarget || !clickTarget.closest) return;
+
+        var scrollButton = clickTarget.closest('.scroll-btn');
+        if (scrollButton) {
+          var scrollBody = scrollButton.closest('.code-drawer-body');
+          var scrollPre = scrollBody ? scrollBody.querySelector('.code-pre') : null;
           if (scrollPre) {
-            var dir = scrollBtn.classList.contains('scroll-btn-left') ? -240 : 240;
-            scrollPre.scrollBy({ behavior: 'smooth', left: dir });
+            var scrollDistance = scrollButton.classList.contains('scroll-btn-left') ? -240 : 240;
+            scrollPre.scrollBy({ behavior: getScrollBehavior(), left: scrollDistance });
           }
           return;
         }
 
-        var copyBtn = target.closest('.copy-btn');
-        if (!copyBtn) return;
-        var drawer = copyBtn.closest('.code-drawer-body');
-        var pre = drawer ? drawer.querySelector('.code-pre') : null;
-        if (!pre || !navigator.clipboard) return;
-        var labelSpan = copyBtn.querySelector('.copy-btn-text');
-        navigator.clipboard.writeText(pre.textContent || '').then(function () {
-          copyBtn.classList.add('is-copied');
-          if (labelSpan) labelSpan.textContent = 'Copied';
-          setTimeout(function () {
-            copyBtn.classList.remove('is-copied');
-            if (labelSpan) labelSpan.textContent = 'Copy';
-          }, 1500);
-        });
+        var copyButton = clickTarget.closest('.copy-btn');
+        if (!copyButton) return;
+        var copyBody = copyButton.closest('.code-drawer-body');
+        var copyPre = copyBody ? copyBody.querySelector('.code-pre') : null;
+        if (copyPre) copySnippet(copyButton, copyPre);
       });
 
       document.addEventListener('copy', function (event) {
         var selection = window.getSelection ? window.getSelection() : null;
         if (!selection || selection.isCollapsed || !event.clipboardData) return;
-        var anchor = selection.anchorNode;
-        var elem = anchor && anchor.nodeType === 1 ? anchor : (anchor ? anchor.parentElement : null);
-        if (elem && elem.closest && elem.closest('.code-pre')) {
+        var anchorNode = selection.anchorNode;
+        var anchorElement = anchorNode && anchorNode.nodeType === 1 ? anchorNode : (anchorNode ? anchorNode.parentElement : null);
+        if (anchorElement && anchorElement.closest && anchorElement.closest('.code-pre')) {
           event.clipboardData.setData('text/plain', selection.toString().replace(/\\u00a0/g, ' '));
           event.preventDefault();
         }
       });
     })();
   </script>`;
+  return clientScriptHtmlCache;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`.
- * @param slug         Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`).
- * @param size         Width and height in pixels (defaults to `16`).
- * @param extraClass   Optional additional CSS class name(s) appended to `ui-icon`.
- * @returns Inline `<svg>` HTML string, or empty string if the slug is not found.
- */
-export function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
-  return buildUiIcon(slug, size, extraClass);
-}
-
-/**
- * Render a showcase card containing live rendered SVGs and an expandable `<details>` Markdown drawer.
+ * Render a showcase card containing SVG previews (rendered from each item's documented path through the
+ * live route dispatcher) and an expandable `<details>` Markdown drawer.
+ * The card gets a deep-link anchor ID derived from its title, and every inlined SVG gets scoped element IDs.
  * @param card   Showcase card configuration with items and titles.
- * @returns HTML string for the card wrapped in a container-query context.
+ * @returns HTML string for the card wrapped in a container element.
  */
 export function renderShowcaseCard(card: ShowcaseCardConfig): string {
+  const cardId = slugifyText(card.title);
+  const titleId = `${cardId}-title`;
+  const scopePrefix = `p${hashText(cardId)}`;
   let svgsHtml = '';
-  const mdLines: string[] = [];
+  const markdownLines: string[] = [];
 
-  for (const item of card.items) {
-    svgsHtml += `${item.svg}\n`;
-    mdLines.push(formatHighlightedMarkdownSnippet(item));
+  for (let i = 0; i < card.items.length; i += 1) {
+    const item = card.items[i];
+    svgsHtml += `${scopeSvgIds(renderSvgPath(item.path, item.sample), `${scopePrefix}-${i}`)}\n`;
+    markdownLines.push(formatHighlightedMarkdownSnippet(item));
   }
 
   const stageClass = card.isCentered ? 'preview-stage is-centered' : 'preview-stage';
   const subtitleHtml = card.subtitle
     ? `<p class="card-subtitle">${escapeXml(card.subtitle)}</p>`
     : '';
-  const mdBlock = mdLines.join('\n');
+  const escapedTitle = escapeXml(card.title);
 
-  const chevronIcon = buildUiIcon('chevron-right', 14, 'drawer-chevron');
-  const leftScrollIcon = buildUiIcon('chevron-left', 14);
-  const rightScrollIcon = buildUiIcon('chevron-right', 14);
-  const copyIcon = buildUiIcon('copy', 13, 'icon-copy');
-  const checkIcon = buildUiIcon('check', 13, 'icon-check');
+  const chevronIcon = renderUiIcon('chevron-right', 14, 'drawer-chevron');
+  const leftScrollIcon = renderUiIcon('chevron-left', 14);
+  const rightScrollIcon = renderUiIcon('chevron-right', 14);
+  const copyIcon = renderUiIcon('copy', 13, 'icon-copy');
+  const checkIcon = renderUiIcon('check', 13, 'icon-check');
 
-  return `<div class="card-container">
+  return `<div class="card-container" id="${cardId}">
     <div class="card">
       <div class="card-head">
-        <div class="card-title">${formatCardTitleHtml(card.title)}</div>
+        <div class="card-title-row">
+          <h3 class="card-title" id="${titleId}">${formatCardTitleHtml(card.title)}</h3>
+          ${renderAnchorLink(cardId, card.title)}
+        </div>
         ${subtitleHtml}
       </div>
       <div class="${stageClass}">${svgsHtml}</div>
@@ -1741,11 +2380,11 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
             <div class="code-toolbar-actions">
               <button type="button" class="scroll-btn scroll-btn-left" aria-label="Scroll code left">${leftScrollIcon}</button>
               <button type="button" class="scroll-btn scroll-btn-right" aria-label="Scroll code right">${rightScrollIcon}</button>
-              <button type="button" class="copy-btn">${copyIcon}${checkIcon}<span class="copy-btn-text">Copy</span></button>
+              <button type="button" class="copy-btn" aria-describedby="${titleId}">${copyIcon}${checkIcon}<span class="copy-btn-text" aria-live="polite">Copy</span></button>
             </div>
           </div>
           <div class="code-pre-wrap">
-            <pre class="code-pre"><code>${mdBlock}</code></pre>
+            <pre class="code-pre" tabindex="0" role="region" aria-label="Markdown snippet: ${escapedTitle}"><code>${markdownLines.join('\n')}</code></pre>
           </div>
         </div>
       </details>
@@ -1754,34 +2393,16 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
 }
 
 /**
- * Render a responsive parameter reference table that transforms into labeled cards on narrow containers.
- * @param rows   Array of parameter rows to display.
- * @returns HTML string for the responsive table wrapper.
+ * Render a list of showcase cards.
+ * @param cards   Showcase card configurations.
+ * @returns Concatenated card HTML.
  */
-export function renderParamTable(rows: readonly ParamTableRow[]): string {
-  let bodyRowsHtml = '';
-  for (const row of rows) {
-    bodyRowsHtml += `<tr>
-      <th scope="row">${escapeXml(row.name)}</th>
-      <td>${formatParamCellHtml(row.values)}</td>
-      <td>${formatParamCellHtml(row.defaultVal)}</td>
-      <td>${escapeXml(row.description)}</td>
-    </tr>`;
+export function renderCardsHtml(cards: readonly ShowcaseCardConfig[]): string {
+  let cardsHtml = '';
+  for (const card of cards) {
+    cardsHtml += renderShowcaseCard(card);
   }
-
-  return `<div class="table-wrapper">
-    <table class="param-table">
-      <thead>
-        <tr>
-          <th scope="col">Parameter</th>
-          <th scope="col">Values</th>
-          <th scope="col">Default</th>
-          <th scope="col">Description</th>
-        </tr>
-      </thead>
-      <tbody>${bodyRowsHtml}</tbody>
-    </table>
-  </div>`;
+  return cardsHtml;
 }
 
 /**
@@ -1798,46 +2419,140 @@ export function renderRoutePills(patterns: readonly string[]): string {
 }
 
 /**
- * Render the standalone `32x32` SVG favicon matching the navbar brand mark (indigo gradient squircle with Lucide `sparkles`).
+ * Render a documentation section header (title, lead paragraph, and route pills).
+ * @param options   Section header options (`title`, `description`, optional `routes` and `headingLevel`).
+ * @returns HTML string for the section header.
+ */
+export function renderSectionHeader(options: SectionHeaderOptions): string {
+  const headingTag = `h${options.headingLevel ?? 1}`;
+  const routesHtml = options.routes ? renderRoutePills(options.routes) : '';
+  return `<div class="section-header">
+      <${headingTag} class="section-title">${formatInlineMarkupHtml(options.title)}</${headingTag}>
+      <p class="section-desc">${formatInlineMarkupHtml(options.description)}</p>
+      ${routesHtml}
+    </div>`;
+}
+
+/**
+ * Render a section subheading (`<h2>`) with a leading Lucide icon and a hover/focus deep-link anchor.
+ * @param iconSlug   Lucide icon slug (e.g., `'layers'`).
+ * @param text       Subheading text (supports inline `` `code` `` markup).
+ * @returns HTML string for the subheading row.
+ */
+export function renderSectionSubhead(iconSlug: string, text: string): string {
+  const plainText = stripInlineMarkup(text);
+  const subheadId = slugifyText(plainText);
+  return `<div class="subhead-row" id="${subheadId}">
+      <h2 class="section-subhead">${renderUiIcon(iconSlug, 16)}<span class="subhead-text">${formatInlineMarkupHtml(text)}</span></h2>
+      ${renderAnchorLink(subheadId, plainText)}
+    </div>`;
+}
+
+/**
+ * Render a responsive, keyboard-scrollable parameter reference table that transforms into labeled cards on narrow containers.
+ * @param rows    Array of parameter rows to display.
+ * @param label   Accessible table caption and scroll region label (e.g., `'Badge query parameters'`).
+ * @returns HTML string for the responsive table wrapper.
+ */
+export function renderParamTable(rows: readonly ParamTableRow[], label: string): string {
+  let bodyRowsHtml = '';
+  for (const row of rows) {
+    bodyRowsHtml += `<tr role="row">
+      <th scope="row" role="rowheader">${escapeXml(row.name)}</th>
+      <td role="cell">${formatParamCellHtml(row.values)}</td>
+      <td role="cell">${formatParamCellHtml(row.defaultVal)}</td>
+      <td role="cell">${escapeXml(row.description)}</td>
+    </tr>`;
+  }
+
+  const escapedLabel = escapeXml(label);
+  return `<div class="table-wrapper" tabindex="0" role="region" aria-label="${escapedLabel}">
+    <table class="param-table" role="table">
+      <caption class="visually-hidden">${escapedLabel}</caption>
+      <thead role="rowgroup">
+        <tr role="row">
+          <th scope="col" role="columnheader">Parameter</th>
+          <th scope="col" role="columnheader">Values</th>
+          <th scope="col" role="columnheader">Default</th>
+          <th scope="col" role="columnheader">Description</th>
+        </tr>
+      </thead>
+      <tbody role="rowgroup">${bodyRowsHtml}</tbody>
+    </table>
+  </div>`;
+}
+
+/**
+ * Render an alphabetically sorted `alias → canonical` list (e.g., icon slug aliases).
+ * @param aliases   Alias slugs mapped to their canonical slugs.
+ * @param label     Accessible list label (e.g., `'Icon slug aliases'`).
+ * @returns HTML string for the alias list.
+ */
+export function renderAliasList(aliases: Readonly<Record<string, string>>, label: string): string {
+  let itemsHtml = '';
+  for (const alias of Object.keys(aliases).toSorted()) {
+    itemsHtml += `<li class="alias-item"><code class="param-code">${escapeXml(alias)}</code><span class="alias-arrow" aria-hidden="true">→</span><span class="visually-hidden"> resolves to </span><code class="param-code">${escapeXml(aliases[alias])}</code></li>`;
+  }
+  return `<ul class="alias-list" role="list" aria-label="${escapeXml(label)}">${itemsHtml}</ul>`;
+}
+
+/**
+ * Render (once per isolate) the standalone `32x32` SVG favicon matching the navbar brand mark (indigo gradient squircle with Lucide `sparkles`).
  * @returns Standalone `<svg>` XML string.
  */
 export function renderFaviconSvg(): string {
-  const resolved = resolveIcon('sparkles');
-  const innerSvg = resolved ? resolved.innerSvg : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  if (faviconSvgCache !== undefined) {
+    return faviconSvgCache;
+  }
+  const innerSvg = resolveIcon('sparkles')?.innerSvg ?? '';
+  faviconSvgCache = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#818cf8" />
-      <stop offset="100%" stop-color="#4f46e5" />
+      <stop offset="0%" stop-color="${BRAND_GRADIENT_START}" />
+      <stop offset="100%" stop-color="${BRAND_GRADIENT_END}" />
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#bg)" />
   <g transform="translate(6 6) scale(0.8333)" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</g>
 </svg>`;
+  return faviconSvgCache;
 }
 
 /**
- * Render the complete HTML document shell with FOUC-free color-scheme support, view transitions, and responsive navigation.
- * @param options   Page layout options (`activePage`, `title`, `description`, `bodyHtml`).
+ * Render the complete HTML document shell with FOUC-free color-scheme support, view transitions, social/canonical meta, and responsive navigation.
+ * @param options   Page layout options (`activePage`, `title`, `description`, `canonicalPath`, `bodyHtml`).
  * @returns Complete HTML document string.
  */
 export function renderPageLayout(options: PageLayoutOptions): string {
+  const title = escapeXml(options.title);
+  const description = escapeXml(options.description);
+  const canonicalUrl = escapeXml(`${SITE_ORIGIN}${options.canonicalPath}`);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light dark" />
-  <script blocking="render">try{document.querySelector('meta[name="color-scheme"]').content=localStorage.getItem("color-scheme")??"light dark";}catch{}</script>
+  ${renderHeadScript()}
   <link rel="expect" href="#main-content" blocking="render" />
+  <title>${title}</title>
+  <meta name="description" content="${description}" />
+  <link rel="canonical" href="${canonicalUrl}" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <meta name="description" content="${escapeXml(options.description)}" />
-  <title>${escapeXml(options.title)}</title>
+  <meta name="theme-color" content="${LIGHT_BG}" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="${DARK_BG}" media="(prefers-color-scheme: dark)" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="svg.xul.is" />
+  <meta property="og:title" content="${title}" />
+  <meta property="og:description" content="${description}" />
+  <meta property="og:url" content="${canonicalUrl}" />
+  <meta name="twitter:card" content="summary" />
   ${renderStylesheet()}
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to content</a>
   ${renderHeaderNav(options.activePage)}
-  <main class="page-main" id="main-content">
+  <main class="page-main" id="main-content" tabindex="-1">
     ${options.bodyHtml}
   </main>
   ${renderFooter()}

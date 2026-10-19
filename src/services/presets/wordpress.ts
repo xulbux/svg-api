@@ -1,0 +1,153 @@
+/**
+ * WordPress service presets – Plugin and theme version, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
+ */
+
+import {
+  createCountTransform,
+  createRatingTransform,
+  createVersionTransform,
+  RATING,
+  TOTAL_DOWNLOADS,
+} from '@/services/metrics';
+import type { MetricEndpoint, ServiceDefinition } from '@/types';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Partial WordPress.org plugin/theme information payload (`api.wordpress.org/{plugins|themes}/info/1.2/`). */
+interface WordPressInfoPayload {
+  /** Active install bucket (e.g., `5000000` for "5+ million"). */
+  active_installs: number;
+  /** All-time downloads. */
+  downloaded: number;
+  /** Average rating in percent (`0`–`100`; stars = `rating / 20`). */
+  rating: number;
+  /** Latest version. */
+  version: string;
+}
+
+/** WordPress.org directory kind. */
+interface WordPressDirectory {
+  /** Info API action (`plugin_information`, `theme_information`). */
+  action: string;
+  /** Docs metadata description. */
+  description: string;
+  /** Badge label of the version metric. */
+  label: string;
+  /** Directory path segment (`plugins`, `themes`). */
+  path: string;
+  /** Target segment placeholder (e.g., `':plugin'`). */
+  targetName: string;
+  /** Human-readable service name. */
+  title: string;
+  /** Extra `request[fields]` toggles that trim the response (e.g., `sections=0`). */
+  trimmedFields: readonly string[];
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Maximum WordPress.org rating (percent). */
+const MAX_WORDPRESS_RATING = 100;
+
+/** Fields disabled for plugin requests (shrinks the response from `~66 KB` to `~1 KB`). */
+const TRIMMED_PLUGIN_FIELDS: readonly string[] = [
+  'banners',
+  'compatibility',
+  'contributors',
+  'description',
+  'icons',
+  'reviews',
+  'screenshots',
+  'sections',
+  'tags',
+  'versions',
+];
+
+/** Fields disabled for theme requests. */
+const TRIMMED_THEME_FIELDS: readonly string[] = ['sections', 'tags'];
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Build the `request[fields]` query of a directory (enables installs/downloads, disables bulky fields). */
+function buildFieldsQuery(directory: WordPressDirectory): string {
+  let query = '&request%5Bfields%5D%5Bactive_installs%5D=1&request%5Bfields%5D%5Bdownloaded%5D=1';
+  for (const field of directory.trimmedFields) {
+    query += `&request%5Bfields%5D%5B${field}%5D=0`;
+  }
+  return query;
+}
+
+/** Create a WordPress.org service preset for a directory kind. */
+function createWordPressService(directory: WordPressDirectory): ServiceDefinition {
+  const fieldsQuery = buildFieldsQuery(directory);
+  const endpoint: MetricEndpoint = {
+    buildApiUrl: (_owner: string, slug: string): string =>
+      `https://api.wordpress.org/${directory.path}/info/1.2/?action=${directory.action}&request%5Bslug%5D=${encodeURIComponent(slug)}${fieldsQuery}`,
+    buildRedirectUrl: (_owner: string, slug: string): string =>
+      `https://wordpress.org/${directory.path}/${slug}/`,
+  };
+  return {
+    docs: {
+      description: directory.description,
+      targetName: directory.targetName,
+      title: directory.title,
+    },
+    metricAliases: { dl: 'dt' },
+    metrics: {
+      dt: {
+        ...endpoint,
+        ...TOTAL_DOWNLOADS,
+        transform: createCountTransform<WordPressInfoPayload>((payload) => payload.downloaded),
+      },
+      installs: {
+        ...endpoint,
+        defaultColor: 'emerald',
+        defaultIcon: 'users',
+        defaultLabel: 'active installs',
+        transform: createCountTransform<WordPressInfoPayload>(
+          (payload) => payload.active_installs,
+          '+'
+        ),
+      },
+      rating: {
+        ...endpoint,
+        ...RATING,
+        transform: createRatingTransform<WordPressInfoPayload>((payload) => [
+          payload.rating,
+          MAX_WORDPRESS_RATING,
+        ]),
+      },
+      v: {
+        ...endpoint,
+        defaultColor: 'sky',
+        defaultIcon: 'wordpress',
+        defaultLabel: directory.label,
+        transform: createVersionTransform<WordPressInfoPayload>((payload) => payload.version),
+      },
+    },
+    ownerMode: 'none',
+  };
+}
+
+// -------------------------------------- PUBLIC API -------------------------------------
+
+/** WordPress plugin service preset (`wp`). */
+export const WORDPRESS_PLUGIN_SERVICE: ServiceDefinition = createWordPressService({
+  action: 'plugin_information',
+  description: 'Plugin version, active installs, all-time downloads, and rating.',
+  label: 'wordpress',
+  path: 'plugins',
+  targetName: ':plugin',
+  title: 'WordPress Plugins',
+  trimmedFields: TRIMMED_PLUGIN_FIELDS,
+});
+
+/** WordPress theme service preset (`wp-theme`). */
+export const WORDPRESS_THEME_SERVICE: ServiceDefinition = createWordPressService({
+  action: 'theme_information',
+  description: 'Theme version, active installs, all-time downloads, and rating.',
+  label: 'wordpress theme',
+  path: 'themes',
+  targetName: ':theme',
+  title: 'WordPress Themes',
+  trimmedFields: TRIMMED_THEME_FIELDS,
+});

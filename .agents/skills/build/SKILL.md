@@ -23,7 +23,7 @@ In accordance with `AGENTS.md` Section 4, keep `src/preview/` (`catalog.ts`, `pa
 pnpm run dev
 ```
 
-Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants across dark and light canvases.
+Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch) and on every preview stage background (header picker: Match page, Inverted, Checker).
 
 ## 3. Verify Worker Bundle (Dry Run)
 
@@ -42,9 +42,4 @@ pnpm exec wrangler secret put GITHUB_TOKEN
 pnpm run deploy
 ```
 
-## 5. Full One-Liner (Validate + Dry-Run Bundle)
-
-```bash
-pnpm run check
-```
-
+Pushes to `main` also deploy automatically after CI validation passes (`.github/workflows/ci.yaml`).

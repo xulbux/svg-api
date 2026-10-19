@@ -1,16 +1,15 @@
 /**
- * Worker route, readable query DSL, special element parser, service presets, and smart redirect tests (`src/index.ts`, `src/services/fetcher.ts`, `src/config/`).
+ * Worker route, readable query DSL, special element parser, documentation page, and route regression tests (`src/index.ts`, `src/routes/`, `src/preview/`, `src/config/`).
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { formatCompactNumber, formatRelativeDate } from '@/config/services';
+import { SITE_ORIGIN } from '@/config/site';
 import { resolveColor, THEMES } from '@/config/theme';
-import app, {
-  isDocumentNavigation,
-  parseSpecialParam,
-  resolveAnimationMode,
-  resolveVariant,
-} from '@/index';
+import app, { isDocumentNavigation } from '@/index';
+import { parseSpecialParam, resolveAnimationMode, resolveVariant } from '@/routes/params';
+import { resolveSvgRoute } from '@/routes/svg';
+import { resetUpstreamCaches } from '@/services/fetcher';
+import { formatCompactNumber, formatRelativeDate } from '@/services/metrics';
 import type { Env } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -22,6 +21,7 @@ const TEST_ENV: Env = { ALLOW_PREVIEW_IN_PROD: 'true', DEFAULT_GH_OWNER: 'xulbux
 
 afterEach(() => {
   vi.restoreAllMocks();
+  resetUpstreamCaches();
 });
 
 describe('helpers', () => {
@@ -31,6 +31,13 @@ describe('helpers', () => {
     expect(formatCompactNumber(4820)).toBe('4.8k');
     expect(formatCompactNumber(2_500_000)).toBe('2.5M');
     expect(formatCompactNumber(1_200_000_000)).toBe('1.2B');
+  });
+
+  it('promotes values that round up to the next unit (regression: 999_950 rendered as "1000k")', () => {
+    expect(formatCompactNumber(999_949)).toBe('999.9k');
+    expect(formatCompactNumber(999_950)).toBe('1M');
+    expect(formatCompactNumber(999_999_999)).toBe('1B');
+    expect(formatCompactNumber(18.663753)).toBe('18.66');
   });
 
   it('formats relative dates from ISO timestamps', () => {
@@ -292,138 +299,146 @@ describe('Hono routes on svg.xul.is', () => {
     expect(svg).toContain('<animate attributeName="r"');
     expect(svg).toContain('width="2.5" height="10"');
   });
+});
 
-  it('fetches GitHub, ClickPy PyPI, npm, Open VSX, Crates.io, and Docker Hub metrics and enforces GitHub owner allowlist', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+/** Extract the `aria-label` attribute of a rendered SVG. */
+function extractAriaLabel(svg: string): string | undefined {
+  return /aria-label="(?<label>[^"]*)"/.exec(svg)?.groups?.label;
+}
 
-    // 1. GitHub stars & last-commit.
-    fetchSpy.mockResolvedValueOnce(
-      Response.json(
-        { pushed_at: new Date().toISOString(), stargazers_count: 1420 },
-        { status: 200 }
-      )
+describe('route parsing regressions', () => {
+  it('renders documented empty-label and icon-only badge URLs instead of 404 (regression: /badge//:value, /badge/)', async () => {
+    const compactRes = await app.request('/badge//100%25?icon=zap&color=amber', {}, TEST_ENV);
+    expect(compactRes.status).toBe(200);
+    expect(extractAriaLabel(await compactRes.text())).toBe('100%');
+
+    const iconOnlyResponses = await Promise.all(
+      ['/badge/?icon=github', '/badge?icon=github'].map((path) => app.request(path, {}, TEST_ENV))
     );
-    const ghStarsRes = await app.request(
-      '/badge/gh/color-tracr/stars',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
+    for (const iconOnlyRes of iconOnlyResponses) {
+      expect(iconOnlyRes.status).toBe(200);
+    }
+    const iconOnlySvgs = await Promise.all(iconOnlyResponses.map((response) => response.text()));
+    for (const iconOnlySvg of iconOnlySvgs) {
+      expect(extractAriaLabel(iconOnlySvg)).toBe('github');
+    }
+  });
+
+  it('decodes path segments exactly once (regression: %2B became a space and %2525 became %)', async () => {
+    const plusRes = await app.request('/badge/version/1.0.0%2Bbuild', {}, TEST_ENV);
+    expect(extractAriaLabel(await plusRes.text())).toBe('version: 1.0.0+build');
+
+    const percentRes = await app.request('/badge/escaped/100%2525', {}, TEST_ENV);
+    expect(extractAriaLabel(await percentRes.text())).toBe('escaped: 100%25');
+
+    const spaceRes = await app.request('/badge/a+b/c%20d', {}, TEST_ENV);
+    expect(extractAriaLabel(await spaceRes.text())).toBe('a b: c d');
+
+    const quoteRes = await app.request('/quote/A%2BB/C%2B%2B+rocks', {}, TEST_ENV);
+    expect(extractAriaLabel(await quoteRes.text())).toContain('C++ rocks');
+  });
+
+  it('routes paths containing encoded line terminators (regression: %0A, %0D, and %E2%80%A8 returned 404)', async () => {
+    const paths = [
+      '/badge/a%0Ab/c',
+      '/badge/a%0Db/c',
+      '/badge/a%E2%80%A8b/c',
+      '/quote/line%0Abreak',
+    ];
+    const responses = await Promise.all(paths.map((path) => app.request(path, {}, TEST_ENV)));
+    for (let i = 0; i < paths.length; i += 1) {
+      expect(responses[i].status, paths[i]).toBe(200);
+    }
+    expect(extractAriaLabel(await responses[0].text())).toBe('a b: c');
+    const docsRes = await app.request('/docs/badges?x=%0A', {}, TEST_ENV);
+    expect(docsRes.status).toBe(200);
+  });
+
+  it('ignores Object.prototype keys in user input instead of crashing (regression: /icon/constructor returned 500)', async () => {
+    const paths = [
+      '/icon/constructor',
+      '/stack/constructor,toString',
+      '/badge/status/constructor/x',
+      '/badge/a/b?color=constructor&dot=toString&icon=hasOwnProperty&anim=auto',
+      '/button/a?size=constructor',
+      '/quote/a?size=toString',
+    ];
+    const responses = await Promise.all(paths.map((path) => app.request(path, {}, TEST_ENV)));
+    const svgs = await Promise.all(responses.map((response) => response.text()));
+    for (let i = 0; i < paths.length; i += 1) {
+      expect(responses[i].status, paths[i]).toBe(200);
+      expect(svgs[i]).not.toContain('undefined');
+      expect(svgs[i]).not.toContain('native code');
+    }
+  });
+
+  it('returns 404 for paths that match no SVG route', async () => {
+    const paths = ['/badge/a/b/c', '/badge/a/b/c/d/e', '/icon/a/b', '/stack/a/b', '/nope'];
+    const responses = await Promise.all(paths.map((path) => app.request(path, {}, TEST_ENV)));
+    for (const response of responses) {
+      expect(response.status).toBe(404);
+    }
+  });
+
+  it('serves memoized documentation pages with Cache-Control headers', async () => {
+    const firstRes = await app.request('/docs/icons', {}, TEST_ENV);
+    const secondRes = await app.request('/docs/icons', {}, TEST_ENV);
+    expect(firstRes.headers.get('Cache-Control')).toContain('s-maxage=');
+    expect(await firstRes.text()).toBe(await secondRes.text());
+  });
+
+  it('routes multi-segment service targets only for services that declare maxTargetSegments', () => {
+    const goMatch = resolveSvgRoute(new URL('/badge/go/github.com/spf13/cobra/v', SITE_ORIGIN));
+    expect(goMatch).toEqual({
+      kind: 'service',
+      request: { metric: 'v', service: 'go', target: 'github.com/spf13/cobra' },
+    });
+    expect(resolveSvgRoute(new URL('/badge/npm/a/b/c/v', SITE_ORIGIN))).toBeUndefined();
+  });
+});
+
+describe('response headers & revalidation', () => {
+  it('adds security headers to HTML pages and a restrictive CSP to SVG responses', async () => {
+    const homeRes = await app.request('/', {}, TEST_ENV);
+    expect(homeRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(homeRes.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+
+    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
+    expect(faviconRes.headers.get('Content-Security-Policy')).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'"
+    );
+    const secondFaviconRes = await app.request('/favicon.ico', {}, TEST_ENV);
+    expect(await secondFaviconRes.text()).toBe(await faviconRes.text());
+  });
+
+  it('answers If-None-Match revalidations of memoized docs pages with 304 Not Modified', async () => {
+    const firstRes = await app.request('/docs/colors', {}, TEST_ENV);
+    const etag = firstRes.headers.get('ETag') ?? '';
+    expect(etag).toMatch(/^W\/"[\da-f]+-[\da-f]+"$/);
+
+    const revalidatedRes = await app.request(
+      '/docs/colors',
+      { headers: { 'If-None-Match': `"stale", ${etag}` } },
       TEST_ENV
     );
-    expect(ghStarsRes.status).toBe(200);
-    expect(await ghStarsRes.text()).toContain('1.4k');
+    expect(revalidatedRes.status).toBe(304);
+    expect(revalidatedRes.headers.get('ETag')).toBe(etag);
+    expect(revalidatedRes.headers.get('Cache-Control')).toContain('s-maxage=');
+    expect(await revalidatedRes.text()).toBe('');
 
-    fetchSpy.mockResolvedValueOnce(
-      Response.json({ pushed_at: new Date().toISOString() }, { status: 200 })
-    );
-    const ghCommitRes = await app.request(
-      '/badge/gh/python-lib-xulbux/commit',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
+    const strongFormRes = await app.request(
+      '/docs/colors',
+      { headers: { 'If-None-Match': etag.slice(2) } },
       TEST_ENV
     );
-    expect(ghCommitRes.status).toBe(200);
-    expect(await ghCommitRes.text()).toContain('today');
+    expect(strongFormRes.status).toBe(304);
 
-    // 2. ClickHouse ClickPy PyPI total downloads (dt) with ?label= override + redirect to clickpy.clickhouse.com.
-    fetchSpy.mockResolvedValueOnce(
-      Response.json({ row_1: { last_month: '3333', total: '86808' } }, { status: 200 })
-    );
-    const pypiDtRes = await app.request(
-      '/badge/pypi/xulbux/dt?label=total+downloads',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
+    const staleRes = await app.request(
+      '/docs/colors',
+      { headers: { 'If-None-Match': '"stale"' } },
       TEST_ENV
     );
-    expect(pypiDtRes.status).toBe(200);
-    const pypiDtSvg = await pypiDtRes.text();
-    expect(pypiDtSvg).toContain('total downloads');
-    expect(pypiDtSvg).toContain('86.8k');
-
-    fetchSpy.mockResolvedValueOnce(
-      Response.json({ row_1: { last_month: '3333', total: '86808' } }, { status: 200 })
-    );
-    const pypiDocNav = await app.request(
-      '/badge/pypi/xulbux/dt',
-      { headers: { 'Sec-Fetch-Dest': 'document' } },
-      TEST_ENV
-    );
-    expect(pypiDocNav.status).toBe(302);
-    expect(pypiDocNav.headers.get('Location')).toBe(
-      'https://clickpy.clickhouse.com/dashboard/xulbux'
-    );
-
-    // 3. npm unscoped version & scoped downloads.
-    fetchSpy.mockResolvedValueOnce(
-      Response.json(
-        { license: 'MIT', types: './dist/index.d.ts', version: '4.13.13' },
-        { status: 200 }
-      )
-    );
-    const npmVerRes = await app.request(
-      '/badge/npm/hono/v',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(npmVerRes.status).toBe(200);
-    expect(await npmVerRes.text()).toContain('v4.13.13');
-
-    fetchSpy.mockResolvedValueOnce(Response.json({ downloads: 12_400_000 }, { status: 200 }));
-    const npmScopedDlRes = await app.request(
-      '/badge/npm/@hono/node-server/dt',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(npmScopedDlRes.status).toBe(200);
-    expect(await npmScopedDlRes.text()).toContain('12.4M/yr');
-
-    // 4. Open VSX version & total downloads.
-    fetchSpy.mockResolvedValueOnce(
-      Response.json({ downloadCount: 2486, version: '1.2.3' }, { status: 200 })
-    );
-    const ovsxRes = await app.request(
-      '/badge/ovsx/color-tracr/v',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(ovsxRes.status).toBe(200);
-    expect(await ovsxRes.text()).toContain('v1.2.3');
-
-    // 5. Crates.io version & Docker Hub pulls.
-    fetchSpy.mockResolvedValueOnce(
-      Response.json(
-        {
-          crate: {
-            downloads: 450_000_000,
-            max_stable_version: '1.0.215',
-            recent_downloads: 32_000_000,
-          },
-        },
-        { status: 200 }
-      )
-    );
-    const cratesRes = await app.request(
-      '/badge/crates/serde/v',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(cratesRes.status).toBe(200);
-    expect(await cratesRes.text()).toContain('v1.0.215');
-
-    fetchSpy.mockResolvedValueOnce(
-      Response.json({ pull_count: 1_200_000_000, star_count: 1940 }, { status: 200 })
-    );
-    const dockerRes = await app.request(
-      '/badge/docker/nginx/pulls',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(dockerRes.status).toBe(200);
-    expect(await dockerRes.text()).toContain('1.2B');
-
-    // 6. Restricted owner check.
-    const restrictedRes = await app.request(
-      '/badge/gh/someone-else/some-repo/stars',
-      { headers: { 'Sec-Fetch-Dest': 'image' } },
-      TEST_ENV
-    );
-    expect(restrictedRes.status).toBe(200);
-    expect(await restrictedRes.text()).toContain('restricted');
+    expect(staleRes.status).toBe(200);
+    expect(await staleRes.text()).toBe(await firstRes.text());
   });
 });

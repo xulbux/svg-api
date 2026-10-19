@@ -2,7 +2,7 @@
 
 Dynamic SVG badge, CTA button, service preset, icon, tech stack grid, and quote card engine running on Cloudflare Workers at **[svg.xul.is](https://svg.xul.is)**.
 
-For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`, and public service presets like PyPI, npm, Open VSX, Crates.io, and Docker Hub), see the live interactive documentation on **[svg.xul.is](https://svg.xul.is)**.
+For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) and the token-free public service presets (PyPI, npm, JSR, jsDelivr, Bundlephobia, Open VSX, Firefox Add-ons, crates.io, Go modules, Docker Hub, RubyGems, Packagist, NuGet, Hex.pm, pub.dev, CRAN, CocoaPods, Clojars, Hackage, Elm packages, Puppet Forge, Ansible Galaxy, Homebrew formulae & casks, Flathub, Snapcraft, F-Droid, AUR, Hugging Face models & datasets, Modrinth, WordPress plugins & themes, GitLab, Codeberg, Gitea, OpenSSF Scorecard, Codecov, Coveralls, Read the Docs, Open Collective, Liberapay, Discord, and Bluesky), see the live interactive documentation on **[svg.xul.is](https://svg.xul.is)**.
 
 ## Local Development
 
@@ -13,6 +13,25 @@ pnpm run check
 # Start local Wrangler dev server (http://localhost:8787)
 pnpm run dev
 ```
+
+## Project Structure
+
+| Path | Purpose |
+| :--- | :--- |
+| `src/index.ts` | Hono router: docs pages, SVG routes, document redirects, and Tier-2 SVG edge caching. |
+| `src/routes/` | Path segment & query DSL parsing (`params.ts`) and the SVG route dispatcher (`svg.ts`) shared by the Worker and the docs previews. |
+| `src/svg/` | SSOT renderers (badges, buttons, icons, stacks, quotes), text outlines, icon resolution, and shared primitives (incl. the count- and size-bounded LRU caches). |
+| `src/services/` | Upstream fetcher (validation, coalescing, size-budgeted memory cache + edge caching), metric helpers, and one preset module per service in `presets/`. |
+| `src/config/` | Theme palettes, the service registry (`services.ts`), and status presets. |
+| `src/preview/` | Homepage and `/docs/*` pages; Every preview is rendered from its documented path. |
+
+### Adding a Service Preset
+
+1.  Create `src/services/presets/<service>.ts` exporting a `ServiceDefinition` (endpoints, metric presentations, transforms built with the factories in `src/services/metrics.ts`, `ownerMode`, and `docs` metadata).
+2.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, and the `/docs/services` reference table pick it up automatically.
+3.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`.
+
+Owner and target segments may contain word characters, `.`, `-`, `@`, and `+` (dot-only segments are rejected). A literal `+` in a badge path decodes to a space, so names like `gtk+3` must be written as `gtk%2B3`. Always `encodeURIComponent()` targets that end up in an upstream query string. Targets spanning several path segments (e.g., Go module paths like `/badge/go/github.com/spf13/cobra/v`) set `maxTargetSegments` on the `ServiceDefinition`; Every segment is validated individually.
 
 ## Environment & Secrets
 
@@ -35,7 +54,9 @@ ALLOW_PREVIEW_IN_PROD=true
 
 ## Restricted GitHub Service Badges (`/badge/gh/*`)
 
-GitHub repository presets are intentionally omitted from the public documentation website because they are locked to `DEFAULT_GH_OWNER` (`xulbux`) to protect the Worker's `GITHUB_TOKEN` rate limit. Requests for any other owner return a `restricted` badge.
+GitHub repository presets are intentionally omitted from the public documentation website because they are locked to `DEFAULT_GH_OWNER` (`xulbux`) to protect the Worker's `GITHUB_TOKEN` rate limit. Requests for any other owner return a `restricted` badge, and an exhausted rate limit (`429`, or GitHub's `403` with `x-ratelimit-remaining: 0`) renders a `rate limited` badge.
+
+There is no free, token-free source for arbitrary public repositories: Unauthenticated `api.github.com` allows only `60 req/hr` per IP (shared by all Workers on the same egress IP), and proxies like [ungh.cc](https://ungh.cc) or shields.io's JSON endpoints run on their own pooled tokens (shields.io pools OAuth tokens donated by its users instead of paying GitHub). Opening the preset to every owner would therefore need a token pool of its own.
 
 ### Route Formats
 
@@ -44,19 +65,19 @@ https://svg.xul.is/badge/gh/:repo/:metric
 https://svg.xul.is/badge/gh/xulbux/:repo/:metric
 ```
 
-When `:owner` is omitted, it defaults to `xulbux`. Clicking any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) automatically redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, `commits`, `releases`, or `pulse`).
+When `:owner` is omitted, it defaults to `xulbux`. Opening any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, `blob/HEAD/LICENSE`, `commits`, `releases`, or `graphs/commit-activity`) without fetching any metrics.
 
 ### Available `:metric` Presets
 
 | Metric | Route Example | Default Label | Default Color & Icon | Default Redirect Target |
 | :--- | :--- | :--- | :--- | :--- |
 | **`stars`** | `/badge/gh/python-lib-xulbux/stars` | `stars` | `amber` (`star`) | `github.com/xulbux/:repo/stargazers` |
-| **`forks`** | `/badge/gh/python-lib-xulbux/forks` | `forks` | `blue` (`git-fork`) | `github.com/xulbux/:repo/network/members` |
-| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `issues` | `emerald` (`0`) or `amber` (`>0`) (`circle-dot`) | `github.com/xulbux/:repo/issues` |
-| **`license`** | `/badge/gh/python-lib-xulbux/license` | `license` | `teal` (`scale`) | `github.com/xulbux/:repo` |
-| **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `last commit` | `indigo` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
-| **`release`** | `/badge/gh/python-lib-xulbux/release` | `release` | `violet` (`tag`, `variant=1`) | `github.com/xulbux/:repo/releases` |
-| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`) | `github.com/xulbux/:repo/pulse` |
+| **`forks`** | `/badge/gh/python-lib-xulbux/forks` | `forks` | `sky` (`git-fork`) | `github.com/xulbux/:repo/network/members` |
+| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `issues` | `rose` (`circle-dot`) | `github.com/xulbux/:repo/issues` |
+| **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `license` | `slate` (`scale`) | `github.com/xulbux/:repo/blob/HEAD/LICENSE` |
+| **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `last commit` | `rose` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
+| **`release`** | `/badge/gh/python-lib-xulbux/release` | `release` | `indigo` (`tag`) | `github.com/xulbux/:repo/releases` |
+| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |
 
 ### Markdown Examples
 
@@ -72,10 +93,10 @@ When `:owner` is omitted, it defaults to `xulbux`. Clicking any `/badge/gh/*` ba
 
 All `/badge/gh/*` routes accept the standard badge query parameters plus `?label=`:
 
--   `?variant=1|2|3` (defaults to `1` for `release`, `2` for all other GitHub metrics)
--   `?color=<theme>` (any of the 22 Tailwind v4 OKLCH theme colors)
+-   `?variant=1|2|3` (defaults to `1` for all GitHub metrics)
+-   `?color=<theme>` (any Tailwind v4 OKLCH theme color listed on [/docs/colors](https://svg.xul.is/docs/colors))
 -   `?icon=<slug>|<left>,<right>|none,<right>|none` (override the default left icon, add both left and right icons, or show only a right icon)
 -   `?label=<text>` (override the left-hand label text on service badges)
--   `?dot=green|amber|red|blue|sky|indigo|violet|purple|emerald|teal|cyan|slate`
+-   `?dot=<theme>|online|degraded|incident|offline|maintenance|beta|standby|none` (any theme color or status preset name)
 -   `?anim=sheen|auto|spin|shake|nudge|pulse|float|<left>,<right>|sheen,<mode>|sheen,<left>,<right>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `<left>,<right>` like `none,nudge` or `shake,nudge` to animate left and right icons independently, `sheen,auto` for both, or `none` to disable all animations)
 -   `?special=sparkline:...|bar:...|ring:...|strip:...|delta:...`

@@ -5,8 +5,73 @@
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
-import { renderBadge, renderButton, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
-import type { BadgeVariant } from '@/types';
+import { renderSvgPath } from '@/routes/svg';
+import { resolveIcon } from '@/svg/icons';
+import { renderQuote } from '@/svg/quote';
+import {
+  ICON_SIZE_RANGE,
+  ICON_STROKE_RANGE,
+  MAX_LABEL_LENGTH,
+  renderBadge,
+  renderButton,
+  renderIcon,
+} from '@/svg/renderer';
+import { escapeXml, prepareDisplayText } from '@/svg/shared';
+import { STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
+import type { BadgeSpecialElement, BadgeVariant } from '@/types';
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches the `aria-label` attribute of a rendered SVG. */
+const ARIA_LABEL_RX = /aria-label="(?<label>[^"]*)"/;
+
+/** Matches a lone (unpaired) UTF-16 surrogate code unit. */
+const LONE_SURROGATE_RX = /\p{Cs}/u;
+
+/** Matches the translucent 3D top crescent `<path>` of a secondary (`0.45`) or tertiary (`0.045`) surface. */
+const DARK_SURFACE_CRESCENT_RX =
+  /<path d="(?<path>M [^"]+)" fill="[^"]+" fill-opacity="(?:0\.45|0\.045)"/;
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Extract the `aria-label` attribute of a rendered SVG. */
+function extractAriaLabel(svg: string): string {
+  return ARIA_LABEL_RX.exec(svg)?.groups?.label ?? '';
+}
+
+/** Extract the `d` attribute of the 3D top crescent of a secondary or tertiary surface. */
+function readTopCrescentPath(svg: string): string {
+  return DARK_SURFACE_CRESCENT_RX.exec(svg)?.groups?.path ?? '';
+}
+
+/** Render a secondary cyan badge with a `delta:` special element. */
+function renderDeltaBadge(value: string): string {
+  return renderBadge({
+    color: 'cyan',
+    label: 'delta',
+    special: { type: 'delta', value },
+    variant: '2',
+  });
+}
+
+/** Render a default horizontal quote card with a short text and the given author. */
+function renderAuthorQuote(author: string): string {
+  return renderQuote({ author, color: 'indigo', text: 'Short quote.' });
+}
+
+/** Compute the rightmost ink X coordinate of all translated text `<path>` outlines in an SVG. */
+function measureMaxTextInkX(svg: string): number {
+  let maxInkX = 0;
+  for (const match of svg.matchAll(
+    /<path transform="translate\((?<x>[\d.-]+) [\d.-]+\)" d="(?<d>[^"]+)"/g
+  )) {
+    const coordinates = (match.groups?.d ?? '').replaceAll(/[A-Z]/g, ' ').trim().split(/\s+/);
+    for (let i = 0; i < coordinates.length; i += 2) {
+      maxInkX = Math.max(maxInkX, Number(match.groups?.x) + Number(coordinates[i]));
+    }
+  }
+  return maxInkX;
+}
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -319,7 +384,7 @@ describe('renderBadge & renderButton', () => {
     expect(rightOnlyButton).toContain('Continue');
   });
 
-  it('applies tapering Kumo upper-edge crescent on all 3 button variants (1, 2, 3) and colored variant=1 badge capsules, and uses muted carbon-gray text on variant=3', () => {
+  it('applies tapering Kumo upper-edge crescent on all 3 button and badge variants (1, 2, 3), and uses muted carbon-gray text on variant=3', () => {
     const primaryButton = renderButton({
       color: 'blue',
       icon: 'sparkles',
@@ -366,7 +431,8 @@ describe('renderBadge & renderButton', () => {
       value: 'hyprland',
       variant: '2',
     });
-    expect(secondaryBadge).not.toContain('A 5 4 0 0 0');
+    expect(secondaryBadge).toContain('A 5 4 0 0 0');
+    expect(secondaryBadge).toContain(`fill="${THEMES.cyan.borderColor}" fill-opacity="0.45"`);
 
     const tertiaryBadge = renderBadge({
       color: 'indigo',
@@ -381,7 +447,8 @@ describe('renderBadge & renderButton', () => {
       variant: '3',
     });
     expect(tertiaryBadge).toContain(`fill="${BASE_DARK.textMuted}" />`);
-    expect(tertiaryBadge).not.toContain('A 5 4 0 0 0');
+    expect(tertiaryBadge).toContain('A 5 4 0 0 0');
+    expect(tertiaryBadge).toContain('fill="#ffffff" fill-opacity="0.045"');
     expect(tertiaryButton).toContain(`fill="${BASE_DARK.textMuted}" />`);
     expect(tertiaryButton).not.toContain('<style>');
     expect(tertiaryButton).toContain('A 8 7 0 0 0');
@@ -409,11 +476,12 @@ describe('renderIcon', () => {
     expect(simpleSvg).not.toContain('stroke-width=');
 
     const sheenLucideSvg = renderIcon({ anim: 'sheen', color: 'amber', icon: 'zap', size: 28 });
-    expect(sheenLucideSvg).toContain('linearGradient id="icon-sheen-zap-amber-28"');
+    expect(sheenLucideSvg).toContain('linearGradient id="icon-sheen"');
     expect(sheenLucideSvg).toContain('values="-58;58;58"');
     expect(sheenLucideSvg).toContain('values="-32;84;84"');
     expect(sheenLucideSvg).toContain('stop-opacity="0.45"');
-    expect(sheenLucideSvg).toContain('stroke="url(#icon-sheen-zap-amber-28)"');
+    expect(sheenLucideSvg).toContain('stroke="url(#icon-sheen)"');
+    expect(sheenLucideSvg).not.toContain('gradientTransform');
     expect(sheenLucideSvg).not.toContain('<animateTransform');
 
     const sheenSimpleSvg = renderIcon({
@@ -422,8 +490,8 @@ describe('renderIcon', () => {
       icon: 'cloudflare',
       size: 24,
     });
-    expect(sheenSimpleSvg).toContain('linearGradient id="icon-sheen-cloudflare-orange-24"');
-    expect(sheenSimpleSvg).toContain('fill="url(#icon-sheen-cloudflare-orange-24)"');
+    expect(sheenSimpleSvg).toContain('linearGradient id="icon-sheen"');
+    expect(sheenSimpleSvg).toContain('fill="url(#icon-sheen)"');
 
     const staticHeartSvg = renderIcon({ color: 'rose', icon: 'heart-handshake' });
     expect(staticHeartSvg).not.toContain('<animateTransform');
@@ -510,7 +578,7 @@ describe('renderQuote', () => {
       width: 340,
     });
     expect(verticalQuoteSvgV1).toContain('width="340"');
-    expect(verticalQuoteSvgV1).toContain('fill="url(#quote-grad-blue)"');
+    expect(verticalQuoteSvgV1).toContain('fill="url(#grad-blue)"');
     expect(verticalQuoteSvgV1).toContain('fill="#ffffff"');
     expect(verticalQuoteSvgV1).toContain('rotate(180 12 12)');
     expect(verticalQuoteSvgV1).toContain('fill="rgba(255, 255, 255, 0.82)" />');
@@ -575,9 +643,357 @@ describe('renderDocsHtml & renderHomeHtml', () => {
     expect(servicesHtml).toContain(
       '<span class="card-title-text">Crates.io &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docker/*</code>'
     );
-    expect(iconsHtml).toContain('svg.xul.is/icon/:icon');
-    expect(stackHtml).toContain('svg.xul.is/stack/:groups');
-    expect(quotesHtml).toContain('svg.xul.is/quote/:author/:text');
+    expect(iconsHtml).toContain('<span class="route-path">/icon/:icon</span>');
+    expect(stackHtml).toContain('<span class="route-path">/stack/:groups</span>');
+    expect(quotesHtml).toContain('<span class="route-path">/quote/:author/:text</span>');
     expect(colorsHtml).toContain('22 Tailwind v4 OKLCH Theme Colors');
+  });
+});
+
+describe('rendering regressions', () => {
+  it('marks truncated quotes with an ellipsis and shortens over-long words (regression: silent cut-off and overflow)', () => {
+    const longText = Array.from({ length: 200 }, (_, index) => `word${index}`).join(' ');
+    const truncatedSvg = renderQuote({ color: 'indigo', text: longText, width: 240 });
+    const ariaLabel = extractAriaLabel(truncatedSvg);
+    expect(ariaLabel.endsWith('…')).toBe(true);
+    expect(ariaLabel).not.toContain('word199');
+
+    const longWordSvg = renderQuote({
+      color: 'indigo',
+      text: `${'a'.repeat(400)} end`,
+      width: 240,
+    });
+    const longWordLabel = extractAriaLabel(longWordSvg);
+    expect(longWordLabel).toContain('…');
+    expect(longWordLabel.length).toBeLessThan(200);
+  });
+
+  it('keeps horizontal quote lines including their quote marks inside the text column (regression: marks overflowed into the watermark)', () => {
+    const width = 260;
+    const svg = renderQuote({
+      color: 'indigo',
+      text: `Supercalifragilisticexpialidocious${'a'.repeat(60)} end of the quote text here`,
+      width,
+    });
+    // Text column: starts at x = 34 and is `width - (padX + 42)` wide (`padX = 36` at the `md` size).
+    const textColumnRight = 34 + (width - (36 + 42));
+    const maxInkX = measureMaxTextInkX(svg);
+    expect(maxInkX).toBeGreaterThan(100);
+    expect(maxInkX).toBeLessThanOrEqual(textColumnRight + 0.5);
+  });
+
+  it('truncates overlong quote author lines to the text column (regression: author overflowed the card)', () => {
+    const width = 260;
+    const author = 'An Extraordinarily Long Author Name That Never Fits Into The Card';
+    const horizontalSvg = renderQuote({ author, color: 'indigo', text: 'Short quote.', width });
+    expect(extractAriaLabel(horizontalSvg).endsWith('…')).toBe(true);
+    expect(measureMaxTextInkX(horizontalSvg)).toBeLessThanOrEqual(34 + (width - (36 + 42)) + 0.5);
+
+    const verticalSvg = renderQuote({
+      author,
+      color: 'indigo',
+      layout: 'vertical',
+      text: 'Short quote.',
+      width,
+    });
+    expect(extractAriaLabel(verticalSvg).endsWith('…')).toBe(true);
+    expect(measureMaxTextInkX(verticalSvg)).toBeLessThanOrEqual(width - 36);
+  });
+
+  it('caps quote text at 1000 characters with an ellipsis (regression: unbounded text length)', () => {
+    const svg = renderQuote({ color: 'indigo', text: 'x'.repeat(5000), width: 900 });
+    expect(extractAriaLabel(svg).length).toBeLessThan(1000);
+    expect(extractAriaLabel(svg).endsWith('…')).toBe(true);
+  });
+
+  it('clamps derived defaults into their documented ranges (regression: fallbacks skipped clamping)', () => {
+    // `gap = 24` derives `groupGap = 78`, which must clamp to the `64px` maximum.
+    expect(renderStack({ gap: 24, icons: ['rust|go'] })).toContain('width="148"');
+    // `gap = 2` derives `groupGap = 7`, which must clamp to the `8px` minimum.
+    expect(renderStack({ gap: 2, icons: ['rust|go'] })).toContain('width="92"');
+    // `size = 28` derives a `1045px` default width, which must clamp to the `900px` maximum.
+    expect(renderQuote({ color: 'indigo', size: 28, text: 'Clamped.' })).toContain('width="900"');
+  });
+
+  it('draws flat sparklines through the vertical center instead of the bottom edge', () => {
+    const flatSvg = renderBadge({
+      color: 'indigo',
+      label: 'flat',
+      special: { type: 'sparkline', values: [5, 5, 5] },
+      value: '5',
+      variant: '2',
+    });
+    const linePoints = /<polyline points="(?<points>[^"]+)"/.exec(flatSvg)?.groups?.points ?? '';
+    for (const point of linePoints.split(' ')) {
+      expect(point.endsWith(',11.0')).toBe(true);
+    }
+  });
+
+  it('applies the first motion of a per-icon pair to standalone icons (regression: pairs were ignored)', () => {
+    const pairSvg = renderIcon({ anim: 'nudge,shake', color: 'indigo', icon: 'rocket' });
+    expect(pairSvg).toContain('type="translate" values="0 0;0 0;1.8 -1.8;0 0;0 0"');
+  });
+
+  it('never interpolates the icon slug into the sheen gradient ID (regression: SVG injection via /icon/:icon?anim=sheen)', () => {
+    const maliciousSlug = 'x"><script>alert(1)</script><g id="';
+    const svg = renderIcon({ anim: 'sheen', color: 'indigo', icon: maliciousSlug });
+    expect(svg).not.toContain('<script');
+    expect(svg).toContain('<linearGradient id="icon-sheen"');
+    expect(svg).toContain('url(#icon-sheen)');
+    expect(svg).toContain(`aria-label="${escapeXml(maliciousSlug.toLowerCase())}"`);
+  });
+
+  it('compensates the Devicon coordinate scale in the standalone sheen gradient (regression: band was 5x too narrow)', () => {
+    const deviconSvg = renderIcon({ anim: 'sheen', color: 'blue', icon: 'typescript' });
+    expect(deviconSvg).toContain('<linearGradient id="icon-sheen-s5333"');
+    expect(deviconSvg).toContain('gradientTransform="scale(5.3333)"');
+    expect(deviconSvg).toContain('fill="url(#icon-sheen-s5333)"');
+  });
+
+  it('gives differently laid out stacks with equal size different sheen clip IDs (regression: duplicate IDs with different content)', () => {
+    const clipIdRx = /clipPath id="(?<id>[^"]+)"/;
+    const leftHeavySvg = renderStack({ anim: 'sheen', icons: ['rust,go,ts|py'] });
+    const rightHeavySvg = renderStack({ anim: 'sheen', icons: ['rust|go,ts,py'] });
+    expect(leftHeavySvg).toContain('width="210" height="42"');
+    expect(rightHeavySvg).toContain('width="210" height="42"');
+    const leftHeavyId = clipIdRx.exec(leftHeavySvg)?.groups?.id;
+    expect(leftHeavyId).toMatch(/^stack-sheen-clip-210-42-/);
+    expect(leftHeavyId).not.toBe(clipIdRx.exec(rightHeavySvg)?.groups?.id);
+    expect(renderStack({ anim: 'sheen', icons: ['rust,go,ts|py'] })).toContain(
+      `id="${leftHeavyId}"`
+    );
+  });
+
+  it('strips XML-illegal control characters from aria-labels and titles (regression: ill-formed SVG)', () => {
+    const badgeSvg = renderBadge({
+      color: 'indigo',
+      label: 'a\u0001b',
+      value: 'c\u001Fd',
+      variant: '2',
+    });
+    expect(extractAriaLabel(badgeSvg)).toBe('a b: c d');
+    expect(badgeSvg.includes('\u0001') || badgeSvg.includes('\u001F')).toBe(false);
+    expect(escapeXml('tab\there\nnew\u0000line\uFFFF')).toBe('tab\there\nnewline');
+    expect(escapeXml('lone \uD800 surrogate 😀')).toBe('lone  surrogate 😀');
+  });
+
+  it('renders control and invisible format characters as spaces (regression: Geist drew them as .notdef boxes)', () => {
+    const spacedBadge = renderBadge({ color: 'indigo', label: 'a b', value: 'c d', variant: '2' });
+    for (const separator of ['\n', '\t', '\u200B', '\u0000\u00AD']) {
+      const badgeSvg = renderBadge({
+        color: 'indigo',
+        label: `a${separator}b`,
+        value: `c${separator}d`,
+        variant: '2',
+      });
+      expect(badgeSvg, JSON.stringify(separator)).toBe(spacedBadge);
+    }
+    expect(prepareDisplayText('x\r\n\u2060y', 10)).toBe('x y');
+  });
+
+  it('caps badge and button labels, values, and delta readouts at 128 characters without splitting surrogate pairs (regression: unbounded text length)', () => {
+    const longBadge = renderBadge({
+      color: 'indigo',
+      label: 'a'.repeat(5000),
+      special: { type: 'delta', value: `+${'9'.repeat(5000)}%` },
+      value: 'b'.repeat(5000),
+      variant: '2',
+    });
+    const [labelPart, valuePart] = extractAriaLabel(longBadge).split(': ');
+    expect(labelPart).toHaveLength(MAX_LABEL_LENGTH);
+    expect(labelPart.endsWith('…')).toBe(true);
+    expect(valuePart).toHaveLength(MAX_LABEL_LENGTH);
+    expect(Number(/width="(?<width>\d+)"/.exec(longBadge)?.groups?.width)).toBeLessThan(3000);
+
+    const emojiButton = renderButton({
+      color: 'indigo',
+      label: `${'a'.repeat(MAX_LABEL_LENGTH - 2)}😀${'b'.repeat(10)}`,
+      variant: '1',
+    });
+    expect(LONE_SURROGATE_RX.test(extractAriaLabel(emojiButton))).toBe(false);
+    expect(extractAriaLabel(emojiButton)).toBe(`${'a'.repeat(MAX_LABEL_LENGTH - 2)}…`);
+  });
+
+  it('draws only the track for a 0% ring (regression: a round line cap drew a dot)', () => {
+    const emptyRingSvg = renderBadge({
+      color: 'sky',
+      label: 'quota',
+      special: { type: 'ring', value: 0 },
+      value: '0%',
+      variant: '2',
+    });
+    expect(emptyRingSvg).toContain('r="4.5"');
+    expect(emptyRingSvg).not.toContain('stroke-dasharray');
+  });
+
+  it('treats every zero-valued delta as flat (regression: "-0%" showed a red arrow, "0.0%" a green one)', () => {
+    for (const value of ['0', '0%', '+0%', '-0%', '0.0%', '+0', '0.00']) {
+      const svg = renderBadge({
+        color: 'cyan',
+        label: 'delta',
+        special: { type: 'delta', value },
+        variant: '2',
+      });
+      expect(svg, value).toContain(`stroke="${BASE_DARK.textMuted}"`);
+    }
+    const negativeSvg = renderBadge({
+      color: 'cyan',
+      label: 'delta',
+      special: { type: 'delta', value: '-3%' },
+      variant: '2',
+    });
+    expect(negativeSvg).toContain(`stroke="${THEMES.rose.accentText}"`);
+  });
+
+  it('reserves no width for an empty strip (regression: 3px phantom compartment)', () => {
+    const plainSvg = renderBadge({ color: 'indigo', label: 'uptime', variant: '2' });
+    const emptyStripSvg = renderBadge({
+      color: 'indigo',
+      label: 'uptime',
+      special: { states: [], type: 'strip' },
+      variant: '2',
+    });
+    expect(emptyStripSvg).toBe(plainSvg);
+  });
+
+  it('names icon-only badges after the first visible icon (regression: aria-label="none" for icon=none,<slug>)', () => {
+    expect(
+      extractAriaLabel(
+        renderBadge({ color: 'indigo', icon: 'none,github', label: '', variant: '1' })
+      )
+    ).toBe('github');
+  });
+
+  it('centers stack tile icons by their visible ink bounds instead of the 24x24 box', () => {
+    const svg = renderStack({ icons: ['rust'], size: 56 });
+    const transform = /translate\((?<x>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)/.exec(
+      svg
+    )?.groups;
+    const iconData = resolveIcon('rust', true);
+    expect(transform).toBeDefined();
+    expect(iconData).toBeDefined();
+    const visualCenterX =
+      Number(transform?.x) +
+      (((iconData?.minX ?? 0) + (iconData?.maxX ?? 0)) / 2) * Number(transform?.scale);
+    expect(visualCenterX).toBeCloseTo(28, 1);
+  });
+
+  it('never emits NaN for extreme or non-finite widget values (regression: 1e308 sparklines and Infinity gauges)', () => {
+    const svgs = [
+      renderBadge({
+        color: 'sky',
+        label: 'spark',
+        special: { type: 'sparkline', values: [1e308, -1e308, 5] },
+        variant: '2',
+      }),
+      renderBadge({
+        color: 'sky',
+        label: 'spark',
+        special: { type: 'sparkline', values: [Number.NaN, 3, Number.POSITIVE_INFINITY, 4] },
+        variant: '1',
+      }),
+      renderBadge({
+        color: 'sky',
+        label: 'bar',
+        special: { type: 'bar', value: Number.POSITIVE_INFINITY },
+        variant: '2',
+      }),
+      renderBadge({
+        color: 'sky',
+        label: 'ring',
+        special: { type: 'ring', value: Number.NaN },
+        variant: '2',
+      }),
+    ];
+    for (const svg of svgs) {
+      expect(svg).not.toContain('NaN');
+      expect(svg).not.toContain('Infinity');
+    }
+    expect(svgs[2]).toContain('width="32" height="6"');
+  });
+
+  it('treats ?anim=none,none like none (regression: dots, strips, and bars kept animating)', () => {
+    const specials: BadgeSpecialElement[] = [
+      { states: ['9', '8'], type: 'strip' },
+      { type: 'bar', value: 50 },
+    ];
+    for (const special of specials) {
+      const staticSvg = renderBadge({
+        anim: 'none,none',
+        color: 'emerald',
+        dot: 'green',
+        label: 'status',
+        special,
+        variant: '2',
+      });
+      expect(staticSvg, special.type).not.toContain('<animate');
+    }
+  });
+
+  it('renders non-numeric deltas flat and classifies suffixed or Unicode-minus deltas by sign (regression: "n/a" showed a green up arrow)', () => {
+    expect(renderDeltaBadge('n/a')).toContain(`stroke="${BASE_DARK.textMuted}"`);
+    expect(renderDeltaBadge('+12 stars')).toContain(`stroke="${THEMES.emerald.accentText}"`);
+    expect(renderDeltaBadge('\u22125%')).toContain(`stroke="${THEMES.rose.accentText}"`);
+    expect(renderDeltaBadge('  +5%  ')).toBe(renderDeltaBadge('+5%'));
+  });
+
+  it('references the standalone icon body once for the sheen pass (regression: body inlined twice, duplicating IDs)', () => {
+    const iconData = resolveIcon('rocket');
+    const svg = renderIcon({ anim: 'sheen', color: 'violet', icon: 'rocket' });
+    expect(iconData).toBeDefined();
+    expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
+    expect(svg).toContain('<use href="#icon-body" stroke="url(#icon-sheen)" />');
+  });
+
+  it('emits each stack icon body once and references it per tile (regression: 128 large brand tiles produced a ~6.9 MB SVG)', () => {
+    const iconData = resolveIcon('elsevier', true);
+    const svg = renderStack({ icons: Array.from({ length: 128 }, () => 'elsevier') });
+    expect(iconData).toBeDefined();
+    expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
+    expect(svg.split('<use href="#stack-icon-0" />').length - 1).toBe(128);
+    expect(svg.length).toBeLessThan(200_000);
+  });
+
+  it('draws the 3D top crescent of split secondary badges on the right capsule only, like split primary badges', () => {
+    const splitSecondary = readTopCrescentPath(
+      renderBadge({ color: 'cyan', label: 'arch', value: 'hyprland', variant: '2' })
+    );
+    const splitTertiary = readTopCrescentPath(
+      renderBadge({ color: 'cyan', label: 'arch', value: 'hyprland', variant: '3' })
+    );
+    const singleSecondary = readTopCrescentPath(
+      renderBadge({ color: 'cyan', label: 'arch', variant: '2' })
+    );
+
+    // Square-left crescent (`M <x> 1 H …`) starting just right of the divider.
+    expect(splitSecondary).toMatch(/^M [\d.]+ 1 H/);
+    expect(Number.parseFloat(splitSecondary.slice(2))).toBeGreaterThan(20);
+    // Rounded-left crescents spanning the whole badge (`M 1 <cornerY> A …`).
+    expect(splitTertiary).toMatch(/^M 1 [\d.]+ A/);
+    expect(singleSecondary).toMatch(/^M 1 [\d.]+ A/);
+  });
+
+  it('caps the quote author before ink-measuring it (regression: 1000-character authors cost ~26 ms of CPU)', () => {
+    expect(renderAuthorQuote('W'.repeat(1000))).toBe(renderAuthorQuote('W'.repeat(400)));
+    expect(extractAriaLabel(renderAuthorQuote('Ada'))).toBe('Short quote. — Ada');
+  });
+});
+
+describe('documentation drift guards', () => {
+  it('throws for documented paths that match no SVG route instead of rendering a broken snippet', () => {
+    expect(() => renderSvgPath('/nope/example')).toThrow('No SVG route matches');
+    expect(renderSvgPath('/badge//100%25?icon=zap')).toContain('aria-label="100%"');
+  });
+
+  it('documents the exact numeric ranges enforced by the renderers', () => {
+    const iconsHtml = renderDocsHtml('icons');
+    expect(iconsHtml).toContain(
+      `${ICON_SIZE_RANGE.min}<span class="param-sep"> to </span>${ICON_SIZE_RANGE.max}`
+    );
+    expect(iconsHtml).toContain(`${ICON_STROKE_RANGE.default}</code>`);
+    const stackHtml = renderDocsHtml('stack');
+    expect(stackHtml).toContain(
+      `${STACK_GROUP_GAP_RANGE.min}<span class="param-sep"> to </span>${STACK_GROUP_GAP_RANGE.max}`
+    );
   });
 });

@@ -1,8 +1,15 @@
 /**
- * Preview and documentation pages: Renders the `svg.xul.is` homepage (`/`) and dedicated element documentation pages (`/docs/:section`).
+ * Documentation pages – Renders the `svg.xul.is` homepage (`/`) and dedicated element documentation pages (`/docs/:section`).
+ *
+ * Both are deterministic, so each page is rendered once per Worker isolate and then served from memory.
  */
 
+import { SERVICES_CONFIG } from '@/config/services';
+import { SITE_ORIGIN } from '@/config/site';
+import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
+  formatCountLowerBound,
+  getIconSetCounts,
   renderBadgesSectionHtml,
   renderButtonsSectionHtml,
   renderColorsSectionHtml,
@@ -11,26 +18,17 @@ import {
   renderServicesSectionHtml,
   renderStackSectionHtml,
 } from '@/preview/catalog';
-import type { ShowcaseCardConfig } from '@/preview/layout';
 import {
+  DOCS_SECTIONS,
+  renderCardsHtml,
   renderPageLayout,
-  renderRoutePills,
-  renderShowcaseCard,
+  renderSectionHeader,
   renderUiIcon,
 } from '@/preview/layout';
-import { renderBadge, renderButton, renderIcon, renderQuote, renderStack } from '@/svg/renderer';
+import { escapeXml } from '@/svg/shared';
+import type { DocsSectionMeta, DocsSectionSlug, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Supported documentation section slugs on `/docs/:section`. */
-export type DocsSectionSlug =
-  | 'badges'
-  | 'buttons'
-  | 'colors'
-  | 'icons'
-  | 'quotes'
-  | 'services'
-  | 'stack';
 
 /** Feature highlight card displayed on the `/` homepage. */
 interface FeatureCardItem {
@@ -42,239 +40,218 @@ interface FeatureCardItem {
   title: string;
 }
 
+/** Target of a previous/next pager link. */
+interface PagerLink {
+  /** Link target path. */
+  href: string;
+  /** Visible link label. */
+  label: string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Feature highlight cards displayed below the homepage hero. */
-const HOME_FEATURES: readonly FeatureCardItem[] = [
+/** Section rendered for `/docs` and for unknown `/docs/:section` slugs. */
+export const DEFAULT_DOCS_SECTION: DocsSectionSlug = 'badges';
+
+/** Section HTML renderers keyed by documentation section slug. */
+const SECTION_RENDERERS: Readonly<Record<DocsSectionSlug, () => string>> = {
+  badges: renderBadgesSectionHtml,
+  buttons: renderButtonsSectionHtml,
+  colors: renderColorsSectionHtml,
+  icons: renderIconsSectionHtml,
+  quotes: renderQuotesSectionHtml,
+  services: renderServicesSectionHtml,
+  stack: renderStackSectionHtml,
+};
+
+/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`). */
+const ENDPOINT_ROUTES: readonly string[] = [
+  '/badge/*',
+  '/button/*',
+  '/icon/*',
+  '/stack/*',
+  '/quote/*',
+];
+
+/** English number words for small headline counts (index = count). */
+const COUNT_WORDS: readonly string[] = [
+  'Zero',
+  'One',
+  'Two',
+  'Three',
+  'Four',
+  'Five',
+  'Six',
+  'Seven',
+  'Eight',
+  'Nine',
+  'Ten',
+];
+
+/** Pager target used before the first and after the last documentation section. */
+const HOME_PAGER_LINK: PagerLink = { href: '/', label: 'Home' };
+
+/** Quickstart overview cards displayed on the `/` homepage. */
+const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
-    details:
-      'Deterministic SVG rendering on Cloudflare Workers with dual-layer edge and KV caching.',
-    icon: 'zap',
-    title: 'Zero Cold Starts',
+    items: [
+      { alt: 'Build Passing', path: '/badge/build/passing?icon=circle-check' },
+      { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
+      {
+        alt: 'Coverage',
+        path: '/badge/coverage/99.4%25?icon=shield-check&color=emerald&variant=2&special=bar:99.4',
+      },
+      {
+        alt: 'Edge Latency',
+        path: '/badge/latency/11ms?icon=zap&color=cyan&dot=green&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
+      },
+      {
+        alt: 'Explore Docs',
+        href: `${SITE_ORIGIN}/docs/buttons`,
+        path: '/button/Explore+Docs?icon=rocket,arrow-right&anim=sheen',
+      },
+    ],
+    subtitle: 'Static 22px badges, live package metrics, inline data widgets, and 3D CTA buttons.',
+    title: 'Badges & CTA Buttons (/badge/*, /button/*)',
   },
   {
-    details:
-      'All badges, buttons, icons, stacks, and quotes share 22 Tailwind v4 OKLCH color tokens.',
-    icon: 'palette',
-    title: 'Unified OKLCH Palette',
+    items: [
+      { alt: 'Info', path: '/icon/circle-info?size=32' },
+      { alt: 'Terminal', path: '/icon/square-terminal?size=32&color=sky' },
+      { alt: 'Quick Start', path: '/icon/zap?size=32&color=amber' },
+      { alt: 'Arch Linux', path: '/icon/archlinux?size=32&color=cyan' },
+      { alt: 'Rust', path: '/icon/rust?size=32&color=orange' },
+      { alt: 'Cloudflare', path: '/icon/cloudflare?size=32&color=orange' },
+    ],
+    subtitle:
+      'Lucide stroke icons and Simple Icons / Devicon brand logos with intrinsic pixel sizing.',
+    title: 'Standalone Icons (/icon/:icon)',
   },
   {
-    details: 'Combine 1,500+ Lucide stroke icons with 3,300+ Simple Icons and Devicon brand logos.',
-    icon: 'layers',
-    title: '4,800+ Vector Icons',
+    isCentered: true,
+    items: [
+      { alt: 'Tech Stack', path: '/stack/c,cpp,cs,rust,py,ts:6|docker,cloudflare,linux,git:4' },
+    ],
+    subtitle:
+      'Multi-group icon grids with per-group columns (:N), side-by-side groups (|), and row bands (;).',
+    title: 'Grouped Tech Stacks (/stack/:groups)',
   },
   {
-    details:
-      'Auto-fetches PyPI, npm, Open VSX, crates.io, and Docker Hub metrics with smart 302 redirects.',
-    icon: 'cpu',
-    title: 'Live Service Presets',
+    isCentered: true,
+    items: [
+      {
+        alt: "XulbuX's Quote",
+        path: '/quote/XulbuX/Who+says+programmers+are+boring%3F+I+bring+the+humor+to+the+office+while+my+code+brings+the+chaos!?layout=vertical',
+      },
+    ],
+    subtitle:
+      'Vertical and horizontal pull-quote cards with automatic word-wrapping and watermarks.',
+    title: 'Quote Cards (/quote/:author/:text)',
   },
 ];
 
+/** Memoized documentation section pages keyed by slug. */
+const DOCS_HTML_CACHE = new Map<DocsSectionSlug, string>();
+
+/** Memoized homepage HTML (`undefined` until first rendered). */
+let homeHtmlCache: string | undefined = undefined;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Render the 4 feature highlight cards on the `/` homepage. */
+/** Format a small count as a capitalized English word (`5` -> `'Five'`), falling back to digits. */
+function formatCountWord(count: number): string {
+  return COUNT_WORDS[count] ?? String(count);
+}
+
+/** Find the index of a documentation section in navigation order (`-1` when unknown). */
+function findDocsSectionIndex(slug: DocsSectionSlug): number {
+  return DOCS_SECTIONS.findIndex((meta) => meta.slug === slug);
+}
+
+/** Convert an optional documentation section into a pager link (falls back to the homepage). */
+function toPagerLink(section: DocsSectionMeta | undefined): PagerLink {
+  return section ? { href: `/docs/${section.slug}`, label: section.pagerLabel } : HOME_PAGER_LINK;
+}
+
+/** Build the homepage feature highlight cards (every count is computed from the code it describes). */
+function buildHomeFeatures(): FeatureCardItem[] {
+  const publicServiceTitles: string[] = [];
+  for (const service of Object.values(SERVICES_CONFIG)) {
+    if (!service.allowedOwners) {
+      publicServiceTitles.push(service.docs.title);
+    }
+  }
+  const iconCounts = getIconSetCounts();
+  return [
+    {
+      details:
+        'Deterministic SVG rendering on Cloudflare Workers with in-isolate memoization and multi-tier edge caching.',
+      icon: 'zap',
+      title: 'Zero Cold Starts',
+    },
+    {
+      details: `All badges, buttons, icons, stacks, and quotes share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
+      icon: 'palette',
+      title: 'Unified OKLCH Palette',
+    },
+    {
+      details: `Combine ${formatCountLowerBound(iconCounts.lucide)} Lucide stroke icons with ${formatCountLowerBound(iconCounts.brand)} Simple Icons and Devicon brand logos.`,
+      icon: 'layers',
+      title: `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Vector Icons`,
+    },
+    {
+      details: `Live metrics from ${publicServiceTitles.length} public registries and forges (${publicServiceTitles.slice(0, 4).join(', ')}, …) with smart 302 redirects.`,
+      icon: 'cpu',
+      title: 'Live Service Presets',
+    },
+  ];
+}
+
+/** Render the feature highlight cards on the `/` homepage. */
 function renderHomeFeaturesHtml(): string {
   let cardsHtml = '';
-  for (const feature of HOME_FEATURES) {
-    const iconSvg = renderUiIcon(feature.icon, 20);
+  for (const feature of buildHomeFeatures()) {
     cardsHtml += `<div class="feature-card">
-      <div class="feature-icon">${iconSvg}</div>
-      <div class="feature-title">${feature.title}</div>
-      <p class="feature-desc">${feature.details}</p>
+      <div class="feature-icon">${renderUiIcon(feature.icon, 20)}</div>
+      <h2 class="feature-title">${escapeXml(feature.title)}</h2>
+      <p class="feature-desc">${escapeXml(feature.details)}</p>
     </div>`;
   }
   return `<div class="feature-grid">${cardsHtml}</div>`;
-}
-
-/** Build the 4 quickstart overview cards displayed on the `/` homepage. */
-function buildHomeOverviewCards(): ShowcaseCardConfig[] {
-  return [
-    {
-      items: [
-        {
-          alt: 'Build Passing',
-          path: '/badge/build/passing?icon=circle-check',
-          svg: renderBadge({
-            color: 'indigo',
-            icon: 'circle-check',
-            label: 'build',
-            value: 'passing',
-            variant: '1',
-          }),
-        },
-        {
-          alt: 'PyPI Downloads',
-          href: 'https://clickpy.clickhouse.com/dashboard/xulbux',
-          path: '/badge/pypi/xulbux/dt',
-          svg: renderBadge({
-            color: 'indigo',
-            icon: 'download',
-            label: 'downloads',
-            value: '86.8k',
-            variant: '1',
-          }),
-        },
-        {
-          alt: 'Coverage',
-          path: '/badge/coverage/99.4%25?icon=shield-check&color=emerald&variant=2&special=bar:99.4',
-          svg: renderBadge({
-            color: 'emerald',
-            icon: 'shield-check',
-            label: 'coverage',
-            special: { type: 'bar', value: 99.4 },
-            value: '99.4%',
-            variant: '2',
-          }),
-        },
-        {
-          alt: 'Edge Latency',
-          path: '/badge/latency/11ms?icon=zap&color=cyan&dot=green&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
-          svg: renderBadge({
-            color: 'cyan',
-            dot: 'green',
-            icon: 'zap',
-            label: 'latency',
-            special: { type: 'sparkline', values: [19, 16, 18, 15, 14, 15, 12, 11] },
-            value: '11ms',
-            variant: '2',
-          }),
-        },
-        {
-          alt: 'Explore Docs',
-          href: 'https://svg.xul.is/docs/buttons',
-          path: '/button/Explore+Docs?icon=rocket,arrow-right&anim=sheen',
-          svg: renderButton({
-            anim: 'sheen',
-            color: 'indigo',
-            icon: 'rocket,arrow-right',
-            label: 'Explore Docs',
-            variant: '1',
-          }),
-        },
-      ],
-      subtitle:
-        'Static 22px badges, live package metrics, inline data widgets, and 3D CTA buttons.',
-      title: 'Badges & CTA Buttons (/badge/*, /button/*)',
-    },
-    {
-      items: [
-        {
-          alt: 'Info',
-          path: '/icon/circle-info?size=32',
-          svg: renderIcon({ color: 'indigo', icon: 'circle-info', size: 32 }),
-        },
-        {
-          alt: 'Terminal',
-          path: '/icon/square-terminal?size=32&color=sky',
-          svg: renderIcon({ color: 'sky', icon: 'square-terminal', size: 32 }),
-        },
-        {
-          alt: 'Quick Start',
-          path: '/icon/zap?size=32&color=amber',
-          svg: renderIcon({ color: 'amber', icon: 'zap', size: 32 }),
-        },
-        {
-          alt: 'Arch Linux',
-          path: '/icon/archlinux?size=32&color=cyan',
-          svg: renderIcon({ color: 'cyan', icon: 'archlinux', size: 32 }),
-        },
-        {
-          alt: 'Rust',
-          path: '/icon/rust?size=32&color=orange',
-          svg: renderIcon({ color: 'orange', icon: 'rust', size: 32 }),
-        },
-        {
-          alt: 'Cloudflare',
-          path: '/icon/cloudflare?size=32&color=orange',
-          svg: renderIcon({ color: 'orange', icon: 'cloudflare', size: 32 }),
-        },
-      ],
-      subtitle:
-        'Lucide stroke icons and Simple Icons / Devicon brand logos with intrinsic pixel sizing.',
-      title: 'Standalone Icons (/icon/:icon)',
-    },
-    {
-      isCentered: true,
-      items: [
-        {
-          alt: 'Tech Stack',
-          path: '/stack/c,cpp,cs,rust,py,ts:6|docker,cloudflare,linux,git:4',
-          svg: renderStack({
-            icons: ['c,cpp,cs,rust,py,ts:6|docker,cloudflare,linux,git:4'],
-            variant: '2',
-          }),
-        },
-      ],
-      subtitle:
-        'Multi-group icon grids with per-group columns (:N), side-by-side groups (|), and row bands (;).',
-      title: 'Grouped Tech Stacks (/stack/:groups)',
-    },
-    {
-      isCentered: true,
-      items: [
-        {
-          alt: "XulbuX's Quote",
-          path: '/quote/XulbuX/Who+says+programmers+are+boring%3F+I+bring+the+humor+to+the+office+while+my+code+brings+the+chaos!?layout=vertical',
-          svg: renderQuote({
-            author: 'XulbuX',
-            color: 'indigo',
-            layout: 'vertical',
-            text: 'Who says programmers are boring? I bring the humor to the office while my code brings the chaos!',
-            variant: '2',
-          }),
-        },
-      ],
-      subtitle:
-        'Vertical and horizontal pull-quote cards with automatic word-wrapping and watermarks.',
-      title: 'Quote Cards (/quote/:author/:text)',
-    },
-  ];
 }
 
 /** Render the bottom navigation links between documentation subpages. */
 function renderDocsPager(section: DocsSectionSlug): string {
   const leftArrow = renderUiIcon('arrow-left', 16, 'btn-icon-left');
   const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
+  const sectionIndex = findDocsSectionIndex(section);
+  const prev = toPagerLink(DOCS_SECTIONS[sectionIndex - 1]);
+  const next = toPagerLink(DOCS_SECTIONS[sectionIndex + 1]);
 
-  const order: readonly { href: string; label: string; slug: DocsSectionSlug }[] = [
-    { href: '/docs/badges', label: 'Status Badges', slug: 'badges' },
-    { href: '/docs/buttons', label: 'CTA Buttons', slug: 'buttons' },
-    { href: '/docs/services', label: 'Live Service Badges', slug: 'services' },
-    { href: '/docs/icons', label: 'Standalone Icons', slug: 'icons' },
-    { href: '/docs/stack', label: 'Tech Stack Grids', slug: 'stack' },
-    { href: '/docs/quotes', label: 'Quote Cards', slug: 'quotes' },
-    { href: '/docs/colors', label: 'Theme Colors', slug: 'colors' },
-  ];
-
-  let idx = 0;
-  for (let i = 0; i < order.length; i += 1) {
-    if (order[i].slug === section) {
-      idx = i;
-      break;
-    }
-  }
-
-  const prev = idx > 0 ? order[idx - 1] : { href: '/', label: 'Home' };
-  const next = idx < order.length - 1 ? order[idx + 1] : { href: '/', label: 'Home' };
-
-  return `<div class="pager-row">
-    <a href="${prev.href}" class="btn-secondary">${leftArrow}<span class="btn-label">${prev.label}</span></a>
-    <a href="${next.href}" class="btn-primary"><span class="btn-label">${next.label}</span>${rightArrow}</a>
-  </div>`;
+  return `<nav class="pager-row" aria-label="Documentation pages">
+    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev">${leftArrow}<span class="btn-label">${escapeXml(prev.label)}</span></a>
+    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next"><span class="btn-label">${escapeXml(next.label)}</span>${rightArrow}</a>
+  </nav>`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render the `svg.xul.is` homepage (`/`) introducing the API, showcasing live examples, and linking to documentation.
+ * Check whether a raw slug is a valid documentation section.
+ * @param slug   Raw, lowercased `/docs/:section` slug.
+ * @returns `true` when `slug` is a known `DocsSectionSlug`.
+ */
+export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
+  return Object.hasOwn(SECTION_RENDERERS, slug);
+}
+
+/**
+ * Render (once per isolate) the `svg.xul.is` homepage introducing the API, showcasing live examples, and linking to documentation.
  * @returns Complete HTML document string for the homepage.
  */
 export function renderHomeHtml(): string {
-  const overviewCards = buildHomeOverviewCards();
-  let overviewCardsHtml = '';
-  for (const card of overviewCards) {
-    overviewCardsHtml += renderShowcaseCard(card);
+  if (homeHtmlCache !== undefined) {
+    return homeHtmlCache;
   }
 
   const bookIcon = renderUiIcon('book-open', 16);
@@ -287,90 +264,56 @@ export function renderHomeHtml(): string {
       Dynamic badges, CTA buttons, icons, tech stacks, and quote cards rendered at the edge in a unified 3D Kumo and Tailwind v4 OKLCH design system.
     </p>
     <div class="hero-cta-row">
-      <a href="/docs/badges" class="btn-primary">${bookIcon}<span class="btn-label">Explore Docs &amp; Previews</span>${rightArrow}</a>
+      <a href="/docs/${DEFAULT_DOCS_SECTION}" class="btn-primary">${bookIcon}<span class="btn-label">Explore Docs &amp; Previews</span>${rightArrow}</a>
       <a href="/docs/services" class="btn-secondary">${activityIcon}<span class="btn-label">Live Service Badges</span></a>
     </div>
   </section>
 
   ${renderHomeFeaturesHtml()}
 
-  <section class="doc-section">
-    <div class="section-header">
-      <h2 class="section-title">Five Unified Endpoints</h2>
-      <p class="section-desc">Expand <strong>View Markdown</strong> on any card to inspect and copy its live snippet.</p>
-      ${renderRoutePills([
-        'https://svg.xul.is/badge/*',
-        'https://svg.xul.is/button/*',
-        'https://svg.xul.is/icon/*',
-        'https://svg.xul.is/stack/*',
-        'https://svg.xul.is/quote/*',
-      ])}
-    </div>
-    <div class="card-grid">${overviewCardsHtml}</div>
-    <div class="pager-row" style="justify-content:flex-end;">
-      <a href="/docs/badges" class="btn-primary">${bookIcon}<span class="btn-label">Browse Documentation</span>${rightArrow}</a>
+  <section class="doc-section" id="endpoints">
+    ${renderSectionHeader({
+      description: 'Expand **View Markdown** on any card to inspect and copy its live snippet.',
+      headingLevel: 2,
+      routes: ENDPOINT_ROUTES,
+      title: `${formatCountWord(ENDPOINT_ROUTES.length)} Unified Endpoints`,
+    })}
+    <div class="card-grid">${renderCardsHtml(HOME_OVERVIEW_CARDS)}</div>
+    <div class="pager-row is-end">
+      <a href="/docs/${DEFAULT_DOCS_SECTION}" class="btn-primary">${bookIcon}<span class="btn-label">Browse Documentation</span>${rightArrow}</a>
     </div>
   </section>`;
 
-  return renderPageLayout({
+  homeHtmlCache = renderPageLayout({
     activePage: 'home',
     bodyHtml,
+    canonicalPath: '/',
     description:
       'Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, and quote card engine for svg.xul.is.',
     title: 'svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack & Quote API',
   });
+  return homeHtmlCache;
 }
 
 /**
- * Render the documentation and interactive preview page for a dedicated element section.
+ * Render (once per isolate) the documentation and live preview page for a dedicated element section.
  * @param section   Target section slug (`'badges'`, `'buttons'`, `'services'`, `'icons'`, `'stack'`, `'quotes'`, `'colors'`).
  * @returns Complete HTML document string.
  */
-export function renderDocsHtml(section: DocsSectionSlug = 'badges'): string {
-  let sectionHtml = '';
-  let pageTitle = 'Status Badges · svg.xul.is Documentation';
-
-  switch (section) {
-    case 'buttons': {
-      sectionHtml = renderButtonsSectionHtml();
-      pageTitle = 'CTA Buttons · svg.xul.is Documentation';
-      break;
-    }
-    case 'services': {
-      sectionHtml = renderServicesSectionHtml();
-      pageTitle = 'Live Service Badges · svg.xul.is Documentation';
-      break;
-    }
-    case 'icons': {
-      sectionHtml = renderIconsSectionHtml();
-      pageTitle = 'Standalone Icons · svg.xul.is Documentation';
-      break;
-    }
-    case 'stack': {
-      sectionHtml = renderStackSectionHtml();
-      pageTitle = 'Tech Stack Grids · svg.xul.is Documentation';
-      break;
-    }
-    case 'quotes': {
-      sectionHtml = renderQuotesSectionHtml();
-      pageTitle = 'Quote Cards · svg.xul.is Documentation';
-      break;
-    }
-    case 'colors': {
-      sectionHtml = renderColorsSectionHtml();
-      pageTitle = 'Theme Color Tokens · svg.xul.is Documentation';
-      break;
-    }
-    default: {
-      sectionHtml = renderBadgesSectionHtml();
-      break;
-    }
+export function renderDocsHtml(section: DocsSectionSlug = DEFAULT_DOCS_SECTION): string {
+  const cached = DOCS_HTML_CACHE.get(section);
+  if (cached !== undefined) {
+    return cached;
   }
 
-  return renderPageLayout({
+  const meta = DOCS_SECTIONS[findDocsSectionIndex(section)];
+  const html = renderPageLayout({
     activePage: section,
-    bodyHtml: `${sectionHtml}${renderDocsPager(section)}`,
-    description: 'Interactive SVG preview studio and parameter reference for svg.xul.is.',
-    title: pageTitle,
+    bodyHtml: `${SECTION_RENDERERS[section]()}${renderDocsPager(section)}`,
+    canonicalPath: `/docs/${section}`,
+    description: meta?.description ?? DOCS_SECTIONS[0].description,
+    title: `${meta?.title ?? section} · svg.xul.is Documentation`,
   });
+  DOCS_HTML_CACHE.set(section, html);
+  return html;
 }

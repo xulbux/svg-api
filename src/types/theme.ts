@@ -1,5 +1,5 @@
 /**
- * Theme color and visual variant types.
+ * Theme types – Theme color tokens, shared visual variants, size presets, highlight band stops, and palette shapes.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -29,24 +29,29 @@ export type ThemeColorName =
   | 'yellow'
   | 'zinc';
 
-/** Visual hierarchy variants (`1` = Primary Brand Gradient, `2` = Secondary Tinted Dark, `3` = Tertiary Neutral Dark). */
+/**
+ * Visual hierarchy variant shared by badges, buttons, stack tiles, and quote cards
+ * (`1` = Primary Brand Gradient, `2` = Secondary Tinted Dark, `3` = Tertiary Neutral Dark).
+ */
 export type BadgeVariant = '1' | '2' | '3';
+
+/** Named size scale preset shared by CTA buttons and quote cards (`?size=sm|md|lg|xl`). */
+export type SizePreset = 'lg' | 'md' | 'sm' | 'xl';
 
 /** Animated pulsing status dot color states. */
 export type DotState = ThemeColorName;
 
+/** Single white highlight gradient stop (`[offset in percent, stop-opacity]`) of a sheen or shimmer band. */
+export type BandStop = readonly [offsetPercent: number, opacity: string];
+
 /** Base neutral dark carbon surface tokens. */
 export interface BaseDarkPalette {
-  /** Inner bevel highlight color for primary filled buttons. */
-  bevelHighlight: string;
   /** Bottom stop of the neutral dark vertical background gradient. */
   bgBottom: string;
   /** Top stop of the neutral dark vertical background gradient. */
   bgTop: string;
   /** Neutral 1px border color for standard dark pills. */
   borderNeutral: string;
-  /** Subtle top hairline highlight color for dark surfaces. */
-  innerHighlight: string;
   /** Muted foreground color for tertiary labels. */
   textMuted: string;
   /** Primary crisp white-gray foreground color for labels. */
@@ -63,7 +68,7 @@ export interface ThemePalette {
   emphasisBg: string;
   /** Outer 1px border ring color for primary fills (`color-mix(in oklch, brand, black 10%)`). */
   emphasisRing: string;
-  /** Dot / filter glow color. */
+  /** Pulsing status dot color (Tailwind shade `500`). */
   glowColor: string;
   /** Bottom gradient stop for primary fills (`variant=1`). */
   gradEnd: string;
