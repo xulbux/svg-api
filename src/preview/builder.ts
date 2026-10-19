@@ -48,6 +48,9 @@ const BUILDER_DOCS_SLUGS = {
   stack: 'stack',
 } as const satisfies Readonly<Record<BuilderKind, string>>;
 
+/** Number of options above which a dropdown gets a search field (e.g., the service presets). */
+const SEARCHABLE_OPTION_COUNT = 12;
+
 /** Memoized builder pages keyed by element kind. */
 const BUILDER_HTML_CACHE = new Map<BuilderKind, string>();
 
@@ -61,17 +64,50 @@ function buildFieldId(field: BuilderField, part?: string): string {
   return part ? `field-${field.id}-${part}` : `field-${field.id}`;
 }
 
-/** Render `<option>` elements, selecting `selectedValue`. */
+/** Render `<option>` elements (with optional `data-swatch` colors), selecting `selectedValue`. */
 function renderOptionsHtml(options: readonly BuilderOption[], selectedValue: string): string {
   let optionsHtml = '';
   for (const option of options) {
     const selectedAttr = option.value === selectedValue ? ' selected' : '';
-    optionsHtml += `<option value="${escapeXml(option.value)}"${selectedAttr}>${escapeXml(option.label)}</option>`;
+    const swatchAttr = option.swatch ? ` data-swatch="${escapeXml(option.swatch)}"` : '';
+    optionsHtml += `<option value="${escapeXml(option.value)}"${swatchAttr}${selectedAttr}>${escapeXml(option.label)}</option>`;
   }
   return optionsHtml;
 }
 
-/** Render the service options of the service badge builder (`<option value="npm">npm · npm</option>`). */
+/**
+ * Render a custom dropdown: A visually hidden native `<select>` (the form state read by the builder
+ * script) and a trigger that opens an anchored listbox popover (filled by the builder script).
+ * Dropdowns with more than `SEARCHABLE_OPTION_COUNT` options get a search field.
+ */
+function renderSelectHtml(
+  selectId: string,
+  labelId: string,
+  options: readonly BuilderOption[],
+  selectedValue: string,
+  part?: string
+): string {
+  const selected = options.find((option) => option.value === selectedValue) ?? options[0];
+  const anchorName = `--${selectId}`;
+  const partAttr = part ? ` data-part="${part}"` : '';
+  const swatchHtml = selected?.swatch
+    ? `<span class="select-swatch" aria-hidden="true" style="--swatch: ${escapeXml(selected.swatch)}"></span>`
+    : '<span class="select-swatch" aria-hidden="true" hidden></span>';
+  const searchHtml =
+    options.length > SEARCHABLE_OPTION_COUNT
+      ? `<div class="select-search">${renderUiIcon('search', 14)}<input class="select-search-input" type="search" placeholder="Search…" aria-label="Search options" spellcheck="false" autocomplete="off" /></div>`
+      : '';
+  return `<div class="select" data-select="${selectId}">
+            <select class="select-native" id="${selectId}"${partAttr} tabindex="-1" aria-hidden="true">${renderOptionsHtml(options, selectedValue)}</select>
+            <button type="button" class="builder-input select-trigger" id="${selectId}-trigger" popovertarget="${selectId}-menu" aria-haspopup="listbox" aria-labelledby="${labelId} ${selectId}-value" style="anchor-name: ${anchorName}">${swatchHtml}<span class="select-value" id="${selectId}-value">${escapeXml(selected?.label ?? '')}</span>${renderUiIcon('chevron-down', 14, 'select-chevron')}</button>
+            <div class="select-menu" id="${selectId}-menu" popover style="position-anchor: ${anchorName}">
+              ${searchHtml}
+              <div class="select-options" role="listbox" aria-labelledby="${labelId}"></div>
+            </div>
+          </div>`;
+}
+
+/** Render the service options of the service badge builder (`PyPI (pypi)`). */
 function buildServiceSelectOptions(schema: BuilderSchema): BuilderOption[] {
   const options: BuilderOption[] = [];
   for (const service of schema.services ?? []) {
@@ -97,15 +133,24 @@ function resolveSelectOptions(
   return field.options ?? [];
 }
 
-/** Render an icon slug input with its picker button and glyph preview. */
-function renderIconInputHtml(field: BuilderField, part: string, label: string): string {
+/**
+ * Render an icon selector: A trigger showing the current glyph and slug that opens the icon picker
+ * (the slug is stored in a hidden input), plus a clear button.
+ */
+function renderIconSelectHtml(field: BuilderField, part: string, label: string): string {
   const inputId = buildFieldId(field, part);
+  const placeholder = field.placeholder ?? 'none';
+  const noneAttr = field.hasPresetValue ? ' data-icon-none="true"' : '';
   return `<div class="icon-input">
-          <label class="builder-sublabel" for="${inputId}">${escapeXml(label)}</label>
-          <div class="icon-input-row">
-            <span class="icon-input-glyph" aria-hidden="true" data-glyph-for="${inputId}"></span>
-            <input class="builder-input" id="${inputId}" type="text" data-part="${part}" spellcheck="false" autocapitalize="off" placeholder="${escapeXml(field.placeholder ?? 'none')}" />
-            <button type="button" class="icon-picker-btn" data-icon-target="${inputId}" popovertarget="icon-picker" aria-label="Browse icons for ${escapeXml(label.toLowerCase())}" title="Browse icons">${renderUiIcon('layout-grid', 15)}</button>
+          <span class="builder-sublabel" id="${inputId}-label">${escapeXml(label)}</span>
+          <div class="icon-select">
+            <input type="hidden" id="${inputId}" data-part="${part}" />
+            <button type="button" class="builder-input icon-select-trigger" data-icon-target="${inputId}"${noneAttr} popovertarget="icon-picker" aria-haspopup="dialog" aria-labelledby="${inputId}-label ${inputId}-value">
+              <span class="icon-input-glyph" aria-hidden="true" data-glyph-for="${inputId}"></span>
+              <span class="icon-select-value is-placeholder" id="${inputId}-value" data-placeholder="${escapeXml(placeholder)}">${escapeXml(placeholder)}</span>
+              ${renderUiIcon('layout-grid', 14, 'icon-select-grid')}
+            </button>
+            <button type="button" class="icon-select-clear" data-icon-clear="${inputId}" aria-label="Clear ${escapeXml(label.toLowerCase())}" title="Clear" hidden>${renderUiIcon('x', 14)}</button>
           </div>
           <p class="builder-hint builder-validation" data-validation-for="${inputId}" aria-live="polite"></p>
         </div>`;
@@ -123,25 +168,33 @@ function renderColorControlHtml(field: BuilderField, selectedValue: string): str
   return `<div class="swatch-grid" role="radiogroup" aria-labelledby="${buildFieldId(field)}-label">${swatchesHtml}</div>`;
 }
 
-/** Render the motion `<select>` of an `anim` field part. */
-function renderMotionSelectHtml(field: BuilderField, part: string, label: string): string {
+/** Render a labeled dropdown part of a composite field (e.g., an icon motion or the widget kind). */
+function renderSubSelectHtml(
+  field: BuilderField,
+  part: string,
+  label: string,
+  options: readonly BuilderOption[],
+  extraClass = ''
+): string {
   const selectId = buildFieldId(field, part);
-  return `<div class="builder-subfield">
-          <label class="builder-sublabel" for="${selectId}">${escapeXml(label)}</label>
-          <select class="builder-input builder-select" id="${selectId}" data-part="${part}">${renderOptionsHtml(field.options ?? [], '')}</select>
+  const partAttr = part === 'modifier' ? ' data-special-part="modifier"' : '';
+  return `<div class="builder-subfield${extraClass}"${partAttr}>
+          <span class="builder-sublabel" id="${selectId}-label">${escapeXml(label)}</span>
+          ${renderSelectHtml(selectId, `${selectId}-label`, options, '', part)}
         </div>`;
 }
 
-/** Render the composite controls of an `anim` field (sheen toggle plus motion selects). */
+/** Render the composite controls of an `anim` field (sheen toggle plus motion dropdowns). */
 function renderAnimControlHtml(field: BuilderField): string {
   const sheenId = buildFieldId(field, 'sheen');
+  const motionOptions = field.options ?? [];
   let motionsHtml = '';
   if (field.animScope === 'pair') {
     motionsHtml =
-      renderMotionSelectHtml(field, 'left', 'Left icon motion') +
-      renderMotionSelectHtml(field, 'right', 'Right icon motion');
+      renderSubSelectHtml(field, 'left', 'Left icon motion', motionOptions) +
+      renderSubSelectHtml(field, 'right', 'Right icon motion', motionOptions);
   } else if (field.animScope === 'single') {
-    motionsHtml = renderMotionSelectHtml(field, 'left', 'Icon motion');
+    motionsHtml = renderSubSelectHtml(field, 'left', 'Icon motion', motionOptions);
   }
   return `<div class="builder-composite">
           <label class="builder-check" for="${sheenId}"><input type="checkbox" id="${sheenId}" data-part="sheen" /><span>Surface sheen</span></label>
@@ -152,34 +205,24 @@ function renderAnimControlHtml(field: BuilderField): string {
 /** Render the composite controls of a `special` field (widget kind, payload, and modifier). */
 function renderSpecialControlHtml(field: BuilderField): string {
   return `<div class="builder-inline">
-          <div class="builder-subfield">
-            <label class="builder-sublabel" for="${buildFieldId(field, 'kind')}">Widget</label>
-            <select class="builder-input builder-select" id="${buildFieldId(field, 'kind')}" data-part="kind">${renderOptionsHtml(field.options ?? [], '')}</select>
-          </div>
+          ${renderSubSelectHtml(field, 'kind', 'Widget', field.options ?? [])}
           <div class="builder-subfield is-grow" data-special-part="payload">
             <label class="builder-sublabel" for="${buildFieldId(field, 'payload')}">Data</label>
             <input class="builder-input" id="${buildFieldId(field, 'payload')}" type="text" data-part="payload" spellcheck="false" />
           </div>
-          <div class="builder-subfield" data-special-part="modifier">
-            <label class="builder-sublabel" for="${buildFieldId(field, 'modifier')}">Motion</label>
-            <select class="builder-input builder-select" id="${buildFieldId(field, 'modifier')}" data-part="modifier"></select>
-          </div>
+          ${renderSubSelectHtml(field, 'modifier', 'Motion', [])}
         </div>`;
 }
 
 /** Render the composite controls of a `size` field (named preset or custom number). */
 function renderSizeControlHtml(field: BuilderField): string {
-  const presetId = buildFieldId(field, 'preset');
   const customId = buildFieldId(field, 'custom');
   const options: BuilderOption[] = [
     ...(field.options ?? []),
     { label: 'Custom…', value: 'custom' },
   ];
   return `<div class="builder-inline">
-          <div class="builder-subfield is-grow">
-            <label class="builder-sublabel" for="${presetId}">Preset</label>
-            <select class="builder-input builder-select" id="${presetId}" data-part="preset">${renderOptionsHtml(options, '')}</select>
-          </div>
+          ${renderSubSelectHtml(field, 'preset', 'Preset', options, ' is-grow')}
           <div class="builder-subfield" data-size-part="custom" hidden>
             <label class="builder-sublabel" for="${customId}">Pixels</label>
             <input class="builder-input" id="${customId}" type="number" data-part="custom" min="${field.min ?? ''}" max="${field.max ?? ''}" step="${field.step ?? 1}" placeholder="${escapeXml(field.placeholder ?? '')}" inputmode="decimal" />
@@ -202,16 +245,21 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
       return renderColorControlHtml(field, initialValue);
     }
     case 'icon': {
-      return renderIconInputHtml(field, 'main', 'Slug');
+      return renderIconSelectHtml(field, 'main', 'Icon');
     }
     case 'iconPair': {
-      return `<div class="builder-inline is-pair">${renderIconInputHtml(field, 'left', 'Left icon')}${renderIconInputHtml(field, 'right', 'Right icon')}</div>`;
+      return `<div class="builder-inline is-pair">${renderIconSelectHtml(field, 'left', 'Left icon')}${renderIconSelectHtml(field, 'right', 'Right icon')}</div>`;
     }
     case 'number': {
       return `<input class="builder-input" id="${controlId}" type="number" min="${field.min ?? ''}" max="${field.max ?? ''}" step="${field.step ?? 1}" value="${escapeXml(initialValue)}"${placeholderAttr} inputmode="decimal" />`;
     }
     case 'select': {
-      return `<select class="builder-input builder-select" id="${controlId}"${requiredAttr}>${renderOptionsHtml(resolveSelectOptions(field, schema), initialValue)}</select>`;
+      return renderSelectHtml(
+        controlId,
+        `${controlId}-label`,
+        resolveSelectOptions(field, schema),
+        initialValue
+      );
     }
     case 'size': {
       return renderSizeControlHtml(field);
@@ -222,7 +270,7 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
     case 'stackGroups': {
       return `<textarea class="builder-input builder-textarea is-mono" id="${controlId}" rows="4" spellcheck="false"${requiredAttr}>${escapeXml(initialValue)}</textarea>
         <div class="builder-field-actions">
-          <button type="button" class="btn-secondary btn-small icon-picker-btn" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}<span class="btn-label">Insert icon</span></button>
+          <button type="button" class="btn-secondary btn-small" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}<span class="btn-label">Insert icon</span></button>
         </div>
         <p class="builder-hint builder-validation" data-validation-for="${controlId}" aria-live="polite"></p>`;
     }
@@ -235,9 +283,9 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
   }
 }
 
-/** Check whether a field renders a single labelable control (`<label for>`), as opposed to a group of parts. */
+/** Check whether a field renders a single labelable form control (`<label for>`), as opposed to a group of parts. */
 function hasSingleControl(field: BuilderField): boolean {
-  return ['number', 'select', 'stackGroups', 'text', 'textarea'].includes(field.control);
+  return ['number', 'stackGroups', 'text', 'textarea'].includes(field.control);
 }
 
 /** Render one builder field with its label, control(s), and help text. */
@@ -255,7 +303,8 @@ function renderFieldHtml(field: BuilderField, schema: BuilderSchema): string {
   const showAttrs = field.showWhen
     ? ` data-show-field="${escapeXml(field.showWhen.field)}" data-show-values="${escapeXml(field.showWhen.values.join(' '))}"`
     : '';
-  const isGroup = !hasSingleControl(field);
+  // Dropdowns label their trigger and listbox directly; Composite controls are labeled groups.
+  const isGroup = !hasSingleControl(field) && field.control !== 'select';
   const groupAttrs = isGroup ? ` role="group" aria-labelledby="${controlId}-label"` : '';
   const descriptionHtml = field.description
     ? `<p class="builder-hint">${escapeXml(field.description)}</p>`
@@ -288,7 +337,10 @@ function renderIconPickerHtml(): string {
         ${renderUiIcon('search', 15)}
         <input class="icon-picker-input" id="icon-picker-search" type="search" placeholder="Search icons…" aria-label="Search icons" spellcheck="false" autocomplete="off" />
       </div>
-      <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">${tabsHtml}</div>
+      <div class="icon-picker-row">
+        <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">${tabsHtml}</div>
+        <button type="button" class="btn-secondary btn-small icon-picker-none" id="icon-picker-none" hidden>No icon</button>
+      </div>
     </div>
     <div class="icon-picker-grid" id="icon-picker-grid" role="listbox" aria-label="Icons" tabindex="-1"></div>
     <p class="icon-picker-foot" id="icon-picker-status" aria-live="polite">Loading icons…</p>

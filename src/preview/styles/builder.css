@@ -72,9 +72,12 @@
   color: var(--c-text-2);
 }
 
+/* Inputs, Dropdown Triggers & Icon Selectors (neutral states, no accent) */
+
 .builder-input {
   inline-size: 100%;
   min-inline-size: 0;
+  min-block-size: 36px;
   padding: 7px 10px;
   border: 1px solid var(--c-border);
   border-radius: 8px;
@@ -92,17 +95,13 @@
 }
 
 .builder-input:hover {
-  border-color: color-mix(in srgb, var(--c-text-1) 22%, var(--c-border));
+  border-color: var(--c-border-strong);
 }
 
 .builder-input:focus-visible {
   outline: none;
-  border-color: var(--c-brand-1);
-  box-shadow: 0 0 0 3px var(--c-brand-soft);
-}
-
-.builder-select {
-  cursor: pointer;
+  border-color: var(--c-focus);
+  box-shadow: 0 0 0 3px var(--c-hover);
 }
 
 .builder-textarea {
@@ -145,7 +144,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  min-inline-size: 120px;
+  min-inline-size: 140px;
 }
 
 .builder-subfield.is-grow {
@@ -179,6 +178,186 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Custom Dropdowns: Hidden native <select> (form state) + trigger + anchored listbox popover */
+
+.select {
+  position: relative;
+  min-inline-size: 0;
+}
+
+.select-native {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.select-value {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-chevron {
+  color: var(--c-text-3);
+  transition: rotate 0.2s ease;
+}
+
+.select:has(.select-menu:where(:popover-open, .is-open)) .select-chevron {
+  rotate: 180deg;
+}
+
+.select:has(.select-menu:where(:popover-open, .is-open)) .select-trigger {
+  border-color: var(--c-focus);
+}
+
+.select-swatch {
+  flex-shrink: 0;
+  inline-size: 10px;
+  block-size: 10px;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+
+.select-swatch[hidden] {
+  display: none;
+}
+
+.select-menu {
+  position: fixed;
+  inset: auto;
+  min-inline-size: 180px;
+  max-inline-size: min(360px, calc(100vw - 16px));
+  max-block-size: min(320px, 60vh);
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  flex-direction: column;
+  border: 1px solid var(--c-divider);
+  border-radius: 10px;
+  background: var(--c-bg-soft);
+  color: var(--c-text-1);
+  box-shadow: 0 10px 30px rgba(0 0 0 / 0.18);
+}
+
+.select-menu:where(:popover-open, .is-open) {
+  display: flex;
+}
+
+.select-menu:not(:where(:popover-open, .is-open)) {
+  display: none;
+}
+
+/* Fallback without the Popover API: The menu stays in flow, so position it below the trigger */
+
+.select-menu.is-open {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 10;
+}
+
+@supports (position-area: block-end) {
+  .select-menu {
+    min-inline-size: max(180px, anchor-size(width));
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block;
+    margin-block: 4px;
+  }
+}
+
+.select-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 6px 6px 2px;
+  padding-inline: 9px;
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  background: var(--c-bg);
+  color: var(--c-text-3);
+  transition: border-color 0.15s ease;
+}
+
+.select-search:focus-within {
+  border-color: var(--c-focus);
+}
+
+.select-search-input {
+  flex: 1;
+  min-inline-size: 0;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--c-text-1);
+  font: inherit;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.select-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.select-option:hover,
+.select-option:focus-visible {
+  outline: none;
+  background: var(--c-hover);
+  color: var(--c-text-1);
+}
+
+.select-option[aria-selected='true'] {
+  background: var(--c-selected);
+  color: var(--c-text-1);
+  font-weight: 600;
+}
+
+.select-option-label {
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-empty {
+  padding: 8px 9px;
+  font-size: 0.8rem;
+  color: var(--c-text-3);
 }
 
 /* Color Swatches */
@@ -234,15 +413,15 @@
 .swatch-input:checked + .swatch-dot {
   box-shadow:
     0 0 0 2px var(--c-bg-soft),
-    0 0 0 4px var(--c-brand-1);
+    0 0 0 4px var(--c-text-1);
 }
 
 .swatch-input:focus-visible + .swatch-dot {
-  outline: 2px solid var(--c-brand-1);
+  outline: 2px solid var(--c-focus);
   outline-offset: 4px;
 }
 
-/* Icon Inputs */
+/* Icon Selectors: The trigger opens the icon picker; The slug lives in a hidden input */
 
 .icon-input {
   display: flex;
@@ -251,10 +430,36 @@
   min-inline-size: 0;
 }
 
-.icon-input-row {
+.icon-select {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.icon-select-trigger {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-block: 4px;
+  padding-inline-start: 4px;
+  text-align: start;
+  cursor: pointer;
+}
+
+.icon-select-value {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.icon-select-value.is-placeholder {
+  color: var(--c-text-3);
+}
+
+.icon-select-grid {
+  color: var(--c-text-3);
 }
 
 .icon-input-glyph {
@@ -262,26 +467,25 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  inline-size: 34px;
-  block-size: 34px;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 8px;
-  background: var(--c-bg);
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 6px;
+  background: var(--c-hover);
   color: var(--c-text-1);
 }
 
 .icon-input-glyph svg {
-  inline-size: 17px;
-  block-size: 17px;
+  inline-size: 16px;
+  block-size: 16px;
 }
 
-.icon-picker-btn:not(.btn-secondary) {
+.icon-select-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  inline-size: 34px;
-  block-size: 34px;
+  inline-size: 36px;
+  block-size: 36px;
   padding: 0;
   border: 1px solid var(--c-border);
   border-radius: 8px;
@@ -293,9 +497,13 @@
     color 0.15s ease;
 }
 
-.icon-picker-btn:not(.btn-secondary):hover {
-  border-color: var(--c-brand-border);
-  color: var(--c-brand-1);
+.icon-select-clear:hover {
+  border-color: var(--c-border-strong);
+  color: var(--c-text-1);
+}
+
+.icon-select-clear[hidden] {
+  display: none;
 }
 
 /* Small Buttons (builder actions) */
@@ -399,12 +607,13 @@ button.btn-secondary {
 }
 
 .builder-tab:hover {
+  background: var(--c-hover);
   color: var(--c-text-1);
 }
 
 .builder-tab.is-active {
-  background: var(--c-brand-soft);
-  color: var(--c-brand-1);
+  background: var(--c-selected);
+  color: var(--c-text-1);
 }
 
 .builder-tab:focus-visible {
@@ -497,7 +706,7 @@ button.btn-secondary {
 }
 
 .icon-picker-search:focus-within {
-  border-color: var(--c-brand-1);
+  border-color: var(--c-focus);
 }
 
 .icon-picker-input {
@@ -510,6 +719,17 @@ button.btn-secondary {
   font: inherit;
   font-size: 0.85rem;
   outline: none;
+}
+
+.icon-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.icon-picker-none[hidden] {
+  display: none;
 }
 
 .icon-picker-tabs {
@@ -544,16 +764,17 @@ button.btn-secondary {
 }
 
 .icon-picker-tab:hover span {
+  background: var(--c-hover);
   color: var(--c-text-1);
 }
 
 .icon-picker-tab input:checked + span {
-  background: var(--c-brand-soft);
-  color: var(--c-brand-1);
+  background: var(--c-selected);
+  color: var(--c-text-1);
 }
 
 .icon-picker-tab input:focus-visible + span {
-  outline: 2px solid var(--c-brand-1);
+  outline: 2px solid var(--c-focus);
   outline-offset: 1px;
 }
 
@@ -578,7 +799,7 @@ button.btn-secondary {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--c-text-1);
+  color: var(--c-text-2);
   cursor: pointer;
   transition:
     background-color 0.12s ease,
@@ -587,8 +808,13 @@ button.btn-secondary {
 
 .icon-tile:hover,
 .icon-tile:focus-visible {
-  background: var(--c-brand-soft);
-  color: var(--c-brand-1);
+  background: var(--c-hover);
+  color: var(--c-text-1);
+}
+
+.icon-tile[aria-selected='true'] {
+  background: var(--c-selected);
+  color: var(--c-text-1);
 }
 
 .icon-tile:focus-visible {

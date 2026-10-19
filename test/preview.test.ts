@@ -124,8 +124,11 @@ describe('documentation pages – HTML validity', () => {
       for (const reference of collectGroups(page.html, FRAGMENT_REFERENCE_RX, 'id')) {
         expect(ids.has(reference), `${page.path} #${reference}`).toBe(true);
       }
-      for (const reference of collectGroups(page.html, ARIA_ID_REFERENCE_RX, 'id')) {
-        expect(ids.has(reference), `${page.path} aria → ${reference}`).toBe(true);
+      // ARIA references are space-separated ID lists (e.g., a dropdown labeled by its field label and value).
+      for (const references of collectGroups(page.html, ARIA_ID_REFERENCE_RX, 'id')) {
+        for (const reference of references.split(' ')) {
+          expect(ids.has(reference), `${page.path} aria → ${reference}`).toBe(true);
+        }
       }
     }
   });

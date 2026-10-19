@@ -819,7 +819,7 @@
 
   /** @type {BuilderSchema} */
   const schema = JSON.parse(schemaElement.textContent ?? '{}');
-  const hasPresetIcon = schema.kind === 'service';
+  const hasPresetIcon = schema.fields.some((field) => field.hasPresetValue === true);
   const previewImage = /** @type {HTMLImageElement | null} */ (
     document.getElementById('builder-preview')
   );
@@ -843,6 +843,8 @@
   );
   const pickerStatus = document.getElementById('icon-picker-status');
   const hasAnchorPositioning = CSS.supports('position-area', 'block-end');
+  const hasPopoverApi = 'popover' in HTMLElement.prototype;
+  const pickerNoneButton = document.getElementById('icon-picker-none');
   const iconVersion =
     new URL(
       picker?.dataset.indexUrl ?? '/assets/icons.json',
@@ -870,6 +872,8 @@
 
   /** @type {HTMLElement | undefined} */
   let pickerTarget = undefined;
+  /** @type {HTMLElement | undefined} */
+  let pickerTrigger = undefined;
   let isPickerInsertMode = false;
   /** @type {{ set: IconPickerSetId, slug: string }[]} */
   let pickerMatches = [];
@@ -906,7 +910,122 @@
   }
 
   /**
-   * Replace the options of a `<select>` element.
+   * Close a popover element (native Popover API or the site script's `.is-open` fallback).
+   * @param {HTMLElement} popover
+   */
+  function hidePopoverElement(popover) {
+    if (hasPopoverApi && popover.matches(':popover-open')) {
+      popover.hidePopover();
+    }
+    popover.classList.remove('is-open');
+  }
+
+  /**
+   * Find the parts of a custom dropdown (`[data-select]`).
+   * @param {Element} wrapper
+   * @returns {{ list: Element | null, menu: HTMLElement | null, search: HTMLInputElement | null, select: HTMLSelectElement | null, trigger: HTMLElement | null }}
+   */
+  function getSelectParts(wrapper) {
+    return {
+      list: wrapper.querySelector('.select-options'),
+      menu: wrapper.querySelector('.select-menu'),
+      search: wrapper.querySelector('.select-search-input'),
+      select: wrapper.querySelector('select'),
+      trigger: wrapper.querySelector('.select-trigger'),
+    };
+  }
+
+  /**
+   * Create a color swatch dot (dropdown options with a `data-swatch` color).
+   * @param {string} color   CSS color.
+   * @returns {HTMLSpanElement}
+   */
+  function createSwatch(color) {
+    const swatch = document.createElement('span');
+    swatch.className = 'select-swatch';
+    swatch.setAttribute('aria-hidden', 'true');
+    swatch.style.setProperty('--swatch', color);
+    return swatch;
+  }
+
+  /**
+   * Render the listbox options of a custom dropdown from its native `<select>`, filtered by the search query.
+   * @param {Element} wrapper   `[data-select]` element.
+   */
+  function renderSelectOptions(wrapper) {
+    const { list, search, select } = getSelectParts(wrapper);
+    if (!list || !select) {
+      return;
+    }
+    const query = (search?.value ?? '').trim().toLowerCase();
+    const fragment = document.createDocumentFragment();
+    for (const option of select.options) {
+      const isMatch =
+        !query || option.text.toLowerCase().includes(query) || option.value.includes(query);
+      if (isMatch) {
+        const item = document.createElement('div');
+        item.className = 'select-option';
+        item.id = `${select.id}-option-${option.index}`;
+        item.dataset.value = option.value;
+        item.tabIndex = -1;
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', String(option.value === select.value));
+        if (option.dataset.swatch) {
+          item.append(createSwatch(option.dataset.swatch));
+        }
+        const label = document.createElement('span');
+        label.className = 'select-option-label';
+        label.textContent = option.text;
+        item.append(label);
+        fragment.append(item);
+      }
+    }
+    if (fragment.childElementCount === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'select-empty';
+      empty.textContent = 'No matches';
+      fragment.append(empty);
+    }
+    list.replaceChildren(fragment);
+  }
+
+  /**
+   * Sync a custom dropdown trigger (label and swatch) and its selected option with the native `<select>`.
+   * @param {Element} wrapper   `[data-select]` element.
+   */
+  function syncSelect(wrapper) {
+    const { list, select, trigger } = getSelectParts(wrapper);
+    if (!select || !trigger) {
+      return;
+    }
+    const [option] = select.selectedOptions;
+    const valueElement = trigger.querySelector('.select-value');
+    if (valueElement) {
+      valueElement.textContent = option?.text ?? '';
+    }
+    const swatch = trigger.querySelector('.select-swatch');
+    if (swatch instanceof HTMLElement) {
+      const color = option?.dataset.swatch;
+      swatch.hidden = !color;
+      swatch.style.setProperty('--swatch', color ?? 'transparent');
+    }
+    for (const item of list?.querySelectorAll('.select-option') ?? []) {
+      item.setAttribute(
+        'aria-selected',
+        String(item instanceof HTMLElement && item.dataset.value === select.value)
+      );
+    }
+  }
+
+  /** Sync every custom dropdown with its native `<select>` (after programmatic value changes). */
+  function syncAllSelects() {
+    for (const wrapper of form?.querySelectorAll('[data-select]') ?? []) {
+      syncSelect(wrapper);
+    }
+  }
+
+  /**
+   * Replace the options of a native `<select>` and re-render its custom dropdown.
    * @param {HTMLSelectElement} select
    * @param {readonly BuilderOption[]} options
    * @param {string} selectedValue
@@ -915,6 +1034,136 @@
     select.replaceChildren();
     for (const option of options) {
       select.add(new Option(option.label, option.value, false, option.value === selectedValue));
+    }
+    const wrapper = select.closest('[data-select]');
+    if (wrapper) {
+      renderSelectOptions(wrapper);
+      syncSelect(wrapper);
+    }
+  }
+
+  /**
+   * Choose a custom dropdown option: Update the native `<select>`, notify the form, and close the menu.
+   * @param {Element} wrapper   `[data-select]` element.
+   * @param {string} value
+   */
+  function chooseSelectOption(wrapper, value) {
+    const { menu, select, trigger } = getSelectParts(wrapper);
+    if (!select) {
+      return;
+    }
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    syncSelect(wrapper);
+    if (menu) {
+      hidePopoverElement(menu);
+    }
+    trigger?.focus();
+  }
+
+  /**
+   * Move the focus between the options of an open custom dropdown.
+   * @param {Element} wrapper   `[data-select]` element.
+   * @param {number} offset     Option offset (`-Infinity` / `Infinity` for the first / last option).
+   */
+  function moveOptionFocus(wrapper, offset) {
+    const items = [...wrapper.querySelectorAll('.select-option')];
+    const current = items.indexOf(document.activeElement ?? wrapper);
+    let targetIndex = current + offset;
+    if (current === -1 || !Number.isFinite(targetIndex)) {
+      targetIndex =
+        offset > 0
+          ? Math.min(offset, items.length) - 1
+          : items.length + Math.max(offset, -items.length);
+    }
+    const next = items[Math.max(0, Math.min(items.length - 1, targetIndex))];
+    if (next instanceof HTMLElement) {
+      next.focus();
+    }
+  }
+
+  /**
+   * Handle keys inside an open custom dropdown (arrows, `Home`/`End`, `Enter`/`Space`, and typeahead).
+   * @param {KeyboardEvent} event
+   * @param {Element} wrapper   `[data-select]` element.
+   */
+  function handleSelectKeydown(event, wrapper) {
+    const { target } = event;
+    /** @type {Readonly<Record<string, number>>} */
+    const offsets = { ArrowDown: 1, ArrowUp: -1, End: Infinity, Home: -Infinity };
+    const offset = offsets[event.key];
+    const isSearch = target instanceof HTMLInputElement;
+    if (offset !== undefined && !(isSearch && (event.key === 'Home' || event.key === 'End'))) {
+      event.preventDefault();
+      moveOptionFocus(wrapper, offset);
+    } else if (event.key === 'Enter' || (event.key === ' ' && !isSearch)) {
+      event.preventDefault();
+      const item = isSearch ? wrapper.querySelector('.select-option') : target;
+      if (item instanceof HTMLElement && item.dataset.value !== undefined) {
+        chooseSelectOption(wrapper, item.dataset.value);
+      }
+    } else if (!isSearch && event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+      const key = event.key.toLowerCase();
+      const match = [...wrapper.querySelectorAll('.select-option')].find((item) =>
+        (item.textContent ?? '').trim().toLowerCase().startsWith(key)
+      );
+      if (match instanceof HTMLElement) {
+        match.focus();
+      }
+    }
+  }
+
+  /**
+   * Prepare a custom dropdown menu when it opens: Reset the search, render the options, and focus the search or the selected option.
+   * @param {Element} wrapper   `[data-select]` element.
+   */
+  function openSelectMenu(wrapper) {
+    const { menu, search, trigger } = getSelectParts(wrapper);
+    if (search) {
+      search.value = '';
+    }
+    renderSelectOptions(wrapper);
+    if (menu && trigger && !hasAnchorPositioning) {
+      const rect = trigger.getBoundingClientRect();
+      menu.style.top = `${rect.bottom + 4}px`;
+      menu.style.left = `${rect.left}px`;
+      menu.style.minWidth = `${rect.width}px`;
+    }
+    const selected = wrapper.querySelector('.select-option[aria-selected="true"]');
+    const focusTarget = search ?? selected ?? wrapper.querySelector('.select-option');
+    if (focusTarget instanceof HTMLElement) {
+      focusTarget.focus();
+    }
+    if (selected instanceof HTMLElement) {
+      selected.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  /** Bind every custom dropdown: Option clicks, keyboard navigation, search, and opening with the arrow keys. */
+  function bindSelects() {
+    for (const wrapper of form?.querySelectorAll('[data-select]') ?? []) {
+      const { menu, search, trigger } = getSelectParts(wrapper);
+      renderSelectOptions(wrapper);
+      menu?.addEventListener('toggle', (event) => {
+        if (/** @type {ToggleEvent} */ (event).newState === 'open') {
+          openSelectMenu(wrapper);
+        }
+      });
+      menu?.addEventListener('click', (event) => {
+        const item =
+          event.target instanceof Element ? event.target.closest('.select-option') : undefined;
+        if (item instanceof HTMLElement && item.dataset.value !== undefined) {
+          chooseSelectOption(wrapper, item.dataset.value);
+        }
+      });
+      menu?.addEventListener('keydown', (event) => handleSelectKeydown(event, wrapper));
+      search?.addEventListener('input', () => renderSelectOptions(wrapper));
+      trigger?.addEventListener('keydown', (event) => {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu && hasPopoverApi) {
+          event.preventDefault();
+          menu.showPopover();
+        }
+      });
     }
   }
 
@@ -1286,10 +1535,26 @@
         ? `Unknown icon${unknown.length > 1 ? 's' : ''}: ${unknown.slice(0, MAX_LISTED_UNKNOWN_ICONS).join(', ')}${more} (renders a fallback).`
         : '';
     hint.classList.toggle('is-warning', unknown.length > 0);
-    const glyph = document.querySelector(`[data-glyph-for="${inputId}"]`);
-    if (glyph instanceof HTMLElement && glyph.dataset.slug !== value) {
-      glyph.dataset.slug = value;
-      renderInputGlyph(glyph, value);
+  }
+
+  /** Sync every icon selector (slug text, placeholder, clear button, and glyph) with its hidden input. */
+  function syncIconSelects() {
+    for (const trigger of form?.querySelectorAll('.icon-select-trigger') ?? []) {
+      const inputId = trigger instanceof HTMLElement ? (trigger.dataset.iconTarget ?? '') : '';
+      const input = document.getElementById(inputId);
+      const valueElement = trigger.querySelector('.icon-select-value');
+      if (input instanceof HTMLInputElement && valueElement instanceof HTMLElement) {
+        const slug = input.value.trim();
+        valueElement.textContent = slug || (valueElement.dataset.placeholder ?? '');
+        valueElement.classList.toggle('is-placeholder', !slug);
+        form?.querySelector(`[data-icon-clear="${inputId}"]`)?.toggleAttribute('hidden', !slug);
+        const glyph = trigger.querySelector('[data-glyph-for]');
+        // Glyphs need the icon index; They are rendered again once it has loaded.
+        if (glyph instanceof HTMLElement && iconResolver && glyph.dataset.slug !== slug) {
+          glyph.dataset.slug = slug;
+          renderInputGlyph(glyph, slug);
+        }
+      }
     }
   }
 
@@ -1323,6 +1588,8 @@
     }
     document.querySelector('.builder-output')?.classList.toggle('is-incomplete', !isComplete);
     setStatus(isComplete ? '' : `Required: ${missing.join(', ')}`, !isComplete);
+    syncAllSelects();
+    syncIconSelects();
     validateIcons();
 
     clearTimeout(previewTimer);
@@ -1446,6 +1713,10 @@
     }
     const fragment = document.createDocumentFragment();
     const end = Math.min(pickerMatches.length, pickerRendered + PICKER_CHUNK_SIZE);
+    const currentSlug =
+      !isPickerInsertMode && pickerTarget instanceof HTMLInputElement
+        ? pickerTarget.value.trim().toLowerCase()
+        : '';
     for (let i = pickerRendered; i < end; i += 1) {
       const match = pickerMatches[i];
       const tile = document.createElement('button');
@@ -1454,7 +1725,7 @@
       tile.dataset.slug = match.slug;
       tile.setAttribute('role', 'option');
       tile.setAttribute('aria-label', match.slug);
-      tile.setAttribute('aria-selected', 'false');
+      tile.setAttribute('aria-selected', String(match.slug === currentSlug));
       tile.title = match.slug;
       tile.tabIndex = i === 0 ? 0 : -1;
       fragment.append(tile);
@@ -1511,10 +1782,10 @@
       target.value = slug;
     }
     target.dispatchEvent(new Event('input', { bubbles: true }));
-    if (picker && 'hidePopover' in picker) {
-      picker.hidePopover();
+    if (picker) {
+      hidePopoverElement(picker);
     }
-    target.focus();
+    (target instanceof HTMLTextAreaElement ? target : (pickerTrigger ?? target)).focus();
   }
 
   /**
@@ -1639,6 +1910,23 @@
       handleTabKeydown(/** @type {KeyboardEvent} */ (event))
     );
 
+    form?.addEventListener('click', (event) => {
+      const clearButton =
+        event.target instanceof Element ? event.target.closest('[data-icon-clear]') : undefined;
+      const input = clearButton
+        ? document.getElementById(clearButton.getAttribute('data-icon-clear') ?? '')
+        : undefined;
+      if (input instanceof HTMLInputElement) {
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const trigger = form?.querySelector(`[data-icon-target="${input.id}"]`);
+        if (trigger instanceof HTMLElement) {
+          trigger.focus();
+        }
+      }
+    });
+    bindSelects();
+
     resetButton?.addEventListener('click', () => {
       if (altInput) {
         altInput.value = '';
@@ -1658,7 +1946,9 @@
    */
   function targetPicker(pickerElement, button) {
     pickerTarget = document.getElementById(button.dataset.iconTarget ?? '') ?? undefined;
+    pickerTrigger = button;
     isPickerInsertMode = button.dataset.iconInsert === 'true';
+    pickerNoneButton?.toggleAttribute('hidden', button.dataset.iconNone !== 'true');
     for (const anchored of document.querySelectorAll('[data-icon-target]')) {
       if (anchored instanceof HTMLElement) {
         anchored.style.removeProperty('anchor-name');
@@ -1790,6 +2080,7 @@
       }
     });
     gridElement.addEventListener('keydown', handlePickerGridKeydown);
+    pickerNoneButton?.addEventListener('click', () => applyPickedSlug('none'));
     gridElement.addEventListener('focusin', showTileSlug);
     gridElement.addEventListener('pointerover', showTileSlug);
   }
@@ -1803,6 +2094,7 @@
   // Icon index: Load in the background for validation, glyph previews, and the picker.
   loadIconIndex().then(
     () => {
+      syncIconSelects();
       validateIcons();
       if (picker?.matches(':popover-open')) {
         renderPicker();

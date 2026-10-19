@@ -13,14 +13,13 @@
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
-    color 0.2s ease,
-    box-shadow 0.2s ease;
+    color 0.2s ease;
 }
 
 .btn-primary {
-  background: var(--c-btn-brand-bg);
-  color: var(--c-btn-brand-text);
-  border: 1px solid color-mix(in srgb, var(--c-brand-2), transparent 40%);
+  background: var(--c-btn-bg);
+  color: var(--c-btn-text);
+  border: 1px solid var(--c-btn-border);
 }
 
 .btn-secondary {
@@ -30,12 +29,11 @@
 }
 
 .btn-primary:hover {
-  background: var(--c-btn-brand-hover-bg);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--base-brand) 32%, transparent);
+  background: var(--c-btn-hover-bg);
 }
 
 .btn-secondary:hover {
-  border-color: var(--c-brand-border);
+  border-color: var(--c-border-strong);
   background: color-mix(in srgb, var(--c-text-1), var(--c-border) 94%);
 }
 
@@ -208,7 +206,7 @@
 }
 
 .card-container:target .card {
-  border-color: var(--c-brand-border);
+  border-color: var(--c-focus);
 }
 
 .card-head {
@@ -375,8 +373,8 @@ details.code-drawer > summary::-webkit-details-marker {
 
 details.code-drawer > summary:hover {
   color: var(--c-text-1);
-  border-color: var(--c-brand-border);
-  background: color-mix(in srgb, var(--c-brand-1) 6%, var(--c-bg));
+  border-color: var(--c-border-strong);
+  background: color-mix(in srgb, var(--c-hover), var(--c-bg));
 }
 
 .drawer-chevron {
@@ -447,7 +445,7 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .scroll-btn:hover:not(.is-disabled) {
-  border-color: var(--c-brand-border);
+  border-color: var(--c-border-strong);
   color: var(--c-text-1);
 }
 
@@ -476,7 +474,7 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .copy-btn:hover {
-  border-color: var(--c-brand-border);
+  border-color: var(--c-border-strong);
   color: var(--c-text-1);
 }
 

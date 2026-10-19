@@ -9,7 +9,7 @@
 
 import { listPublicServices, STATUS_PRESET_MAP } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
-import { THEME_COLOR_NAMES, THEMES } from '@/config/theme';
+import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import { ICON_MOTION_TOKENS, SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
@@ -68,11 +68,11 @@ const SPECIAL_KIND_DETAILS: Readonly<
 };
 
 /** Example `/stack` groups the tech stack builder starts with. */
-const EXAMPLE_STACK_GROUPS = 'c,cpp,cs,rust,py,ts:6|docker,cloudflare,linux,git:4';
+const EXAMPLE_STACK_GROUPS = 'html,css,js,ts:4|react,nodejs,docker:3';
 
 /** Example quote text the quote card builder starts with. */
 const EXAMPLE_QUOTE_TEXT =
-  'Who says programmers are boring? I bring the humor to the office while my code brings the chaos!';
+  'Your quote goes here. Long quotes wrap onto multiple lines automatically.';
 
 /** Memoized builder schemas keyed by element kind. */
 const BUILDER_SCHEMA_CACHE = new Map<BuilderKind, BuilderSchema>();
@@ -107,15 +107,16 @@ function buildColorField(description?: string): BuilderField {
   return { control: 'color', description, id: 'color', label: 'Color', options, param: 'color' };
 }
 
-/** Build the `?icon=left,right` icon pair field (`placeholder` describes an empty slug). */
-function buildIconPairField(description: string, placeholder = 'none'): BuilderField {
+/** Build the `?icon=left,right` icon pair field (`hasPresetValue`: An empty slug keeps the service preset icon). */
+function buildIconPairField(description: string, hasPresetValue = false): BuilderField {
   return {
     control: 'iconPair',
     description,
+    hasPresetValue,
     id: 'icon',
     label: 'Icons',
     param: 'icon',
-    placeholder,
+    placeholder: hasPresetValue ? 'preset' : 'none',
   };
 }
 
@@ -125,11 +126,15 @@ function buildDotField(): BuilderField {
     buildDefaultOption(),
     { label: 'none (remove preset dot)', value: 'none' },
   ];
-  for (const state of Object.keys(STATUS_PRESET_MAP)) {
-    options.push({ label: `${state} (status preset)`, value: state });
+  for (const [state, preset] of Object.entries(STATUS_PRESET_MAP)) {
+    options.push({
+      label: `${state} (status preset)`,
+      swatch: DOT_COLORS[preset.dot],
+      value: state,
+    });
   }
   for (const colorName of THEME_COLOR_NAMES) {
-    options.push({ label: colorName, value: colorName });
+    options.push({ label: colorName, swatch: DOT_COLORS[colorName], value: colorName });
   }
   return { control: 'select', id: 'dot', label: 'Status dot', options, param: 'dot' };
 }
@@ -342,8 +347,8 @@ function buildServiceFields(): BuilderField[] {
     buildVariantField(),
     buildColorField('Overrides the preset color.'),
     buildIconPairField(
-      'Overrides the preset icon; Set only the right icon to keep the preset icon on the left.',
-      'preset'
+      'Overrides the preset icon; Set only the right icon to keep the preset icon on the left, or pick No icon to remove it.',
+      true
     ),
     buildDotField(),
     buildSpecialField(),
@@ -510,14 +515,14 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
       return {
         ...base,
         fields: buildQuoteFields(),
-        initialState: { author: 'XulbuX', layout: 'vertical', text: EXAMPLE_QUOTE_TEXT },
+        initialState: { author: 'Author', text: EXAMPLE_QUOTE_TEXT },
       };
     }
     case 'service': {
       return {
         ...base,
         fields: buildServiceFields(),
-        initialState: { metric: 'v', service: 'pypi', target: 'xulbux' },
+        initialState: { metric: 'v', service: 'npm', target: 'react' },
         services: buildServiceOptions(),
       };
     }

@@ -57,6 +57,8 @@ export interface BuilderField {
   control: BuilderControl;
   /** Help text shown below the control. */
   description?: string;
+  /** Whether an empty value keeps a route preset (service badge icons); `none` then removes it explicitly. */
+  hasPresetValue?: boolean;
   /** Field ID (state key and DOM ID suffix). */
   id: string;
   /** Whether the URL cannot be built while the field is empty. */

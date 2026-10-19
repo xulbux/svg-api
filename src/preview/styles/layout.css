@@ -302,11 +302,12 @@
 }
 
 .bg-picker-option:has(:checked) {
-  color: var(--c-brand-1);
+  background: var(--c-selected);
+  color: var(--c-text-1);
 }
 
 .bg-picker-option:has(:focus-visible) {
-  outline: 2px solid var(--c-brand-1);
+  outline: 2px solid var(--c-focus);
   outline-offset: -2px;
 }
 
@@ -492,7 +493,7 @@
   }
 
   .local-nav-toggle:hover {
-    border-color: var(--c-brand-border);
+    border-color: var(--c-border-strong);
   }
 
   .local-nav-current {
