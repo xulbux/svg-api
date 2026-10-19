@@ -843,13 +843,11 @@ details.code-drawer[open] .drawer-chevron {
   max-inline-size: 100%;
   border-radius: 6px;
   outline-offset: 4px;
-  transition:
-    translate 0.15s ease,
-    scale 0.15s ease;
+  transition: translate 0.15s ease;
 }
 
-/* Lift and grow slightly (no glow, so the hover state never clashes with the preview's own colors) */
+/* Lift slightly (no glow or scaling, so the preview keeps its colors and crisp text) */
+
 .preview-link:hover {
   translate: 0 -2px;
-  scale: 1.04;
 }
