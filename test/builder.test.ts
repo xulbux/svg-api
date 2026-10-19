@@ -21,7 +21,7 @@ import {
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { getBuilderSchema, resolveBuilderTarget } from '@/routes/schema';
-import { renderSvgPath, resolveSvgRoute } from '@/routes/svg';
+import { renderSvgPath, resolveSvgPathRedirectUrl, resolveSvgRoute } from '@/routes/svg';
 import { getIconPickerIndex, ICON_SLUG_ALIASES, resolveIcon } from '@/svg/icons';
 import type {
   BuilderKind,
@@ -39,6 +39,7 @@ type BuilderState = Record<string, string>;
 /** Pure helpers exposed by the builder client script (`svgBuilderCore`). */
 interface BuilderCore {
   buildAltText: (schema: BuilderSchema, state: BuilderState) => string;
+  buildDefaultLinkTarget: (kind: BuilderKind, url: string) => string;
   buildPath: (schema: BuilderSchema, state: BuilderState) => { missing: string[]; path: string };
   buildSnippets: (
     url: string,
@@ -336,6 +337,28 @@ describe('builder client core', () => {
         value: 'passing',
       })
     ).toBe('build: passing');
+  });
+
+  it('links service badges to their query-free path, which redirects to the same upstream page (regression: duplicated styling params)', () => {
+    const schema = getBuilderSchema('service');
+    const { path } = core.buildPath(schema, {
+      metric: 'rating',
+      owner: 'xulbux',
+      service: 'ovsx',
+      target: 'theme-isolux',
+      variant: '2',
+    });
+    const url = `${schema.origin}${path}`;
+    expect(url).toContain('?variant=2');
+    const link = core.buildDefaultLinkTarget('service', url);
+    expect(link).toBe(url.slice(0, url.indexOf('?')));
+    const linkPath = new URL(link).pathname;
+    expect(resolveSvgPathRedirectUrl(linkPath)).toBeDefined();
+    expect(resolveSvgPathRedirectUrl(linkPath)).toBe(resolveSvgPathRedirectUrl(path));
+    expect(core.buildDefaultLinkTarget('service', link)).toBe(link);
+    for (const kind of BUILDER_KINDS.filter((candidate) => candidate !== 'service')) {
+      expect(core.buildDefaultLinkTarget(kind, url), kind).toBe('');
+    }
   });
 });
 

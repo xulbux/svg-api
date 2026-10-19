@@ -687,6 +687,22 @@
   }
 
   /**
+   * Build the default link target wrapped around the image when the link field is empty: Service badges link
+   * to their own path, which the Worker redirects to the upstream page on document navigations based on the
+   * path alone, so the (styling-only) query string is dropped; Other elements stay unlinked.
+   * @param {BuilderSchema['kind']} kind   Builder element kind.
+   * @param {string} url                   Absolute SVG URL.
+   * @returns {string} Link target (`''` for an unlinked image).
+   */
+  function buildDefaultLinkTarget(kind, url) {
+    if (kind !== 'service') {
+      return '';
+    }
+    const queryIndex = url.indexOf('?');
+    return queryIndex === -1 ? url : url.slice(0, queryIndex);
+  }
+
+  /**
    * Capitalize every `-`/`_`-separated slug part and join them (mirrors the Worker's Lucide lookup key).
    * @param {string} slug
    * @returns {string}
@@ -787,6 +803,7 @@
 
   const core = {
     buildAltText,
+    buildDefaultLinkTarget,
     buildPath,
     buildSnippets,
     collectStackSlugs,
@@ -1577,7 +1594,9 @@
     if (altInput) {
       altInput.placeholder = autoAlt;
     }
-    const link = (linkInput?.value ?? '').trim() || (schema.kind === 'service' ? absoluteUrl : '');
+    const link =
+      (linkInput?.value ?? '').trim() || buildDefaultLinkTarget(schema.kind, absoluteUrl);
+
     renderCode(
       buildSnippetTokens(absoluteUrl, (altInput?.value ?? '').trim() || autoAlt, link)[
         /** @type {keyof SnippetSet} */ (snippetFormat)
