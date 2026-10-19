@@ -12,14 +12,14 @@ import {
   clampInt,
   clampNumber,
   hasOwnKey,
-  renderDarkBgGradientDef,
+  prepareDisplayText,
   renderKumoBoxSurface,
   renderSheenOverlay,
+  renderSurfaceGradientDefs,
   renderSvgDocument,
-  renderThemeGradientDef,
-  sliceAtCodePoint,
-  prepareDisplayText,
+  resolveForegroundColor,
   resolveSurfaceTextColor,
+  sliceAtCodePoint,
 } from '@/svg/shared';
 import type {
   AnimationMode,
@@ -46,7 +46,7 @@ interface QuoteMetrics {
   fontSize: number;
   /** Line height in pixels for wrapped quote lines. */
   lineHeight: number;
-  /** Horizontal inner padding in pixels. */
+  /** Horizontal inner padding of vertical cards in pixels (horizontal cards are inset by their bar and watermark). */
   padX: number;
   /** Vertical inner padding in pixels. */
   padY: number;
@@ -73,11 +73,19 @@ interface QuoteWrapContext {
   /** Whether the text is rendered with semi-bold (`600`) weight. */
   isBold: boolean;
   /** Maximum rendered line width in pixels. */
-  maxWidthPx: number;
+  maxWidth: number;
   /** Opening quote mark rendered before the first line (`''` for none). */
   prefix: string;
   /** Closing quote mark rendered after the last line (`''` for none). */
   suffix: string;
+}
+
+/** Horizontal extent of the text column of a quote card. */
+interface QuoteTextColumn {
+  /** Maximum rendered line width in pixels. */
+  maxWidth: number;
+  /** X coordinate where left-aligned (horizontal) text starts. */
+  startX: number;
 }
 
 /** Variant-dependent colors, font weight, and `<defs>` gradients of a quote card. */
@@ -118,6 +126,8 @@ interface QuoteCardContext {
   textBlockHeight: number;
   /** Quote body text color. */
   textColor: string;
+  /** Horizontal extent of the text column. */
+  textColumn: QuoteTextColumn;
   /** Card surface variant. */
   variant: BadgeVariant;
   /** Total card width in pixels. */
@@ -165,6 +175,24 @@ const MIN_GLYPH_ADVANCE_RATIO = 0.15;
 const QUOTE_MARK_PATHS =
   '<path d="M16 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/><path d="M5 3a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2 1 1 0 0 1 1 1v1a2 2 0 0 1-2 2 1 1 0 0 0-1 1v2a1 1 0 0 0 1 1 6 6 0 0 0 6-6V5a2 2 0 0 0-2-2z"/>';
 
+/** Leftmost ink X coordinate of the stroked watermark quote marks in `24x24` units (path edge at `3` minus half the `2`-unit stroke). */
+const QUOTE_MARK_INK_LEFT = 2;
+
+/** Inset in pixels of the horizontal card decorations from the card edges (accent bar on the left, watermark on the right). */
+const QUOTE_EDGE_INSET = 18;
+
+/** Gap in pixels between the horizontal text column and its decorations (accent bar on the left, watermark ink on the right). */
+const QUOTE_TEXT_GAP = 16;
+
+/** Minimum X coordinate in pixels where horizontal card text starts. */
+const MIN_QUOTE_TEXT_START_X = 34;
+
+/** Vertical gap in pixels between the top quote mark and the first text line of vertical cards. */
+const VERTICAL_MARK_TOP_GAP = 10;
+
+/** Vertical gap in pixels between the text block and the bottom quote mark of vertical cards. */
+const VERTICAL_MARK_BOTTOM_GAP = 14;
+
 /** Vertical quote mark fill opacity by quote card variant (`'1'`, `'2'`, `'3'`). */
 const VERTICAL_QUOTE_OPACITY_BY_VARIANT: Readonly<Record<BadgeVariant, string>> = {
   '1': '0.74',
@@ -184,6 +212,9 @@ const OPENING_QUOTE_MARK = '“';
 
 /** Closing quote mark appended to the last line of horizontal quote cards. */
 const CLOSING_QUOTE_MARK = '”';
+
+/** Theme color list for cards without a vivid theme gradient. */
+const NO_THEME_COLORS: readonly ThemeColorName[] = [];
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -219,16 +250,44 @@ function resolveQuoteMetrics(
   };
 }
 
+/** Compute the X coordinate of the top-right watermark quote marks of a horizontal card (inset like the accent bar). */
+function computeWatermarkX(width: number, iconBoxSize: number): number {
+  return Math.round(width - iconBoxSize - QUOTE_EDGE_INSET);
+}
+
 /**
- * Shorten `text` until it (plus a trailing ellipsis) fits within `maxWidthPx`, using binary search over its length.
+ * Compute the text column of a quote card. Vertical cards center text between symmetric `padX` insets;
+ * Horizontal cards keep the same `QUOTE_TEXT_GAP` to the accent bar on the left and to the watermark
+ * ink on the right, so no line (including the first, which shares the watermark's rows) ever runs under it.
+ */
+function computeQuoteTextColumn(
+  layout: QuoteLayout,
+  width: number,
+  metrics: QuoteMetrics,
+  iconBoxSize: number
+): QuoteTextColumn {
+  if (layout === 'vertical') {
+    return { maxWidth: width - metrics.padX * 2, startX: metrics.padX };
+  }
+  const startX = Math.max(
+    MIN_QUOTE_TEXT_START_X,
+    Math.round(QUOTE_EDGE_INSET + metrics.barWidth + QUOTE_TEXT_GAP)
+  );
+  const watermarkInkLeft =
+    computeWatermarkX(width, iconBoxSize) + QUOTE_MARK_INK_LEFT * metrics.quoteIconScale;
+  return { maxWidth: Math.floor(watermarkInkLeft - QUOTE_TEXT_GAP - startX), startX };
+}
+
+/**
+ * Shorten `text` until it (plus a trailing ellipsis) fits within `maxWidth` pixels, using binary search over its length.
  * Text far longer than any line could hold is first cut to a line-sized prefix (every glyph advances at
  * least `MIN_GLYPH_ADVANCE_RATIO` em), so the ink measurements never lay out thousands of glyphs.
  */
-function truncateToWidth(text: string, maxWidthPx: number, style: TextStyle): string {
+function truncateToWidth(text: string, maxWidth: number, style: TextStyle): string {
   const { fontSize, isBold, isItalic } = style;
-  const maxFittingLength = Math.ceil(maxWidthPx / (fontSize * MIN_GLYPH_ADVANCE_RATIO)) + 1;
+  const maxFittingLength = Math.ceil(maxWidth / (fontSize * MIN_GLYPH_ADVANCE_RATIO)) + 1;
   const isOverlong = text.length > maxFittingLength;
-  if (!isOverlong && measureTextWidthUncached(text, fontSize, isBold, isItalic) <= maxWidthPx) {
+  if (!isOverlong && measureTextWidthUncached(text, fontSize, isBold, isItalic) <= maxWidth) {
     return text;
   }
   const searchText = isOverlong ? sliceAtCodePoint(text, maxFittingLength) : text;
@@ -237,7 +296,7 @@ function truncateToWidth(text: string, maxWidthPx: number, style: TextStyle): st
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
     const candidate = `${sliceAtCodePoint(searchText, mid)}${ELLIPSIS}`;
-    if (measureTextWidthUncached(candidate, fontSize, isBold, isItalic) <= maxWidthPx) {
+    if (measureTextWidthUncached(candidate, fontSize, isBold, isItalic) <= maxWidth) {
       low = mid;
     } else {
       high = mid - 1;
@@ -264,11 +323,14 @@ function measureQuoteLine(
 function finalizeLastLine(lines: string[], isTruncated: boolean, context: QuoteWrapContext): void {
   const ellipsis = isTruncated ? ELLIPSIS : '';
   let lastIndex = lines.length - 1;
+  let lastLine = lines[lastIndex];
+  if (lastLine === undefined) {
+    return;
+  }
   while (
-    measureQuoteLine(`${lines[lastIndex]}${ellipsis}`, lastIndex === 0, true, context) >
-    context.maxWidthPx
+    measureQuoteLine(`${lastLine}${ellipsis}`, lastIndex === 0, true, context) > context.maxWidth
   ) {
-    const splitIndex = lines[lastIndex].lastIndexOf(' ');
+    const splitIndex = lastLine.lastIndexOf(' ');
     if (isTruncated || splitIndex <= 0 || lines.length >= MAX_QUOTE_LINES) {
       const decorationWidth = measureTextWidthUncached(
         `${lastIndex === 0 ? context.prefix : ''}${context.suffix}`,
@@ -276,31 +338,32 @@ function finalizeLastLine(lines: string[], isTruncated: boolean, context: QuoteW
         context.isBold
       );
       lines[lastIndex] = truncateToWidth(
-        `${lines[lastIndex]}${ellipsis}`,
-        context.maxWidthPx - decorationWidth,
+        `${lastLine}${ellipsis}`,
+        context.maxWidth - decorationWidth,
         { fontSize: context.fontSize, isBold: context.isBold, isItalic: false }
       );
       return;
     }
-    const lastLine = lines[lastIndex];
-    lines.splice(lastIndex, 1, lastLine.slice(0, splitIndex), lastLine.slice(splitIndex + 1));
+    const headLine = lastLine.slice(0, splitIndex);
+    lastLine = lastLine.slice(splitIndex + 1);
+    lines.splice(lastIndex, 1, headLine, lastLine);
     lastIndex += 1;
   }
-  lines[lastIndex] = `${lines[lastIndex]}${ellipsis}`;
+  lines[lastIndex] = `${lastLine}${ellipsis}`;
 }
 
 /**
- * Wrap a quote text string into at most `MAX_QUOTE_LINES` lines that fit within `context.maxWidthPx`,
+ * Wrap a quote text string into at most `MAX_QUOTE_LINES` lines that fit within `context.maxWidth`,
  * including the opening and closing quote marks rendered on the first and last line.
  * Line widths are estimated from cheap per-word advance widths and only measured exactly when an
  * estimate lands within `WRAP_TOLERANCE_RATIO * fontSize` of the limit; Words wider than a full line
  * are shortened with an ellipsis, and an ellipsis marks text cut off after the last line.
  */
 function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
-  const { fontSize, isBold, maxWidthPx } = context;
+  const { fontSize, isBold, maxWidth } = context;
   const wordStyle: TextStyle = { fontSize, isBold, isItalic: false };
   const maxWordWidth =
-    maxWidthPx - measureTextWidthUncached(`${context.prefix}${context.suffix}`, fontSize, isBold);
+    maxWidth - measureTextWidthUncached(`${context.prefix}${context.suffix}`, fontSize, isBold);
   const spaceAdvance = measureTextAdvance(' ', fontSize, isBold);
   const prefixAdvance = measureTextAdvance(context.prefix, fontSize, isBold);
   const tolerance = fontSize * WRAP_TOLERANCE_RATIO;
@@ -330,9 +393,9 @@ function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
         const candidateAdvance = currentAdvance + spaceAdvance + wordAdvance;
         const estimatedWidth = (lines.length === 0 ? prefixAdvance : 0) + candidateAdvance;
         const isOverflowing =
-          estimatedWidth > maxWidthPx + tolerance ||
-          (estimatedWidth > maxWidthPx - tolerance &&
-            measureQuoteLine(candidate, lines.length === 0, false, context) > maxWidthPx);
+          estimatedWidth > maxWidth + tolerance ||
+          (estimatedWidth > maxWidth - tolerance &&
+            measureQuoteLine(candidate, lines.length === 0, false, context) > maxWidth);
         if (isOverflowing) {
           lines.push(currentLine);
           isTruncated = lines.length === MAX_QUOTE_LINES;
@@ -363,16 +426,15 @@ function resolveQuoteStyleTokens(
   color: ThemeColorName,
   palette: ThemePalette
 ): QuoteStyleTokens {
-  const textColor = resolveSurfaceTextColor(variant);
-
-  const authorColor =
-    variant === '1' ? `rgba(255, 255, 255, ${PRIMARY_FOREGROUND_OPACITY})` : palette.accentText;
-  const isBoldText = isVertical || variant === '1';
-  const darkGradDef = variant === '1' ? '' : renderDarkBgGradientDef();
-  const themeGradDef =
-    variant === '1' || (!isVertical && variant === '2') ? renderThemeGradientDef(color) : '';
-
-  return { authorColor, gradDefs: `${darkGradDef}${themeGradDef}`, isBoldText, textColor };
+  const isOnPrimary = variant === '1';
+  // Primary cards fill with the theme gradient; Horizontal secondary cards paint their accent bar with it.
+  const hasThemeGradient = isOnPrimary || (!isVertical && variant === '2');
+  return {
+    authorColor: resolveForegroundColor(isOnPrimary, palette.accentText),
+    gradDefs: renderSurfaceGradientDefs(!isOnPrimary, hasThemeGradient ? [color] : NO_THEME_COLORS),
+    isBoldText: isVertical || isOnPrimary,
+    textColor: resolveSurfaceTextColor(variant),
+  };
 }
 
 /** Render a decorative double quotation mark `<g>` group. */
@@ -389,7 +451,7 @@ function renderQuoteSurface(context: QuoteCardContext): string {
   }
 
   const barY = Math.max(14, metrics.padY - 2);
-  const barGeometry = `x="18" y="${barY}" width="${metrics.barWidth}" height="${Math.max(16, height - barY * 2)}" rx="${Number((metrics.barWidth / 2).toFixed(2))}"`;
+  const barGeometry = `x="${QUOTE_EDGE_INSET}" y="${barY}" width="${metrics.barWidth}" height="${Math.max(16, height - barY * 2)}" rx="${Number((metrics.barWidth / 2).toFixed(2))}"`;
   let barPaint = `fill="${palette.iconColor}" fill-opacity="0.55"`;
   if (variant === '1') {
     barPaint = `fill="${WHITE}" fill-opacity="${PRIMARY_FOREGROUND_OPACITY}"`;
@@ -413,18 +475,19 @@ function renderVerticalQuoteContent(context: QuoteCardContext): string {
     quotePaint
   );
 
-  const firstLineY = padY + iconBoxSize + 10 + Math.round(fontSize * 0.85);
-  for (let i = 0; i < lines.length; i += 1) {
-    markup += renderTextPathMarkup(lines[i], {
+  const firstLineY = padY + iconBoxSize + VERTICAL_MARK_TOP_GAP + Math.round(fontSize * 0.85);
+  for (const [i, line] of lines.entries()) {
+    markup += renderTextPathMarkup(line, {
       anchorX: centerX,
       baselineY: firstLineY + i * lineHeight,
       fill: context.textColor,
       fontSize,
-      isBold: true,
+      isBold: context.isBoldText,
+      isUncached: true,
     });
   }
 
-  const bottomQuoteY = padY + iconBoxSize + 14 + context.textBlockHeight;
+  const bottomQuoteY = padY + iconBoxSize + VERTICAL_MARK_BOTTOM_GAP + context.textBlockHeight;
   markup += renderQuoteMarkGroup(
     `translate(${quoteIconX}, ${bottomQuoteY}) scale(${quoteIconScale})`,
     quotePaint
@@ -438,6 +501,7 @@ function renderVerticalQuoteContent(context: QuoteCardContext): string {
       fontSize: authorFontSize,
       isBold: true,
       isItalic: true,
+      isUncached: true,
     });
   }
 
@@ -447,8 +511,8 @@ function renderVerticalQuoteContent(context: QuoteCardContext): string {
 /** Render the inner watermark, wrapped text lines, and author line for a horizontal quote card. */
 function renderHorizontalQuoteContent(context: QuoteCardContext): string {
   const { authorLine, iconBoxSize, lines, metrics, variant, width } = context;
-  const { authorFontSize, barWidth, fontSize, lineHeight, padY, quoteIconScale } = metrics;
-  const watermarkX = Math.round(width - iconBoxSize - 18);
+  const { authorFontSize, fontSize, lineHeight, padY, quoteIconScale } = metrics;
+  const watermarkX = computeWatermarkX(width, iconBoxSize);
   const watermarkY = Math.max(14, Math.round(padY * 0.72));
   const watermarkStroke = variant === '1' ? WHITE : context.palette.iconColor;
 
@@ -457,7 +521,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
     `fill="none" stroke="${watermarkStroke}" stroke-opacity="${WATERMARK_OPACITY_BY_VARIANT[variant]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`
   );
 
-  const textStartX = Math.max(34, Math.round(22 + barWidth + 12));
+  const textStartX = context.textColumn.startX;
   const firstLineY = padY + Math.round(fontSize * 1.05);
   for (let i = 0; i < lines.length; i += 1) {
     const prefix = i === 0 ? OPENING_QUOTE_MARK : '';
@@ -469,6 +533,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
       fill: context.textColor,
       fontSize,
       isBold: context.isBoldText,
+      isUncached: true,
     });
   }
 
@@ -480,6 +545,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
       fill: context.authorColor,
       fontSize: authorFontSize,
       isBold: true,
+      isUncached: true,
     });
   }
 
@@ -502,15 +568,16 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const layout: QuoteLayout = options.layout ?? 'horizontal';
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveQuoteMetrics(options.size, layout);
-  const { authorFontSize, authorSpace, fontSize, lineHeight, padX, padY, quoteIconScale } = metrics;
+  const { authorFontSize, authorSpace, fontSize, lineHeight, padY, quoteIconScale } = metrics;
 
   const isVertical = layout === 'vertical';
   const defaultWidth = isVertical
     ? Math.round(DEFAULT_VERTICAL_QUOTE_WIDTH * Math.max(1, fontSize / QUOTE_SIZE_MAP.lg))
     : Math.round(QUOTE_WIDTH_RANGE.default * Math.max(1, fontSize / QUOTE_SIZE_MAP.md));
   const width = clampInt(options.width, QUOTE_WIDTH_RANGE, defaultWidth);
+  const iconBoxSize = Math.round(24 * quoteIconScale);
+  const textColumn = computeQuoteTextColumn(layout, width, metrics, iconBoxSize);
 
-  const maxTextWidth = isVertical ? width - padX * 2 : width - (padX + 42);
   const { authorColor, gradDefs, isBoldText, textColor } = resolveQuoteStyleTokens(
     variant,
     isVertical,
@@ -520,14 +587,14 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const lines = wrapQuoteLines(prepareDisplayText(options.text, MAX_QUOTE_TEXT_LENGTH), {
     fontSize,
     isBold: isBoldText,
-    maxWidthPx: maxTextWidth,
+    maxWidth: textColumn.maxWidth,
     prefix: isVertical ? '' : OPENING_QUOTE_MARK,
     suffix: isVertical ? '' : CLOSING_QUOTE_MARK,
   });
   const author = prepareDisplayText(options.author ?? '', MAX_QUOTE_TEXT_LENGTH).trim();
   const authorLine =
     author.length > 0
-      ? truncateToWidth(`— ${author}`, maxTextWidth, {
+      ? truncateToWidth(`— ${author}`, textColumn.maxWidth, {
           fontSize: authorFontSize,
           isBold: true,
           isItalic: isVertical,
@@ -535,8 +602,9 @@ export function renderQuote(options: QuoteRenderOptions): string {
       : '';
 
   const textBlockHeight = lines.length * lineHeight;
-  const iconBoxSize = Math.round(24 * quoteIconScale);
-  const verticalQuotesSpace = isVertical ? iconBoxSize * 2 + 24 : 0;
+  const verticalQuotesSpace = isVertical
+    ? iconBoxSize * 2 + VERTICAL_MARK_TOP_GAP + VERTICAL_MARK_BOTTOM_GAP
+    : 0;
   const authorHeightForLayout = isVertical ? authorSpace + 8 : authorSpace;
   const effectiveAuthorSpace = authorLine.length > 0 ? authorHeightForLayout : 0;
   const height = padY + verticalQuotesSpace + textBlockHeight + effectiveAuthorSpace + padY;
@@ -554,6 +622,7 @@ export function renderQuote(options: QuoteRenderOptions): string {
     palette,
     textBlockHeight,
     textColor,
+    textColumn,
     variant,
     width,
   };

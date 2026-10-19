@@ -7,7 +7,14 @@
  */
 
 import { getSiteAssetUrl } from '@/preview/assets';
-import { renderSectionHeader, renderUiIcon, serializeInlineJson } from '@/preview/components';
+import {
+  BRAND_FILL_ATTRS,
+  LUCIDE_STROKE_ATTRS,
+  renderCopyButton,
+  renderSectionHeader,
+  renderUiIcon,
+  serializeInlineJson,
+} from '@/preview/components';
 import { renderPageLayout } from '@/preview/layout';
 import {
   buildBuilderPath,
@@ -17,7 +24,14 @@ import {
 } from '@/preview/navigation';
 import { getBuilderSchema } from '@/routes/schema';
 import { escapeXml } from '@/svg/shared';
-import type { BuilderField, BuilderKind, BuilderOption, BuilderSchema } from '@/types';
+import type {
+  BuilderControl,
+  BuilderField,
+  BuilderKind,
+  BuilderOption,
+  BuilderSchema,
+  IconPickerSetId,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -25,6 +39,14 @@ import type { BuilderField, BuilderKind, BuilderOption, BuilderSchema } from '@/
 interface SnippetFormat {
   /** Format identifier (`data-format`). */
   id: string;
+  /** Visible tab label. */
+  label: string;
+}
+
+/** Icon set tab of the icon picker. */
+interface IconPickerTab {
+  /** Tab value (`'all'` or an icon set). */
+  id: IconPickerSetId | 'all';
   /** Visible tab label. */
   label: string;
 }
@@ -38,6 +60,19 @@ const SNIPPET_FORMATS: readonly SnippetFormat[] = [
   { id: 'url', label: 'URL' },
 ];
 
+/** Icon set tabs of the icon picker in display order (the first one is selected initially). */
+const ICON_PICKER_TABS: readonly IconPickerTab[] = [
+  { id: 'all', label: 'All' },
+  { id: 'lucide', label: 'Lucide' },
+  { id: 'brands', label: 'Brands' },
+];
+
+/** SVG paint attributes of icon picker glyphs per set (cloned from `<template>` elements by the builder script). */
+const GLYPH_PAINT_ATTRS: Readonly<Record<IconPickerSetId, string>> = {
+  brands: BRAND_FILL_ATTRS,
+  lucide: LUCIDE_STROKE_ATTRS,
+};
+
 /** Documentation page linked from each builder (parameter reference). */
 const BUILDER_DOCS_SLUGS = {
   badge: 'badges',
@@ -47,6 +82,21 @@ const BUILDER_DOCS_SLUGS = {
   service: 'services',
   stack: 'stack',
 } as const satisfies Readonly<Record<BuilderKind, string>>;
+
+/** Controls that render a single labelable form control (`<label for>`), as opposed to a group of parts. */
+const SINGLE_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderControl>([
+  'number',
+  'stackGroups',
+  'text',
+  'textarea',
+]);
+
+/** Controls labeled directly (dropdown and icon triggers, the color radiogroup) instead of as a labeled group. */
+const SELF_LABELED_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderControl>([
+  'color',
+  'icon',
+  'select',
+]);
 
 /** Number of options above which a dropdown gets a search field (e.g., the service presets). */
 const SEARCHABLE_OPTION_COUNT = 12;
@@ -100,7 +150,7 @@ function renderSelectHtml(
   return `<div class="select" data-select="${selectId}">
             <select class="select-native" id="${selectId}"${partAttr} tabindex="-1" aria-hidden="true">${renderOptionsHtml(options, selectedValue)}</select>
             <button type="button" class="builder-input select-trigger" id="${selectId}-trigger" popovertarget="${selectId}-menu" aria-haspopup="listbox" aria-labelledby="${labelId} ${selectId}-value" style="anchor-name: ${anchorName}">${swatchHtml}<span class="select-value" id="${selectId}-value">${escapeXml(selected?.label ?? '')}</span>${renderUiIcon('chevron-down', 14, 'select-chevron')}</button>
-            <div class="select-menu" id="${selectId}-menu" popover style="position-anchor: ${anchorName}">
+            <div class="popover-panel select-menu" id="${selectId}-menu" popover style="position-anchor: ${anchorName}">
               ${searchHtml}
               <div class="select-options" role="listbox" aria-labelledby="${labelId}"></div>
             </div>
@@ -135,22 +185,28 @@ function resolveSelectOptions(
 
 /**
  * Render an icon selector: A trigger showing the current glyph and slug that opens the icon picker
- * (the slug is stored in a hidden input), plus a clear button.
+ * (the slug is stored in a hidden input), plus a clear button. Icon pair parts get a sublabel; A single icon
+ * selector is labeled by its field label.
  */
-function renderIconSelectHtml(field: BuilderField, part: string, label: string): string {
+function renderIconSelectHtml(field: BuilderField, part: string, sublabel?: string): string {
   const inputId = buildFieldId(field, part);
   const placeholder = field.placeholder ?? 'none';
   const noneAttr = field.hasPresetValue ? ' data-icon-none="true"' : '';
+  const labelId = sublabel ? `${inputId}-label` : `${buildFieldId(field)}-label`;
+  const sublabelHtml = sublabel
+    ? `<span class="builder-sublabel" id="${labelId}">${escapeXml(sublabel)}</span>`
+    : '';
+  const clearLabel = (sublabel ?? field.label).toLowerCase();
   return `<div class="icon-input">
-          <span class="builder-sublabel" id="${inputId}-label">${escapeXml(label)}</span>
+          ${sublabelHtml}
           <div class="icon-select">
             <input type="hidden" id="${inputId}" data-part="${part}" />
-            <button type="button" class="builder-input icon-select-trigger" data-icon-target="${inputId}"${noneAttr} popovertarget="icon-picker" aria-haspopup="dialog" aria-labelledby="${inputId}-label ${inputId}-value">
+            <button type="button" class="builder-input icon-select-trigger" data-icon-target="${inputId}"${noneAttr} popovertarget="icon-picker" aria-haspopup="dialog" aria-labelledby="${labelId} ${inputId}-value">
               <span class="icon-input-glyph" aria-hidden="true" data-glyph-for="${inputId}"></span>
               <span class="icon-select-value is-placeholder" id="${inputId}-value" data-placeholder="${escapeXml(placeholder)}">${escapeXml(placeholder)}</span>
               ${renderUiIcon('layout-grid', 14, 'icon-select-grid')}
             </button>
-            <button type="button" class="icon-select-clear" data-icon-clear="${inputId}" aria-label="Clear ${escapeXml(label.toLowerCase())}" title="Clear" hidden>${renderUiIcon('x', 14)}</button>
+            <button type="button" class="icon-select-clear" data-icon-clear="${inputId}" aria-label="Clear ${escapeXml(clearLabel)}" title="Clear" hidden>${renderUiIcon('x', 14)}</button>
           </div>
           <p class="builder-hint builder-validation" data-validation-for="${inputId}" aria-live="polite"></p>
         </div>`;
@@ -245,7 +301,7 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
       return renderColorControlHtml(field, initialValue);
     }
     case 'icon': {
-      return renderIconSelectHtml(field, 'main', 'Icon');
+      return renderIconSelectHtml(field, 'main');
     }
     case 'iconPair': {
       return `<div class="builder-inline is-pair">${renderIconSelectHtml(field, 'left', 'Left icon')}${renderIconSelectHtml(field, 'right', 'Right icon')}</div>`;
@@ -270,7 +326,7 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
     case 'stackGroups': {
       return `<textarea class="builder-input builder-textarea is-mono" id="${controlId}" rows="4" spellcheck="false"${requiredAttr}>${escapeXml(initialValue)}</textarea>
         <div class="builder-field-actions">
-          <button type="button" class="btn-secondary btn-small" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}<span class="btn-label">Insert icon</span></button>
+          <button type="button" class="btn-secondary btn-small" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}Insert icon</button>
         </div>
         <p class="builder-hint builder-validation" data-validation-for="${controlId}" aria-live="polite"></p>`;
     }
@@ -283,28 +339,26 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
   }
 }
 
-/** Check whether a field renders a single labelable form control (`<label for>`), as opposed to a group of parts. */
-function hasSingleControl(field: BuilderField): boolean {
-  return ['number', 'stackGroups', 'text', 'textarea'].includes(field.control);
-}
-
 /** Render one builder field with its label, control(s), and help text. */
 function renderFieldHtml(field: BuilderField, schema: BuilderSchema): string {
   const controlId = buildFieldId(field);
-  const requiredMark = field.isRequired
-    ? '<span class="builder-required" aria-hidden="true">*</span>'
-    : '';
+  const isSingleControl = SINGLE_CONTROL_TYPES.has(field.control);
+  // Fields with a runtime requirement (service owners) get a hidden mark the builder script toggles.
+  const requiredMark =
+    field.isRequired || field.hasDynamicRequirement
+      ? `<span class="builder-required" aria-hidden="true"${field.isRequired ? '' : ' hidden'}>*</span>`
+      : '';
   const paramHtml = field.param
     ? `<code class="builder-param">?${escapeXml(field.param)}=</code>`
     : '';
-  const labelHtml = hasSingleControl(field)
-    ? `<label class="builder-label" id="${controlId}-label" for="${controlId}">${escapeXml(field.label)}${requiredMark}</label>`
-    : `<span class="builder-label" id="${controlId}-label">${escapeXml(field.label)}${requiredMark}</span>`;
+  const labelTag = isSingleControl ? 'label' : 'span';
+  const forAttr = isSingleControl ? ` for="${controlId}"` : '';
+  const labelHtml = `<${labelTag} class="builder-label" id="${controlId}-label"${forAttr}><span class="builder-label-text">${escapeXml(field.label)}</span>${requiredMark}</${labelTag}>`;
   const showAttrs = field.showWhen
     ? ` data-show-field="${escapeXml(field.showWhen.field)}" data-show-values="${escapeXml(field.showWhen.values.join(' '))}"`
     : '';
-  // Dropdowns label their trigger and listbox directly; Composite controls are labeled groups.
-  const isGroup = !hasSingleControl(field) && field.control !== 'select';
+  // Dropdowns and the color radiogroup label themselves; Other composite controls are labeled groups.
+  const isGroup = !isSingleControl && !SELF_LABELED_CONTROL_TYPES.has(field.control);
   const groupAttrs = isGroup ? ` role="group" aria-labelledby="${controlId}-label"` : '';
   const descriptionHtml = field.description
     ? `<p class="builder-hint">${escapeXml(field.description)}</p>`
@@ -316,22 +370,19 @@ function renderFieldHtml(field: BuilderField, schema: BuilderSchema): string {
       </div>`;
 }
 
-/** Render (once per isolate) the shared icon picker popover (tabs, search, and the lazily filled grid). */
+/** Render (once per isolate) the shared icon picker dialog popover (tabs, search, the lazily filled grid, and glyph templates). */
 function renderIconPickerHtml(): string {
-  if (iconPickerHtmlCache !== undefined) {
-    return iconPickerHtmlCache;
-  }
-  const tabs: readonly SnippetFormat[] = [
-    { id: 'all', label: 'All' },
-    { id: 'lucide', label: 'Lucide' },
-    { id: 'brands', label: 'Brands' },
-  ];
-  let tabsHtml = '';
-  for (let i = 0; i < tabs.length; i += 1) {
-    const checkedAttr = i === 0 ? ' checked' : '';
-    tabsHtml += `<label class="icon-picker-tab"><input type="radio" name="icon-picker-set" value="${tabs[i].id}"${checkedAttr} /><span>${tabs[i].label}</span></label>`;
-  }
-  iconPickerHtmlCache = `<div class="icon-picker" id="icon-picker" popover data-index-url="${getSiteAssetUrl('icons.json')}" aria-label="Icon picker">
+  if (iconPickerHtmlCache === undefined) {
+    let tabsHtml = '';
+    for (const [i, tab] of ICON_PICKER_TABS.entries()) {
+      const checkedAttr = i === 0 ? ' checked' : '';
+      tabsHtml += `<label class="icon-picker-tab"><input type="radio" name="icon-picker-set" value="${tab.id}"${checkedAttr} /><span>${tab.label}</span></label>`;
+    }
+    let glyphTemplatesHtml = '';
+    for (const [set, paintAttrs] of Object.entries(GLYPH_PAINT_ATTRS)) {
+      glyphTemplatesHtml += `<svg data-set="${set}" viewBox="0 0 24 24" aria-hidden="true" ${paintAttrs}></svg>`;
+    }
+    iconPickerHtmlCache = `<div class="popover-panel icon-picker" id="icon-picker" popover role="dialog" data-index-url="${getSiteAssetUrl('icons.json')}" aria-label="Icon picker">
     <div class="icon-picker-head">
       <div class="icon-picker-search">
         ${renderUiIcon('search', 15)}
@@ -344,20 +395,19 @@ function renderIconPickerHtml(): string {
     </div>
     <div class="icon-picker-grid" id="icon-picker-grid" role="listbox" aria-label="Icons" tabindex="-1"></div>
     <p class="icon-picker-foot" id="icon-picker-status" aria-live="polite">Loading icons…</p>
+    <template id="icon-glyph-templates">${glyphTemplatesHtml}</template>
   </div>`;
+  }
   return iconPickerHtmlCache;
 }
 
 /** Render the preview, snippet, and action panel. */
 function renderOutputPanelHtml(kind: BuilderKind): string {
   let tabsHtml = '';
-  for (let i = 0; i < SNIPPET_FORMATS.length; i += 1) {
-    const format = SNIPPET_FORMATS[i];
+  for (const [i, format] of SNIPPET_FORMATS.entries()) {
     const isSelected = i === 0;
     tabsHtml += `<button type="button" class="builder-tab${isSelected ? ' is-active' : ''}" role="tab" id="builder-tab-${format.id}" data-format="${format.id}" aria-selected="${isSelected}" aria-controls="builder-code" tabindex="${isSelected ? 0 : -1}">${format.label}</button>`;
   }
-  const copyIcon = renderUiIcon('copy', 13, 'icon-copy');
-  const checkIcon = renderUiIcon('check', 13, 'icon-check');
   const docsHref = buildDocsPath(BUILDER_DOCS_SLUGS[kind]);
   return `<aside class="builder-panel" aria-label="Preview and snippets">
       <div class="builder-panel-inner">
@@ -372,7 +422,7 @@ function renderOutputPanelHtml(kind: BuilderKind): string {
             <div class="code-drawer-toolbar">
               <span class="code-drawer-label" id="builder-code-label">Snippet</span>
               <div class="code-toolbar-actions">
-                <button type="button" class="copy-btn" data-copy-target="builder-code" aria-describedby="builder-code-label">${copyIcon}${checkIcon}<span class="copy-btn-text" aria-live="polite">Copy</span></button>
+                ${renderCopyButton('id="builder-copy" data-copy-target="builder-code" aria-describedby="builder-code-label"')}
               </div>
             </div>
             <div class="code-pre-wrap">
@@ -390,10 +440,10 @@ function renderOutputPanelHtml(kind: BuilderKind): string {
             </div>
           </div>
           <div class="builder-actions">
-            <a class="btn-secondary btn-small" id="builder-open" href="#" target="_blank" rel="noopener noreferrer">${renderUiIcon('external-link', 14)}<span class="btn-label">Open SVG</span></a>
-            <button type="button" class="btn-secondary btn-small" id="builder-share">${renderUiIcon('link', 14)}<span class="btn-label" id="builder-share-label">Copy builder link</span></button>
-            <button type="button" class="btn-secondary btn-small" id="builder-reset">${renderUiIcon('rotate-ccw', 14)}<span class="btn-label">Reset</span></button>
-            <a class="btn-secondary btn-small" href="${docsHref}">${renderUiIcon('book-open', 14)}<span class="btn-label">Reference</span></a>
+            <a class="btn-secondary btn-small" id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true">${renderUiIcon('external-link', 14)}Open SVG</a>
+            <button type="button" class="btn-secondary btn-small" id="builder-share" data-copied-label="Link copied">${renderUiIcon('link', 14)}<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span></button>
+            <button type="button" class="btn-secondary btn-small" id="builder-reset">${renderUiIcon('rotate-ccw', 14)}Reset</button>
+            <a class="btn-secondary btn-small" href="${docsHref}">${renderUiIcon('book-open', 14)}Reference</a>
           </div>
         </div>
       </div>

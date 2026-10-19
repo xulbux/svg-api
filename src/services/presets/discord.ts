@@ -2,8 +2,8 @@
  * Discord service preset – Approximate online and total member counts of a server via a permanent invite code (`/badge/discord/:invite/:metric`).
  */
 
-import { createCountTransform } from '@/services/metrics';
-import type { MetricEndpoint, MetricPresentation, ServiceDefinition } from '@/types';
+import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createCommunityMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -18,53 +18,41 @@ interface DiscordInvitePayload {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /**
- * Tier-1 JSON cache TTL in seconds; Discord rate-limits per IP and Workers share egress IPs, so
- * approximate counts are cached longer than the default.
+ * Discord invite endpoint (with approximate counts) and invite link redirect; Discord rate-limits
+ * per IP and Workers share egress IPs, so approximate counts use the slow TTL.
  */
-const DISCORD_CACHE_TTL_SECONDS = 1800;
-
-/** Shared presentation of the Discord badges. */
-const DISCORD: MetricPresentation = {
-  defaultColor: 'indigo',
-  defaultIcon: 'discord',
-  defaultLabel: 'discord',
-};
-
-/** Discord invite endpoint (with approximate counts) and invite link redirect. */
-const DISCORD_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, invite: string): string =>
-    `https://discord.com/api/v10/invites/${invite}?with_counts=true`,
-  buildRedirectUrl: (_owner: string, invite: string): string => `https://discord.gg/${invite}`,
-  cacheTtlSeconds: DISCORD_CACHE_TTL_SECONDS,
-};
+const DISCORD_ENDPOINT = createEndpoint({
+  api: 'https://discord.com/api/v10/invites/{target}?with_counts=true',
+  page: 'https://discord.gg/{target}',
+  project: pickFields<DiscordInvitePayload>([
+    'approximate_member_count',
+    'approximate_presence_count',
+  ]),
+  ttl: CACHE_TTL.slow,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Discord service preset (`discord`). */
-export const DISCORD_SERVICE: ServiceDefinition = {
+export const DISCORD_SERVICE = defineService({
   docs: {
     description: 'Approximate online and total member counts via a permanent invite code.',
-    targetName: ':invite',
     title: 'Discord',
   },
   metricAliases: { users: 'members' },
   metrics: {
-    members: {
-      ...DISCORD_ENDPOINT,
-      ...DISCORD,
-      transform: createCountTransform<DiscordInvitePayload>(
-        (payload) => payload.approximate_member_count,
-        ' members'
-      ),
-    },
-    online: {
-      ...DISCORD_ENDPOINT,
-      ...DISCORD,
-      transform: createCountTransform<DiscordInvitePayload>(
-        (payload) => payload.approximate_presence_count,
-        ' online'
-      ),
-    },
+    members: createCommunityMetric(
+      DISCORD_ENDPOINT,
+      'members',
+      'discord',
+      (invite) => invite.approximate_member_count
+    ),
+    online: createCommunityMetric(
+      DISCORD_ENDPOINT,
+      'online',
+      'discord',
+      (invite) => invite.approximate_presence_count
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':invite' } },
+});

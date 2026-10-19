@@ -17,11 +17,38 @@ export interface WaitUntilContext {
 export interface Env {
   /** Whether the `/` homepage and `/docs/*` documentation pages are enabled in production. */
   ALLOW_PREVIEW_IN_PROD?: string;
-  /** Default GitHub owner/username for 3-segment `/badge/gh/:repo/:metric` routes (also the owner allowlist). */
-  DEFAULT_GH_OWNER: string;
+  /**
+   * GitHub owner of the restricted `gh` preset: Default owner of 3-segment `/badge/gh/:repo/:metric`
+   * routes and the only allowed owner; When unset or empty, every `gh` badge is restricted.
+   */
+  DEFAULT_GH_OWNER?: string;
   /** Optional GitHub Personal Access Token for higher upstream API rate limits. */
   GITHUB_TOKEN?: string;
 }
+
+/** Raw numeric upstream value (number or numeric string), possibly missing. */
+export type RawCount = number | string | null | undefined;
+
+/**
+ * Canonical download metric keys: `dd` = last day (`/day`), `dw` = last week (`/wk`), `dl` = last
+ * month (`/mo`), `dq` = last 90 days (`/90d`), `dy` = last year (`/yr`), `dt` = all-time (no suffix).
+ */
+export type DownloadMetricKey = 'dd' | 'dl' | 'dq' | 'dt' | 'dw' | 'dy';
+
+/**
+ * Community count kinds sharing one label and color across services (the service brand icon
+ * identifies the platform, e.g., Discord `members`, Bluesky `followers`, Hugging Face `likes`).
+ */
+export type CommunityMetricKind =
+  | 'backers'
+  | 'followers'
+  | 'likes'
+  | 'members'
+  | 'online'
+  | 'patrons'
+  | 'players'
+  | 'posts'
+  | 'votes';
 
 /** Resolved metric values and redirect URL returned by a service preset. */
 export interface MetricResult {
@@ -51,24 +78,52 @@ export interface StatusPreset {
   dot: DotState;
 }
 
+/** Validated path segments of a service preset route, passed to URL builders and transforms. */
+export interface ServiceRouteParams {
+  /** Effective owner segment (explicit or default; `''` when the route has none). */
+  owner: string;
+  /** Target segment; Multi-segment targets are joined with `/`. */
+  target: string;
+}
+
+/** Builds an upstream API or browser page URL from validated route params. */
+export type ServiceUrlBuilder = (params: ServiceRouteParams) => string;
+
 /**
- * Transforms a raw upstream JSON payload into badge properties.
+ * Projects a raw upstream JSON payload into the small value kept in the in-isolate memory cache
+ * and the Tier-1 edge cache. Returning `undefined` marks the package or repository as not found.
+ */
+export type PayloadProjection<P> = (data: unknown) => P | undefined;
+
+/**
+ * Transforms projected upstream data into badge properties.
  * Returning `undefined` marks the requested package or repository as not found.
  */
-export type MetricTransform = (
-  data: unknown,
-  owner: string,
-  target: string
+export type MetricTransform<P = unknown> = (
+  data: P,
+  params: ServiceRouteParams
 ) => Partial<MetricResult> | undefined;
 
-/** Upstream endpoint builders shared by one or more metrics of a service preset. */
-export interface MetricEndpoint {
-  /** Builds the upstream JSON API URL for `(owner, target)`. */
-  buildApiUrl: (owner: string, target: string) => string;
-  /** Builds the browser redirect destination URL for `(owner, target)`. */
-  buildRedirectUrl: (owner: string, target: string) => string;
-  /** Optional Tier-1 JSON cache TTL in seconds (defaults to `600`). */
-  cacheTtlSeconds?: number;
+/** Upstream JSON endpoint shared by one or more metrics of a service preset. */
+export interface MetricEndpoint<P = unknown> {
+  /** Builds the upstream JSON API URL. */
+  buildApiUrl: ServiceUrlBuilder;
+  /** Builds the browser redirect destination URL. */
+  buildPageUrl: ServiceUrlBuilder;
+  /**
+   * Leading key of the upstream JSON object whose value is the only part needed (e.g., PyPI's
+   * `info`); The body stream is cancelled as soon as that value is complete.
+   */
+  leadingKey?: string;
+  /**
+   * Additional upstream HTTP error statuses that mean the package does not exist (e.g., Fedora
+   * mdapi's `400`); They are reported and cached like a `404`.
+   */
+  missingStatuses?: readonly number[];
+  /** Optional projection of the raw payload (defaults to the raw JSON object). */
+  project?: PayloadProjection<P>;
+  /** Tier-1 JSON cache TTL in seconds. */
+  ttl: number;
 }
 
 /** Default visual presentation of a metric badge before query overrides. */
@@ -89,58 +144,96 @@ export interface ScoreColorThreshold {
   minPercent: number;
 }
 
-/** Configuration for a single metric within an upstream service preset. */
-export interface ServiceMetricConfig extends MetricEndpoint, MetricPresentation {
-  /** Transforms the raw upstream JSON payload into badge properties. */
+/**
+ * Configuration for a single metric within an upstream service preset (built with the typed
+ * factories in `src/services/metrics.ts`, which guarantee that `transform` matches `endpoint`).
+ */
+export interface ServiceMetricConfig extends MetricPresentation {
+  /** Upstream endpoint and cache projection. */
+  endpoint: MetricEndpoint;
+  /** Transforms the projected endpoint payload into badge properties. */
   transform: MetricTransform;
 }
 
 /**
- * Owner segment handling of a service preset route.
+ * Owner segment handling of a service preset route (derived from `ServiceRoute`, used by the builder).
  * - `'none'`: Only `/badge/:service/:target/:metric` is valid.
- * - `'optional'`: Both 3-segment and 4-segment routes are valid (`defaultOwner` fills the gap).
+ * - `'optional'`: Both 3-segment and 4-segment routes are valid.
  * - `'required'`: Only `/badge/:service/:owner/:target/:metric` is valid.
  */
 export type ServiceOwnerMode = 'none' | 'optional' | 'required';
+
+/** Owner path segment of a service preset route. */
+export interface ServiceOwnerSegment {
+  /** Whether the owner segment must be present. */
+  isRequired: boolean;
+  /** Docs placeholder of the owner segment (e.g., `':scope'`, `':vendor'`). */
+  placeholder: string;
+  /**
+   * Resolves the owner of routes without an owner segment (optional owners only); Returning
+   * `undefined` or `''` rejects the route as `missing owner`.
+   */
+  resolveDefault?: (env: Env) => string | undefined;
+}
+
+/** Target path segment(s) of a service preset route. */
+export interface ServiceTargetSegment {
+  /**
+   * Maximum number of `/`-separated path segments the target may span (defaults to `1`); Each one
+   * is validated individually (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`). Values
+   * above `1` combined with an owner require `isRequired: true`, so the owner stays unambiguous.
+   */
+  maxSegments?: number;
+  /** Minimum number of `/`-separated path segments the target must span (defaults to `1`). */
+  minSegments?: number;
+  /**
+   * Stricter pattern every target segment must also match on top of the shared safe segment rule
+   * (e.g., numeric Steam app ids); Mismatches are rejected as `invalid name` before any fetch.
+   */
+  pattern?: RegExp;
+  /** Docs placeholder of the target segment (e.g., `':pkg'`, `':repo'`). */
+  placeholder: string;
+}
+
+/** Path segments of a service preset route (`/badge/:service/[:owner/]:target/:metric`). */
+export interface ServiceRoute {
+  /** Owner segment; When absent, an explicit owner segment is rejected as `invalid route`. */
+  owner?: ServiceOwnerSegment;
+  /** Target segment(s). */
+  target: ServiceTargetSegment;
+}
 
 /** Documentation metadata used to generate the `/docs/services` route reference table. */
 export interface ServiceDocs {
   /** Short explanation of the available metrics. */
   description: string;
-  /** Owner segment placeholder (e.g., `':scope'`, `':vendor'`), when the service accepts an owner. */
-  ownerName?: string;
-  /** Target segment placeholder (e.g., `':pkg'`, `':repo'`). */
-  targetName: string;
   /** Human-readable service name (e.g., `'PyPI'`, `'crates.io'`). */
   title: string;
 }
 
-/** Declarative definition for an external service (e.g., `gh`, `pypi`). */
-export interface ServiceDefinition {
+/**
+ * Declarative definition for an external service (e.g., `gh`, `pypi`); `M` is the union of
+ * canonical metric keys, so alias targets are checked at compile time (see `defineService`).
+ */
+export interface ServiceDefinition<M extends string = string> {
   /**
    * Returns the allowlist of owners permitted to use this service preset.
    * Include `'*'` to allow any owner; Services with an allowlist are omitted from the public docs.
    */
-  allowedOwners?: (env: Env) => string[];
+  allowedOwners?: (env: Env) => readonly string[];
   /** Returns additional upstream request headers (e.g., an `Authorization` token). */
-  buildHeaders?: (env: Env) => Record<string, string>;
-  /** Resolves the default owner when omitted from the route path. */
-  defaultOwner?: (env: Env) => string;
+  buildHeaders?: (env: Env) => Readonly<Record<string, string>>;
   /** Documentation metadata for the `/docs/services` reference table. */
   docs: ServiceDocs;
-  /** Optional alternative metric slugs mapped to their canonical metric slug (e.g., `l` -> `license`). */
-  metricAliases?: Readonly<Record<string, string>>;
   /**
-   * Maximum number of `/`-separated path segments the target may span (defaults to `1`).
-   * Values above `1` require `ownerMode: 'none'`; Every path segment between the service key and
-   * the trailing metric segment is joined into the target, and each one is validated individually
-   * (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`).
+   * Service-specific alternative metric slugs mapped to their canonical metric slug; They extend
+   * and override the global default aliases of the fetcher (e.g., `l` -> `license`).
    */
-  maxTargetSegments?: number;
+  metricAliases?: Readonly<Record<string, NoInfer<M>>>;
   /** Map of canonical metric slugs to their endpoint and transformer definitions. */
-  metrics: Readonly<Record<string, ServiceMetricConfig>>;
-  /** Whether the route accepts, requires, or rejects an explicit owner segment. */
-  ownerMode: ServiceOwnerMode;
+  metrics: Readonly<Record<M, ServiceMetricConfig>>;
+  /** Owner and target path segments of the route. */
+  route: ServiceRoute;
 }
 
 /** Parsed service preset route (`/badge/:service/[:owner/]:target/:metric`). */

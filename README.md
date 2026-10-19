@@ -2,7 +2,7 @@
 
 Dynamic SVG badge, CTA button, service preset, icon, tech stack grid, and quote card engine running on Cloudflare Workers at **[svg.xul.is](https://svg.xul.is)**.
 
-For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) and the token-free public service presets (PyPI, npm, JSR, jsDelivr, Bundlephobia, Open VSX, Firefox Add-ons, crates.io, Go modules, Docker Hub, RubyGems, Packagist, NuGet, Hex.pm, pub.dev, CRAN, CocoaPods, Clojars, Hackage, Elm packages, Puppet Forge, Ansible Galaxy, Homebrew formulae & casks, Flathub, Snapcraft, F-Droid, AUR, Hugging Face models & datasets, Modrinth, WordPress plugins & themes, GitLab, Codeberg, Gitea, OpenSSF Scorecard, Codecov, Coveralls, Read the Docs, Open Collective, Liberapay, Discord, and Bluesky), see the live interactive documentation on **[svg.xul.is/docs](https://svg.xul.is/docs)**, or compose any element visually in the **[Builder](https://svg.xul.is/builder)** (every documented preview opens there prefilled).
+For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) and the token-free public service presets (PyPI, npm, JSR, jsDelivr, Bundlephobia, Open VSX, Firefox Add-ons, crates.io, Go modules, Docker Hub, RubyGems, Packagist, NuGet, Hex.pm, pub.dev, CRAN, MetaCPAN, CocoaPods, Clojars, Hackage, Elm packages, Puppet Forge, Ansible Galaxy, Homebrew formulae & casks, Terraform modules & providers, Artifact Hub, Flathub, Snapcraft, F-Droid, AUR, Arch Linux, Fedora, MacPorts, Hugging Face models & datasets, Zenodo, Modrinth, SpigotMC, Hangar, Thunderstore, Steam, WordPress plugins & themes, GitLab, Codeberg, Gitea, OpenSSF Scorecard, deps.dev, SonarCloud, Codecov, Coveralls, Read the Docs, Open Collective, Liberapay, Discord, Bluesky, and Hacker News), compose any element visually in the **[Builder](https://svg.xul.is/builder)**, or browse the live interactive documentation on **[svg.xul.is/docs](https://svg.xul.is/docs)** (every documented preview opens in the Builder prefilled).
 
 ## Local Development
 
@@ -18,22 +18,25 @@ pnpm run dev
 
 | Path | Purpose |
 | :--- | :--- |
-| `src/index.ts` | Hono router: docs and builder pages, versioned static assets (`/assets/*`), SVG routes, document redirects, and Tier-2 SVG edge caching. |
-| `src/routes/` | Path segment & query DSL parsing (`params.ts`), the SVG route dispatcher (`svg.ts`) shared by the Worker and the docs previews, and the URL builder schemas (`schema.ts`) generated from the parser constants. |
-| `src/svg/` | SSOT renderers (badges, buttons, icons, stacks, quotes), text outlines, icon resolution, and shared primitives (incl. the count- and size-bounded LRU caches). |
-| `src/services/` | Upstream fetcher (validation, coalescing, size-budgeted memory cache + edge caching), metric helpers, and one preset module per service in `presets/`. |
+| `src/index.ts` | Hono router wiring: docs and builder pages (behind the preview guard), versioned static assets (`/assets/*`), SVG routes registered from the route table, document redirects, error badges (`onError`), and Tier-2 SVG edge caching (static and service routes, keyed by path plus the recognized query parameters only). |
+| `src/routes/` | Path segment & query DSL parsing (`params.ts`), the SVG route table and dispatcher (`svg.ts`) shared by the Worker and the docs previews, HTTP helpers (`http.ts`: response headers, entity tags, document navigation detection, redirect sanitizing), and the URL builder schemas (`schema.ts`) generated from the parser constants. |
+| `src/svg/` | SSOT renderers (badges, buttons, icons, stacks, quotes), text outlines, icon resolution, and shared primitives (incl. the count- and size-bounded LRU caches and content-addressed SVG IDs). |
+| `src/services/` | Upstream fetcher (validation, coalescing, 2 MB body cap, projected memory cache + edge caching incl. negative caching), endpoint helpers (`endpoint.ts`: URL templates, projections, `defineService`), metric factories (`metrics.ts`), and one preset module per service in `presets/`. |
 | `src/config/` | The fixed color palette (`palette.ts`: Isolux grays, UI neutrals and syntax colors, brand indigo, strip stages), Tailwind v4 theme palettes (`theme.ts`), the service registry (`services.ts`), and status presets. |
-| `src/preview/` | Homepage (`page.ts`), Getting Started and `/docs/:section` pages (`catalog.ts`), `/builder/:kind` pages (`builder.ts`), navigation and sidebars (`navigation.ts`), the document shell (`layout.ts`), shared components (`components.ts`), and versioned assets (`assets.ts`); Every preview is rendered from its documented path. |
+| `src/preview/` | Homepage (`page.ts`), Getting Started and `/docs/:section` pages (`catalog.ts`), shared docs vocabulary (`glossary.ts`: variant tiers, special element examples), `/builder/:kind` pages (`builder.ts`), navigation and sidebars (`navigation.ts`), the document shell (`layout.ts`), shared components (`components.ts`), and versioned assets (`assets.ts`); Every preview is rendered from its documented path. |
 | `src/preview/styles/` | Website stylesheets (plain `.css`, bundled as text; design tokens are generated in `styles.ts`). |
-| `src/preview/scripts/` | Browser scripts (`*.client.js`, type-checked with JSDoc via `tsconfig.client.json`): the site script and the builder (form, snippets, icon picker). |
+| `src/preview/scripts/` | Browser scripts (`*.client.js`, type-checked with JSDoc via `tsconfig.client.json`): the site script (theme, popovers, clipboard helpers shared via `svgSite`) and the builder (form, snippets, icon picker; share links keep the state incl. `&alt=` and `&link=`). |
 
 ### Adding a Service Preset
 
-1.  Create `src/services/presets/<service>.ts` exporting a `ServiceDefinition` (endpoints, metric presentations, transforms built with the factories in `src/services/metrics.ts`, `ownerMode`, and `docs` metadata).
-2.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, and the `/docs/services` reference table pick it up automatically.
-3.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`. The service badge builder lists every public preset automatically.
+1.  Create `src/services/presets/<service>.ts` exporting a service built with `defineService()` (`src/services/endpoint.ts`): `docs` metadata, a `route` descriptor (optional or required `owner` segment with an optional `resolveDefault`, and the `target` placeholder), and `metrics` built with the typed factories in `src/services/metrics.ts` (`createVersionMetric`, `createLicenseMetric`, `createDownloadsMetric`, `createCommunityMetric`, `createCountMetric`, `createPercentScoreMetric`, ...). Metric keys are type-checked, so `metricAliases` can only point at existing metrics.
+2.  Declare upstream endpoints with `createEndpoint()`: URL templates (`{owner}`, `{target}`, `{path}` = `[owner/]target`, `{id}` = fully encoded `owner%2Ftarget`) encode every placeholder with `encodeURIComponent()` per path segment, a `ttl` from `CACHE_TTL` (`default`, `slow`, `daily`), and a `project` function (e.g., `pickFields`, `projectFirstEntry`) so only the few fields a badge needs are kept in the in-isolate and edge caches.
+3.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, global metric aliases (`l`, `dm`, `version`, `last-commit`, `pulls`, `cov`), and the `/docs/services` reference table pick it up automatically.
+4.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`. The service badge builder lists every public preset automatically.
 
-Owner and target segments may contain word characters, `.`, `-`, `@`, and `+` (dot-only segments are rejected). A literal `+` in a badge path decodes to a space, so names like `gtk+3` must be written as `gtk%2B3`. Always `encodeURIComponent()` targets that end up in an upstream query string. Targets spanning several path segments (e.g., Go module paths like `/badge/go/github.com/spf13/cobra/v`) set `maxTargetSegments` on the `ServiceDefinition`; Every segment is validated individually.
+Download metrics use canonical keys with one shared suffix and color table: `dd` (last day, `/day`), `dw` (last week, `/wk`), `dl` (last month, `/mo`), `dq` (last 90 days, `/90d`), `dy` (last year, `/yr`), and `dt` (all-time, no suffix). Community counts (`followers`, `likes`, `members`, `online`, `players`, `posts`, `votes`, `backers`, `patrons`) share one label and color table as well, while the service brand icon identifies the platform.
+
+Owner and target segments may contain word characters, `.`, `-`, `@`, and `+` (dot-only segments are rejected). A literal `+` in a badge path decodes to a space, so names like `gtk+3` must be written as `gtk%2B3`. Targets spanning several path segments (e.g., Go module paths like `/badge/go/github.com/spf13/cobra/v`, or GitLab projects in nested subgroups like `/badge/gitlab/gitlab-org/charts/gitlab-runner/stars`) set `route.target.maxSegments`; Every segment is validated individually. Presets with stricter ids set `route.target.pattern` (e.g., numeric Steam app ids, Lucene-safe CPAN distribution names), and endpoints whose API reports missing packages with another status set `missingStatuses` (e.g., Fedora mdapi's `400`), so they render `not found`. Upstream bodies are capped at 2 MB (`too large` badge), and failures are cached briefly at the edge (`404`: 5 min, `429`: `Retry-After` clamped to 1–15 min, `5xx`: 1 min).
 
 ## Environment & Secrets
 
@@ -51,14 +54,14 @@ ALLOW_PREVIEW_IN_PROD=true
     pnpm exec wrangler secret put GITHUB_TOKEN
     ```
 
--   **`DEFAULT_GH_OWNER`**: Owner allowlist for `/badge/gh/*` endpoints (configured in `wrangler.jsonc` as `xulbux`).
+-   **`DEFAULT_GH_OWNER`**: The only allowed owner of `/badge/gh/*` endpoints and the default owner of the 3-segment `/badge/gh/:repo/:metric` form (configured in `wrangler.jsonc` as `xulbux`). There is no built-in fallback: Without the binding, every `gh` badge is `restricted` (and the 3-segment form reports `missing owner`).
 -   **`ALLOW_PREVIEW_IN_PROD`**: Controls whether `/`, `/docs/*`, and `/builder/*` render the interactive documentation website and builder in production (`"true"`) or redirect to `https://xul.is` (`"false"`; `/assets/*` then returns `404`).
 
 ## Restricted GitHub Service Badges (`/badge/gh/*`)
 
-GitHub repository presets are intentionally omitted from the public documentation website because they are locked to `DEFAULT_GH_OWNER` (`xulbux`) to protect the Worker's `GITHUB_TOKEN` rate limit. Requests for any other owner return a `restricted` badge, and an exhausted rate limit (`429`, or GitHub's `403` with `x-ratelimit-remaining: 0`) renders a `rate limited` badge.
+GitHub repository presets are intentionally omitted from the public documentation website because they are locked to the `DEFAULT_GH_OWNER` binding (`xulbux` on svg.xul.is) to protect the Worker's `GITHUB_TOKEN` rate limit. Requests for any other owner return a `restricted` badge, and an exhausted rate limit (`429`, or GitHub's `403` with `x-ratelimit-remaining: 0`) renders a `rate limited` badge.
 
-There is no free, token-free source for arbitrary public repositories: Unauthenticated `api.github.com` allows only `60 req/hr` per IP (shared by all Workers on the same egress IP), and proxies like [ungh.cc](https://ungh.cc) or shields.io's JSON endpoints run on their own pooled tokens (shields.io pools OAuth tokens donated by its users instead of paying GitHub). Opening the preset to every owner would therefore need a token pool of its own.
+There is no free, token-free source of *live* metrics for arbitrary public repositories: Unauthenticated `api.github.com` allows only `60 req/hr` per IP (shared by all Workers on the same egress IP), and proxies like [ungh.cc](https://ungh.cc) or shields.io's JSON endpoints run on their own pooled tokens (shields.io pools OAuth tokens donated by its users instead of paying GitHub). Opening the preset to every owner would therefore need a token pool of its own. For any public GitHub repository, the public `depsdev` preset (`/badge/depsdev/:owner/:repo/stars|forks|issues|license|score`) serves token-free stars, forks, open issues & PRs, license, and OpenSSF Scorecard data from [deps.dev](https://deps.dev) instead (refreshed about once a day).
 
 ### Route Formats
 
@@ -67,7 +70,7 @@ https://svg.xul.is/badge/gh/:repo/:metric
 https://svg.xul.is/badge/gh/xulbux/:repo/:metric
 ```
 
-When `:owner` is omitted, it defaults to `xulbux`. Opening any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, `blob/HEAD/LICENSE`, `commits`, `releases`, or `graphs/commit-activity`) without fetching any metrics.
+When `:owner` is omitted, it defaults to the `DEFAULT_GH_OWNER` binding (`missing owner` when the binding is unset). Opening any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, the repository root, `commits`, `releases`, or `graphs/commit-activity`) without fetching any metrics.
 
 ### Available `:metric` Presets
 
@@ -75,8 +78,8 @@ When `:owner` is omitted, it defaults to `xulbux`. Opening any `/badge/gh/*` bad
 | :--- | :--- | :--- | :--- | :--- |
 | **`stars`** | `/badge/gh/python-lib-xulbux/stars` | `stars` | `amber` (`star`) | `github.com/xulbux/:repo/stargazers` |
 | **`forks`** | `/badge/gh/python-lib-xulbux/forks` | `forks` | `sky` (`git-fork`) | `github.com/xulbux/:repo/network/members` |
-| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `issues` | `rose` (`circle-dot`) | `github.com/xulbux/:repo/issues` |
-| **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `license` | `slate` (`scale`) | `github.com/xulbux/:repo/blob/HEAD/LICENSE` |
+| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `issues & PRs` (GitHub counts open pull requests as issues) | `rose` (`circle-dot`) | `github.com/xulbux/:repo/issues` |
+| **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `license` (`none` without a license, `custom` when unrecognized) | `slate` (`scale`) | `github.com/xulbux/:repo` |
 | **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `last commit` | `rose` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
 | **`release`** | `/badge/gh/python-lib-xulbux/release` | `release` | `indigo` (`tag`) | `github.com/xulbux/:repo/releases` |
 | **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |

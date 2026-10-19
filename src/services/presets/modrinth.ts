@@ -5,16 +5,22 @@
  * deliberately avoided.
  */
 
+import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
+  createCommunityMetric,
+  createDownloadsMetric,
+  createLicenseMetric,
   formatVersion,
-  LICENSE,
-  TOTAL_DOWNLOADS,
 } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** License metadata of a Modrinth project. */
+interface ModrinthLicense {
+  /** SPDX license identifier (e.g., `'MIT'`, `'LicenseRef-Polyform-Shield-1.0.0'`). */
+  id?: string;
+}
 
 /** Partial Modrinth project API payload (`api.modrinth.com/v2/project/:project`). */
 interface ModrinthProjectPayload {
@@ -23,23 +29,24 @@ interface ModrinthProjectPayload {
   /** Number of followers. */
   followers: number;
   /** Supported game versions in ascending order (including snapshots and pre-releases). */
-  game_versions: string[];
+  game_versions: unknown[];
   /** License metadata. */
-  license: {
-    /** SPDX license identifier (e.g., `'MIT'`, `'LicenseRef-Polyform-Shield-1.0.0'`). */
-    id?: string;
-  } | null;
+  license: ModrinthLicense | null;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Modrinth project endpoint with project page redirect (`/project/` redirects to the typed page). */
-const MODRINTH_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, project: string): string =>
-    `https://api.modrinth.com/v2/project/${project}`,
-  buildRedirectUrl: (_owner: string, project: string): string =>
-    `https://modrinth.com/project/${project}`,
-};
+const MODRINTH_ENDPOINT = createEndpoint({
+  api: 'https://api.modrinth.com/v2/project/{target}',
+  page: 'https://modrinth.com/project/{target}',
+  project: pickFields<ModrinthProjectPayload>([
+    'downloads',
+    'followers',
+    'game_versions',
+    'license',
+  ]),
+});
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -49,55 +56,48 @@ const RELEASE_GAME_VERSION_RX = /^\d+(?:\.\d+)+$/;
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Transform a Modrinth project into its newest supported stable game release (falling back to the newest version). */
-function transformModrinthGameVersion(data: unknown): Partial<MetricResult> {
-  const versions = ((data ?? {}) as Partial<ModrinthProjectPayload>).game_versions;
-  if (!Array.isArray(versions) || versions.length === 0) {
-    return { value: formatVersion(undefined) };
-  }
+function transformModrinthGameVersion(
+  project: Partial<ModrinthProjectPayload>
+): Partial<MetricResult> {
+  const versions = Array.isArray(project.game_versions) ? project.game_versions : [];
+  let newestVersion: string | undefined = undefined;
   for (let i = versions.length - 1; i >= 0; i -= 1) {
-    if (RELEASE_GAME_VERSION_RX.test(versions[i])) {
-      return { value: versions[i] };
+    const version: unknown = versions[i];
+    if (typeof version === 'string') {
+      if (RELEASE_GAME_VERSION_RX.test(version)) {
+        return { value: version };
+      }
+      newestVersion ??= version;
     }
   }
-  return { value: versions.at(-1) };
+  return { value: newestVersion ?? formatVersion(undefined) };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Modrinth service preset (`modrinth`). */
-export const MODRINTH_SERVICE: ServiceDefinition = {
+export const MODRINTH_SERVICE = defineService({
   docs: {
     description: 'Project downloads, followers, latest supported game release, and license.',
-    targetName: ':project',
     title: 'Modrinth',
   },
-  metricAliases: { dl: 'dt', l: 'license', mc: 'game' },
+  metricAliases: { dl: 'dt', mc: 'game' },
   metrics: {
-    dt: {
-      ...MODRINTH_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
+    dt: createDownloadsMetric(MODRINTH_ENDPOINT, 'dt', (project) => project.downloads, {
       defaultColor: 'emerald',
-      transform: createCountTransform<ModrinthProjectPayload>((payload) => payload.downloads),
-    },
-    followers: {
-      ...MODRINTH_ENDPOINT,
-      defaultColor: 'rose',
-      defaultIcon: 'heart',
-      defaultLabel: 'followers',
-      transform: createCountTransform<ModrinthProjectPayload>((payload) => payload.followers),
-    },
-    game: {
-      ...MODRINTH_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'modrinth',
-      defaultLabel: 'minecraft',
-      transform: transformModrinthGameVersion,
-    },
-    license: {
-      ...MODRINTH_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<ModrinthProjectPayload>((payload) => payload.license?.id),
-    },
+    }),
+    followers: createCommunityMetric(
+      MODRINTH_ENDPOINT,
+      'followers',
+      'modrinth',
+      (project) => project.followers
+    ),
+    game: createMetric(
+      MODRINTH_ENDPOINT,
+      { defaultColor: 'emerald', defaultIcon: 'modrinth', defaultLabel: 'minecraft' },
+      transformModrinthGameVersion
+    ),
+    license: createLicenseMetric(MODRINTH_ENDPOINT, (project) => project.license?.id),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':project' } },
+});

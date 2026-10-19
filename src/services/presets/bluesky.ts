@@ -2,8 +2,8 @@
  * Bluesky service preset – Follower and post counts of a public profile (`/badge/bluesky/:handle/:metric`).
  */
 
-import { createCountTransform } from '@/services/metrics';
-import type { MetricEndpoint, MetricPresentation, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createCommunityMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -17,47 +17,34 @@ interface BlueskyProfilePayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Shared presentation of the Bluesky badges. */
-const BLUESKY: MetricPresentation = {
-  defaultColor: 'blue',
-  defaultIcon: 'bluesky',
-  defaultLabel: 'bluesky',
-};
-
 /** Bluesky public AppView profile endpoint with bsky.app profile redirect. */
-const BLUESKY_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, handle: string): string =>
-    `https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(handle)}`,
-  buildRedirectUrl: (_owner: string, handle: string): string =>
-    `https://bsky.app/profile/${handle}`,
-};
+const BLUESKY_ENDPOINT = createEndpoint({
+  api: 'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor={target}',
+  page: 'https://bsky.app/profile/{target}',
+  project: pickFields<BlueskyProfilePayload>(['followersCount', 'postsCount']),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Bluesky service preset (`bluesky`). */
-export const BLUESKY_SERVICE: ServiceDefinition = {
+export const BLUESKY_SERVICE = defineService({
   docs: {
     description: 'Follower and post counts of a public profile handle (e.g., bsky.app).',
-    targetName: ':handle',
     title: 'Bluesky',
   },
   metrics: {
-    followers: {
-      ...BLUESKY_ENDPOINT,
-      ...BLUESKY,
-      transform: createCountTransform<BlueskyProfilePayload>(
-        (payload) => payload.followersCount,
-        ' followers'
-      ),
-    },
-    posts: {
-      ...BLUESKY_ENDPOINT,
-      ...BLUESKY,
-      transform: createCountTransform<BlueskyProfilePayload>(
-        (payload) => payload.postsCount,
-        ' posts'
-      ),
-    },
+    followers: createCommunityMetric(
+      BLUESKY_ENDPOINT,
+      'followers',
+      'bluesky',
+      (profile) => profile.followersCount
+    ),
+    posts: createCommunityMetric(
+      BLUESKY_ENDPOINT,
+      'posts',
+      'bluesky',
+      (profile) => profile.postsCount
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':handle' } },
+});

@@ -9,7 +9,7 @@
 import { WHITE } from '@/config/palette';
 import { SITE_ORIGIN } from '@/config/site';
 import { getSiteAssetUrl } from '@/preview/assets';
-import { renderUiIcon, serializeInlineJson } from '@/preview/components';
+import { renderUiIcon, renderUiSprite, serializeInlineJson } from '@/preview/components';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START, DARK_BG, LIGHT_BG } from '@/preview/styles';
 import { resolveIcon } from '@/svg/icons';
 import { escapeXml } from '@/svg/shared';
@@ -40,8 +40,8 @@ interface NavTab {
 /** Top navigation tabs in display order. */
 const NAV_TABS: readonly NavTab[] = [
   { href: '/', id: 'home', label: 'Home' },
-  { href: '/docs', id: 'docs', label: 'Docs' },
   { href: '/builder', id: 'builder', label: 'Builder' },
+  { href: '/docs', id: 'docs', label: 'Docs' },
 ];
 
 /** `localStorage` key of the persisted color scheme override (`'dark'` or `'light'`). */
@@ -49,6 +49,12 @@ const COLOR_SCHEME_STORAGE_KEY = 'color-scheme';
 
 /** `localStorage` key of the persisted preview stage background. */
 const PREVIEW_BG_STORAGE_KEY = 'preview-bg';
+
+/** Media query under which the sidebar becomes a popover drawer (keep in sync with the `960px` breakpoint in `layout.css`). */
+const DRAWER_MEDIA_QUERY = '(max-width: 960px)';
+
+/** Page background per color scheme (`theme-color` meta tags, also following the manual scheme override). */
+const THEME_COLORS: Readonly<Record<'dark' | 'light', string>> = { dark: DARK_BG, light: LIGHT_BG };
 
 /** Preview stage background options; The first option is the default and follows the page theme. */
 const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
@@ -91,7 +97,7 @@ function renderNavLink(href: string, label: string, isActive: boolean): string {
   const activeAttrs = isActive
     ? ' class="nav-link is-active" aria-current="page"'
     : ' class="nav-link"';
-  return `<a href="${escapeXml(href)}"${activeAttrs}><span class="nav-text">${escapeXml(label)}</span></a>`;
+  return `<a href="${escapeXml(href)}"${activeAttrs}>${escapeXml(label)}</a>`;
 }
 
 /**
@@ -99,25 +105,23 @@ function renderNavLink(href: string, label: string, isActive: boolean): string {
  * native popover radio group (Match page / Inverted / Checker), persisted by the client script.
  */
 function renderPreviewBgPicker(): string {
-  if (previewBgPickerHtmlCache !== undefined) {
-    return previewBgPickerHtmlCache;
-  }
-  let optionsHtml = '';
-  for (let i = 0; i < PREVIEW_BG_OPTIONS.length; i += 1) {
-    const option = PREVIEW_BG_OPTIONS[i];
-    const checkedAttr = i === 0 ? ' checked' : '';
-    optionsHtml += `<label class="bg-picker-option"><input class="bg-picker-input" type="radio" name="preview-bg" value="${option.value}"${checkedAttr} /><span class="bg-swatch" data-bg="${option.value}" aria-hidden="true"></span><span class="bg-picker-label">${escapeXml(option.label)}</span>${renderUiIcon('check', 13, 'bg-picker-check')}</label>`;
-  }
-  const chevronIcon = renderUiIcon('chevron-down', 12, 'bg-picker-chevron');
-  previewBgPickerHtmlCache = `<div class="bg-picker">
+  if (previewBgPickerHtmlCache === undefined) {
+    let optionsHtml = '';
+    for (const [i, option] of PREVIEW_BG_OPTIONS.entries()) {
+      const checkedAttr = i === 0 ? ' checked' : '';
+      optionsHtml += `<label class="bg-picker-option"><input class="bg-picker-input" type="radio" name="preview-bg" value="${option.value}"${checkedAttr} /><span class="bg-swatch" data-bg="${option.value}" aria-hidden="true"></span><span class="bg-picker-label">${escapeXml(option.label)}</span>${renderUiIcon('check', 13, 'bg-picker-check')}</label>`;
+    }
+    const chevronIcon = renderUiIcon('chevron-down', 12, 'bg-picker-chevron');
+    previewBgPickerHtmlCache = `<div class="bg-picker">
           <button type="button" class="bg-picker-trigger" id="bg-picker-trigger" popovertarget="bg-picker-menu" aria-label="Preview background" title="Preview background">
             <span class="bg-swatch bg-swatch-current" aria-hidden="true"></span>${chevronIcon}
           </button>
-          <div class="bg-picker-menu" id="bg-picker-menu" popover role="radiogroup" aria-labelledby="bg-picker-title">
+          <div class="popover-panel bg-picker-menu" id="bg-picker-menu" popover role="radiogroup" aria-labelledby="bg-picker-title">
             <span class="bg-picker-title" id="bg-picker-title">Preview background</span>
             ${optionsHtml}
           </div>
         </div>`;
+  }
   return previewBgPickerHtmlCache;
 }
 
@@ -160,17 +164,17 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
     navItemsHtml += renderNavLink(tab.href, tab.label, tab.id === activeNav);
   }
 
-  const brandIcon = renderUiIcon('sparkles', 15, 'brand-sparkle');
-  const sunIcon = renderUiIcon('sun', 12, 'theme-icon theme-label-light');
-  const moonIcon = renderUiIcon('moon', 12, 'theme-icon theme-label-dark');
-  const githubIcon = renderUiIcon('github', 20, 'gh-icon');
+  const brandIcon = renderUiIcon('sparkles', 15);
+  const sunIcon = renderUiIcon('sun', 12, 'theme-label-light');
+  const moonIcon = renderUiIcon('moon', 12, 'theme-label-dark');
+  const githubIcon = renderUiIcon('github', 20);
   const sidebarToggleHtml = sidebar ? renderSidebarToggle(sidebar) : '';
 
   const headerHtml = `<header class="site-header">
     <div class="header-inner">
       <a href="/" class="brand-link">
         <span class="brand-mark" aria-hidden="true">${brandIcon}</span>
-        <span class="brand-name">svg.xul.is</span>
+        svg.xul.is
       </a>
       <div class="header-nav-row">
         ${sidebarToggleHtml}
@@ -197,13 +201,12 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
 }
 
 /**
- * Render the grouped left sidebar (a sticky column on wide screens and a popover drawer on narrow screens,
- * opened by the header's sidebar toggle).
+ * Render the grouped left sidebar (a sticky column on wide screens and a popover drawer with a close button on
+ * narrow screens, opened by the header's sidebar toggle).
  */
 function renderSidebar(sidebar: PageSidebar): string {
   let groupsHtml = '';
-  for (let i = 0; i < sidebar.groups.length; i += 1) {
-    const group = sidebar.groups[i];
+  for (const [i, group] of sidebar.groups.entries()) {
     const titleId = `sidebar-group-${i}`;
     let linksHtml = '';
     for (const link of group.links) {
@@ -214,12 +217,14 @@ function renderSidebar(sidebar: PageSidebar): string {
       linksHtml += `<li><a href="${escapeXml(link.href)}"${activeAttrs}>${escapeXml(link.label)}</a></li>`;
     }
     groupsHtml += `<section class="sidebar-group">
-          <p class="sidebar-group-title" id="${titleId}">${renderUiIcon(group.icon, 14)}<span class="sidebar-group-label">${escapeXml(group.title)}</span></p>
+          <p class="sidebar-group-title" id="${titleId}">${renderUiIcon(group.icon, 14)}${escapeXml(group.title)}</p>
           <ul class="sidebar-list" aria-labelledby="${titleId}">${linksHtml}</ul>
         </section>`;
   }
+  const closeLabel = escapeXml(`Close ${sidebar.label}`);
   return `<aside class="sidebar" id="sidebar-drawer" popover>
-      <nav class="sidebar-nav" aria-label="${escapeXml(sidebar.label)}">
+      <button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-label="${closeLabel}" title="${closeLabel}">${renderUiIcon('x', 16)}</button>
+      <nav aria-label="${escapeXml(sidebar.label)}">
         ${groupsHtml}
       </nav>
     </aside>`;
@@ -227,11 +232,9 @@ function renderSidebar(sidebar: PageSidebar): string {
 
 /** Render (once per isolate) the site footer matching the XulbuX documentation aesthetic. */
 function renderFooter(): string {
-  if (footerHtmlCache !== undefined) {
-    return footerHtmlCache;
-  }
-  const sparkleIcon = renderUiIcon('sparkles', 14, 'footer-sparkle');
-  footerHtmlCache = `<footer class="site-footer">
+  if (footerHtmlCache === undefined) {
+    const sparkleIcon = renderUiIcon('sparkles', 14, 'footer-sparkle');
+    footerHtmlCache = `<footer class="site-footer">
     <div class="footer-inner">
       <p class="footer-feedback">
         Missing a public API service, vector icon, or even a whole new SVG element? Feel free to <a href="mailto:hi@xul.is" class="text-link">send an email to hi@xul.is</a> and let me know!
@@ -240,31 +243,37 @@ function renderFooter(): string {
         <p class="footer-license">Released under the MIT License.</p>
         <p class="footer-credit">
           ${sparkleIcon}
-          <span class="footer-from">From <a href="https://github.com/xulbux" class="text-link" target="_blank" rel="noopener noreferrer"><b>XulbuX</b></a></span>
+          From <a href="https://github.com/xulbux" class="text-link" target="_blank" rel="noopener noreferrer"><b>XulbuX</b></a>
           ${sparkleIcon}
         </p>
       </div>
     </div>
   </footer>`;
+  }
   return footerHtmlCache;
 }
 
-/** Render (once per isolate) the render-blocking `<head>` script that applies stored, whitelisted preferences before first paint. */
+/**
+ * Render (once per isolate) the render-blocking `<head>` script that applies stored, whitelisted preferences
+ * (color scheme incl. the `theme-color` meta tags, preview background) before first paint.
+ */
 function renderHeadScript(): string {
-  if (headScriptHtmlCache !== undefined) {
-    return headScriptHtmlCache;
+  if (headScriptHtmlCache === undefined) {
+    const previewBgValues = serializeInlineJson(collectPreviewBgValues());
+    const themeColors = serializeInlineJson(THEME_COLORS);
+    headScriptHtmlCache = `<script>try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;document.querySelectorAll('meta[name="theme-color"]').forEach(function(meta){meta.content=${themeColors}[storedScheme];});}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}</script>`;
   }
-  const previewBgValues = serializeInlineJson(collectPreviewBgValues());
-  headScriptHtmlCache = `<script>try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}</script>`;
   return headScriptHtmlCache;
 }
 
 /** Render (once per isolate) the `#site-config` JSON element read by the site script (`SiteClientConfig`). */
 function renderSiteConfig(): string {
   siteConfigHtmlCache ??= `<script type="application/json" id="site-config">${serializeInlineJson({
+    drawerMediaQuery: DRAWER_MEDIA_QUERY,
     previewBgStorageKey: PREVIEW_BG_STORAGE_KEY,
     previewBgValues: collectPreviewBgValues(),
     schemeStorageKey: COLOR_SCHEME_STORAGE_KEY,
+    themeColors: THEME_COLORS,
   })}</script>`;
   return siteConfigHtmlCache;
 }
@@ -276,11 +285,7 @@ function renderSiteConfig(): string {
  * @returns Standalone `<svg>` XML string.
  */
 export function renderFaviconSvg(): string {
-  if (faviconSvgCache !== undefined) {
-    return faviconSvgCache;
-  }
-  const innerSvg = resolveIcon('sparkles')?.innerSvg ?? '';
-  faviconSvgCache = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  faviconSvgCache ??= `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="${BRAND_GRADIENT_START}" />
@@ -288,7 +293,7 @@ export function renderFaviconSvg(): string {
     </linearGradient>
   </defs>
   <rect width="32" height="32" rx="8" fill="url(#bg)" />
-  <g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${WHITE}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${innerSvg}</g>
+  <g transform="translate(6 6) scale(0.8333)" fill="none" stroke="${WHITE}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${resolveIcon('sparkles')?.innerSvg ?? ''}</g>
 </svg>`;
   return faviconSvgCache;
 }
@@ -310,14 +315,14 @@ export function renderPageLayout(options: PageLayoutOptions): string {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light dark" />
+  <meta name="theme-color" content="${THEME_COLORS.light}" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="${THEME_COLORS.dark}" media="(prefers-color-scheme: dark)" />
   ${renderHeadScript()}
   <link rel="expect" href="#main-content" blocking="render" />
   <title>${title}</title>
   <meta name="description" content="${description}" />
   <link rel="canonical" href="${canonicalUrl}" />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <meta name="theme-color" content="${LIGHT_BG}" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="${DARK_BG}" media="(prefers-color-scheme: dark)" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="svg.xul.is" />
   <meta property="og:title" content="${title}" />
@@ -329,6 +334,7 @@ export function renderPageLayout(options: PageLayoutOptions): string {
 </head>
 <body${bodyClassAttr}>
   <a class="skip-link" href="#main-content">Skip to content</a>
+  ${renderUiSprite()}
   ${renderHeaderNav(options.activeNav, options.sidebar)}
   <div class="page-shell">
     ${sidebarHtml}

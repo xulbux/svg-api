@@ -8,32 +8,94 @@
     "style": "warn",
     "suspicious": "warn"
   },
-  "env": { "builtin": true, "node": true },
+  "env": { "builtin": true, "serviceworker": true },
   "globals": { "caches": "readonly" },
   "ignorePatterns": [".wrangler/**", "dist/**", "*.md", "package.json", "wrangler.jsonc"],
-  "plugins": ["eslint", "oxc", "typescript", "unicorn"],
+  "plugins": ["eslint", "import", "oxc", "typescript", "unicorn"],
   "rules": {
     "capitalized-comments": "off",
     "eslint/no-ternary": "off",
     "func-style": ["error", "declaration"],
-    "id-length": "off",
+    "id-length": [
+      "error",
+      {
+        "exceptionPatterns": ["^[A-Z]$"],
+        "exceptions": ["i", "j", "n"],
+        "min": 2,
+        "properties": "never"
+      }
+    ],
+    "import/exports-last": "off",
+    "import/group-exports": "off",
+    "import/no-named-export": "off",
     "import/no-nodejs-modules": "error",
+    "import/prefer-default-export": "off",
     "import/unambiguous": "off",
     "max-params": "off",
     "max-statements": "off",
     "no-duplicate-imports": "off",
     "no-magic-numbers": "off",
+    "no-plusplus": "error",
     "no-undefined": "off",
+    "no-use-before-define": ["error", { "classes": true, "functions": true, "variables": true }],
     "one-var": "off",
     "oxc/no-async-await": "off",
     "oxc/no-optional-chaining": "off",
     "oxc/no-rest-spread-properties": "off",
     "sort-imports": "off",
+    "sort-keys": ["warn", "asc", { "caseSensitive": true, "natural": true }],
+    "typescript/ban-ts-comment": [
+      "error",
+      {
+        "minimumDescriptionLength": 10,
+        "ts-check": false,
+        "ts-expect-error": "allow-with-description",
+        "ts-ignore": true,
+        "ts-nocheck": true
+      }
+    ],
     "typescript/consistent-type-definitions": "error",
+    "typescript/consistent-type-imports": [
+      "error",
+      { "fixStyle": "separate-type-imports", "prefer": "type-imports" }
+    ],
     "typescript/explicit-function-return-type": "off",
     "typescript/explicit-module-boundary-types": "off",
     "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+    "typescript/no-explicit-any": "error",
     "unicorn/filename-case": ["error", { "cases": { "camelCase": true, "pascalCase": true } }],
     "unicorn/number-literal-case": "off"
-  }
+  },
+  "overrides": [
+    { "env": { "browser": true, "serviceworker": false }, "files": ["src/preview/scripts/**"] },
+    { "files": ["src/index.ts", "*.config.*"], "rules": { "import/no-default-export": "off" } },
+    {
+      "env": { "node": true, "serviceworker": false },
+      "files": ["test/**", "*.config.*"],
+      "rules": { "import/no-nodejs-modules": "off" }
+    },
+    {
+      "files": ["test/**"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/max-expects": "off",
+        "vitest/no-conditional-expect": "off",
+        "vitest/no-hooks": "off",
+        "vitest/no-importing-vitest-globals": "off",
+        "vitest/prefer-called-times": "off",
+        "vitest/prefer-describe-function-title": "off",
+        "vitest/prefer-expect-assertions": "off",
+        "vitest/prefer-expect-resolves": "off",
+        "vitest/prefer-lowercase-title": "off",
+        "vitest/prefer-mock-promise-shorthand": "off",
+        "vitest/prefer-mock-return-shorthand": "off",
+        "vitest/prefer-strict-equal": "off",
+        "vitest/prefer-to-be-falsy": "off",
+        "vitest/prefer-to-be-truthy": "off",
+        "vitest/require-test-timeout": "off",
+        "vitest/require-top-level-describe": "off",
+        "vitest/valid-expect": ["error", { "maxArgs": 2 }]
+      }
+    }
+  ]
 }

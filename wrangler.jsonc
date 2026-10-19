@@ -5,6 +5,9 @@
   "compatibility_date": "2026-10-15",
   "upload_source_maps": true,
   "workers_dev": false,
+  "observability": {
+    "enabled": true
+  },
   "rules": [
     {
       "type": "Data",
@@ -24,7 +27,7 @@
     }
   ],
   "vars": {
-    "DEFAULT_GH_OWNER": "xulbux",
-    "ALLOW_PREVIEW_IN_PROD": "true"
+    "ALLOW_PREVIEW_IN_PROD": "true",
+    "DEFAULT_GH_OWNER": "xulbux"
   }
 }

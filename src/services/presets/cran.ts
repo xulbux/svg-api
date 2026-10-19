@@ -3,15 +3,18 @@
  */
 
 import {
-  createCountTransform,
-  createFirstEntryTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  WEEKLY_DOWNLOADS,
+  CACHE_TTL,
+  createEndpoint,
+  defineService,
+  pickFields,
+  projectFirstEntry,
+} from '@/services/endpoint';
+import {
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, MetricTransform, ServiceDefinition } from '@/types';
+import type { MetricEndpoint } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -31,15 +34,15 @@ interface CranDownloadsEntry {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Tier-1 JSON cache TTL in seconds for the daily refreshed cranlogs statistics. */
-const CRANLOGS_CACHE_TTL_SECONDS = 3600;
-
 /** crandb package endpoint with CRAN package page redirect. */
-const CRANDB_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => `https://crandb.r-pkg.org/${pkg}`,
-  buildRedirectUrl: (_owner: string, pkg: string): string =>
-    `https://cran.r-project.org/package=${pkg}`,
-};
+const CRANDB_ENDPOINT = createEndpoint({
+  api: 'https://crandb.r-pkg.org/{target}',
+  page: 'https://cran.r-project.org/package={target}',
+  project: pickFields<CranPackagePayload>(['License', 'Version']),
+});
+
+/** Projection of the first (only) cranlogs row (an empty list is not found). */
+const CRANLOGS_PROJECTION = projectFirstEntry<CranDownloadsEntry>(undefined, ['downloads']);
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -48,65 +51,36 @@ const FILE_LICENSE_SUFFIX_RX = /\s*\+\s*file\s+LICEN[CS]E$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Create a cranlogs total downloads endpoint for a period (`last-day`, `last-week`, `last-month`). */
-function createCranlogsEndpoint(period: string): MetricEndpoint {
-  return {
-    buildApiUrl: (_owner: string, pkg: string): string =>
-      `https://cranlogs.r-pkg.org/downloads/total/${period}/${pkg}`,
-    buildRedirectUrl: CRANDB_ENDPOINT.buildRedirectUrl,
-    cacheTtlSeconds: CRANLOGS_CACHE_TTL_SECONDS,
-  };
-}
-
-/** Create a cranlogs downloads transform reading the first (only) result row. */
-function createCranlogsTransform(suffix: string): MetricTransform {
-  return createFirstEntryTransform<CranDownloadsEntry[]>(
-    (payload) => payload,
-    createCountTransform<CranDownloadsEntry>((entry) => entry.downloads, suffix)
-  );
+/** Create a cranlogs total downloads endpoint for a period (`last-day`, `last-week`, `last-month`; Refreshed daily). */
+function createCranlogsEndpoint(period: string): MetricEndpoint<Partial<CranDownloadsEntry>> {
+  return createEndpoint({
+    api: `https://cranlogs.r-pkg.org/downloads/total/${period}/{target}`,
+    page: 'https://cran.r-project.org/package={target}',
+    project: CRANLOGS_PROJECTION,
+    ttl: CACHE_TTL.daily,
+  });
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** CRAN service preset (`cran`). */
-export const CRAN_SERVICE: ServiceDefinition = {
+export const CRAN_SERVICE = defineService({
   docs: {
-    description: 'Package version, license, and daily/weekly/monthly downloads (RStudio mirror).',
-    targetName: ':pkg',
+    description: 'Package version, license, and daily/weekly/monthly downloads (dd/dw/dl).',
     title: 'CRAN',
   },
-  metricAliases: { dm: 'dl', l: 'license' },
   metrics: {
-    dd: {
-      ...createCranlogsEndpoint('last-day'),
-      ...RECENT_DOWNLOADS,
-      defaultColor: 'sky',
-      transform: createCranlogsTransform('/day'),
-    },
-    dl: {
-      ...createCranlogsEndpoint('last-month'),
-      ...RECENT_DOWNLOADS,
-      transform: createCranlogsTransform('/mo'),
-    },
-    dw: {
-      ...createCranlogsEndpoint('last-week'),
-      ...WEEKLY_DOWNLOADS,
-      transform: createCranlogsTransform('/wk'),
-    },
-    license: {
-      ...CRANDB_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<CranPackagePayload>((payload) =>
-        payload.License?.replace(FILE_LICENSE_SUFFIX_RX, '')
-      ),
-    },
-    v: {
-      ...CRANDB_ENDPOINT,
-      defaultColor: 'blue',
-      defaultIcon: 'r',
-      defaultLabel: 'cran',
-      transform: createVersionTransform<CranPackagePayload>((payload) => payload.Version),
-    },
+    dd: createDownloadsMetric(createCranlogsEndpoint('last-day'), 'dd', (row) => row.downloads),
+    dl: createDownloadsMetric(createCranlogsEndpoint('last-month'), 'dl', (row) => row.downloads),
+    dw: createDownloadsMetric(createCranlogsEndpoint('last-week'), 'dw', (row) => row.downloads),
+    license: createLicenseMetric(CRANDB_ENDPOINT, (pkg) =>
+      typeof pkg.License === 'string' ? pkg.License.replace(FILE_LICENSE_SUFFIX_RX, '') : undefined
+    ),
+    v: createVersionMetric(
+      CRANDB_ENDPOINT,
+      { defaultColor: 'blue', defaultIcon: 'r', defaultLabel: 'cran' },
+      (pkg) => pkg.Version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':pkg' } },
+});

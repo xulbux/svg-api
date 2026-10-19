@@ -31,6 +31,22 @@ export interface ResolvedIcon extends IconBody {
   minX: number;
 }
 
+/** Horizontal ink bounds of an icon body in `24x24` icon space. */
+export interface IconXBounds {
+  /** Rightmost visible X coordinate. */
+  maxX: number;
+  /** Leftmost visible X coordinate. */
+  minX: number;
+}
+
+/** Icon resolution result paired with the canonical slug it was resolved by. */
+export interface IconLookup {
+  /** Resolved icon data (`undefined` for `'none'`, empty, over-long, or unknown slugs). */
+  data: ResolvedIcon | undefined;
+  /** Canonical (trimmed, lowercase, alias-resolved) slug used for contextual lookups. */
+  key: string;
+}
+
 /** Searchable icon picker index served at `/assets/icons.json`. */
 export interface IconPickerIndex {
   /** Common slug aliases (`ICON_SLUG_ALIASES`) mapped to their canonical slugs. */

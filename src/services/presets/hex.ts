@@ -2,97 +2,80 @@
  * Hex.pm service preset – Elixir/Erlang package version, all-time/90-day/weekly downloads, and license (`/badge/hex/:pkg/:metric`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  TOTAL_DOWNLOADS,
-  WEEKLY_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Download counters of a Hex.pm package. */
+interface HexDownloads {
+  /** All-time downloads. */
+  all?: number;
+  /** Downloads in the last 90 days. */
+  recent?: number;
+  /** Downloads in the last 7 days. */
+  week?: number;
+}
+
+/** Metadata of a Hex.pm package. */
+interface HexPackageMeta {
+  /** SPDX license identifiers. */
+  licenses?: string[];
+}
 
 /** Partial Hex.pm package API payload (`hex.pm/api/packages/:pkg`). */
 interface HexPackagePayload {
   /** Download counters. */
-  downloads: {
-    /** All-time downloads. */
-    all?: number;
-    /** Downloads in the last 90 days. */
-    recent?: number;
-    /** Downloads in the last 7 days. */
-    week?: number;
-  };
+  downloads: HexDownloads | null;
   /** Latest stable version, or `null` when only pre-releases exist. */
   latest_stable_version: string | null;
   /** Latest version including pre-releases. */
   latest_version: string;
   /** Package metadata. */
-  meta: {
-    /** SPDX license identifiers. */
-    licenses?: string[];
-  };
+  meta: HexPackageMeta | null;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Hex.pm package endpoint with package page redirect. */
-const HEX_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => `https://hex.pm/api/packages/${pkg}`,
-  buildRedirectUrl: (_owner: string, pkg: string): string => `https://hex.pm/packages/${pkg}`,
-};
+const HEX_ENDPOINT = createEndpoint({
+  api: 'https://hex.pm/api/packages/{target}',
+  page: 'https://hex.pm/packages/{target}',
+  project: pickFields<HexPackagePayload>([
+    'downloads',
+    'latest_stable_version',
+    'latest_version',
+    'meta',
+  ]),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Hex.pm service preset (`hex`). */
-export const HEX_SERVICE: ServiceDefinition = {
+export const HEX_SERVICE = defineService({
   docs: {
-    description: 'Latest stable version, all-time/90-day/weekly downloads, and license.',
-    targetName: ':pkg',
+    description: 'Latest stable version, all-time/90-day/weekly downloads (dt/dq/dw), and license.',
     title: 'Hex.pm',
   },
-  metricAliases: { l: 'license' },
+  // `dl` reported the 90-day downloads before the download keys were normalized.
+  metricAliases: { dl: 'dq' },
   metrics: {
-    dl: {
-      ...HEX_ENDPOINT,
-      ...RECENT_DOWNLOADS,
-      transform: createCountTransform<HexPackagePayload>(
-        (payload) => payload.downloads?.recent,
-        '/90d'
-      ),
-    },
-    dt: {
-      ...HEX_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<HexPackagePayload>((payload) => payload.downloads?.all),
-    },
-    dw: {
-      ...HEX_ENDPOINT,
-      ...WEEKLY_DOWNLOADS,
-      transform: createCountTransform<HexPackagePayload>(
-        (payload) => payload.downloads?.week,
-        '/wk'
-      ),
-    },
-    license: {
-      ...HEX_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<HexPackagePayload>(
-        (payload) => payload.meta?.licenses?.[0]
-      ),
-    },
-    v: {
-      ...HEX_ENDPOINT,
-      defaultColor: 'violet',
-      defaultIcon: 'elixir',
-      defaultLabel: 'hex',
-      transform: createVersionTransform<HexPackagePayload>(
-        (payload) => payload.latest_stable_version ?? payload.latest_version
-      ),
-    },
+    dq: createDownloadsMetric(HEX_ENDPOINT, 'dq', (pkg) => pkg.downloads?.recent),
+    dt: createDownloadsMetric(HEX_ENDPOINT, 'dt', (pkg) => pkg.downloads?.all),
+    dw: createDownloadsMetric(HEX_ENDPOINT, 'dw', (pkg) => pkg.downloads?.week),
+    license: createLicenseMetric(HEX_ENDPOINT, (pkg) => {
+      const licenses = pkg.meta?.licenses;
+      return Array.isArray(licenses) ? licenses[0] : undefined;
+    }),
+    v: createVersionMetric(
+      HEX_ENDPOINT,
+      { defaultColor: 'violet', defaultIcon: 'elixir', defaultLabel: 'hex' },
+      (pkg) => pkg.latest_stable_version ?? pkg.latest_version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':pkg' } },
+});

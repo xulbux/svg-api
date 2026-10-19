@@ -108,6 +108,20 @@ export interface BadgeRenderOptions {
   variant: BadgeVariant;
 }
 
+/** Base size dimensions of a badge (`22px`) or a CTA button (`22px`–`48px`). */
+export interface VariantMetrics {
+  /** Font size in pixels. */
+  fontSize: number;
+  /** Total height of the SVG in pixels. */
+  height: number;
+  /** Width and height of the icon in pixels. */
+  iconSize: number;
+  /** Horizontal padding in pixels. */
+  padX: number;
+  /** Corner border radius in pixels. */
+  radius: number;
+}
+
 /** Options for rendering a CTA button SVG via `renderButton` (`/button/*` and `/btn/*`). */
 export interface ButtonRenderOptions {
   /** Optional micro-animation control mode (defaults to `'default'`). */

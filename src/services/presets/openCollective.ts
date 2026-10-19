@@ -2,8 +2,9 @@
  * Open Collective service preset – Backer count and yearly budget of a collective (`/badge/opencollective/:slug/:metric`).
  */
 
-import { createCountTransform, formatCurrency } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
+import { createCommunityMetric, formatCurrency } from '@/services/metrics';
+import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -23,45 +24,45 @@ interface OpenCollectivePayload {
 const CENTS_PER_UNIT = 100;
 
 /** Open Collective collective endpoint with collective page redirect. */
-const OPEN_COLLECTIVE_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, slug: string): string => `https://opencollective.com/${slug}.json`,
-  buildRedirectUrl: (_owner: string, slug: string): string => `https://opencollective.com/${slug}`,
-};
+const OPEN_COLLECTIVE_ENDPOINT = createEndpoint({
+  api: 'https://opencollective.com/{target}.json',
+  page: 'https://opencollective.com/{target}',
+  project: pickFields<OpenCollectivePayload>(['backersCount', 'currency', 'yearlyIncome']),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Transform a collective payload into its yearly budget (`'$177.5k/yr'`). */
-function transformOpenCollectiveBudget(data: unknown): Partial<MetricResult> {
-  const payload = (data ?? {}) as Partial<OpenCollectivePayload>;
+function transformOpenCollectiveBudget(
+  collective: Partial<OpenCollectivePayload>
+): Partial<MetricResult> {
   const income =
-    typeof payload.yearlyIncome === 'number' ? payload.yearlyIncome / CENTS_PER_UNIT : undefined;
-  return { value: formatCurrency(income, payload.currency, '/yr') };
+    typeof collective.yearlyIncome === 'number'
+      ? collective.yearlyIncome / CENTS_PER_UNIT
+      : undefined;
+  return { value: formatCurrency(income, collective.currency, '/yr') };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Open Collective service preset (`opencollective`). */
-export const OPEN_COLLECTIVE_SERVICE: ServiceDefinition = {
+export const OPEN_COLLECTIVE_SERVICE = defineService({
   docs: {
     description: 'Backer count and estimated yearly budget in the collective currency.',
-    targetName: ':slug',
     title: 'Open Collective',
   },
   metrics: {
-    backers: {
-      ...OPEN_COLLECTIVE_ENDPOINT,
-      defaultColor: 'blue',
-      defaultIcon: 'opencollective',
-      defaultLabel: 'backers',
-      transform: createCountTransform<OpenCollectivePayload>((payload) => payload.backersCount),
-    },
-    budget: {
-      ...OPEN_COLLECTIVE_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'opencollective',
-      defaultLabel: 'budget',
-      transform: transformOpenCollectiveBudget,
-    },
+    backers: createCommunityMetric(
+      OPEN_COLLECTIVE_ENDPOINT,
+      'backers',
+      'opencollective',
+      (collective) => collective.backersCount
+    ),
+    budget: createMetric(
+      OPEN_COLLECTIVE_ENDPOINT,
+      { defaultColor: 'emerald', defaultIcon: 'opencollective', defaultLabel: 'budget' },
+      transformOpenCollectiveBudget
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':slug' } },
+});

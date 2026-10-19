@@ -3,27 +3,27 @@
  */
 
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  TOTAL_DOWNLOADS,
-  WEEKLY_DOWNLOADS,
+  CACHE_TTL,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  pickFields,
+} from '@/services/endpoint';
+import {
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial Flathub AppStream payload (`flathub.org/api/v2/appstream/:app`). */
-interface FlathubAppStreamPayload {
-  /** SPDX license expression of the project. */
-  project_license: string | null;
-  /** Releases, newest first. */
-  releases: {
-    /** Release version string. */
-    version?: string;
-  }[];
+/** Projected Flathub AppStream payload (`flathub.org/api/v2/appstream/:app`). */
+interface FlathubAppStreamProjection {
+  /** SPDX license expression of the project (`project_license`). */
+  license?: string;
+  /** Version of the newest release (`releases[0].version`). */
+  version?: string;
 }
 
 /** Partial Flathub statistics payload (`flathub.org/api/v2/stats/:app`). */
@@ -38,81 +38,82 @@ interface FlathubStatsPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Tier-1 JSON cache TTL in seconds for the daily refreshed install statistics. */
-const FLATHUB_STATS_CACHE_TTL_SECONDS = 3600;
+/** Presentation override of the install metrics. */
+const INSTALLS_LABEL = { defaultLabel: 'installs' } as const;
+
+/** Flathub install statistics endpoint (refreshed daily). */
+const STATS_ENDPOINT = createEndpoint({
+  api: 'https://flathub.org/api/v2/stats/{target}',
+  page: 'https://flathub.org/apps/{target}',
+  project: pickFields<FlathubStatsPayload>([
+    'installs_last_7_days',
+    'installs_last_month',
+    'installs_total',
+  ]),
+  ttl: CACHE_TTL.daily,
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Build the Flathub app page redirect URL. */
-function buildFlathubRedirectUrl(_owner: string, app: string): string {
-  return `https://flathub.org/apps/${app}`;
+/** Project an AppStream document into its license and newest release version (release notes are dropped). */
+function projectAppStream(data: unknown): FlathubAppStreamProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const releases = Array.isArray(data.releases) ? data.releases : [];
+  const newestRelease: unknown = releases[0];
+  return {
+    license: typeof data.project_license === 'string' ? data.project_license : undefined,
+    version:
+      isJsonObject(newestRelease) && typeof newestRelease.version === 'string'
+        ? newestRelease.version
+        : undefined,
+  };
 }
 
-/** Flathub AppStream metadata endpoint. */
-const APPSTREAM_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, app: string): string =>
-    `https://flathub.org/api/v2/appstream/${app}`,
-  buildRedirectUrl: buildFlathubRedirectUrl,
-};
-
-/** Flathub install statistics endpoint. */
-const STATS_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, app: string): string => `https://flathub.org/api/v2/stats/${app}`,
-  buildRedirectUrl: buildFlathubRedirectUrl,
-  cacheTtlSeconds: FLATHUB_STATS_CACHE_TTL_SECONDS,
-};
+/** Create the Flathub service preset. */
+function createFlathubService(): ServiceDefinition {
+  const appStreamEndpoint = createEndpoint({
+    api: 'https://flathub.org/api/v2/appstream/{target}',
+    page: 'https://flathub.org/apps/{target}',
+    project: projectAppStream,
+  });
+  return defineService({
+    docs: {
+      description: 'App version, license, and total/monthly/weekly installs (dt/dl/dw).',
+      title: 'Flathub',
+    },
+    metrics: {
+      dl: createDownloadsMetric(
+        STATS_ENDPOINT,
+        'dl',
+        (stats) => stats.installs_last_month,
+        INSTALLS_LABEL
+      ),
+      dt: createDownloadsMetric(
+        STATS_ENDPOINT,
+        'dt',
+        (stats) => stats.installs_total,
+        INSTALLS_LABEL
+      ),
+      dw: createDownloadsMetric(
+        STATS_ENDPOINT,
+        'dw',
+        (stats) => stats.installs_last_7_days,
+        INSTALLS_LABEL
+      ),
+      license: createLicenseMetric(appStreamEndpoint, (app) => app.license),
+      v: createVersionMetric(
+        appStreamEndpoint,
+        { defaultColor: 'sky', defaultIcon: 'flathub', defaultLabel: 'flathub' },
+        (app) => app.version
+      ),
+    },
+    route: { target: { placeholder: ':app' } },
+  });
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Flathub service preset (`flathub`). */
-export const FLATHUB_SERVICE: ServiceDefinition = {
-  docs: {
-    description: 'App version, license, and total/monthly/weekly installs.',
-    targetName: ':app',
-    title: 'Flathub',
-  },
-  metricAliases: { dm: 'dl', l: 'license' },
-  metrics: {
-    dl: {
-      ...STATS_ENDPOINT,
-      ...RECENT_DOWNLOADS,
-      defaultLabel: 'installs',
-      transform: createCountTransform<FlathubStatsPayload>(
-        (payload) => payload.installs_last_month,
-        '/mo'
-      ),
-    },
-    dt: {
-      ...STATS_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      defaultLabel: 'installs',
-      transform: createCountTransform<FlathubStatsPayload>((payload) => payload.installs_total),
-    },
-    dw: {
-      ...STATS_ENDPOINT,
-      ...WEEKLY_DOWNLOADS,
-      defaultLabel: 'installs',
-      transform: createCountTransform<FlathubStatsPayload>(
-        (payload) => payload.installs_last_7_days,
-        '/wk'
-      ),
-    },
-    license: {
-      ...APPSTREAM_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<FlathubAppStreamPayload>(
-        (payload) => payload.project_license
-      ),
-    },
-    v: {
-      ...APPSTREAM_ENDPOINT,
-      defaultColor: 'sky',
-      defaultIcon: 'flathub',
-      defaultLabel: 'flathub',
-      transform: createVersionTransform<FlathubAppStreamPayload>(
-        (payload) => payload.releases?.[0]?.version
-      ),
-    },
-  },
-  ownerMode: 'none',
-};
+export const FLATHUB_SERVICE: ServiceDefinition = createFlathubService();

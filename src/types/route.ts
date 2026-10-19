@@ -20,10 +20,10 @@ export interface NumericRange {
 export interface StaticSvgRouteMatch {
   /** Discriminant of a statically rendered SVG. */
   kind: 'static';
-  /** Complete SVG markup. */
-  svg: string;
+  /** Render the complete SVG markup (deferred, so edge cache hits skip rendering entirely). */
+  render: () => string;
   /** Shared edge cache TTL in seconds. */
-  ttlSeconds: number;
+  ttl: number;
 }
 
 /** Service preset route match that needs upstream metric data. */
@@ -36,3 +36,23 @@ export interface ServiceSvgRouteMatch {
 
 /** Result of dispatching a request URL onto an SVG route. */
 export type SvgRouteMatch = ServiceSvgRouteMatch | StaticSvgRouteMatch;
+
+/** SVG route table entry serving `/<prefix>` and `/<prefix>/*` (drives the Hono registration and the dispatcher). */
+export interface SvgRouteDefinition {
+  /** Maximum number of decoded path segments after the prefix (omitted when the resolver validates the count itself). */
+  maxSegments?: number;
+  /** First path segment (e.g., `'badge'`, `'icon'`). */
+  prefix: string;
+  /** Alphabetically sorted query parameters the route reads; The only ones passed to `resolve` and kept in the edge cache key. */
+  queryParams: readonly string[];
+  /** Resolve decoded path segments and the filtered query parameters onto a route match. */
+  resolve: (segments: readonly string[], query: URLSearchParams) => SvgRouteMatch | undefined;
+}
+
+/** SVG route match together with its normalized edge cache key. */
+export interface ResolvedSvgRequest {
+  /** Normalized cache key URL (origin, raw pathname, and only the route's recognized query parameters, sorted). */
+  cacheKey: string;
+  /** Dispatched route match. */
+  match: SvgRouteMatch;
+}

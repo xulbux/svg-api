@@ -16,14 +16,12 @@ import {
   renderButton,
   renderIcon,
 } from '@/svg/renderer';
-import { escapeXml, prepareDisplayText } from '@/svg/shared';
+import { escapeXml, prepareDisplayText, sliceAtCodePoint } from '@/svg/shared';
 import { STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
-import type { BadgeSpecialElement, BadgeVariant } from '@/types';
+import type { BadgeSpecialElement, BadgeVariant, SizePreset, StripTickState } from '@/types';
+import { extractAriaLabel } from './helpers';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches the `aria-label` attribute of a rendered SVG. */
-const ARIA_LABEL_RX = /aria-label="(?<label>[^"]*)"/;
 
 /** Matches a lone (unpaired) UTF-16 surrogate code unit. */
 const LONE_SURROGATE_RX = /\p{Cs}/u;
@@ -32,16 +30,34 @@ const LONE_SURROGATE_RX = /\p{Cs}/u;
 const DARK_SURFACE_CRESCENT_RX =
   /<path d="(?<path>M [^"]+)" fill="[^"]+" fill-opacity="(?:0\.45|0\.045)"/;
 
-// -------------------------------------- INTERNALS --------------------------------------
+/** Matches every `<use href="#…">` reference and captures the referenced ID. */
+const USE_HREF_RX = /<use href="#(?<id>[^"]+)"/g;
 
-/** Extract the `aria-label` attribute of a rendered SVG. */
-function extractAriaLabel(svg: string): string {
-  return ARIA_LABEL_RX.exec(svg)?.groups?.label ?? '';
-}
+/** Matches the watermark quote mark group of a horizontal quote card and captures its X offset and scale. */
+const WATERMARK_TRANSFORM_RX =
+  /<g transform="translate\((?<x>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)" fill="none" stroke="[^"]+" stroke-opacity/;
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Extract the `d` attribute of the 3D top crescent of a secondary or tertiary surface. */
 function readTopCrescentPath(svg: string): string {
   return DARK_SURFACE_CRESCENT_RX.exec(svg)?.groups?.path ?? '';
+}
+
+/** Collect the distinct IDs referenced via `<use href="#…">` in an SVG. */
+function collectUseIds(svg: string): Set<string> {
+  const ids = new Set<string>();
+  for (const match of svg.matchAll(USE_HREF_RX)) {
+    ids.add(match.groups?.id ?? '');
+  }
+  return ids;
+}
+
+/** Render a secondary sky `metric` badge with a special element and read its `aria-label`. */
+function readMetricBadgeLabel(special: BadgeSpecialElement, value?: string): string | undefined {
+  return extractAriaLabel(
+    renderBadge({ color: 'sky', label: 'metric', special, value, variant: '2' })
+  );
 }
 
 /** Render a secondary cyan badge with a `delta:` special element. */
@@ -230,7 +246,7 @@ describe('renderBadge & renderButton', () => {
       label: 'Explore Docs',
       variant: '1',
     });
-    expect((dualIconNudgeSvg.match(/<animateTransform/g) ?? []).length).toBe(1);
+    expect(dualIconNudgeSvg.match(/<animateTransform/g) ?? []).toHaveLength(1);
 
     const dualIconExplicitPairSvg = renderButton({
       anim: 'sheen,shake,nudge',
@@ -372,7 +388,7 @@ describe('renderBadge & renderButton', () => {
       value: 'read',
       variant: '1',
     });
-    expect((dualIconBadge.match(/scale\(0\.5417\)/g) ?? []).length).toBe(2);
+    expect(dualIconBadge.match(/scale\(0\.5417\)/g) ?? []).toHaveLength(2);
 
     const rightOnlyButton = renderButton({
       color: 'emerald',
@@ -380,7 +396,7 @@ describe('renderBadge & renderButton', () => {
       label: 'Continue',
       variant: '1',
     });
-    expect((rightOnlyButton.match(/scale\(0\.625\)/g) ?? []).length).toBe(1);
+    expect(rightOnlyButton.match(/scale\(0\.625\)/g) ?? []).toHaveLength(1);
     expect(rightOnlyButton).toContain('Continue');
   });
 
@@ -395,7 +411,7 @@ describe('renderBadge & renderButton', () => {
     expect(primaryButton).toContain(`fill="${THEMES.blue.emphasisBg}"`);
     expect(primaryButton).toContain(`stroke="${THEMES.blue.emphasisRing}"`);
     expect(primaryButton).toContain(
-      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"'
     );
 
     const secondaryButton = renderButton({
@@ -407,7 +423,7 @@ describe('renderBadge & renderButton', () => {
     expect(secondaryButton).toContain('A 8 7 0 0 0');
     expect(secondaryButton).toContain(`fill="${THEMES.sky.borderColor}" fill-opacity="0.45"`);
     expect(secondaryButton).toContain(`stroke="${THEMES.sky.borderColor}" stroke-width="1"`);
-    expect(secondaryButton).not.toContain('opacity="0.82"');
+    expect(secondaryButton).not.toContain('opacity="0.85"');
 
     const splitPrimary = renderBadge({
       color: 'emerald',
@@ -422,7 +438,7 @@ describe('renderBadge & renderButton', () => {
     expect(splitPrimary).toContain(`stroke="${THEMES.emerald.emphasisRing}"`);
     expect(splitPrimary).toContain(`fill="${THEMES.emerald.iconColor}">`);
     expect(splitPrimary).toContain(
-      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"'
+      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"'
     );
 
     const secondaryBadge = renderBadge({
@@ -581,7 +597,7 @@ describe('renderQuote', () => {
     expect(verticalQuoteSvgV1).toContain('fill="url(#grad-blue)"');
     expect(verticalQuoteSvgV1).toContain('fill="#FFFFFF"');
     expect(verticalQuoteSvgV1).toContain('rotate(180 12 12)');
-    expect(verticalQuoteSvgV1).toContain('fill="rgba(255, 255, 255, 0.82)" />');
+    expect(verticalQuoteSvgV1).toContain('fill="rgba(255,255,255,0.85)" />');
     expect(verticalQuoteSvgV1).toContain('— XulbuX');
     expect(verticalQuoteSvgV1).not.toContain('<text');
 
@@ -638,23 +654,25 @@ describe('renderDocsHtml & renderHomeHtml', () => {
       '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
     );
     expect(servicesHtml).toContain(
-      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:owner/:ext/:metric</code>'
+      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
     );
     expect(servicesHtml).toContain(
       '<span class="card-title-text">Crates.io &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docker/*</code>'
     );
-    expect(iconsHtml).toContain('<span class="route-path">/icon/:icon</span>');
-    expect(stackHtml).toContain('<span class="route-path">/stack/:groups</span>');
-    expect(quotesHtml).toContain('<span class="route-path">/quote/:author/:text</span>');
+    expect(iconsHtml).toContain('<span class="route-method">GET</span>/icon/:icon</code>');
+    expect(stackHtml).toContain('<span class="route-method">GET</span>/stack/:groups</code>');
+    expect(quotesHtml).toContain(
+      '<span class="route-method">GET</span>/quote/:author/:text</code>'
+    );
     expect(colorsHtml).toContain('22 Tailwind v4 OKLCH Theme Colors');
   });
 });
 
 describe('rendering regressions', () => {
   it('marks truncated quotes with an ellipsis and shortens over-long words (regression: silent cut-off and overflow)', () => {
-    const longText = Array.from({ length: 200 }, (_, index) => `word${index}`).join(' ');
+    const longText = Array.from({ length: 200 }, (_entry, index) => `word${index}`).join(' ');
     const truncatedSvg = renderQuote({ color: 'indigo', text: longText, width: 240 });
-    const ariaLabel = extractAriaLabel(truncatedSvg);
+    const ariaLabel = extractAriaLabel(truncatedSvg) ?? '';
     expect(ariaLabel.endsWith('…')).toBe(true);
     expect(ariaLabel).not.toContain('word199');
 
@@ -663,7 +681,7 @@ describe('rendering regressions', () => {
       text: `${'a'.repeat(400)} end`,
       width: 240,
     });
-    const longWordLabel = extractAriaLabel(longWordSvg);
+    const longWordLabel = extractAriaLabel(longWordSvg) ?? '';
     expect(longWordLabel).toContain('…');
     expect(longWordLabel.length).toBeLessThan(200);
   });
@@ -675,19 +693,41 @@ describe('rendering regressions', () => {
       text: `Supercalifragilisticexpialidocious${'a'.repeat(60)} end of the quote text here`,
       width,
     });
-    // Text column: starts at x = 34 and is `width - (padX + 42)` wide (`padX = 36` at the `md` size).
-    const textColumnRight = 34 + (width - (36 + 42));
+    // Text column (`md`): Starts at x = 38 and ends 16px left of the watermark ink (x = 217 + 2 * 1.05).
+    const textColumnRight = 217 + 2.1 - 16;
     const maxInkX = measureMaxTextInkX(svg);
     expect(maxInkX).toBeGreaterThan(100);
     expect(maxInkX).toBeLessThanOrEqual(textColumnRight + 0.5);
+  });
+
+  it('never runs horizontal quote text under the watermark at any size (regression: md text reached x = 520, the watermark starts at x = 519)', () => {
+    const sizes: (SizePreset | number)[] = ['sm', 'md', 'lg', 'xl', 11, 28];
+    const variants: BadgeVariant[] = ['1', '2'];
+    const text =
+      'Every single word of this deliberately long quotation keeps wrapping across several lines of the card';
+    for (const size of sizes) {
+      for (const variant of variants) {
+        const svg = renderQuote({
+          author: 'A Long Author Name',
+          color: 'indigo',
+          size,
+          text,
+          variant,
+        });
+        const watermark = WATERMARK_TRANSFORM_RX.exec(svg)?.groups;
+        expect(watermark, String(size)).toBeDefined();
+        const watermarkInkLeft = Number(watermark?.x) + 2 * Number(watermark?.scale);
+        expect(measureMaxTextInkX(svg), String(size)).toBeLessThan(watermarkInkLeft);
+      }
+    }
   });
 
   it('truncates overlong quote author lines to the text column (regression: author overflowed the card)', () => {
     const width = 260;
     const author = 'An Extraordinarily Long Author Name That Never Fits Into The Card';
     const horizontalSvg = renderQuote({ author, color: 'indigo', text: 'Short quote.', width });
-    expect(extractAriaLabel(horizontalSvg).endsWith('…')).toBe(true);
-    expect(measureMaxTextInkX(horizontalSvg)).toBeLessThanOrEqual(34 + (width - (36 + 42)) + 0.5);
+    expect(extractAriaLabel(horizontalSvg)?.endsWith('…')).toBe(true);
+    expect(measureMaxTextInkX(horizontalSvg)).toBeLessThanOrEqual(217 + 2.1 - 16 + 0.5);
 
     const verticalSvg = renderQuote({
       author,
@@ -696,14 +736,14 @@ describe('rendering regressions', () => {
       text: 'Short quote.',
       width,
     });
-    expect(extractAriaLabel(verticalSvg).endsWith('…')).toBe(true);
+    expect(extractAriaLabel(verticalSvg)?.endsWith('…')).toBe(true);
     expect(measureMaxTextInkX(verticalSvg)).toBeLessThanOrEqual(width - 36);
   });
 
   it('caps quote text at 1000 characters with an ellipsis (regression: unbounded text length)', () => {
     const svg = renderQuote({ color: 'indigo', text: 'x'.repeat(5000), width: 900 });
-    expect(extractAriaLabel(svg).length).toBeLessThan(1000);
-    expect(extractAriaLabel(svg).endsWith('…')).toBe(true);
+    expect(extractAriaLabel(svg)?.length).toBeLessThan(1000);
+    expect(extractAriaLabel(svg)?.endsWith('…')).toBe(true);
   });
 
   it('clamps derived defaults into their documented ranges (regression: fallbacks skipped clamping)', () => {
@@ -740,7 +780,9 @@ describe('rendering regressions', () => {
     expect(svg).not.toContain('<script');
     expect(svg).toContain('<linearGradient id="icon-sheen"');
     expect(svg).toContain('url(#icon-sheen)');
-    expect(svg).toContain(`aria-label="${escapeXml(maliciousSlug.toLowerCase())}"`);
+    expect(svg).toContain(
+      `aria-label="${escapeXml(`unknown icon: ${maliciousSlug.toLowerCase()}`)}"`
+    );
   });
 
   it('compensates the Devicon coordinate scale in the standalone sheen gradient (regression: band was 5x too narrow)', () => {
@@ -799,9 +841,11 @@ describe('rendering regressions', () => {
       value: 'b'.repeat(5000),
       variant: '2',
     });
-    const [labelPart, valuePart] = extractAriaLabel(longBadge).split(': ');
+    const [labelPart = '', rightPart = ''] = (extractAriaLabel(longBadge) ?? '').split(': ');
+    const [deltaPart, valuePart] = rightPart.split(' ');
     expect(labelPart).toHaveLength(MAX_LABEL_LENGTH);
     expect(labelPart.endsWith('…')).toBe(true);
+    expect(deltaPart).toHaveLength(MAX_LABEL_LENGTH);
     expect(valuePart).toHaveLength(MAX_LABEL_LENGTH);
     expect(Number(/width="(?<width>\d+)"/.exec(longBadge)?.groups?.width)).toBeLessThan(3000);
 
@@ -810,7 +854,7 @@ describe('rendering regressions', () => {
       label: `${'a'.repeat(MAX_LABEL_LENGTH - 2)}😀${'b'.repeat(10)}`,
       variant: '1',
     });
-    expect(LONE_SURROGATE_RX.test(extractAriaLabel(emojiButton))).toBe(false);
+    expect(LONE_SURROGATE_RX.test(extractAriaLabel(emojiButton) ?? '')).toBe(false);
     expect(extractAriaLabel(emojiButton)).toBe(`${'a'.repeat(MAX_LABEL_LENGTH - 2)}…`);
   });
 
@@ -942,7 +986,7 @@ describe('rendering regressions', () => {
     const svg = renderIcon({ anim: 'sheen', color: 'violet', icon: 'rocket' });
     expect(iconData).toBeDefined();
     expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
-    expect(svg).toContain('<use href="#icon-body" stroke="url(#icon-sheen)" />');
+    expect(svg).toMatch(/<use href="#icon-body-[\da-z]+" stroke="url\(#icon-sheen\)" \/>/);
   });
 
   it('emits each stack icon body once and references it per tile (regression: 128 large brand tiles produced a ~6.9 MB SVG)', () => {
@@ -950,8 +994,152 @@ describe('rendering regressions', () => {
     const svg = renderStack({ icons: Array.from({ length: 128 }, () => 'elsevier') });
     expect(iconData).toBeDefined();
     expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
-    expect(svg.split('<use href="#stack-icon-0" />').length - 1).toBe(128);
+    const [bodyId] = collectUseIds(svg);
+    expect(collectUseIds(svg).size).toBe(1);
+    expect(svg.split(`<use href="#${bodyId}" />`).length - 1).toBe(128);
     expect(svg.length).toBeLessThan(200_000);
+  });
+
+  it('content-addresses stack and standalone icon body IDs (regression: stack-icon-0 and icon-body collided across inlined SVGs)', () => {
+    const rustStackIds = collectUseIds(renderStack({ icons: ['rust'] }));
+    const goStackIds = collectUseIds(renderStack({ icons: ['go'] }));
+    expect(rustStackIds.size).toBe(1);
+    expect([...rustStackIds][0]).toMatch(/^stack-icon-[\da-z]+$/);
+    expect([...rustStackIds][0]).not.toBe([...goStackIds][0]);
+    expect(collectUseIds(renderStack({ icons: ['go', 'rust'] }))).toEqual(
+      new Set([...goStackIds, ...rustStackIds])
+    );
+
+    const rocketIds = collectUseIds(renderIcon({ anim: 'sheen', color: 'indigo', icon: 'rocket' }));
+    const zapIds = collectUseIds(renderIcon({ anim: 'sheen', color: 'indigo', icon: 'zap' }));
+    expect([...rocketIds][0]).toMatch(/^icon-body-[\da-z]+$/);
+    expect([...rocketIds][0]).not.toBe([...zapIds][0]);
+    expect(collectUseIds(renderIcon({ anim: 'sheen', color: 'rose', icon: 'rocket' }))).toEqual(
+      rocketIds
+    );
+  });
+
+  it('describes special elements in badge aria-labels (regression: bars, rings, strips, deltas, and sparklines were silent)', () => {
+    expect(readMetricBadgeLabel({ type: 'bar', value: 85 }, '85%')).toBe('metric: 85%');
+    expect(readMetricBadgeLabel({ type: 'bar', value: 94 }, '150/160')).toBe('metric: 94% 150/160');
+    expect(readMetricBadgeLabel({ type: 'ring', value: 74.6 })).toBe('metric: 75%');
+    expect(readMetricBadgeLabel({ type: 'delta', value: '+14%' }, '142k')).toBe(
+      'metric: +14% 142k'
+    );
+    expect(readMetricBadgeLabel({ states: ['9', '9', '0'], type: 'strip' })).toBe(
+      'metric: 3 checks'
+    );
+    expect(readMetricBadgeLabel({ type: 'sparkline', values: [1, 3, 2] }, '44/8w')).toBe(
+      'metric: trend 44/8w'
+    );
+    // Sparklines with fewer than 2 points render nothing, so they are not announced either.
+    expect(readMetricBadgeLabel({ type: 'sparkline', values: [1] })).toBe('metric');
+  });
+
+  it('omits gauge percentages when the value already states one (regression: "coverage: 69% 69.4%")', () => {
+    expect(readMetricBadgeLabel({ type: 'ring', value: 69.4 }, '69.4%')).toBe('metric: 69.4%');
+    expect(readMetricBadgeLabel({ type: 'bar', value: 99.98 }, '99.98%')).toBe('metric: 99.98%');
+    expect(readMetricBadgeLabel({ type: 'ring', value: 85 }, '8.5/10')).toBe('metric: 85% 8.5/10');
+    expect(readMetricBadgeLabel({ type: 'delta', value: '+2%' }, '96%')).toBe('metric: +2% 96%');
+  });
+
+  it('names empty buttons "button" and unknown standalone icons after the fallback (regression: "badge" and the raw slug)', () => {
+    expect(extractAriaLabel(renderButton({ color: 'indigo', label: '', variant: '1' }))).toBe(
+      'button'
+    );
+    expect(extractAriaLabel(renderBadge({ color: 'indigo', label: '', variant: '1' }))).toBe(
+      'badge'
+    );
+    expect(extractAriaLabel(renderIcon({ color: 'indigo', icon: 'no-such-icon' }))).toBe(
+      'unknown icon: no-such-icon'
+    );
+    expect(extractAriaLabel(renderIcon({ color: 'indigo', icon: 'Rocket' }))).toBe('rocket');
+  });
+
+  it('builds stack aria-labels from the bounded tile titles (regression: raw, uncapped slugs)', () => {
+    const svg = renderStack({ icons: ['ts', 'my-tool', `x${'y'.repeat(5000)}`] });
+    const ariaLabel = extractAriaLabel(svg) ?? '';
+    expect(ariaLabel.startsWith('tech stack: TypeScript, My Tool, Xyyy')).toBe(true);
+    expect(ariaLabel.length).toBeLessThan(200);
+    expect(svg.length).toBeLessThan(10_000);
+    // Tiles beyond the 128-tile cap are dropped before any normalization.
+    const cappedIcons = Array.from({ length: 128 }, (_entry, index) => `tool-${index}`);
+    const overlongIcons = [...cappedIcons, ...Array.from({ length: 500 }, () => 'rust')];
+    expect(renderStack({ groups: [[{ icons: overlongIcons }]] })).toBe(
+      renderStack({ groups: [[{ icons: cappedIcons }]] })
+    );
+  });
+
+  it('renders no special element for an empty or whitespace-only delta (regression: lone arrow without readout)', () => {
+    const plainSvg = renderBadge({ color: 'cyan', label: 'delta', variant: '2' });
+    expect(renderDeltaBadge('')).toBe(plainSvg);
+    expect(renderDeltaBadge('  \u200B ')).toBe(plainSvg);
+  });
+
+  it('drops invalid strip tick states from upstream data (regression: prototype keys and junk ticks were drawn)', () => {
+    const junkStates: StripTickState[] = JSON.parse('["9", "constructor", "x", "5"]');
+    const junkSvg = renderBadge({
+      color: 'emerald',
+      label: 'uptime',
+      special: { states: junkStates, type: 'strip' },
+      variant: '1',
+    });
+    const cleanSvg = renderBadge({
+      color: 'emerald',
+      label: 'uptime',
+      special: { states: ['9', '5'], type: 'strip' },
+      variant: '1',
+    });
+    expect(junkSvg).toBe(cleanSvg);
+    expect(junkSvg).not.toContain('undefined');
+  });
+
+  it('returns an empty prefix for non-positive slice ends (regression: negative ends sliced from the string end)', () => {
+    expect(sliceAtCodePoint('abc', 0)).toBe('');
+    expect(sliceAtCodePoint('abc', -1)).toBe('');
+    expect(sliceAtCodePoint('a😀', 2)).toBe('a');
+  });
+
+  it('adds the escaped accessible label as the first-child <title> of every SVG (regression: no tooltip or title fallback)', () => {
+    const svgs = [
+      renderBadge({ color: 'indigo', label: 'a & b', value: '<1>', variant: '2' }),
+      renderButton({ color: 'indigo', label: 'Go', variant: '1' }),
+      renderIcon({ color: 'indigo', icon: 'rocket' }),
+      renderStack({ icons: ['rust'] }),
+      renderQuote({ color: 'indigo', text: 'Short quote.' }),
+    ];
+    for (const svg of svgs) {
+      const label = extractAriaLabel(svg) ?? '';
+      expect(label.length).toBeGreaterThan(0);
+      expect(svg).toContain(`aria-label="${label}"><title>${label}</title>`);
+    }
+    expect(svgs[0]).toContain('<title>a &amp; b: &lt;1&gt;</title>');
+  });
+
+  it('routes the bar shimmer gradient into the root <defs> (regression: inline <defs> inside the badge body)', () => {
+    const svg = renderBadge({
+      color: 'emerald',
+      label: 'coverage',
+      special: { type: 'bar', value: 60 },
+      variant: '2',
+    });
+    expect(svg.split('<defs>').length - 1).toBe(1);
+    const rootDefs = /<defs>(?<defs>.*?)<\/defs>/.exec(svg)?.groups?.defs ?? '';
+    expect(rootDefs).toContain('<linearGradient id="bar-shimmer-c"');
+    expect(svg).toContain('fill="url(#bar-shimmer-c)"');
+  });
+
+  it('applies a single foreground alpha to flat delta arrows on primary capsules (regression: rgba 0.85 x opacity 0.82)', () => {
+    const svg = renderBadge({
+      color: 'cyan',
+      label: 'delta',
+      special: { type: 'delta', value: '0%' },
+      variant: '1',
+    });
+    expect(svg).toContain('stroke="#FFFFFF" stroke-width="1.6"');
+    expect(svg).toContain('opacity="0.85"><path d="M2 5H8');
+    expect(svg).not.toContain('stroke="rgba(');
+    expect(svg).toContain('fill="rgba(255,255,255,0.85)"');
   });
 
   it('draws the 3D top crescent of split secondary badges on the right capsule only, like split primary badges', () => {

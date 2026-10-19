@@ -2,24 +2,36 @@
   navigation: auto;
 }
 
-/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated From `THEME_TOKENS` in styles.ts) */
+/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated From `getThemeTokens()` in styles.ts) */
 
 :root {
-  interpolate-size: allow-keywords;
-  color-scheme: light dark;
-
   /* Layout Dimensions */
   --layout-max: 1180px;
   --sidebar-width: 264px;
   --header-height: 57px;
 
-  /* 3-Tier Border Hierarchy: Outer Divider > Standard Border > Inner Subtle Border */
-  --c-border: color-mix(in srgb, var(--c-bg), var(--c-divider) 72%);
-  --c-border-subtle: color-mix(in srgb, var(--c-bg), var(--c-divider) 42%);
-  --c-code-bg: color-mix(in srgb, var(--c-bg), var(--c-divider) 65%);
-  --c-brand-soft: color-mix(in srgb, var(--c-brand-1) 12%, transparent);
-  --c-brand-border: color-mix(in srgb, var(--c-brand-1) 36%, transparent);
+  /* Corner Radii */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: calc(infinity * 1px);
 
+  /* Elevation */
+  --shadow-popover: 0 10px 30px rgba(0 0 0 / 0.18);
+
+  /* Motion */
+  --duration-fast: 0.15s;
+  --duration-base: 0.2s;
+  --duration-slow: 0.25s;
+
+  /* Stacking Order */
+  --z-popover: 10;
+  --z-header: 20;
+  --z-skip-link: 50;
+
+  interpolate-size: allow-keywords;
+  scroll-padding-block-start: calc(var(--header-height) + 32px);
+  color-scheme: light dark;
   accent-color: var(--c-btn-bg);
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--c-text-1) 24%, transparent) transparent;
@@ -41,18 +53,24 @@
   box-sizing: border-box;
 }
 
+/* The `hidden` attribute always wins over component `display` values. */
+
+[hidden] {
+  display: none !important;
+}
+
 body {
-  margin: 0;
-  min-block-size: 100dvh;
   display: flex;
   flex-direction: column;
-  background: var(--c-bg);
-  color: var(--c-text-1);
+  min-block-size: 100dvh;
+  margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   line-height: 1.55;
+  color: var(--c-text-1);
+  background: var(--c-bg);
   transition:
-    background-color 0.2s ease,
-    color 0.2s ease;
+    background-color var(--duration-base) ease,
+    color var(--duration-base) ease;
 }
 
 h1,
@@ -60,8 +78,8 @@ h2,
 h3,
 h4,
 th {
-  text-wrap: balance;
   margin-block: 0;
+  text-wrap: balance;
 }
 
 p,
@@ -96,9 +114,9 @@ code {
   margin: -1px !important;
   padding: 0 !important;
   overflow: hidden !important;
-  clip-path: inset(50%) !important;
-  white-space: nowrap !important;
   border: 0 !important;
+  white-space: nowrap !important;
+  clip-path: inset(50%) !important;
 }
 
 /* Skip Link: hidden until focused by keyboard */
@@ -107,14 +125,14 @@ code {
   position: fixed;
   inset-block-start: 10px;
   inset-inline-start: 10px;
-  z-index: 50;
+  z-index: var(--z-skip-link);
   padding: 8px 14px;
-  border-radius: 8px;
-  background: var(--c-btn-bg);
-  color: var(--c-btn-text);
+  border-radius: var(--radius-md);
   font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none;
+  color: var(--c-btn-text);
+  background: var(--c-btn-bg);
   translate: 0 calc(-100% - 20px);
 }
 
@@ -122,28 +140,95 @@ code {
   translate: 0 0;
 }
 
+/* UI Icons: Inline `<svg>` glyphs referencing the hidden `<symbol>` sprite (symbols still render through `<use>`) */
+
+.ui-sprite {
+  display: none;
+}
+
 .ui-icon {
-  flex-shrink: 0;
   display: inline-block;
+  flex-shrink: 0;
   vertical-align: middle;
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
 }
 
-/* Text links: Always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover */
+/* Text Links & Link-Styled Buttons: Always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover */
 
-.text-link {
-  color: var(--c-text-1);
+.text-link,
+.text-btn {
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  transition: text-decoration-color 0.2s ease;
+  color: var(--c-text-1);
+  transition: text-decoration-color var(--duration-base) ease;
 }
 
-.text-link:hover {
+.text-link:hover,
+.text-btn:hover {
   text-decoration-color: currentColor;
+}
+
+.text-btn {
+  padding: 0;
+  border: none;
+  font: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+/* Shared Surface Cards: Soft surface + outer divider border (cards, hero, tables, builder panels) */
+
+.card,
+.feature-card,
+.hero,
+.table-wrapper,
+.alias-list,
+.anatomy,
+.builder-form,
+.builder-panel-inner {
+  border: 1px solid var(--c-divider);
+  border-radius: var(--radius-lg);
+  background: var(--c-bg-soft);
+}
+
+/* Shared Popover Panels (preview background picker, dropdown listboxes, icon picker) */
+
+.popover-panel {
+  position: fixed;
+  inset: auto;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--c-divider);
+  border-radius: 10px;
+  color: var(--c-text-1);
+  background: var(--c-bg-elv);
+  box-shadow: var(--shadow-popover);
+}
+
+.popover-panel:where(:popover-open, .is-open) {
+  display: flex;
+}
+
+.popover-panel:not(:where(:popover-open, .is-open)) {
+  display: none;
+}
+
+/* Shared Hidden Radio Overlays: The native input covers its custom-styled label for clicks and keyboard focus */
+
+.bg-picker-input,
+.swatch-input,
+.icon-picker-tab input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 /* Reduced Motion: no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script) */
@@ -160,9 +245,9 @@ code {
     animation: none !important;
     scroll-behavior: auto !important;
   }
-}
 
-@media (prefers-reduced-motion: reduce) {
+  /* `*` never matches the `::details-content` pseudo-element. */
+
   details.code-drawer::details-content {
     transition: none !important;
   }

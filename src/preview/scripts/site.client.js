@@ -1,17 +1,16 @@
 // @ts-check
 /**
  * Site client script – Color-scheme toggle, preview stage backgrounds, reduced motion for SMIL previews, code drawer
- * scrolling, and clipboard copying on every `svg.xul.is` documentation page.
+ * scrolling, popovers, and clipboard copying on every `svg.xul.is` documentation page.
  *
- * Loaded as a deferred classic script; Shared values (storage keys, preview backgrounds) are read from the
- * `#site-config` JSON element rendered by `src/preview/layout.ts`.
+ * Loaded as a deferred classic script before any page script; Shared values (storage keys, preview backgrounds,
+ * theme colors) are read from the `#site-config` JSON element rendered by `src/preview/layout.ts`. The popover
+ * and clipboard helpers are exposed as `svgSite` for the builder script; Without a DOM, the pure helpers are
+ * exposed as `svgSiteCore` so the test suite can verify them.
  */
 
 (function initSiteClient() {
   // ---------------------------------------- CONSTS ---------------------------------------
-
-  /** @type {SiteClientConfig} */
-  const SITE_CONFIG = JSON.parse(document.getElementById('site-config')?.textContent ?? '{}');
 
   /** Horizontal distance in pixels scrolled by a code drawer scroll button. */
   const CODE_SCROLL_STEP = 240;
@@ -19,22 +18,8 @@
   /** Duration in milliseconds before copy feedback resets. */
   const COPY_FEEDBACK_MS = 1500;
 
-  const rootElement = document.documentElement;
-  const schemeMeta = /** @type {HTMLMetaElement | null} */ (
-    document.querySelector('meta[name="color-scheme"]')
-  );
-  const themeToggle = document.getElementById('theme-toggle');
-  const darkSchemeQuery = globalThis.matchMedia('(prefers-color-scheme: dark)');
-  const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
-
-  /** @type {WeakMap<Element, number>} */
-  const copyResetTimers = new WeakMap();
-
-  /** Whether the browser supports the Popover API (otherwise popovers toggle an `.is-open` class). */
-  const hasPopoverApi = 'popover' in HTMLElement.prototype;
-
-  /** Whether the browser supports CSS anchor positioning for popovers. */
-  const hasAnchorPositioning = CSS.supports('position-area', 'block-end');
+  /** Minimum distance in pixels between a fallback-positioned popover and the viewport edges. */
+  const VIEWPORT_MARGIN = 8;
 
   // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -42,6 +27,68 @@
   const NBSP_RX = /\u00A0/g;
 
   // -------------------------------------- INTERNALS --------------------------------------
+
+  /**
+   * Compute the viewport position of a popover below (or, without room, above) its anchor, clamped to the
+   * viewport; Used where CSS anchor positioning is unavailable.
+   * @param {PopoverAnchorRect} anchorRect   Anchor bounding rectangle.
+   * @param {PopoverSize} popoverSize        Measured popover size.
+   * @param {PopoverSize} viewportSize       Viewport size.
+   * @param {PopoverPlacementOptions} options
+   * @returns {PopoverPlacement}
+   */
+  function computePopoverPlacement(anchorRect, popoverSize, viewportSize, options) {
+    const gap = options.gap ?? VIEWPORT_MARGIN;
+    const width = options.isWidthMatched
+      ? Math.max(popoverSize.width, anchorRect.width)
+      : popoverSize.width;
+    let top = anchorRect.bottom + gap;
+    const hasRoomBelow = top + popoverSize.height <= viewportSize.height - VIEWPORT_MARGIN;
+    const aboveTop = anchorRect.top - gap - popoverSize.height;
+    if (!hasRoomBelow && aboveTop >= VIEWPORT_MARGIN) {
+      top = aboveTop;
+    } else if (!hasRoomBelow) {
+      top = Math.max(VIEWPORT_MARGIN, viewportSize.height - VIEWPORT_MARGIN - popoverSize.height);
+    }
+    const preferredLeft = options.align === 'end' ? anchorRect.right - width : anchorRect.left;
+    const left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(preferredLeft, viewportSize.width - VIEWPORT_MARGIN - width)
+    );
+    return { left, minWidth: options.isWidthMatched ? anchorRect.width : undefined, top };
+  }
+
+  // -------------------------------------- PUBLIC API -------------------------------------
+
+  if (typeof document === 'undefined') {
+    globalThis.svgSiteCore = { computePopoverPlacement };
+    return;
+  }
+
+  // ----------------------------------------- MAIN ----------------------------------------
+  // Everything below needs the DOM; Helpers close over the page state, so they live inside MAIN.
+
+  /** @type {SiteClientConfig} */
+  const siteConfig = JSON.parse(document.getElementById('site-config')?.textContent ?? '{}');
+  const rootElement = document.documentElement;
+  const schemeMeta = /** @type {HTMLMetaElement | null} */ (
+    document.querySelector('meta[name="color-scheme"]')
+  );
+  const themeColorMetas = document.querySelectorAll('meta[name="theme-color"]');
+  const themeToggle = document.getElementById('theme-toggle');
+  const darkSchemeQuery = globalThis.matchMedia('(prefers-color-scheme: dark)');
+  const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
+  const drawerQuery = globalThis.matchMedia(siteConfig.drawerMediaQuery);
+  const sidebarDrawer = document.getElementById('sidebar-drawer');
+
+  /** Whether the browser supports the Popover API (otherwise popovers toggle an `.is-open` class). */
+  const hasPopoverApi = 'popover' in HTMLElement.prototype;
+
+  /** Whether the browser supports CSS anchor positioning for popovers. */
+  const hasAnchorPositioning = CSS.supports('position-area', 'block-end');
+
+  /** @type {WeakMap<Element, number>} */
+  const copyResetTimers = new WeakMap();
 
   /**
    * Check whether a popover element is open (native `:popover-open` or the `.is-open` fallback class).
@@ -71,7 +118,31 @@
   }
 
   /**
-   * Read a `localStorage` value (`null` when unavailable).
+   * Position an open popover next to its anchor when CSS anchor positioning is unavailable (no-op otherwise).
+   * @param {HTMLElement} popover                Open popover element (measured for its real size).
+   * @param {Element} anchor                     Anchor element.
+   * @param {PopoverPlacementOptions} [options]
+   */
+  function placePopover(popover, anchor, options = {}) {
+    if (hasAnchorPositioning) {
+      return;
+    }
+    const popoverRect = popover.getBoundingClientRect();
+    const placement = computePopoverPlacement(
+      anchor.getBoundingClientRect(),
+      { height: popoverRect.height, width: popoverRect.width },
+      { height: globalThis.innerHeight, width: rootElement.clientWidth },
+      options
+    );
+    popover.style.top = `${placement.top}px`;
+    popover.style.left = `${placement.left}px`;
+    if (placement.minWidth !== undefined) {
+      popover.style.minWidth = `${placement.minWidth}px`;
+    }
+  }
+
+  /**
+   * Read a `localStorage` value (`undefined` when unset or unavailable).
    * @param {string} key   Storage key.
    * @returns {string | undefined}
    */
@@ -85,7 +156,7 @@
 
   /**
    * Write or remove (`undefined`) a `localStorage` value, ignoring unavailable storage.
-   * @param {string} key            Storage key.
+   * @param {string} key                 Storage key.
    * @param {string | undefined} value   Value to store, or `undefined` to remove the key.
    */
   function writeStorage(key, value) {
@@ -115,12 +186,19 @@
   }
 
   /**
-   * Apply an explicit color scheme (or follow the system with `undefined`) and sync the theme switch state.
+   * Apply an explicit color scheme (or follow the system with `undefined`) to the color-scheme and
+   * theme-color meta tags, and sync the theme switch state.
    * @param {'dark' | 'light' | undefined} storedScheme   Explicit scheme override.
    */
   function applyScheme(storedScheme) {
     if (schemeMeta) {
       schemeMeta.content = storedScheme ?? 'light dark';
+    }
+    for (const themeColorMeta of themeColorMetas) {
+      if (themeColorMeta instanceof HTMLMetaElement) {
+        const mediaScheme = themeColorMeta.media.includes('dark') ? 'dark' : 'light';
+        themeColorMeta.content = siteConfig.themeColors[storedScheme ?? mediaScheme];
+      }
     }
     themeToggle?.setAttribute(
       'aria-checked',
@@ -134,9 +212,9 @@
    * @returns {string}
    */
   function sanitizePreviewBg(value) {
-    return typeof value === 'string' && SITE_CONFIG.previewBgValues.includes(value)
+    return typeof value === 'string' && siteConfig.previewBgValues.includes(value)
       ? value
-      : SITE_CONFIG.previewBgValues[0];
+      : siteConfig.previewBgValues[0];
   }
 
   /**
@@ -144,7 +222,7 @@
    * @param {string} previewBg   Sanitized preview background value.
    */
   function applyPreviewBg(previewBg) {
-    if (previewBg === SITE_CONFIG.previewBgValues[0]) {
+    if (previewBg === siteConfig.previewBgValues[0]) {
       rootElement.removeAttribute('data-preview-bg');
     } else {
       rootElement.setAttribute('data-preview-bg', previewBg);
@@ -183,33 +261,37 @@
     const codePre = drawerBody?.querySelector('.code-pre');
     const leftButton = drawerBody?.querySelector('.scroll-btn-left');
     const rightButton = drawerBody?.querySelector('.scroll-btn-right');
-    if (!codePre || !leftButton || !rightButton) {
+    if (
+      !codePre ||
+      !(leftButton instanceof HTMLButtonElement) ||
+      !(rightButton instanceof HTMLButtonElement)
+    ) {
       return;
     }
     const isScrollable = codePre.scrollWidth > codePre.clientWidth + 1;
     leftButton.classList.toggle('is-visible', isScrollable);
     rightButton.classList.toggle('is-visible', isScrollable);
-    if (isScrollable) {
-      leftButton.classList.toggle('is-disabled', codePre.scrollLeft <= 0);
-      rightButton.classList.toggle(
-        'is-disabled',
-        codePre.scrollLeft >= codePre.scrollWidth - codePre.clientWidth - 1
-      );
-    }
+    leftButton.disabled = !isScrollable || codePre.scrollLeft <= 0;
+    rightButton.disabled =
+      !isScrollable || codePre.scrollLeft >= codePre.scrollWidth - codePre.clientWidth - 1;
   }
 
   /**
-   * Copy an element's text by selecting it and running the legacy `copy` command.
-   * @param {Element} sourceElement   Element whose text content is copied.
+   * Copy text by selecting a temporary off-screen element and running the legacy `copy` command.
+   * @param {string} text   Text to copy.
    * @returns {boolean} Whether the copy command succeeded.
    */
-  function copyWithSelection(sourceElement) {
+  function copyWithSelection(text) {
     const selection = globalThis.getSelection();
     if (!selection) {
       return false;
     }
+    const scratch = document.createElement('pre');
+    scratch.textContent = text;
+    scratch.style.cssText = 'position:fixed;inset:0 auto auto 0;opacity:0;pointer-events:none;';
+    document.body.append(scratch);
     const range = document.createRange();
-    range.selectNodeContents(sourceElement);
+    range.selectNodeContents(scratch);
     selection.removeAllRanges();
     selection.addRange(range);
     let isCopied = false;
@@ -220,46 +302,50 @@
       isCopied = false;
     }
     selection.removeAllRanges();
+    scratch.remove();
     return isCopied;
   }
 
   /**
-   * Announce copy success or failure on a copy button, resetting after `COPY_FEEDBACK_MS`.
-   * @param {Element} copyButton   `.copy-btn` element.
-   * @param {boolean} isCopied     Whether the copy succeeded.
+   * Announce copy success or failure in a button's `[data-copy-label]` element (a polite live region),
+   * resetting after `COPY_FEEDBACK_MS`; `data-copied-label` / `data-failed-label` override the texts.
+   * @param {Element} button      Copy button.
+   * @param {boolean} isCopied    Whether the copy succeeded.
    */
-  function showCopyFeedback(copyButton, isCopied) {
-    const labelElement = copyButton.querySelector('.copy-btn-text');
-    clearTimeout(copyResetTimers.get(copyButton));
-    copyButton.classList.toggle('is-copied', isCopied);
-    copyButton.classList.toggle('is-failed', !isCopied);
-    if (labelElement) {
-      labelElement.textContent = isCopied ? 'Copied' : 'Copy failed';
+  function showCopyFeedback(button, isCopied) {
+    const labelElement = button.querySelector('[data-copy-label]');
+    if (!(button instanceof HTMLElement) || !(labelElement instanceof HTMLElement)) {
+      return;
     }
+    labelElement.dataset.defaultLabel ??= labelElement.textContent ?? '';
+    clearTimeout(copyResetTimers.get(button));
+    button.classList.toggle('is-copied', isCopied);
+    button.classList.toggle('is-failed', !isCopied);
+    labelElement.textContent = isCopied
+      ? (button.dataset.copiedLabel ?? 'Copied')
+      : (button.dataset.failedLabel ?? 'Copy failed');
     copyResetTimers.set(
-      copyButton,
+      button,
       globalThis.setTimeout(() => {
-        copyButton.classList.remove('is-copied', 'is-failed');
-        if (labelElement) {
-          labelElement.textContent = 'Copy';
-        }
+        button.classList.remove('is-copied', 'is-failed');
+        labelElement.textContent = labelElement.dataset.defaultLabel ?? '';
       }, COPY_FEEDBACK_MS)
     );
   }
 
   /**
-   * Copy text with the async Clipboard API, falling back to a selection copy of `sourceElement`.
-   * @param {Element} copyButton      `.copy-btn` element receiving the feedback.
-   * @param {Element} sourceElement   Element whose text content is copied.
+   * Copy text with the async Clipboard API (falling back to a selection copy) and show feedback on a button.
+   * @param {string} text         Text to copy.
+   * @param {Element} button      Button receiving the feedback.
    */
-  function copyElementText(copyButton, sourceElement) {
+  function copyText(text, button) {
     if (navigator.clipboard && globalThis.isSecureContext) {
-      navigator.clipboard.writeText(sourceElement.textContent ?? '').then(
-        () => showCopyFeedback(copyButton, true),
-        () => showCopyFeedback(copyButton, copyWithSelection(sourceElement))
+      navigator.clipboard.writeText(text).then(
+        () => showCopyFeedback(button, true),
+        () => showCopyFeedback(button, copyWithSelection(text))
       );
     } else {
-      showCopyFeedback(copyButton, copyWithSelection(sourceElement));
+      showCopyFeedback(button, copyWithSelection(text));
     }
   }
 
@@ -276,25 +362,38 @@
     return copyButton.closest('.code-drawer-body')?.querySelector('.code-pre') ?? undefined;
   }
 
-  // ----------------------------------------- MAIN ----------------------------------------
+  globalThis.svgSite = {
+    closePopover,
+    copyText,
+    hasAnchorPositioning,
+    isPopoverOpen,
+    placePopover,
+  };
 
-  applyScheme(sanitizeScheme(readStorage(SITE_CONFIG.schemeStorageKey)));
-  applyPreviewBg(sanitizePreviewBg(readStorage(SITE_CONFIG.previewBgStorageKey)));
+  /** Keeps the scroll buttons of open code drawers in sync with their width. */
+  const codeResizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      updateScrollButtons(entry.target.closest('.code-drawer-body'));
+    }
+  });
+
+  applyScheme(sanitizeScheme(readStorage(siteConfig.schemeStorageKey)));
+  applyPreviewBg(sanitizePreviewBg(readStorage(siteConfig.previewBgStorageKey)));
   if (reducedMotionQuery.matches) {
     syncPreviewAnimations();
   }
 
   themeToggle?.addEventListener('click', () => {
     const renderedScheme =
-      sanitizeScheme(readStorage(SITE_CONFIG.schemeStorageKey)) ?? getSystemScheme();
+      sanitizeScheme(readStorage(siteConfig.schemeStorageKey)) ?? getSystemScheme();
     const targetScheme = renderedScheme === 'dark' ? 'light' : 'dark';
     const storedScheme = targetScheme === getSystemScheme() ? undefined : targetScheme;
-    writeStorage(SITE_CONFIG.schemeStorageKey, storedScheme);
+    writeStorage(siteConfig.schemeStorageKey, storedScheme);
     applyScheme(storedScheme);
   });
 
   darkSchemeQuery.addEventListener('change', () => {
-    applyScheme(sanitizeScheme(readStorage(SITE_CONFIG.schemeStorageKey)));
+    applyScheme(sanitizeScheme(readStorage(siteConfig.schemeStorageKey)));
   });
 
   reducedMotionQuery.addEventListener('change', syncPreviewAnimations);
@@ -304,17 +403,17 @@
     if (input instanceof HTMLInputElement && input.name === 'preview-bg') {
       const previewBg = sanitizePreviewBg(input.value);
       writeStorage(
-        SITE_CONFIG.previewBgStorageKey,
-        previewBg === SITE_CONFIG.previewBgValues[0] ? undefined : previewBg
+        siteConfig.previewBgStorageKey,
+        previewBg === siteConfig.previewBgValues[0] ? undefined : previewBg
       );
       applyPreviewBg(previewBg);
     }
   });
 
   globalThis.addEventListener('storage', (event) => {
-    if (event.key === SITE_CONFIG.schemeStorageKey) {
+    if (event.key === siteConfig.schemeStorageKey) {
       applyScheme(sanitizeScheme(event.newValue));
-    } else if (event.key === SITE_CONFIG.previewBgStorageKey) {
+    } else if (event.key === siteConfig.previewBgStorageKey) {
       applyPreviewBg(sanitizePreviewBg(event.newValue));
     }
   });
@@ -359,15 +458,11 @@
   const bgPickerTrigger = document.getElementById('bg-picker-trigger');
   const bgPickerMenu = document.getElementById('bg-picker-menu');
   if (bgPickerTrigger && bgPickerMenu) {
-    if (hasPopoverApi && !hasAnchorPositioning) {
-      bgPickerMenu.addEventListener('beforetoggle', (event) => {
-        if (/** @type {ToggleEvent} */ (event).newState === 'open') {
-          const triggerRect = bgPickerTrigger.getBoundingClientRect();
-          bgPickerMenu.style.top = `${triggerRect.bottom + 8}px`;
-          bgPickerMenu.style.right = `${Math.max(8, rootElement.clientWidth - triggerRect.right)}px`;
-        }
-      });
-    }
+    bgPickerMenu.addEventListener('toggle', (event) => {
+      if (/** @type {ToggleEvent} */ (event).newState === 'open') {
+        placePopover(bgPickerMenu, bgPickerTrigger, { align: 'end' });
+      }
+    });
 
     // Pointer selections close the menu; Keyboard arrow selections (click detail 0) keep it open.
     bgPickerMenu.addEventListener('click', (event) => {
@@ -378,39 +473,44 @@
     });
   }
 
-  // Close the mobile sidebar drawer when one of its links is followed.
-  const sidebarDrawer = document.getElementById('sidebar-drawer');
-  sidebarDrawer?.addEventListener('click', (event) => {
-    const { target } = event;
-    if (target instanceof Element && target.closest('a')) {
-      closePopover(sidebarDrawer);
-    }
-  });
+  // Mobile sidebar drawer: Close it when one of its links is followed or the viewport leaves the drawer layout.
+  if (sidebarDrawer) {
+    sidebarDrawer.addEventListener('click', (event) => {
+      const { target } = event;
+      if (target instanceof Element && target.closest('a')) {
+        closePopover(sidebarDrawer);
+      }
+    });
+    drawerQuery.addEventListener('change', () => {
+      if (!drawerQuery.matches) {
+        closePopover(sidebarDrawer);
+      }
+    });
+  }
 
-  // Code drawers: Scroll buttons follow the scroll position and the drawer width.
+  // Code drawers: Scroll buttons follow the scroll position and the drawer width while a drawer is open.
   document.addEventListener(
     'toggle',
     (event) => {
       const drawer = event.target;
-      if (
-        drawer instanceof HTMLDetailsElement &&
-        drawer.classList.contains('code-drawer') &&
-        drawer.open
-      ) {
-        const drawerBody = drawer.querySelector('.code-drawer-body');
-        globalThis.setTimeout(() => updateScrollButtons(drawerBody), 30);
+      if (!(drawer instanceof HTMLDetailsElement) || !drawer.classList.contains('code-drawer')) {
+        return;
+      }
+      const codePre = drawer.querySelector('.code-pre');
+      if (!codePre) {
+        return;
+      }
+      if (drawer.open) {
+        codeResizeObserver.observe(codePre);
+        globalThis.requestAnimationFrame(() =>
+          updateScrollButtons(codePre.closest('.code-drawer-body'))
+        );
+      } else {
+        codeResizeObserver.unobserve(codePre);
       }
     },
     true
   );
-
-  globalThis.addEventListener('resize', () => {
-    for (const drawerBody of document.querySelectorAll(
-      'details.code-drawer[open] .code-drawer-body'
-    )) {
-      updateScrollButtons(drawerBody);
-    }
-  });
 
   document.addEventListener(
     'scroll',
@@ -442,7 +542,7 @@
     const copyButton = clickTarget.closest('.copy-btn');
     const copySource = copyButton ? resolveCopySource(copyButton) : undefined;
     if (copyButton && copySource) {
-      copyElementText(copyButton, copySource);
+      copyText(copySource.textContent ?? '', copyButton);
     }
   });
 
@@ -454,7 +554,7 @@
     }
     const { anchorNode } = selection;
     const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
-    if (anchorElement?.closest('.code-pre, .code-output')) {
+    if (anchorElement?.closest('.code-pre')) {
       event.clipboardData.setData('text/plain', selection.toString().replace(NBSP_RX, ' '));
       event.preventDefault();
     }

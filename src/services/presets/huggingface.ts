@@ -2,8 +2,9 @@
  * Hugging Face service presets – Model and dataset 30-day/all-time downloads and likes via the compact `?expand[]=` Hub API (`/badge/hf/:owner/:model/:metric`, `/badge/hf-dataset/:owner/:dataset/:metric`).
  */
 
-import { createCountTransform, RECENT_DOWNLOADS, TOTAL_DOWNLOADS } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createCommunityMetric, createDownloadsMetric } from '@/services/metrics';
+import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -26,7 +27,7 @@ interface HuggingFaceRepoKind {
   /** Web page path prefix (`''` for models, `'/datasets'` for datasets). */
   pagePrefix: string;
   /** Target segment placeholder (e.g., `':model'`). */
-  targetName: string;
+  targetPlaceholder: string;
   /** Human-readable service name. */
   title: string;
 }
@@ -40,46 +41,23 @@ const EXPAND_QUERY = '?expand%5B%5D=downloads&expand%5B%5D=likes&expand%5B%5D=do
 
 /** Create a Hugging Face service preset for a Hub repository kind. */
 function createHuggingFaceService(kind: HuggingFaceRepoKind): ServiceDefinition {
-  const endpoint: MetricEndpoint = {
-    buildApiUrl: (owner: string, repo: string): string =>
-      `https://huggingface.co/api/${kind.apiCollection}/${owner}/${repo}${EXPAND_QUERY}`,
-    buildRedirectUrl: (owner: string, repo: string): string =>
-      `https://huggingface.co${kind.pagePrefix}/${owner}/${repo}`,
-  };
-  return {
-    docs: {
-      description: kind.description,
-      ownerName: ':owner',
-      targetName: kind.targetName,
-      title: kind.title,
-    },
-    metricAliases: { dm: 'dl' },
+  const endpoint = createEndpoint({
+    api: `https://huggingface.co/api/${kind.apiCollection}/{owner}/{target}${EXPAND_QUERY}`,
+    page: `https://huggingface.co${kind.pagePrefix}/{owner}/{target}`,
+    project: pickFields<HuggingFaceRepoPayload>(['downloads', 'downloadsAllTime', 'likes']),
+  });
+  return defineService({
+    docs: { description: kind.description, title: kind.title },
     metrics: {
-      dl: {
-        ...endpoint,
-        ...RECENT_DOWNLOADS,
-        transform: createCountTransform<HuggingFaceRepoPayload>(
-          (payload) => payload.downloads,
-          '/mo'
-        ),
-      },
-      dt: {
-        ...endpoint,
-        ...TOTAL_DOWNLOADS,
-        transform: createCountTransform<HuggingFaceRepoPayload>(
-          (payload) => payload.downloadsAllTime
-        ),
-      },
-      likes: {
-        ...endpoint,
-        defaultColor: 'amber',
-        defaultIcon: 'huggingface',
-        defaultLabel: 'likes',
-        transform: createCountTransform<HuggingFaceRepoPayload>((payload) => payload.likes),
-      },
+      dl: createDownloadsMetric(endpoint, 'dl', (repo) => repo.downloads),
+      dt: createDownloadsMetric(endpoint, 'dt', (repo) => repo.downloadsAllTime),
+      likes: createCommunityMetric(endpoint, 'likes', 'huggingface', (repo) => repo.likes),
     },
-    ownerMode: 'required',
-  };
+    route: {
+      owner: { isRequired: true, placeholder: ':owner' },
+      target: { placeholder: kind.targetPlaceholder },
+    },
+  });
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -89,7 +67,7 @@ export const HUGGING_FACE_MODEL_SERVICE: ServiceDefinition = createHuggingFaceSe
   apiCollection: 'models',
   description: 'Model downloads (30-day and all-time) and likes.',
   pagePrefix: '',
-  targetName: ':model',
+  targetPlaceholder: ':model',
   title: 'Hugging Face',
 });
 
@@ -98,6 +76,6 @@ export const HUGGING_FACE_DATASET_SERVICE: ServiceDefinition = createHuggingFace
   apiCollection: 'datasets',
   description: 'Dataset downloads (30-day and all-time) and likes.',
   pagePrefix: '/datasets',
-  targetName: ':dataset',
+  targetPlaceholder: ':dataset',
   title: 'Hugging Face Datasets',
 });

@@ -2,24 +2,31 @@
 /**
  * Builder client script – Schema-driven URL builder for `/builder/:kind`: Form state, URL and snippet generation, live previews, shareable state, and the searchable icon picker.
  *
- * The pure helpers (encoding, path building, prefill parsing, icon slug resolution) run without a DOM
- * and are exposed as `svgBuilderCore` when no `document` exists, so the test suite verifies them
- * against the Worker's route parser.
+ * The pure helpers (encoding, path building, prefill parsing, snippets, icon slug resolution) run without a DOM
+ * and are exposed as `svgBuilderCore` when no `document` exists, so the test suite verifies them against the
+ * Worker's route parser. The DOM part relies on the popover and clipboard helpers of the site script (`svgSite`).
  */
 
 (function initBuilderClient() {
+  // ---------------------------------------- TYPES ----------------------------------------
+
   /** @typedef {import('../../types/builder').BuilderField} BuilderField */
   /** @typedef {import('../../types/builder').BuilderOption} BuilderOption */
   /** @typedef {import('../../types/builder').BuilderSchema} BuilderSchema */
   /** @typedef {import('../../types/builder').BuilderServiceOption} BuilderServiceOption */
   /** @typedef {import('../../types/icon').IconPickerIndex} IconPickerIndex */
   /** @typedef {import('../../types/icon').IconPickerSetId} IconPickerSetId */
+  /** @typedef {import('../../types/preview').HighlightToken} HighlightToken */
   /** @typedef {Record<string, string>} BuilderState */
   /** @typedef {{ missing: string[], path: string }} BuildResult */
   /** @typedef {{ html: string, markdown: string, url: string }} SnippetSet */
-  /** @typedef {[className: string, text: string]} HighlightToken */
+  /** @typedef {Record<keyof SnippetSet, HighlightToken[]>} SnippetTokenSet */
   /** @typedef {{ prefix: string, query: URLSearchParams, segments: string[] }} ParsedRoute */
-  /** @typedef {{ page: number, set: IconPickerSetId }} IconLocation */
+  /** @typedef {{ set: IconPickerSetId, slug: string }} IconMatch */
+  /** @typedef {IconMatch & { page: number }} IconLocation */
+  /** @typedef {{ locate: (slug: string, isBrandFirst: boolean) => IconLocation | undefined, resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined }} IconResolver */
+  /** @typedef {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement} FieldControl */
+  /** @typedef {{ list: Element | null, menu: HTMLElement | null, search: HTMLInputElement | null, select: HTMLSelectElement | null, trigger: HTMLElement | null }} SelectParts */
 
   // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -29,32 +36,18 @@
   /** Number of icon picker tiles rendered per chunk (more are appended while scrolling). */
   const PICKER_CHUNK_SIZE = 240;
 
-  /** Duration in milliseconds of the share button feedback. */
-  const SHARE_FEEDBACK_MS = 1500;
-
   /** Maximum number of unknown icon slugs listed in a validation hint. */
   const MAX_LISTED_UNKNOWN_ICONS = 6;
 
-  /** Animation modifiers offered per inline data widget kind (parsed by `parsePercentageAndPulse`). */
-  /** @type {Readonly<Record<string, readonly string[]>>} */
-  const SPECIAL_MODIFIERS = { bar: ['', 'static'], ring: ['', 'pulse'] };
+  /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
+  const STATIC_ANIM_PAIR = 'anim=none';
 
-  /** Labels of the inline data widget modifiers. */
+  /** Normalized `?center=` values that select the vertical quote layout (mirrors `resolveQuoteLayout`; drift-tested). */
+  const CENTER_FLAG_VALUES = new Set(['1', 'true', 'yes']);
+
+  /** Entity replacements of characters escaped inside double-quoted HTML attribute values. */
   /** @type {Readonly<Record<string, string>>} */
-  const MODIFIER_LABELS = { '': 'Default', pulse: 'Pulse', static: 'Static' };
-
-  /** SVG paint attributes of icon picker glyphs per set. */
-  /** @type {Readonly<Record<IconPickerSetId, Readonly<Record<string, string>>>>} */
-  const GLYPH_PAINT_ATTRS = {
-    brands: { fill: 'currentColor' },
-    lucide: {
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-      'stroke-width': '2',
-    },
-  };
+  const HTML_ENTITIES = { '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' };
 
   // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -94,10 +87,13 @@
   /** Matches hyphen, underscore, or dot characters in brand icon slugs. */
   const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
 
-  /** Matches characters escaped inside Markdown image alt text. */
+  /** Matches characters escaped with a backslash inside Markdown image alt text (same rule as the server Markdown). */
   const MARKDOWN_ALT_RX = /[[\]\\]/g;
 
-  /** Matches characters escaped inside HTML attribute values. */
+  /** Matches characters percent-encoded inside Markdown link destinations (same rule as the server Markdown). */
+  const MARKDOWN_DESTINATION_RX = /[ ()<>]/g;
+
+  /** Matches characters escaped inside double-quoted HTML attribute values. */
   const HTML_ATTR_RX = /[&"<>]/g;
 
   // -------------------------------------- INTERNALS --------------------------------------
@@ -145,7 +141,43 @@
    * @returns {BuilderServiceOption | undefined}
    */
   function findService(schema, key) {
-    return schema.services?.find((service) => service.key === key);
+    for (const service of schema.services ?? []) {
+      if (service.key === key) {
+        return service;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Find the option with a value in an option list.
+   * @template {BuilderOption} T
+   * @param {readonly T[] | undefined} options
+   * @param {string} value
+   * @returns {T | undefined}
+   */
+  function findOption(options, value) {
+    for (const option of options ?? []) {
+      if (option.value === value) {
+        return option;
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Find a field of a schema.
+   * @param {BuilderSchema} schema
+   * @param {string} id   Field ID.
+   * @returns {BuilderField | undefined}
+   */
+  function findField(schema, id) {
+    for (const field of schema.fields) {
+      if (field.id === id) {
+        return field;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -166,7 +198,7 @@
 
   /**
    * Split an `?icon=` value into its left and right slugs.
-   * @param {string} value           Serialized value.
+   * @param {string} value            Serialized value.
    * @param {boolean} hasPresetIcon   Whether `none` is meaningful on the left (service badges).
    * @returns {[left: string, right: string]}
    */
@@ -219,7 +251,7 @@
    * Compose a `?special=` value from the widget kind, payload, and modifier.
    * @param {string} kind       Widget kind (`''` for none).
    * @param {string} payload    Widget data.
-   * @param {string} modifier   Optional `pulse` / `static` modifier.
+   * @param {string} modifier   Optional modifier of the kind (e.g., `static`).
    * @returns {string}
    */
   function composeSpecial(kind, payload, modifier) {
@@ -231,11 +263,12 @@
   }
 
   /**
-   * Split a `?special=` value into its widget kind, payload, and modifier.
-   * @param {string} value   Serialized value.
+   * Split a `?special=` value into its widget kind, payload, and modifier (modifiers come from the kind options).
+   * @param {string} value                       Serialized value.
+   * @param {readonly BuilderOption[]} options   Widget kind options of the `special` field.
    * @returns {{ kind: string, modifier: string, payload: string }}
    */
-  function splitSpecial(value) {
+  function splitSpecial(value, options) {
     const colonIndex = value.indexOf(':');
     if (colonIndex <= 0) {
       return { kind: '', modifier: '', payload: '' };
@@ -243,14 +276,14 @@
     const kind = value.slice(0, colonIndex).trim().toLowerCase();
     let payload = value.slice(colonIndex + 1);
     let modifier = '';
-    const modifiers = SPECIAL_MODIFIERS[kind];
     const lastColon = payload.lastIndexOf(':');
+    const modifiers = findOption(options, kind)?.modifiers;
     if (modifiers && lastColon !== -1) {
       const candidate = payload
         .slice(lastColon + 1)
         .trim()
         .toLowerCase();
-      if (modifiers.includes(candidate)) {
+      if (candidate && findOption(modifiers, candidate)) {
         modifier = candidate;
         payload = payload.slice(0, lastColon);
       }
@@ -260,7 +293,7 @@
 
   /**
    * Split a `?size=` value into a named preset or a custom number.
-   * @param {string} value                     Serialized value.
+   * @param {string} value                       Serialized value.
    * @param {readonly BuilderOption[]} options   Named preset options.
    * @returns {{ custom: string, preset: string }}
    */
@@ -269,7 +302,7 @@
     if (!clean) {
       return { custom: '', preset: '' };
     }
-    return options.some((option) => option.value === clean)
+    return findOption(options, clean)
       ? { custom: '', preset: clean }
       : { custom: clean, preset: 'custom' };
   }
@@ -329,12 +362,31 @@
   /**
    * Build a `/<prefix>/:label[/:value]` path (badges and buttons; an empty value omits its segment).
    * @param {string} prefix   Route prefix.
-   * @param {string} label
-   * @param {string} value
+   * @param {string} label    Label segment.
+   * @param {string} value    Optional value segment.
    * @returns {string}
    */
   function buildLabelValuePathname(prefix, label, value) {
     return `/${prefix}/${encodeSegment(label)}${value ? `/${encodeSegment(value)}` : ''}`;
+  }
+
+  /**
+   * Encode a service target (multi-segment targets, e.g., Go module paths, keep their `/` separators).
+   * @param {BuilderServiceOption | undefined} service
+   * @param {string} rawTarget   Raw target text.
+   * @returns {string}
+   */
+  function encodeServiceTarget(service, rawTarget) {
+    if (!service || service.maxTargetSegments <= 1) {
+      return encodeSegment(rawTarget);
+    }
+    const encodedSegments = [];
+    for (const segment of rawTarget.split('/')) {
+      if (segment) {
+        encodedSegments.push(encodeSegment(segment));
+      }
+    }
+    return encodedSegments.join('/');
   }
 
   /**
@@ -346,12 +398,7 @@
   function buildServicePathname(schema, state) {
     const service = findService(schema, readState(state, 'service'));
     const owner = service && service.ownerMode !== 'none' ? readState(state, 'owner') : '';
-    const rawTarget = readState(state, 'target');
-    // Multi-segment targets (e.g., Go module paths) keep their `/` separators between encoded segments.
-    const target =
-      service && service.maxTargetSegments > 1
-        ? rawTarget.split('/').filter(Boolean).map(encodeSegment).join('/')
-        : encodeSegment(rawTarget);
+    const target = encodeServiceTarget(service, readState(state, 'target'));
     const ownerPart = owner ? `${encodeSegment(owner)}/` : '';
     return `/badge/${encodeSegment(readState(state, 'service'))}/${ownerPart}${target}/${encodeSegment(readState(state, 'metric'))}`;
   }
@@ -417,19 +464,88 @@
   }
 
   /**
-   * Read the first present query parameter of a field (canonical name, then aliases).
+   * Build the preview URL of a path: Reduced motion previews append `anim=none` (an `<img>` keeps playing SMIL).
+   * @param {string} path                Root-relative SVG path with an optional query string.
+   * @param {boolean} isReducedMotion   Whether the user prefers reduced motion.
+   * @returns {string}
+   */
+  function buildPreviewPath(path, isReducedMotion) {
+    if (!isReducedMotion || !path) {
+      return path;
+    }
+    const queryIndex = path.indexOf('?');
+    const pairs = [];
+    if (queryIndex !== -1) {
+      for (const pair of path.slice(queryIndex + 1).split('&')) {
+        if (pair && !pair.startsWith('anim=')) {
+          pairs.push(pair);
+        }
+      }
+    }
+    pairs.push(STATIC_ANIM_PAIR);
+    return `${queryIndex === -1 ? path : path.slice(0, queryIndex)}?${pairs.join('&')}`;
+  }
+
+  /**
+   * Read the first non-empty query parameter of a list of names (empty values fall through like in the Worker).
    * @param {URLSearchParams} query
-   * @param {readonly string[]} names
-   * @returns {string | undefined}
+   * @param {readonly string[]} names   Parameter names in precedence order.
+   * @returns {string}
    */
   function readQueryParam(query, names) {
     for (const name of names) {
       const value = query.get(name);
-      if (value !== null) {
+      if (value) {
         return value;
       }
     }
-    return undefined;
+    return '';
+  }
+
+  /**
+   * Read the first non-empty query fallback (`aliases`) of a path segment field (e.g., `?groups=` for `/stack`).
+   * @param {BuilderSchema} schema
+   * @param {URLSearchParams} query
+   * @param {string} id   Field ID.
+   * @returns {string}
+   */
+  function readSegmentFallback(schema, query, id) {
+    return readQueryParam(query, findField(schema, id)?.aliases ?? []);
+  }
+
+  /**
+   * Normalize a prefilled option value like the Worker parsers: Case-insensitive, option aliases map onto their
+   * option, and unknown values fall back to the default (`''`, which renders identically).
+   * @param {BuilderField} field
+   * @param {string} raw   Raw query parameter value.
+   * @returns {string}
+   */
+  function normalizeOptionValue(field, raw) {
+    if (field.control === 'size') {
+      return raw.trim().toLowerCase();
+    }
+    if (field.control !== 'select' && field.control !== 'color') {
+      return raw;
+    }
+    const clean = raw.trim().toLowerCase();
+    for (const option of field.options ?? []) {
+      if (option.value === clean || option.aliases?.includes(clean)) {
+        return option.value;
+      }
+    }
+    return '';
+  }
+
+  /**
+   * Canonicalize a requested service metric like the Worker (case-insensitive, metric aliases).
+   * @param {BuilderServiceOption} service
+   * @param {string} raw   Raw metric segment.
+   * @returns {string}
+   */
+  function canonicalizeMetric(service, raw) {
+    const clean = raw.trim().toLowerCase();
+    const aliases = service.metricAliases;
+    return aliases && Object.hasOwn(aliases, clean) ? (aliases[clean] ?? clean) : clean;
   }
 
   /**
@@ -444,11 +560,15 @@
     }
     const url = new URL(rawPath, origin);
     const rawParts = url.pathname.split('/');
-    const segments = rawParts.slice(2).map(decodeSegment);
+    const segments = [];
+    for (const rawSegment of rawParts.slice(2)) {
+      segments.push(decodeSegment(rawSegment));
+    }
     if (segments.length > 1 && segments.at(-1) === '') {
       segments.pop();
     }
-    return { prefix: (rawParts[1] ?? '').toLowerCase(), query: url.searchParams, segments };
+    // Route prefixes are case-sensitive in the Worker (`/Badge/…` is not an SVG route).
+    return { prefix: rawParts[1] ?? '', query: url.searchParams, segments };
   }
 
   /**
@@ -476,14 +596,21 @@
       state.icon = segments[0] ?? '';
       return prefix === 'icon' && segments.length === 1;
     },
-    quote(state, { prefix, query, segments }) {
+    quote(state, { prefix, query, segments }, schema) {
       const hasAuthorSegment = segments.length === 2;
-      state.author = hasAuthorSegment ? (segments[0] ?? '') : (query.get('author') ?? '');
+      state.author = hasAuthorSegment
+        ? (segments[0] ?? '')
+        : readSegmentFallback(schema, query, 'author');
       state.text =
         (hasAuthorSegment ? segments[1] : segments[0]) ||
-        (readQueryParam(query, ['text', 'quote']) ?? '');
-      const center = query.get('center');
-      if (!state.layout && (center === 'true' || center === '1')) {
+        readSegmentFallback(schema, query, 'text');
+      // `?center=` only counts when neither `?layout=` nor one of its aliases has a value.
+      const layoutField = findField(schema, 'layout');
+      const layoutNames = layoutField?.param
+        ? [layoutField.param, ...(layoutField.aliases ?? [])]
+        : [];
+      const center = (query.get('center') ?? '').trim().toLowerCase();
+      if (!readQueryParam(query, layoutNames).trim() && CENTER_FLAG_VALUES.has(center)) {
         state.layout = 'vertical';
       }
       return prefix === 'quote' && segments.length <= 2;
@@ -493,20 +620,27 @@
       if (prefix !== 'badge' || !service || segments.length < 3) {
         return false;
       }
+      const middle = segments.slice(1, -1);
       state.service = service.key;
-      state.metric = segments.at(-1) ?? '';
+      state.metric = canonicalizeMetric(service, segments.at(-1) ?? '');
       if (service.maxTargetSegments > 1) {
-        state.target = segments.slice(1, -1).join('/');
-      } else if (segments.length === 4) {
-        state.owner = segments[1] ?? '';
-        state.target = segments[2] ?? '';
-      } else {
-        state.target = segments[1] ?? '';
+        // Multi-segment targets span every middle segment, except a leading required owner segment.
+        const hasOwnerSegment = service.ownerMode === 'required';
+        const targetSegments = hasOwnerSegment ? middle.slice(1) : middle;
+        state.owner = hasOwnerSegment ? (middle[0] ?? '') : '';
+        state.target = targetSegments.join('/');
+        return targetSegments.length >= 1 && targetSegments.length <= service.maxTargetSegments;
       }
-      return true;
+      if (middle.length === 2) {
+        state.owner = middle[0] ?? '';
+        state.target = middle[1] ?? '';
+        return service.ownerMode !== 'none';
+      }
+      state.target = middle[0] ?? '';
+      return middle.length === 1;
     },
-    stack(state, { prefix, query, segments }) {
-      state.groups = segments[0] || (readQueryParam(query, ['groups', 'icons', 'i']) ?? '');
+    stack(state, { prefix, query, segments }, schema) {
+      state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
       return prefix === 'stack' && segments.length <= 1;
     },
   };
@@ -526,11 +660,28 @@
     /** @type {BuilderState} */
     const state = {};
     for (const field of schema.fields) {
-      state[field.id] = field.param
-        ? (readQueryParam(route.query, [field.param, ...(field.aliases ?? [])]) ?? '')
+      const raw = field.param
+        ? readQueryParam(route.query, [field.param, ...(field.aliases ?? [])])
         : '';
+      state[field.id] = normalizeOptionValue(field, raw);
     }
     return parsePathSegments(state, route, schema) ? state : undefined;
+  }
+
+  /**
+   * Join non-empty parts with a separator.
+   * @param {readonly string[]} parts
+   * @param {string} separator
+   * @returns {string}
+   */
+  function joinNonEmpty(parts, separator) {
+    let joined = '';
+    for (const part of parts) {
+      if (part) {
+        joined = joined ? `${joined}${separator}${part}` : part;
+      }
+    }
+    return joined;
   }
 
   /**
@@ -546,12 +697,11 @@
           readState(state, 'type') === 'status'
             ? [`Status ${readState(state, 'state') || 'online'}`, readState(state, 'text')]
             : [readState(state, 'label'), readState(state, 'value')];
-        return parts.filter(Boolean).join(': ') || 'Badge';
+        return joinNonEmpty(parts, ': ') || 'Badge';
       }
       case 'button': {
         return (
-          [readState(state, 'label'), readState(state, 'value')].filter(Boolean).join(' ') ||
-          'Button'
+          joinNonEmpty([readState(state, 'label'), readState(state, 'value')], ' ') || 'Button'
         );
       }
       case 'icon': {
@@ -564,9 +714,10 @@
         const service = findService(schema, readState(state, 'service'));
         return (
           readState(state, 'label') ||
-          [service?.title, readState(state, 'target'), readState(state, 'metric')]
-            .filter(Boolean)
-            .join(' ')
+          joinNonEmpty(
+            [service?.title ?? '', readState(state, 'target'), readState(state, 'metric')],
+            ' '
+          )
         );
       }
       default: {
@@ -576,26 +727,43 @@
   }
 
   /**
-   * Escape a value for a double-quoted HTML attribute.
+   * Escape a value for a double-quoted HTML attribute (`&amp;`, `&quot;`, `&lt;`, `&gt;`).
    * @param {string} value
    * @returns {string}
    */
   function escapeHtmlAttribute(value) {
-    return value.replace(HTML_ATTR_RX, (char) => `&#${char.codePointAt(0)};`);
+    return value.replace(HTML_ATTR_RX, (char) => HTML_ENTITIES[char] ?? char);
+  }
+
+  /**
+   * Percent-encode the characters that would end or break a Markdown link destination (space, `(`, `)`, `<`, `>`).
+   * @param {string} text
+   * @returns {string}
+   */
+  function encodeMarkdownDestination(text) {
+    return text.replace(
+      MARKDOWN_DESTINATION_RX,
+      (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+    );
   }
 
   /**
    * Join highlight tokens into their plain text.
-   * @param {HighlightToken[]} tokens
+   * @param {readonly HighlightToken[]} tokens
    * @returns {string}
    */
   function joinTokens(tokens) {
-    return tokens.map((token) => token[1]).join('');
+    let text = '';
+    for (const token of tokens) {
+      text += token[1];
+    }
+    return text;
   }
 
   /**
-   * Split an absolute SVG URL into highlight tokens (base, `?`, keys, `=`, values, `&`).
-   * @param {string} url
+   * Split a URL into highlight tokens (base, `?`, keys, `=`, values, `&`); Same algorithm as `tokenizeUrl` in
+   * `src/preview/components.ts` (guarded by a parity test).
+   * @param {string} url   Raw (unescaped) URL.
    * @returns {HighlightToken[]}
    */
   function tokenizeUrl(url) {
@@ -608,19 +776,21 @@
       ['hl-url', url.slice(0, queryIndex)],
       ['hl-op', '?'],
     ];
-    const pairs = url.slice(queryIndex + 1).split('&');
-    for (let i = 0; i < pairs.length; i += 1) {
+    for (const [i, pair] of url
+      .slice(queryIndex + 1)
+      .split('&')
+      .entries()) {
       if (i > 0) {
         tokens.push(['hl-op', '&']);
       }
-      const equalsIndex = pairs[i].indexOf('=');
+      const equalsIndex = pair.indexOf('=');
       if (equalsIndex === -1) {
-        tokens.push(['hl-key', pairs[i]]);
+        tokens.push(['hl-key', pair]);
       } else {
         tokens.push(
-          ['hl-key', pairs[i].slice(0, equalsIndex)],
+          ['hl-key', pair.slice(0, equalsIndex)],
           ['hl-op', '='],
-          ['hl-val', pairs[i].slice(equalsIndex + 1)]
+          ['hl-val', pair.slice(equalsIndex + 1)]
         );
       }
     }
@@ -628,53 +798,51 @@
   }
 
   /**
-   * Build the highlight tokens of every snippet format (their joined text is the exact snippet).
+   * Build the highlight tokens of every snippet format (their joined text is the exact snippet): The raw URL is
+   * tokenized first, then each token is escaped for its format.
    * @param {string} url    Absolute SVG URL.
    * @param {string} alt    Alt text.
    * @param {string} link   Optional link target (`''` for an unlinked image).
-   * @returns {Record<keyof SnippetSet, HighlightToken[]>}
+   * @returns {SnippetTokenSet}
    */
   function buildSnippetTokens(url, alt, link) {
-    const markdownAlt = alt.replace(MARKDOWN_ALT_RX, String.raw`\$&`);
     const urlTokens = tokenizeUrl(url);
     /** @type {HighlightToken[]} */
-    const markdownImage = [
+    const markdown = link ? [['hl-p', '[']] : [];
+    markdown.push(
       ['hl-p', '!['],
-      ['hl-alt', markdownAlt],
-      ['hl-p', ']('],
-      ...urlTokens,
-      ['hl-p', ')'],
-    ];
+      ['hl-alt', alt.replace(MARKDOWN_ALT_RX, String.raw`\$&`)],
+      ['hl-p', '](']
+    );
     /** @type {HighlightToken[]} */
-    const htmlImage = [
-      ['hl-p', '<img src="'],
-      ...tokenizeUrl(escapeHtmlAttribute(url)),
-      ['hl-p', '" alt="'],
-      ['hl-alt', escapeHtmlAttribute(alt)],
-      ['hl-p', '" />'],
-    ];
-    return {
-      html: link
-        ? [
-            ['hl-p', '<a href="'],
-            ['hl-href', escapeHtmlAttribute(link)],
-            ['hl-p', '">'],
-            ...htmlImage,
-            ['hl-p', '</a>'],
-          ]
-        : htmlImage,
-      markdown: link
-        ? [['hl-p', '['], ...markdownImage, ['hl-p', ']('], ['hl-href', link], ['hl-p', ')']]
-        : markdownImage,
-      url: urlTokens,
-    };
+    const html = link
+      ? [
+          ['hl-p', '<a href="'],
+          ['hl-href', escapeHtmlAttribute(link)],
+          ['hl-p', '">'],
+        ]
+      : [];
+    html.push(['hl-p', '<img src="']);
+    for (const [className, text] of urlTokens) {
+      markdown.push([className, encodeMarkdownDestination(text)]);
+      html.push([className, escapeHtmlAttribute(text)]);
+    }
+    markdown.push(['hl-p', ')']);
+    if (link) {
+      markdown.push(['hl-p', ']('], ['hl-href', encodeMarkdownDestination(link)], ['hl-p', ')']);
+    }
+    html.push(['hl-p', '" alt="'], ['hl-alt', escapeHtmlAttribute(alt)], ['hl-p', '" />']);
+    if (link) {
+      html.push(['hl-p', '</a>']);
+    }
+    return { html, markdown, url: urlTokens };
   }
 
   /**
    * Build the plain-text snippets of every format.
-   * @param {string} url
-   * @param {string} alt
-   * @param {string} link
+   * @param {string} url    Absolute SVG URL.
+   * @param {string} alt    Alt text.
+   * @param {string} link   Optional link target.
    * @returns {SnippetSet}
    */
   function buildSnippets(url, alt, link) {
@@ -687,19 +855,124 @@
   }
 
   /**
-   * Build the default link target wrapped around the image when the link field is empty: Service badges link
-   * to their own path, which the Worker redirects to the upstream page on document navigations based on the
-   * path alone, so the (styling-only) query string is dropped; Other elements stay unlinked.
-   * @param {BuilderSchema['kind']} kind   Builder element kind.
-   * @param {string} url                   Absolute SVG URL.
+   * Build the upstream page URL of a service badge from its metric's redirect template, or `''` when the metric
+   * has no template or a value is outside the verified character set.
+   * @param {BuilderSchema} schema
+   * @param {BuilderState} state
+   * @returns {string}
+   */
+  function buildServiceRedirectUrl(schema, state) {
+    const service = findService(schema, readState(state, 'service'));
+    const template = findOption(service?.metrics, readState(state, 'metric'))?.redirect;
+    if (!service || !template || !schema.redirectValuePattern) {
+      return '';
+    }
+    const valuePattern = new RegExp(schema.redirectValuePattern);
+    const explicitOwner = service.ownerMode === 'none' ? '' : readState(state, 'owner');
+    const owner = explicitOwner || service.defaultOwner || '';
+    const target = readState(state, 'target');
+    const targetSegments = target.split('/');
+    if (targetSegments.length > service.maxTargetSegments || (owner && !valuePattern.test(owner))) {
+      return '';
+    }
+    for (const segment of targetSegments) {
+      if (!valuePattern.test(segment)) {
+        return '';
+      }
+    }
+    return template.replaceAll('{owner}', owner).replaceAll('{target}', target);
+  }
+
+  /**
+   * Build the default link target wrapped around the image when the link field is empty: Service badges link to
+   * their upstream page (filled from the metric's redirect template) or, without a template, to their query-free
+   * badge path, which the Worker redirects to the same page on document navigations; Other elements stay unlinked.
+   * @param {BuilderSchema} schema
+   * @param {BuilderState} state
+   * @param {string} url   Absolute SVG URL.
    * @returns {string} Link target (`''` for an unlinked image).
    */
-  function buildDefaultLinkTarget(kind, url) {
-    if (kind !== 'service') {
+  function buildDefaultLinkTarget(schema, state, url) {
+    if (schema.kind !== 'service') {
       return '';
+    }
+    const upstreamUrl = buildServiceRedirectUrl(schema, state);
+    if (upstreamUrl) {
+      return upstreamUrl;
     }
     const queryIndex = url.indexOf('?');
     return queryIndex === -1 ? url : url.slice(0, queryIndex);
+  }
+
+  /**
+   * Build a shareable builder URL with the current path, alt text, and link target.
+   * @param {string} href   Current builder page URL.
+   * @param {string} path   Root-relative SVG path.
+   * @param {string} alt    Custom alt text (`''` omits the parameter).
+   * @param {string} link   Custom link target (`''` omits the parameter).
+   * @returns {string}
+   */
+  function buildShareUrl(href, path, alt, link) {
+    const shareUrl = new URL(href);
+    shareUrl.searchParams.set('path', path);
+    for (const [name, value] of Object.entries({ alt, link })) {
+      if (value) {
+        shareUrl.searchParams.set(name, value);
+      } else {
+        shareUrl.searchParams.delete(name);
+      }
+    }
+    return shareUrl.href;
+  }
+
+  /**
+   * Compute the tile index a grid navigation key moves the roving focus to (arrows by cell or row, `Home` / `End`
+   * to the first / last match, including matches that are not rendered yet).
+   * @param {string} key        `KeyboardEvent.key`.
+   * @param {number} index      Current tile index.
+   * @param {number} columns    Number of grid columns.
+   * @param {number} total      Number of matches.
+   * @returns {number | undefined} Target index, or `undefined` for other keys.
+   */
+  function computeGridFocusIndex(key, index, columns, total) {
+    /** @type {Readonly<Record<string, number>>} */
+    const targets = {
+      ArrowDown: index + columns,
+      ArrowLeft: index - 1,
+      ArrowRight: index + 1,
+      ArrowUp: index - columns,
+      End: total - 1,
+      Home: 0,
+    };
+    if (total <= 0 || !Object.hasOwn(targets, key)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(total - 1, targets[key] ?? 0));
+  }
+
+  /**
+   * Create a keyed promise cache that forgets rejected loads, so failed requests are retried on the next call.
+   * @template T
+   * @param {(key: string) => Promise<T>} load   Loader per key.
+   * @returns {(key: string) => Promise<T>}
+   */
+  function createAsyncCache(load) {
+    /** @type {Map<string, Promise<T>>} */
+    const promises = new Map();
+    return (key) => {
+      let promise = promises.get(key);
+      if (!promise) {
+        const pending = load(key);
+        pending.catch(() => {
+          if (promises.get(key) === pending) {
+            promises.delete(key);
+          }
+        });
+        promises.set(key, pending);
+        promise = pending;
+      }
+      return promise;
+    };
   }
 
   /**
@@ -718,26 +991,27 @@
   }
 
   /**
-   * Create a slug resolver mirroring `resolveIcon` (aliases, Lucide-first or brand-first lookup).
+   * Create a slug resolver mirroring `resolveIcon` (aliases, Lucide-first or brand-first lookup, slug length limit).
    * @param {IconPickerIndex} index
-   * @returns {{ locate: (slug: string, isBrandFirst: boolean) => (IconLocation & { slug: string }) | undefined, resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined }}
+   * @param {number} maxSlugLength   Maximum slug length (`BuilderSchema.maxIconSlugLength`).
+   * @returns {IconResolver}
    */
-  function createIconResolver(index) {
+  function createIconResolver(index, maxSlugLength) {
     /** @type {Map<string, string>} */
     const lucideByKey = new Map();
     /** @type {Map<string, number>} */
     const lucidePositions = new Map();
-    for (let i = 0; i < index.sets.lucide.length; i += 1) {
-      lucideByKey.set(capitalizeSlugParts(index.sets.lucide[i]), index.sets.lucide[i]);
-      lucidePositions.set(index.sets.lucide[i], i);
+    for (const [i, slug] of index.sets.lucide.entries()) {
+      lucideByKey.set(capitalizeSlugParts(slug), slug);
+      lucidePositions.set(slug, i);
     }
     for (const [alias, primary] of Object.entries(index.lucideAliases)) {
       lucideByKey.set(capitalizeSlugParts(alias), primary);
     }
     /** @type {Map<string, number>} */
     const brandPositions = new Map();
-    for (let i = 0; i < index.sets.brands.length; i += 1) {
-      brandPositions.set(index.sets.brands[i], i);
+    for (const [i, slug] of index.sets.brands.entries()) {
+      brandPositions.set(slug, i);
     }
 
     /** @param {string} slug @returns {string | undefined} */
@@ -760,12 +1034,15 @@
     /**
      * @param {string} slug
      * @param {boolean} isBrandFirst
-     * @returns {{ set: IconPickerSetId, slug: string } | 'none' | undefined}
+     * @returns {IconMatch | 'none' | undefined}
      */
     function lookup(slug, isBrandFirst) {
       const rawSlug = slug.trim().toLowerCase();
-      if (!rawSlug || rawSlug === 'none' || rawSlug.length > 64) {
-        return rawSlug === 'none' || !rawSlug ? 'none' : undefined;
+      if (!rawSlug || rawSlug === 'none') {
+        return 'none';
+      }
+      if (rawSlug.length > maxSlugLength) {
+        return undefined;
       }
       const cleanSlug = index.aliases[rawSlug] ?? rawSlug;
       const candidates = cleanSlug === rawSlug ? [cleanSlug] : [cleanSlug, rawSlug];
@@ -805,11 +1082,16 @@
     buildAltText,
     buildDefaultLinkTarget,
     buildPath,
+    buildPreviewPath,
+    buildShareUrl,
+    buildSnippetTokens,
     buildSnippets,
     collectStackSlugs,
     composeAnim,
     composeIconPair,
     composeSpecial,
+    computeGridFocusIndex,
+    createAsyncCache,
     createIconResolver,
     decodeSegment,
     encodeSegment,
@@ -828,9 +1110,10 @@
   // ----------------------------------------- MAIN ----------------------------------------
   // Everything below needs the DOM; Helpers close over the page state, so they live inside MAIN.
 
+  const site = globalThis.svgSite;
   const schemaElement = document.getElementById('builder-schema');
   const form = document.getElementById('builder-form');
-  if (!schemaElement || !(form instanceof HTMLFormElement)) {
+  if (!site || !schemaElement || !(form instanceof HTMLFormElement)) {
     return;
   }
 
@@ -842,6 +1125,7 @@
   );
   const previewPlaceholder = document.getElementById('builder-placeholder');
   const statusElement = document.getElementById('builder-status');
+  const outputElement = document.querySelector('.builder-output');
   const codeElement = document.querySelector('#builder-code code');
   const altInput = /** @type {HTMLInputElement | null} */ (document.getElementById('builder-alt'));
   const linkInput = /** @type {HTMLInputElement | null} */ (
@@ -850,8 +1134,10 @@
   const openLink = /** @type {HTMLAnchorElement | null} */ (
     document.getElementById('builder-open')
   );
+  const copyButton = /** @type {HTMLButtonElement | null} */ (
+    document.getElementById('builder-copy')
+  );
   const shareButton = document.getElementById('builder-share');
-  const shareLabel = document.getElementById('builder-share-label');
   const resetButton = document.getElementById('builder-reset');
   const picker = document.getElementById('icon-picker');
   const pickerGrid = document.getElementById('icon-picker-grid');
@@ -859,97 +1145,134 @@
     document.getElementById('icon-picker-search')
   );
   const pickerStatus = document.getElementById('icon-picker-status');
-  const hasAnchorPositioning = CSS.supports('position-area', 'block-end');
-  const hasPopoverApi = 'popover' in HTMLElement.prototype;
   const pickerNoneButton = document.getElementById('icon-picker-none');
-  const iconVersion =
-    new URL(
-      picker?.dataset.indexUrl ?? '/assets/icons.json',
-      globalThis.location.href
-    ).searchParams.get('v') ?? '';
+  const glyphTemplates = document.getElementById('icon-glyph-templates');
+  const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
+  const iconIndexUrl = picker?.dataset.indexUrl ?? '/assets/icons.json';
+  const iconVersion = new URL(iconIndexUrl, globalThis.location.href).searchParams.get('v') ?? '';
 
   /** @type {Map<string, BuilderField>} */
-  const fieldsById = new Map(schema.fields.map((field) => [field.id, field]));
+  const fieldsById = new Map();
+  /** @type {Map<string, Element>} */
+  const fieldElements = new Map();
+  /** IDs of fields whose value shows or hides other fields. */
+  /** @type {Set<string>} */
+  const visibilityControllers = new Set();
+  for (const field of schema.fields) {
+    fieldsById.set(field.id, field);
+    const fieldElement = form.querySelector(`[data-field="${field.id}"]`);
+    if (fieldElement) {
+      fieldElements.set(field.id, fieldElement);
+    }
+    if (field.showWhen) {
+      visibilityControllers.add(field.showWhen.field);
+    }
+  }
+
+  /** @type {Map<string, FieldControl | undefined>} */
+  const controlCache = new Map();
+  /** @type {WeakMap<Element, SelectParts>} */
+  const selectPartsCache = new WeakMap();
 
   /** @type {BuilderState} */
   let state = { ...schema.initialState };
+  /** @type {keyof SnippetSet} */
   let snippetFormat = 'markdown';
-  let lastPreviewPath = '';
+  let lastPreviewSrc = '';
+  let currentPreviewPath = '';
   let previewTimer = 0;
-  let shareTimer = 0;
+  let pickerSearchFrame = 0;
 
-  /** @type {Promise<IconPickerIndex> | undefined} */
-  let iconIndexPromise = undefined;
-  /** @type {ReturnType<typeof createIconResolver> | undefined} */
-  let iconResolver = undefined;
   /** @type {IconPickerIndex | undefined} */
   let iconIndex = undefined;
-  /** @type {Map<string, Promise<Record<string, string>>>} */
-  const iconPages = new Map();
+  /** @type {IconResolver | undefined} */
+  let iconResolver = undefined;
+  /** Renderable picker slugs per set (slugs that resolve to their own set in this builder), built once. */
+  /** @type {Record<IconPickerSetId, string[]> | undefined} */
+  let pickerCatalog = undefined;
 
   /** @type {HTMLElement | undefined} */
   let pickerTarget = undefined;
   /** @type {HTMLElement | undefined} */
   let pickerTrigger = undefined;
   let isPickerInsertMode = false;
-  /** @type {{ set: IconPickerSetId, slug: string }[]} */
+  /** @type {IconMatch[]} */
   let pickerMatches = [];
   let pickerRendered = 0;
+  let pickerSelectedSlug = '';
   /** @type {IntersectionObserver | undefined} */
   let tileObserver = undefined;
   /** @type {IntersectionObserver | undefined} */
   let sentinelObserver = undefined;
 
+  const loadIconIndexOnce = createAsyncCache(() =>
+    fetch(iconIndexUrl).then((response) => {
+      if (!response.ok) {
+        throw new Error(`Icon index request failed (${response.status})`);
+      }
+      return /** @type {Promise<IconPickerIndex>} */ (response.json());
+    })
+  );
+
+  const loadIconPageOnce = createAsyncCache((key) =>
+    fetch(`/assets/icons-${key}.json?v=${iconVersion}`).then((response) => {
+      if (!response.ok) {
+        throw new Error(`Icon page request failed (${response.status})`);
+      }
+      return /** @type {Promise<Record<string, string>>} */ (response.json());
+    })
+  );
+
   /**
    * Find a part control of a field element.
    * @param {Element} fieldElement
    * @param {string} part
-   * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | undefined}
+   * @returns {FieldControl | undefined}
    */
   function getPart(fieldElement, part) {
-    /** @type {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null} */
+    /** @type {FieldControl | null} */
     const control = fieldElement.querySelector(`[data-part="${part}"]`);
     return control ?? undefined;
   }
 
   /**
-   * Find the single control of a field (`#field-<id>`).
-   * @param {string} id
-   * @returns {HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | undefined}
+   * Find (once) the single control of a field (`#field-<id>`).
+   * @param {string} id   Field ID.
+   * @returns {FieldControl | undefined}
    */
   function getControl(id) {
-    const element = document.getElementById(`field-${id}`);
-    return element instanceof HTMLInputElement ||
-      element instanceof HTMLSelectElement ||
-      element instanceof HTMLTextAreaElement
-      ? element
-      : undefined;
-  }
-
-  /**
-   * Close a popover element (native Popover API or the site script's `.is-open` fallback).
-   * @param {HTMLElement} popover
-   */
-  function hidePopoverElement(popover) {
-    if (hasPopoverApi && popover.matches(':popover-open')) {
-      popover.hidePopover();
+    if (!controlCache.has(id)) {
+      const element = document.getElementById(`field-${id}`);
+      controlCache.set(
+        id,
+        element instanceof HTMLInputElement ||
+          element instanceof HTMLSelectElement ||
+          element instanceof HTMLTextAreaElement
+          ? element
+          : undefined
+      );
     }
-    popover.classList.remove('is-open');
+    return controlCache.get(id);
   }
 
   /**
-   * Find the parts of a custom dropdown (`[data-select]`).
+   * Find (once) the parts of a custom dropdown (`[data-select]`).
    * @param {Element} wrapper
-   * @returns {{ list: Element | null, menu: HTMLElement | null, search: HTMLInputElement | null, select: HTMLSelectElement | null, trigger: HTMLElement | null }}
+   * @returns {SelectParts}
    */
   function getSelectParts(wrapper) {
-    return {
-      list: wrapper.querySelector('.select-options'),
-      menu: wrapper.querySelector('.select-menu'),
-      search: wrapper.querySelector('.select-search-input'),
-      select: wrapper.querySelector('select'),
-      trigger: wrapper.querySelector('.select-trigger'),
-    };
+    let parts = selectPartsCache.get(wrapper);
+    if (!parts) {
+      parts = {
+        list: wrapper.querySelector('.select-options'),
+        menu: wrapper.querySelector('.select-menu'),
+        search: wrapper.querySelector('.select-search-input'),
+        select: wrapper.querySelector('select'),
+        trigger: wrapper.querySelector('.select-trigger'),
+      };
+      selectPartsCache.set(wrapper, parts);
+    }
+    return parts;
   }
 
   /**
@@ -966,7 +1289,8 @@
   }
 
   /**
-   * Render the listbox options of a custom dropdown from its native `<select>`, filtered by the search query.
+   * Render the listbox options of a custom dropdown from its native `<select>`, filtered by the search query
+   * (only while the menu is open).
    * @param {Element} wrapper   `[data-select]` element.
    */
   function renderSelectOptions(wrapper) {
@@ -1007,7 +1331,7 @@
   }
 
   /**
-   * Sync a custom dropdown trigger (label and swatch) and its selected option with the native `<select>`.
+   * Sync a custom dropdown trigger (label and swatch) and its rendered options with the native `<select>`.
    * @param {Element} wrapper   `[data-select]` element.
    */
   function syncSelect(wrapper) {
@@ -1034,15 +1358,18 @@
     }
   }
 
-  /** Sync every custom dropdown with its native `<select>` (after programmatic value changes). */
-  function syncAllSelects() {
-    for (const wrapper of form?.querySelectorAll('[data-select]') ?? []) {
+  /**
+   * Sync every custom dropdown inside a scope with its native `<select>`.
+   * @param {ParentNode} scope   Changed field element or the whole form.
+   */
+  function syncSelects(scope) {
+    for (const wrapper of scope.querySelectorAll('[data-select]')) {
       syncSelect(wrapper);
     }
   }
 
   /**
-   * Replace the options of a native `<select>` and re-render its custom dropdown.
+   * Replace the options of a native `<select>` and sync its custom dropdown trigger.
    * @param {HTMLSelectElement} select
    * @param {readonly BuilderOption[]} options
    * @param {string} selectedValue
@@ -1054,7 +1381,6 @@
     }
     const wrapper = select.closest('[data-select]');
     if (wrapper) {
-      renderSelectOptions(wrapper);
       syncSelect(wrapper);
     }
   }
@@ -1073,7 +1399,7 @@
     select.dispatchEvent(new Event('change', { bubbles: true }));
     syncSelect(wrapper);
     if (menu) {
-      hidePopoverElement(menu);
+      site?.closePopover(menu);
     }
     trigger?.focus();
   }
@@ -1100,6 +1426,23 @@
   }
 
   /**
+   * Focus the first rendered option whose label starts with a typed character (typeahead).
+   * @param {Element} wrapper   `[data-select]` element.
+   * @param {string} key        Typed character (lowercase).
+   */
+  function focusTypeaheadOption(wrapper, key) {
+    for (const item of wrapper.querySelectorAll('.select-option')) {
+      if (
+        item instanceof HTMLElement &&
+        (item.textContent ?? '').trim().toLowerCase().startsWith(key)
+      ) {
+        item.focus();
+        return;
+      }
+    }
+  }
+
+  /**
    * Handle keys inside an open custom dropdown (arrows, `Home`/`End`, `Enter`/`Space`, and typeahead).
    * @param {KeyboardEvent} event
    * @param {Element} wrapper   `[data-select]` element.
@@ -1120,18 +1463,13 @@
         chooseSelectOption(wrapper, item.dataset.value);
       }
     } else if (!isSearch && event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
-      const key = event.key.toLowerCase();
-      const match = [...wrapper.querySelectorAll('.select-option')].find((item) =>
-        (item.textContent ?? '').trim().toLowerCase().startsWith(key)
-      );
-      if (match instanceof HTMLElement) {
-        match.focus();
-      }
+      focusTypeaheadOption(wrapper, event.key.toLowerCase());
     }
   }
 
   /**
-   * Prepare a custom dropdown menu when it opens: Reset the search, render the options, and focus the search or the selected option.
+   * Prepare a custom dropdown menu when it opens: Reset the search, render the options, position the menu
+   * without anchor positioning, and focus the search or the selected option.
    * @param {Element} wrapper   `[data-select]` element.
    */
   function openSelectMenu(wrapper) {
@@ -1140,11 +1478,8 @@
       search.value = '';
     }
     renderSelectOptions(wrapper);
-    if (menu && trigger && !hasAnchorPositioning) {
-      const rect = trigger.getBoundingClientRect();
-      menu.style.top = `${rect.bottom + 4}px`;
-      menu.style.left = `${rect.left}px`;
-      menu.style.minWidth = `${rect.width}px`;
+    if (menu && trigger) {
+      site?.placePopover(menu, trigger, { gap: 4, isWidthMatched: true });
     }
     const selected = wrapper.querySelector('.select-option[aria-selected="true"]');
     const focusTarget = search ?? selected ?? wrapper.querySelector('.select-option');
@@ -1156,11 +1491,10 @@
     }
   }
 
-  /** Bind every custom dropdown: Option clicks, keyboard navigation, search, and opening with the arrow keys. */
+  /** Bind every custom dropdown: Lazy option rendering, clicks, keyboard navigation, search, focus loss, and arrow keys. */
   function bindSelects() {
     for (const wrapper of form?.querySelectorAll('[data-select]') ?? []) {
       const { menu, search, trigger } = getSelectParts(wrapper);
-      renderSelectOptions(wrapper);
       menu?.addEventListener('toggle', (event) => {
         if (/** @type {ToggleEvent} */ (event).newState === 'open') {
           openSelectMenu(wrapper);
@@ -1174,9 +1508,15 @@
         }
       });
       menu?.addEventListener('keydown', (event) => handleSelectKeydown(event, wrapper));
+      // Keyboard focus leaving the dropdown (e.g., `Tab`) closes the menu; Pointer dismissal is native.
+      menu?.addEventListener('focusout', (event) => {
+        if (event.relatedTarget instanceof Node && !wrapper.contains(event.relatedTarget)) {
+          site?.closePopover(menu);
+        }
+      });
       search?.addEventListener('input', () => renderSelectOptions(wrapper));
       trigger?.addEventListener('keydown', (event) => {
-        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu && hasPopoverApi) {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu?.showPopover) {
           event.preventDefault();
           menu.showPopover();
         }
@@ -1235,19 +1575,15 @@
    */
   function syncSpecialParts(field, fieldElement, modifier) {
     const kind = getPart(fieldElement, 'kind')?.value ?? '';
+    const kindOption = findOption(field.options, kind);
+    const modifiers = kindOption?.modifiers ?? [];
     const payload = getPart(fieldElement, 'payload');
     const modifierSelect = getPart(fieldElement, 'modifier');
-    const modifiers = SPECIAL_MODIFIERS[kind] ?? [];
     if (payload instanceof HTMLInputElement) {
-      payload.placeholder =
-        field.options?.find((option) => option.value === kind)?.placeholder ?? '';
+      payload.placeholder = kindOption?.placeholder ?? '';
     }
     if (modifierSelect instanceof HTMLSelectElement) {
-      setSelectOptions(
-        modifierSelect,
-        modifiers.map((value) => ({ label: MODIFIER_LABELS[value] ?? value, value })),
-        modifier
-      );
+      setSelectOptions(modifierSelect, modifiers, modifier);
     }
     fieldElement.querySelector('[data-special-part="payload"]')?.toggleAttribute('hidden', !kind);
     fieldElement
@@ -1265,20 +1601,25 @@
   }
 
   /**
-   * Label a service segment field (`Owner :scope`) and set its input placeholder.
+   * Label a service segment field (`Owner :scope`), toggle its required state, and set its input placeholder;
+   * Only the label text span changes, so the required mark survives.
    * @param {string} id            Field ID (`'owner'` or `'target'`).
    * @param {string} label         Base label.
    * @param {string} segmentName   Segment name from the service docs (e.g., `':scope'`).
-   * @param {string} placeholder
+   * @param {string} placeholder   Input placeholder.
+   * @param {boolean} isRequired   Whether the segment is required.
    */
-  function labelServiceSegment(id, label, segmentName, placeholder) {
-    const labelElement = form?.querySelector(`[data-field="${id}"] .builder-label`);
-    if (labelElement) {
-      labelElement.textContent = `${label} ${segmentName}`.trim();
+  function labelServiceSegment(id, label, segmentName, placeholder, isRequired) {
+    const fieldElement = fieldElements.get(id);
+    const textElement = fieldElement?.querySelector('.builder-label-text');
+    if (textElement) {
+      textElement.textContent = `${label} ${segmentName}`.trim();
     }
+    fieldElement?.querySelector('.builder-required')?.toggleAttribute('hidden', !isRequired);
     const control = getControl(id);
     if (control instanceof HTMLInputElement) {
       control.placeholder = placeholder;
+      control.toggleAttribute('aria-required', isRequired);
     }
   }
 
@@ -1288,19 +1629,24 @@
     if (!service) {
       return;
     }
-    form
-      ?.querySelector('[data-field="owner"]')
-      ?.toggleAttribute('hidden', service.ownerMode === 'none');
-    labelServiceSegment('owner', 'Owner', service.ownerName ?? '', service.ownerHint ?? '');
+    fieldElements.get('owner')?.toggleAttribute('hidden', service.ownerMode === 'none');
+    labelServiceSegment(
+      'owner',
+      'Owner',
+      service.ownerName ?? '',
+      service.ownerHint ?? '',
+      service.ownerMode === 'required'
+    );
     labelServiceSegment(
       'target',
       'Target',
       service.targetName,
-      service.targetName.replace(':', '')
+      service.targetName.replace(':', ''),
+      true
     );
     const metricControl = getControl('metric');
     const { metrics } = service;
-    if (!metrics.some((metric) => metric.value === state.metric)) {
+    if (!findOption(metrics, state.metric ?? '')) {
       state.metric = metrics[0]?.value ?? '';
     }
     if (metricControl instanceof HTMLSelectElement) {
@@ -1312,9 +1658,7 @@
   function syncVisibility() {
     for (const field of schema.fields) {
       if (field.showWhen) {
-        form
-          ?.querySelector(`[data-field="${field.id}"]`)
-          ?.toggleAttribute('hidden', !isFieldVisible(field, state));
+        fieldElements.get(field.id)?.toggleAttribute('hidden', !isFieldVisible(field, state));
       }
     }
   }
@@ -1331,13 +1675,14 @@
       control.value = value;
     }
   }
+
   /**
    * Write a state value into the control(s) of a field.
    * @param {BuilderField} field
    * @param {string} value
    */
   function writeFieldValue(field, value) {
-    const fieldElement = form?.querySelector(`[data-field="${field.id}"]`);
+    const fieldElement = fieldElements.get(field.id);
     if (!fieldElement) {
       return;
     }
@@ -1379,7 +1724,7 @@
         break;
       }
       case 'special': {
-        const special = splitSpecial(value);
+        const special = splitSpecial(value, field.options ?? []);
         setPartValue(fieldElement, 'kind', special.kind);
         setPartValue(fieldElement, 'payload', special.payload);
         syncSpecialParts(field, fieldElement, special.modifier);
@@ -1409,7 +1754,7 @@
 
   /**
    * Render highlight tokens into the snippet `<code>` element (its text content is the exact snippet).
-   * @param {HighlightToken[]} tokens
+   * @param {readonly HighlightToken[]} tokens
    */
   function renderCode(tokens) {
     if (!codeElement) {
@@ -1438,72 +1783,76 @@
   }
 
   /**
-   * Load a preview, skipping unchanged paths.
+   * Load a preview, skipping unchanged sources (reduced motion previews are static).
    * @param {string} path   Root-relative SVG path (`''` hides the preview).
    */
   function loadPreview(path) {
-    if (!previewImage || path === lastPreviewPath) {
+    currentPreviewPath = path;
+    const previewSrc = buildPreviewPath(path, reducedMotionQuery.matches);
+    if (!previewImage || previewSrc === lastPreviewSrc) {
       return;
     }
-    lastPreviewPath = path;
-    previewImage.toggleAttribute('hidden', !path);
-    previewPlaceholder?.toggleAttribute('hidden', Boolean(path));
-    if (path) {
+    lastPreviewSrc = previewSrc;
+    previewImage.toggleAttribute('hidden', !previewSrc);
+    previewPlaceholder?.toggleAttribute('hidden', Boolean(previewSrc));
+    if (previewSrc) {
       previewImage.classList.add('is-loading');
-      previewImage.src = path;
+      previewImage.src = previewSrc;
     }
   }
 
   /**
-   * Load (once) the icon picker index.
+   * Load (once, retried after failures) the icon picker index and build the resolver and picker catalog.
    * @returns {Promise<IconPickerIndex>}
    */
   function loadIconIndex() {
-    iconIndexPromise ??= fetch(picker?.dataset.indexUrl ?? '/assets/icons.json')
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Icon index request failed (${response.status})`);
+    return loadIconIndexOnce('').then((index) => {
+      if (!iconIndex) {
+        const resolver = createIconResolver(index, schema.maxIconSlugLength);
+        /** @type {Record<IconPickerSetId, string[]>} */
+        const catalog = { brands: [], lucide: [] };
+        for (const set of /** @type {const} */ (['lucide', 'brands'])) {
+          for (const slug of index.sets[set]) {
+            // Only offer icons that render as shown (e.g., Lucide wins slug collisions outside tech stacks).
+            if (resolver.resolve(slug, schema.isBrandFirst) === set) {
+              catalog[set].push(slug);
+            }
+          }
         }
-        return response.json();
-      })
-      .then((/** @type {IconPickerIndex} */ index) => {
         iconIndex = index;
-        iconResolver = createIconResolver(index);
-        return index;
-      });
-    return iconIndexPromise;
+        iconResolver = resolver;
+        pickerCatalog = catalog;
+      }
+      return index;
+    });
   }
 
   /**
-   * Load (once) an icon body page (versioned like the icon index).
+   * Load (once per page, retried after failures) an icon body page (versioned like the icon index).
    * @param {IconLocation} iconLocation
    * @returns {Promise<Record<string, string>>}
    */
   function loadIconPage(iconLocation) {
-    const key = `${iconLocation.set}-${iconLocation.page}`;
-    let pagePromise = iconPages.get(key);
-    if (!pagePromise) {
-      pagePromise = fetch(`/assets/icons-${key}.json?v=${iconVersion}`).then((response) =>
-        response.ok ? response.json() : {}
-      );
-      iconPages.set(key, pagePromise);
-    }
-    return pagePromise;
+    return loadIconPageOnce(`${iconLocation.set}-${iconLocation.page}`);
   }
 
   /**
-   * Create an inline glyph `<svg>` for an icon body.
+   * Create an inline glyph `<svg>` for an icon body from the page's glyph templates (paint attributes per set).
    * @param {IconPickerSetId} set
    * @param {string} innerSvg   Trusted icon body markup from `/assets/icons-*.json`.
    * @returns {SVGSVGElement}
    */
   function createGlyph(set, innerSvg) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    for (const [name, value] of Object.entries(GLYPH_PAINT_ATTRS[set])) {
-      svg.setAttribute(name, value);
-    }
+    const template =
+      glyphTemplates instanceof HTMLTemplateElement
+        ? glyphTemplates.content.querySelector(`svg[data-set="${set}"]`)
+        : undefined;
+    const glyph = template ? document.importNode(template, false) : undefined;
+    const svg =
+      glyph instanceof SVGSVGElement
+        ? glyph
+        : document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.removeAttribute('data-set');
     svg.innerHTML = innerSvg;
     return svg;
   }
@@ -1526,14 +1875,17 @@
           container.replaceChildren(createGlyph(glyphLocation.set, body));
         }
       },
-      () => undefined
+      () => {
+        // Render again on the next change (the failed page is retried then).
+        delete container.dataset.slug;
+      }
     );
   }
 
   /**
-   * Validate one icon input (or the stack groups textarea) and refresh its glyph preview.
-   * @param {Element} hint   `[data-validation-for]` hint element.
-   * @param {ReturnType<typeof createIconResolver>} resolver
+   * Validate one icon input (or the stack groups textarea) against the icon index.
+   * @param {Element} hint           `[data-validation-for]` hint element.
+   * @param {IconResolver} resolver
    */
   function validateIconInput(hint, resolver) {
     const inputId = hint.getAttribute('data-validation-for') ?? '';
@@ -1543,9 +1895,12 @@
     }
     const value = input.value.trim();
     const slugs = input instanceof HTMLTextAreaElement ? collectStackSlugs(value) : [value];
-    const unknown = slugs.filter(
-      (slug) => slug && resolver.resolve(slug, schema.isBrandFirst) === undefined
-    );
+    const unknown = [];
+    for (const slug of slugs) {
+      if (slug && resolver.resolve(slug, schema.isBrandFirst) === undefined) {
+        unknown.push(slug);
+      }
+    }
     const more = unknown.length > MAX_LISTED_UNKNOWN_ICONS ? ', …' : '';
     hint.textContent =
       unknown.length > 0
@@ -1554,9 +1909,12 @@
     hint.classList.toggle('is-warning', unknown.length > 0);
   }
 
-  /** Sync every icon selector (slug text, placeholder, clear button, and glyph) with its hidden input. */
-  function syncIconSelects() {
-    for (const trigger of form?.querySelectorAll('.icon-select-trigger') ?? []) {
+  /**
+   * Sync every icon selector inside a scope (slug text, placeholder, clear button, and glyph) with its hidden input.
+   * @param {ParentNode} scope   Changed field element or the whole form.
+   */
+  function syncIconSelects(scope) {
+    for (const trigger of scope.querySelectorAll('.icon-select-trigger')) {
       const inputId = trigger instanceof HTMLElement ? (trigger.dataset.iconTarget ?? '') : '';
       const input = document.getElementById(inputId);
       const valueElement = trigger.querySelector('.icon-select-value');
@@ -1575,57 +1933,101 @@
     }
   }
 
-  /** Validate every icon input and the stack groups against the icon index (once loaded). */
-  function validateIcons() {
+  /**
+   * Validate every icon input and the stack groups inside a scope (once the icon index has loaded).
+   * @param {ParentNode} scope   Changed field element or the whole form.
+   */
+  function validateIcons(scope) {
     const resolver = iconResolver;
     if (resolver) {
-      for (const hint of form?.querySelectorAll('[data-validation-for]') ?? []) {
+      for (const hint of scope.querySelectorAll('[data-validation-for]')) {
         validateIconInput(hint, resolver);
       }
     }
   }
 
-  /** Rebuild the URL, snippets, links, and validation for the current state (preview and history are debounced). */
-  function update() {
-    const { missing, path } = buildPath(schema, state);
-    const isComplete = missing.length === 0;
-    const absoluteUrl = `${schema.origin}${path}`;
+  /**
+   * Enable or disable the URL outputs: Incomplete URLs have no Open SVG target, no copy action, and a hint.
+   * @param {BuildResult} result
+   */
+  function syncOutputAvailability(result) {
+    const isComplete = result.missing.length === 0;
+    if (openLink) {
+      if (isComplete) {
+        openLink.href = result.path;
+        openLink.removeAttribute('aria-disabled');
+      } else {
+        openLink.removeAttribute('href');
+        openLink.setAttribute('aria-disabled', 'true');
+      }
+    }
+    if (copyButton) {
+      copyButton.disabled = !isComplete;
+    }
+    outputElement?.classList.toggle('is-incomplete', !isComplete);
+    setStatus(
+      isComplete
+        ? ''
+        : `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
+      !isComplete
+    );
+  }
+
+  /** Read the custom alt text and link target of the snippet options. */
+  function readSnippetOptions() {
+    return { alt: (altInput?.value ?? '').trim(), link: (linkInput?.value ?? '').trim() };
+  }
+
+  /** Rebuild the URL, snippets, links, and output availability for the current state (preview and history are debounced). */
+  function renderOutputs() {
+    const result = buildPath(schema, state);
+    const isComplete = result.missing.length === 0;
+    const absoluteUrl = `${schema.origin}${result.path}`;
     const autoAlt = buildAltText(schema, state);
+    const options = readSnippetOptions();
+    const alt = options.alt || autoAlt;
     if (altInput) {
       altInput.placeholder = autoAlt;
     }
-    const link =
-      (linkInput?.value ?? '').trim() || buildDefaultLinkTarget(schema.kind, absoluteUrl);
-
-    renderCode(
-      buildSnippetTokens(absoluteUrl, (altInput?.value ?? '').trim() || autoAlt, link)[
-        /** @type {keyof SnippetSet} */ (snippetFormat)
-      ]
-    );
-    if (openLink) {
-      openLink.href = path;
+    if (previewImage) {
+      previewImage.alt = alt;
     }
-    document.querySelector('.builder-output')?.classList.toggle('is-incomplete', !isComplete);
-    setStatus(isComplete ? '' : `Required: ${missing.join(', ')}`, !isComplete);
-    syncAllSelects();
-    syncIconSelects();
-    validateIcons();
+    const link = options.link || buildDefaultLinkTarget(schema, state, absoluteUrl);
+    renderCode(buildSnippetTokens(absoluteUrl, alt, link)[snippetFormat]);
+    syncOutputAvailability(result);
 
     clearTimeout(previewTimer);
     previewTimer = globalThis.setTimeout(() => {
-      loadPreview(isComplete ? path : '');
-      const shareUrl = new URL(globalThis.location.href);
-      shareUrl.searchParams.set('path', path);
-      history.replaceState(history.state, '', shareUrl);
+      loadPreview(isComplete ? result.path : '');
+      history.replaceState(
+        history.state,
+        '',
+        buildShareUrl(globalThis.location.href, result.path, options.alt, options.link)
+      );
     }, PREVIEW_DEBOUNCE_MS);
   }
 
   /**
-   * Handle input on a field: Read its value, sync dependent controls, and update the outputs.
+   * Refresh the outputs and sync the dropdowns, icon selectors, and icon validation of the changed controls.
+   * @param {ParentNode} scope   Changed field element, or the whole form after a state replacement.
+   */
+  function update(scope) {
+    renderOutputs();
+    syncSelects(scope);
+    syncIconSelects(scope);
+    validateIcons(scope);
+  }
+
+  /**
+   * Handle input on a field: Read its value, sync dependent controls, and update the outputs. Text-like controls
+   * report through `input` only; `change` is handled for the (programmatically changed) native selects.
    * @param {Event} event
    */
   function handleFieldInput(event) {
     const { target } = event;
+    if (event.type === 'change' && !(target instanceof HTMLSelectElement)) {
+      return;
+    }
     const fieldElement = target instanceof Element ? target.closest('[data-field]') : undefined;
     const field = fieldsById.get(fieldElement?.getAttribute('data-field') ?? '');
     if (!fieldElement || !field) {
@@ -1645,8 +2047,10 @@
     if (field.id === 'service') {
       syncServiceFields();
     }
-    syncVisibility();
-    update();
+    if (visibilityControllers.has(field.id)) {
+      syncVisibility();
+    }
+    update(fieldElement);
   }
 
   /**
@@ -1654,7 +2058,8 @@
    * @param {HTMLElement} tab
    */
   function selectTab(tab) {
-    snippetFormat = tab.dataset.format ?? 'markdown';
+    const { format } = tab.dataset;
+    snippetFormat = format === 'html' || format === 'url' ? format : 'markdown';
     for (const otherTab of document.querySelectorAll('.builder-tab')) {
       const isSelected = otherTab === tab;
       otherTab.classList.toggle('is-active', isSelected);
@@ -1662,20 +2067,21 @@
       otherTab.setAttribute('tabindex', isSelected ? '0' : '-1');
     }
     document.getElementById('builder-code')?.setAttribute('aria-labelledby', tab.id);
-    update();
+    renderOutputs();
   }
 
   /**
-   * Compute the filtered icon picker matches for the active set tab and search query.
+   * Compute the filtered icon picker matches for the active set tab and search query (prefix matches first).
    * @param {IconPickerIndex} index
-   * @returns {{ set: IconPickerSetId, slug: string }[]}
+   * @param {Record<IconPickerSetId, string[]>} catalog
+   * @returns {IconMatch[]}
    */
-  function computePickerMatches(index) {
+  function computePickerMatches(index, catalog) {
     const checkedTab = picker?.querySelector('input[name="icon-picker-set"]:checked');
     const tab = checkedTab instanceof HTMLInputElement ? checkedTab.value : 'all';
     const query = (pickerSearch?.value ?? '').trim().toLowerCase();
     /** @type {IconPickerSetId[]} */
-    const sets = tab === 'all' ? ['lucide', 'brands'] : [/** @type {IconPickerSetId} */ (tab)];
+    const sets = tab === 'lucide' || tab === 'brands' ? [tab] : ['lucide', 'brands'];
     /** @type {Set<string>} */
     const aliasHits = new Set();
     if (query) {
@@ -1685,21 +2091,23 @@
         }
       }
     }
-    const prefixMatches = [];
+    /** @type {IconMatch[]} */
+    const matches = [];
+    /** @type {IconMatch[]} */
     const otherMatches = [];
     for (const set of sets) {
-      for (const slug of index.sets[set]) {
-        // Only offer icons that render as shown (e.g., Lucide wins slug collisions outside tech stacks).
-        if (iconResolver?.resolve(slug, schema.isBrandFirst) === set) {
-          if (!query || slug.startsWith(query)) {
-            prefixMatches.push({ set, slug });
-          } else if (slug.includes(query) || (set === 'lucide' && aliasHits.has(slug))) {
-            otherMatches.push({ set, slug });
-          }
+      for (const slug of catalog[set]) {
+        if (!query || slug.startsWith(query)) {
+          matches.push({ set, slug });
+        } else if (slug.includes(query) || (set === 'lucide' && aliasHits.has(slug))) {
+          otherMatches.push({ set, slug });
         }
       }
     }
-    return [...prefixMatches, ...otherMatches];
+    for (const match of otherMatches) {
+      matches.push(match);
+    }
+    return matches;
   }
 
   /**
@@ -1732,21 +2140,22 @@
     }
     const fragment = document.createDocumentFragment();
     const end = Math.min(pickerMatches.length, pickerRendered + PICKER_CHUNK_SIZE);
-    const currentSlug =
-      !isPickerInsertMode && pickerTarget instanceof HTMLInputElement
-        ? pickerTarget.value.trim().toLowerCase()
-        : '';
     for (let i = pickerRendered; i < end; i += 1) {
       const match = pickerMatches[i];
+      // `end` never exceeds `pickerMatches.length`; The guard only narrows the indexed access.
+      if (match === undefined) {
+        break;
+      }
       const tile = document.createElement('button');
       tile.type = 'button';
       tile.className = 'icon-tile';
+      tile.dataset.index = String(i);
       tile.dataset.slug = match.slug;
       tile.setAttribute('role', 'option');
       tile.setAttribute('aria-label', match.slug);
-      tile.setAttribute('aria-selected', String(match.slug === currentSlug));
+      tile.setAttribute('aria-selected', String(match.slug === pickerSelectedSlug));
       tile.title = match.slug;
-      tile.tabIndex = i === 0 ? 0 : -1;
+      tile.tabIndex = -1;
       fragment.append(tile);
       tileObserver?.observe(tile);
     }
@@ -1761,22 +2170,114 @@
     }
   }
 
-  /** Re-render the icon picker grid for the current tab and query. */
-  function renderPicker() {
-    if (!iconIndex || !pickerGrid) {
+  /**
+   * Render picker chunks until a match index is rendered.
+   * @param {number} index   Match index.
+   */
+  function renderPickerUntil(index) {
+    while (pickerRendered <= index && pickerRendered < pickerMatches.length) {
+      renderPickerChunk();
+    }
+  }
+
+  /**
+   * Find a rendered picker tile by its match index.
+   * @param {number} index   Match index.
+   * @returns {HTMLElement | undefined}
+   */
+  function getTileAt(index) {
+    const tile = pickerGrid?.children[index];
+    return tile instanceof HTMLElement && tile.classList.contains('icon-tile') ? tile : undefined;
+  }
+
+  /**
+   * Move the roving tab stop of the picker grid to a tile (optionally focusing it).
+   * @param {HTMLElement} tile
+   * @param {boolean} isFocused   Whether the tile receives the focus.
+   */
+  function setRovingTile(tile, isFocused) {
+    for (const otherTile of pickerGrid?.querySelectorAll('.icon-tile[tabindex="0"]') ?? []) {
+      if (otherTile instanceof HTMLElement) {
+        otherTile.tabIndex = -1;
+      }
+    }
+    tile.tabIndex = 0;
+    if (isFocused) {
+      tile.focus();
+    }
+  }
+
+  /** Render the picker's empty state with a clear-search action (handled by the grid's click listener). */
+  function renderPickerEmpty() {
+    const empty = document.createElement('div');
+    empty.className = 'icon-picker-empty';
+    empty.append('No icons found.');
+    if (pickerSearch?.value.trim()) {
+      const clearButton = document.createElement('button');
+      clearButton.type = 'button';
+      clearButton.className = 'text-btn';
+      clearButton.dataset.pickerClear = 'true';
+      clearButton.textContent = 'Clear search';
+      empty.append(' ', clearButton);
+    }
+    pickerGrid?.append(empty);
+  }
+
+  /**
+   * Find the match index of the picker target's current icon (`-1` when none or in insert mode).
+   * @returns {number}
+   */
+  function findSelectedMatchIndex() {
+    if (!pickerSelectedSlug) {
+      return -1;
+    }
+    return pickerMatches.findIndex((match) => match.slug === pickerSelectedSlug);
+  }
+
+  /**
+   * Re-render the icon picker grid for the current tab and query.
+   * @param {boolean} isOpening   Whether the picker just opened (scrolls to and highlights the current icon).
+   */
+  function renderPicker(isOpening) {
+    if (!iconIndex || !pickerCatalog || !pickerGrid) {
       return;
     }
-    pickerMatches = computePickerMatches(iconIndex);
+    pickerSearchFrame = 0;
+    const currentSlug =
+      !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
+    pickerSelectedSlug = iconResolver?.locate(currentSlug, schema.isBrandFirst)?.slug ?? '';
+    pickerMatches = computePickerMatches(iconIndex, pickerCatalog);
     pickerRendered = 0;
+    // Disconnect before dropping the old tiles, so detached tiles are never kept alive by the observers.
+    tileObserver?.disconnect();
+    sentinelObserver?.disconnect();
     pickerGrid.replaceChildren();
     pickerGrid.scrollTop = 0;
-    renderPickerChunk();
+    if (pickerMatches.length === 0) {
+      renderPickerEmpty();
+    } else {
+      const selectedIndex = isOpening ? findSelectedMatchIndex() : -1;
+      renderPickerUntil(Math.max(0, selectedIndex));
+      const rovingTile = getTileAt(Math.max(0, selectedIndex));
+      if (rovingTile) {
+        setRovingTile(rovingTile, false);
+        if (selectedIndex > 0) {
+          rovingTile.scrollIntoView({ block: 'center' });
+        }
+      }
+    }
     if (pickerStatus) {
       pickerStatus.textContent =
         pickerMatches.length === 0
           ? 'No icons found.'
           : `${pickerMatches.length.toLocaleString('en-US')} icon${pickerMatches.length === 1 ? '' : 's'}`;
     }
+  }
+
+  /** Re-render the picker in the next animation frame (coalesces fast typing in the search field). */
+  function scheduleRenderPicker() {
+    cancelAnimationFrame(pickerSearchFrame);
+    pickerSearchFrame = requestAnimationFrame(() => renderPicker(false));
   }
 
   /**
@@ -1802,25 +2303,9 @@
     }
     target.dispatchEvent(new Event('input', { bubbles: true }));
     if (picker) {
-      hidePopoverElement(picker);
+      site?.closePopover(picker);
     }
     (target instanceof HTMLTextAreaElement ? target : (pickerTrigger ?? target)).focus();
-  }
-
-  /**
-   * Move the roving focus within the picker grid.
-   * @param {HTMLElement} tile   Currently focused tile.
-   * @param {number} offset      Tile offset (negative or positive).
-   */
-  function moveTileFocus(tile, offset) {
-    const tiles = [...(pickerGrid?.querySelectorAll('.icon-tile') ?? [])];
-    const index = tiles.indexOf(tile);
-    const next = tiles[Math.max(0, Math.min(tiles.length - 1, index + offset))];
-    if (next instanceof HTMLElement) {
-      tile.tabIndex = -1;
-      next.tabIndex = 0;
-      next.focus();
-    }
   }
 
   /** @returns {number} Number of columns in the picker grid. */
@@ -1834,7 +2319,7 @@
   /** Read every field control back into the state (normalizes composite values after `writeState`). */
   function syncStateFromForm() {
     for (const field of schema.fields) {
-      const fieldElement = form?.querySelector(`[data-field="${field.id}"]`);
+      const fieldElement = fieldElements.get(field.id);
       if (fieldElement) {
         state[field.id] = readFieldValue(field, fieldElement);
       }
@@ -1849,35 +2334,40 @@
     state = { ...nextState };
     writeState();
     syncStateFromForm();
-    update();
+    update(form ?? document);
   }
 
-  /** Apply the initial state: A shared or "Open in Builder" path wins over the example state. */
+  /** Apply the initial state: A shared or "Open in Builder" link (path, alt text, link target) wins over the example. */
   function initializeState() {
-    const sharedPath = new URL(globalThis.location.href).searchParams.get('path');
+    const pageParams = new URL(globalThis.location.href).searchParams;
+    const sharedPath = pageParams.get('path');
     const parsedState = sharedPath ? parsePath(schema, sharedPath) : undefined;
+    if (altInput) {
+      altInput.value = pageParams.get('alt') ?? '';
+    }
+    if (linkInput) {
+      linkInput.value = pageParams.get('link') ?? '';
+    }
     applyState(parsedState ?? schema.initialState);
     if (sharedPath && !parsedState) {
       setStatus('The shared link belongs to another builder; Showing the example instead.', true);
     }
   }
 
-  /** Copy a shareable builder link (with the current `?path=`) to the clipboard. */
+  /** Copy a shareable builder link (path, alt text, and link target) with copy feedback on the share button. */
   function copyShareLink() {
-    const shareUrl = new URL(globalThis.location.href);
-    shareUrl.searchParams.set('path', buildPath(schema, state).path);
-    navigator.clipboard?.writeText(shareUrl.href).then(
-      () => {
-        if (shareLabel) {
-          shareLabel.textContent = 'Link copied';
-          clearTimeout(shareTimer);
-          shareTimer = globalThis.setTimeout(() => {
-            shareLabel.textContent = 'Copy builder link';
-          }, SHARE_FEEDBACK_MS);
-        }
-      },
-      () => setStatus('Copying the link failed; Copy it from the address bar instead.', true)
-    );
+    const options = readSnippetOptions();
+    if (shareButton) {
+      site?.copyText(
+        buildShareUrl(
+          globalThis.location.href,
+          buildPath(schema, state).path,
+          options.alt,
+          options.link
+        ),
+        shareButton
+      );
+    }
   }
 
   /**
@@ -1885,13 +2375,20 @@
    * @param {KeyboardEvent} event
    */
   function handleTabKeydown(event) {
-    const tabs = [...document.querySelectorAll('.builder-tab')];
-    const current = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
     /** @type {Readonly<Record<string, number>>} */
     const offsets = { ArrowLeft: -1, ArrowRight: 1 };
     const offset = offsets[event.key];
-    const next =
-      offset === undefined ? undefined : tabs[(current + offset + tabs.length) % tabs.length];
+    if (offset === undefined) {
+      return;
+    }
+    const tabs = [...document.querySelectorAll('.builder-tab')];
+    let current = 0;
+    for (const [i, tab] of tabs.entries()) {
+      if (tab.getAttribute('aria-selected') === 'true') {
+        current = i;
+      }
+    }
+    const next = tabs[(current + offset + tabs.length) % tabs.length];
     if (next instanceof HTMLElement) {
       selectTab(next);
       next.focus();
@@ -1903,10 +2400,10 @@
     form?.addEventListener('input', handleFieldInput);
     form?.addEventListener('change', handleFieldInput);
     form?.addEventListener('submit', (event) => event.preventDefault());
-    altInput?.addEventListener('input', update);
-    linkInput?.addEventListener('input', update);
+    altInput?.addEventListener('input', renderOutputs);
+    linkInput?.addEventListener('input', renderOutputs);
     if (linkInput && schema.kind === 'service') {
-      linkInput.placeholder = 'Badge URL (redirects to the upstream page)';
+      linkInput.placeholder = 'Upstream page of the service';
     }
 
     previewImage?.addEventListener('load', () => {
@@ -1916,6 +2413,7 @@
       previewImage.classList.remove('is-loading');
       setStatus('The preview could not be loaded; Check the route values.', true);
     });
+    reducedMotionQuery.addEventListener('change', () => loadPreview(currentPreviewPath));
 
     const tabList = document.querySelector('.builder-tabs');
     tabList?.addEventListener('click', (event) => {
@@ -1960,10 +2458,9 @@
 
   /**
    * Remember the picker target of a clicked picker button and anchor the popover to it.
-   * @param {HTMLElement} pickerElement
    * @param {HTMLElement} button   `[data-icon-target]` button.
    */
-  function targetPicker(pickerElement, button) {
+  function targetPicker(button) {
     pickerTarget = document.getElementById(button.dataset.iconTarget ?? '') ?? undefined;
     pickerTrigger = button;
     isPickerInsertMode = button.dataset.iconInsert === 'true';
@@ -1974,27 +2471,57 @@
       }
     }
     button.style.setProperty('anchor-name', '--icon-picker');
-    if (!hasAnchorPositioning) {
-      const rect = button.getBoundingClientRect();
-      pickerElement.style.top = `${Math.min(rect.bottom + 8, globalThis.innerHeight - 420)}px`;
-      pickerElement.style.left = `${Math.max(8, Math.min(rect.left, globalThis.innerWidth - 380))}px`;
+  }
+
+  /** Prepare the opened picker: Position it, reset the search, and render it (loading the index first if needed). */
+  function openPicker() {
+    if (picker && pickerTrigger) {
+      site?.placePopover(picker, pickerTrigger, { gap: 6 });
     }
+    if (pickerSearch) {
+      pickerSearch.value = '';
+      pickerSearch.focus();
+    }
+    if (iconIndex) {
+      renderPicker(true);
+      return;
+    }
+    if (pickerStatus) {
+      pickerStatus.textContent = 'Loading icons…';
+    }
+    loadIconIndex().then(
+      () => {
+        syncIconSelects(form ?? document);
+        validateIcons(form ?? document);
+        if (picker && site?.isPopoverOpen(picker)) {
+          renderPicker(true);
+        }
+      },
+      () => {
+        if (pickerStatus) {
+          pickerStatus.textContent = 'Icons could not be loaded; Reopen the picker to retry.';
+        }
+      }
+    );
   }
 
   /**
    * Handle keys in the picker search (`ArrowDown` focuses the grid, `Enter` picks the first match).
    * @param {KeyboardEvent} event
-   * @param {HTMLElement} gridElement
    */
-  function handlePickerSearchKeydown(event, gridElement) {
+  function handlePickerSearchKeydown(event) {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
-      const firstTile = gridElement.querySelector('.icon-tile');
-      if (firstTile instanceof HTMLElement) {
-        firstTile.focus();
+      const rovingTile = pickerGrid?.querySelector('.icon-tile[tabindex="0"]');
+      if (rovingTile instanceof HTMLElement) {
+        rovingTile.focus();
       }
     } else if (event.key === 'Enter') {
       event.preventDefault();
+      if (pickerSearchFrame) {
+        cancelAnimationFrame(pickerSearchFrame);
+        renderPicker(false);
+      }
       const [firstMatch] = pickerMatches;
       if (firstMatch) {
         applyPickedSlug(firstMatch.slug);
@@ -2003,7 +2530,7 @@
   }
 
   /**
-   * Handle arrow, `Home`, and `End` keys in the picker grid (roving focus).
+   * Handle arrow, `Home`, and `End` keys in the picker grid (roving focus across all matches).
    * @param {KeyboardEvent} event
    */
   function handlePickerGridKeydown(event) {
@@ -2012,20 +2539,20 @@
     if (!(tile instanceof HTMLElement)) {
       return;
     }
-    const columns = getPickerColumns();
-    /** @type {Readonly<Record<string, number>>} */
-    const offsets = {
-      ArrowDown: columns,
-      ArrowLeft: -1,
-      ArrowRight: 1,
-      ArrowUp: -columns,
-      End: pickerRendered,
-      Home: -pickerRendered,
-    };
-    const offset = offsets[event.key];
-    if (offset !== undefined) {
-      event.preventDefault();
-      moveTileFocus(tile, offset);
+    const targetIndex = computeGridFocusIndex(
+      event.key,
+      Number(tile.dataset.index ?? 0),
+      getPickerColumns(),
+      pickerMatches.length
+    );
+    if (targetIndex === undefined) {
+      return;
+    }
+    event.preventDefault();
+    renderPickerUntil(targetIndex);
+    const targetTile = getTileAt(targetIndex);
+    if (targetTile) {
+      setRovingTile(targetTile, true);
     }
   }
 
@@ -2059,8 +2586,11 @@
     );
     sentinelObserver = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          renderPickerChunk();
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            renderPickerChunk();
+            return;
+          }
         }
       },
       { root: gridElement, rootMargin: '240px 0px' }
@@ -2070,30 +2600,31 @@
       const button =
         event.target instanceof Element ? event.target.closest('[data-icon-target]') : undefined;
       if (button instanceof HTMLElement) {
-        targetPicker(pickerElement, button);
+        targetPicker(button);
       }
     });
     pickerElement.addEventListener('toggle', (event) => {
       if (/** @type {ToggleEvent} */ (event).newState === 'open') {
-        if (pickerSearch) {
-          pickerSearch.value = '';
-          pickerSearch.focus();
-        }
-        renderPicker();
+        openPicker();
       }
     });
     pickerElement.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.name === 'icon-picker-set') {
-        renderPicker();
+        renderPicker(false);
       }
     });
-    pickerSearch?.addEventListener('input', renderPicker);
-    pickerSearch?.addEventListener('keydown', (event) =>
-      handlePickerSearchKeydown(event, gridElement)
-    );
+    pickerSearch?.addEventListener('input', scheduleRenderPicker);
+    pickerSearch?.addEventListener('keydown', handlePickerSearchKeydown);
 
     gridElement.addEventListener('click', (event) => {
-      const tile = event.target instanceof Element ? event.target.closest('.icon-tile') : undefined;
+      const target = event.target instanceof Element ? event.target : undefined;
+      if (target?.closest('[data-picker-clear]') && pickerSearch) {
+        pickerSearch.value = '';
+        pickerSearch.focus();
+        renderPicker(false);
+        return;
+      }
+      const tile = target?.closest('.icon-tile');
       if (tile instanceof HTMLElement && tile.dataset.slug) {
         applyPickedSlug(tile.dataset.slug);
       }
@@ -2110,19 +2641,15 @@
     bindIconPicker(picker, pickerGrid);
   }
 
-  // Icon index: Load in the background for validation, glyph previews, and the picker.
+  // Icon index: Load in the background for validation and glyph previews (the picker retries failed loads).
   loadIconIndex().then(
     () => {
-      syncIconSelects();
-      validateIcons();
-      if (picker?.matches(':popover-open')) {
-        renderPicker();
+      syncIconSelects(form);
+      validateIcons(form);
+      if (picker && site.isPopoverOpen(picker)) {
+        renderPicker(true);
       }
     },
-    () => {
-      if (pickerStatus) {
-        pickerStatus.textContent = 'Icons could not be loaded.';
-      }
-    }
+    () => undefined
   );
 })();

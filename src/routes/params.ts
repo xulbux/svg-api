@@ -2,16 +2,16 @@
  * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, ...) into typed render options.
  */
 
+import { STRIP_DARK_COLORS } from '@/config/palette';
 import { STATUS_PRESET_MAP } from '@/config/services';
-import { DOT_COLORS } from '@/config/theme';
+import { isThemeColorName } from '@/config/theme';
 import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
-import { getOwnValue, hasOwnKey } from '@/svg/shared';
+import { ICON_MOTION_TOKENS, getOwnValue } from '@/svg/shared';
 import type {
   AnimationMode,
   BadgeSpecialElement,
   BadgeVariant,
   DotState,
-  IconMotionMode,
   QuoteLayout,
   SizePreset,
   StripTickState,
@@ -44,37 +44,32 @@ export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialElement['type'][] = [
   'delta',
 ];
 
-/** Set of valid named size presets for buttons and quote cards. */
-const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set(['lg', 'md', 'sm', 'xl']);
+/** Valid named size presets for buttons and quote cards in ascending size order (also listed by the docs and the builder). */
+export const SIZE_TOKENS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
 
-/** Valid per-icon motion tokens for `?anim=`, sorted alphabetically (also listed by the docs). */
-export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
-  'auto',
-  'default',
-  'float',
-  'none',
-  'nudge',
-  'pulse',
-  'shake',
-  'spin',
-];
+/** Set of valid named size presets (derived from `SIZE_TOKENS`). */
+const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
+
+/** Valid per-icon motion tokens for `?anim=`, sorted alphabetically (also listed by the docs; Defined once in `src/svg/shared.ts`). */
+export { ICON_MOTION_TOKENS } from '@/svg/shared';
 
 /** Set of valid per-icon motion tokens for `?anim=` (derived from `ICON_MOTION_TOKENS`). */
 const VALID_ICON_MOTIONS: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
 
-/** Set of valid 10-stage (`'0'`–`'9'`) strip tick characters. */
-const VALID_STRIP_STAGES: ReadonlySet<string> = new Set<StripTickState>([
-  '0',
-  '1',
-  '2',
-  '3',
-  '4',
-  '5',
-  '6',
-  '7',
-  '8',
-  '9',
-]);
+/** Set of valid 10-stage (`'0'`–`'9'`) strip tick characters (derived from the `STRIP_DARK_COLORS` stages). */
+const VALID_STRIP_STAGES: ReadonlySet<string> = new Set<string>(Object.keys(STRIP_DARK_COLORS));
+
+/** Maximum number of comma/whitespace-separated `?anim=` tokens (`sheen,<left>,<right>`). */
+const MAX_ANIMATION_TOKENS = 3;
+
+/** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
+const MAX_ANIMATION_INPUT_LENGTH = 64;
+
+/** Normalized `?center=` values that switch quote cards to the vertical layout. */
+const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set(['1', 'true', 'yes']);
+
+/** Normalized `?layout=` / `?type=` values that select the vertical quote layout. */
+const VERTICAL_LAYOUT_TOKENS: ReadonlySet<string> = new Set(['center', 'v', 'vertical']);
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -84,38 +79,77 @@ const PLUS_SIGN_RX = /\+/g;
 /** Matches comma or whitespace separators in list-style payloads. */
 const LIST_SEPARATOR_RX = /[,\s]+/;
 
+/** Matches a single comma or whitespace separator character. */
+const SEPARATOR_CHAR_RX = /[,\s]/;
+
 /** Matches a trailing `%` sign on percentage strings. */
 const TRAILING_PERCENT_RX = /%$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Parse a comma-separated list of numbers for a sparkline (at least 2, at most `MAX_SPARKLINE_POINTS`). */
+/** Trim and lower-case a raw query parameter value (`''` when missing). */
+function normalizeQueryToken(raw: string | null | undefined): string {
+  return (raw ?? '').trim().toLowerCase();
+}
+
+/** Check whether a single character is a valid 10-stage strip tick (`'0'`–`'9'`). */
+function isStripTickState(char: string): char is StripTickState {
+  return VALID_STRIP_STAGES.has(char);
+}
+
+/** Check whether an optional `?anim=` token is a valid per-icon motion token. */
+function isIconMotionToken(token: string | undefined): token is string {
+  return token !== undefined && VALID_ICON_MOTIONS.has(token);
+}
+
+/** Parse a trimmed, comma-separated list of numbers for a sparkline (at least 2, at most `MAX_SPARKLINE_POINTS`). */
 function parseSparklineNumbers(rawPayload: string): number[] | undefined {
   const values: number[] = [];
-  for (const part of rawPayload.trim().split(LIST_SEPARATOR_RX)) {
-    if (part.length > 0 && values.length < MAX_SPARKLINE_POINTS) {
-      const num = Number(part);
-      if (Number.isFinite(num)) {
-        values.push(num);
+  for (const part of rawPayload.split(LIST_SEPARATOR_RX)) {
+    if (part.length > 0) {
+      const value = Number(part);
+      if (Number.isFinite(value)) {
+        values.push(value);
+        if (values.length >= MAX_SPARKLINE_POINTS) {
+          break;
+        }
       }
     }
   }
   return values.length >= 2 ? values : undefined;
 }
 
-/** Parse a 10-stage strip payload (`'0'`–`'9'`, e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]`. */
+/**
+ * Parse a trimmed 10-stage strip payload (`'0'`–`'9'`, e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into
+ * `StripTickState[]` in a single pass: Separated payloads keep only single-digit tokens; Compact
+ * payloads keep every digit character.
+ */
 function parseStripStates(rawPayload: string): StripTickState[] | undefined {
-  const trimmed = rawPayload.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  const tokens = LIST_SEPARATOR_RX.test(trimmed) ? trimmed.split(LIST_SEPARATOR_RX) : [...trimmed];
+  const isSeparated = LIST_SEPARATOR_RX.test(rawPayload);
   const states: StripTickState[] = [];
-  for (const token of tokens) {
-    const clean = token.trim();
-    if (VALID_STRIP_STAGES.has(clean) && states.length < MAX_STRIP_TICKS) {
-      states.push(clean as StripTickState);
+  let pendingState: StripTickState | undefined = undefined;
+  let tokenLength = 0;
+  for (const char of rawPayload) {
+    if (states.length >= MAX_STRIP_TICKS) {
+      break;
     }
+    if (!isSeparated) {
+      if (isStripTickState(char)) {
+        states.push(char);
+      }
+    } else if (SEPARATOR_CHAR_RX.test(char)) {
+      if (tokenLength === 1 && pendingState !== undefined) {
+        states.push(pendingState);
+      }
+      tokenLength = 0;
+      pendingState = undefined;
+    } else {
+      tokenLength += 1;
+      pendingState = isStripTickState(char) ? char : undefined;
+    }
+  }
+  if (tokenLength === 1 && pendingState !== undefined && states.length < MAX_STRIP_TICKS) {
+    states.push(pendingState);
   }
   return states.length > 0 ? states : undefined;
 }
@@ -132,8 +166,8 @@ function parsePercentageAndPulse(rawPayload: string): ParsedPercentage | undefin
           .trim()
           .toLowerCase();
   const cleaned = numberPart.trim().replace(TRAILING_PERCENT_RX, '');
-  const num = cleaned ? Number(cleaned) : Number.NaN;
-  if (!Number.isFinite(num)) {
+  const value = cleaned ? Number(cleaned) : Number.NaN;
+  if (!Number.isFinite(value)) {
     return undefined;
   }
   let hasPulse: boolean | undefined = undefined;
@@ -142,7 +176,7 @@ function parsePercentageAndPulse(rawPayload: string): ParsedPercentage | undefin
   } else if (modifierPart === 'static') {
     hasPulse = false;
   }
-  return { hasPulse, value: num };
+  return { hasPulse, value };
 }
 
 /** Parse a `<kind>:<payload>` pair into a `BadgeSpecialElement`. */
@@ -249,13 +283,24 @@ export function resolveAnimationMode(
   input: string | null | undefined,
   fallback: AnimationMode = 'default'
 ): AnimationMode {
+  const normalized = normalizeQueryToken(input);
+  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
+    return fallback;
+  }
   let hasSheen = false;
+  let tokenCount = 0;
   const motionTokens: string[] = [];
-  for (const token of (input ?? '').trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
-    if (token === 'sheen') {
-      hasSheen = true;
-    } else if (token.length > 0) {
-      motionTokens.push(token);
+  for (const token of normalized.split(LIST_SEPARATOR_RX)) {
+    if (token.length > 0) {
+      tokenCount += 1;
+      if (tokenCount > MAX_ANIMATION_TOKENS) {
+        return fallback;
+      }
+      if (token === 'sheen') {
+        hasSheen = true;
+      } else {
+        motionTokens.push(token);
+      }
     }
   }
 
@@ -263,7 +308,7 @@ export function resolveAnimationMode(
     return hasSheen ? 'sheen' : fallback;
   }
   const [firstMotion, secondMotion] = motionTokens;
-  if (motionTokens.length === 1 && VALID_ICON_MOTIONS.has(firstMotion)) {
+  if (motionTokens.length === 1 && isIconMotionToken(firstMotion)) {
     if (hasSheen && (firstMotion === 'none' || firstMotion === 'default')) {
       return 'sheen';
     }
@@ -271,8 +316,8 @@ export function resolveAnimationMode(
   }
   if (
     motionTokens.length === 2 &&
-    VALID_ICON_MOTIONS.has(firstMotion) &&
-    VALID_ICON_MOTIONS.has(secondMotion)
+    isIconMotionToken(firstMotion) &&
+    isIconMotionToken(secondMotion)
   ) {
     const pair = `${firstMotion},${secondMotion}`;
     return (hasSheen ? `sheen,${pair}` : pair) as AnimationMode;
@@ -290,7 +335,7 @@ export function resolveDotState(
   input: string | null | undefined,
   fallback?: DotState
 ): DotState | undefined {
-  const clean = (input ?? '').trim().toLowerCase();
+  const clean = normalizeQueryToken(input);
   if (!clean) {
     return fallback;
   }
@@ -301,7 +346,7 @@ export function resolveDotState(
   if (preset) {
     return preset.dot;
   }
-  return hasOwnKey(DOT_COLORS, clean) ? clean : fallback;
+  return isThemeColorName(clean) ? clean : fallback;
 }
 
 /**
@@ -310,7 +355,7 @@ export function resolveDotState(
  * @returns Size token, custom number, or `undefined` when missing or invalid.
  */
 export function resolveSizeToken(raw: string | null | undefined): SizePreset | number | undefined {
-  const clean = (raw ?? '').trim().toLowerCase();
+  const clean = normalizeQueryToken(raw);
   if (VALID_SIZE_TOKENS.has(clean)) {
     return clean as SizePreset;
   }
@@ -319,22 +364,30 @@ export function resolveSizeToken(raw: string | null | undefined): SizePreset | n
 
 /**
  * Parse a single number or comma-separated list of numbers for `?perline=` (e.g., `8` or `8,6,6,4,3,3`).
+ * Entries keep their group positions: Invalid entries (`0`, `x`) become `undefined` holes, so that
+ * group falls back to the default instead of shifting later values onto the wrong groups.
  * @param raw   Raw `?perline=` query parameter value.
- * @returns Positive integer list, or `undefined` when missing or invalid.
+ * @returns Positional list of positive integers and holes (trailing holes dropped), or `undefined` when no entry is valid.
  */
-export function parsePerLineList(raw: string | null | undefined): number[] | undefined {
-  const values: number[] = [];
-  for (const part of (raw ?? '').split(LIST_SEPARATOR_RX)) {
+export function parsePerLineList(
+  raw: string | null | undefined
+): (number | undefined)[] | undefined {
+  const values: (number | undefined)[] = [];
+  for (const part of (raw ?? '').trim().split(LIST_SEPARATOR_RX)) {
     const parsed = parseOptionalNumber(part);
-    if (parsed !== undefined && parsed >= 1) {
-      values.push(Math.round(parsed));
-    }
+    values.push(parsed !== undefined && parsed >= 1 ? Math.round(parsed) : undefined);
+  }
+  // Drop trailing holes, so the last valid value keeps applying to every remaining group.
+  while (values.length > 0 && values.at(-1) === undefined) {
+    values.pop();
   }
   return values.length > 0 ? values : undefined;
 }
 
 /**
  * Resolve the quote card layout (`'horizontal'` or `'vertical'`) from `?layout=`, `?type=`, or `?center=`.
+ * Empty aliases fall through (`?layout=&type=vertical`); `?center=` (`true`, `1`, `yes`) is only
+ * consulted when both `?layout=` and `?type=` are empty.
  * @param layoutParam   Raw `?layout=` query parameter value.
  * @param typeParam     Raw `?type=` alias query parameter value.
  * @param centerParam   Raw `?center=` boolean query parameter value.
@@ -345,19 +398,16 @@ export function resolveQuoteLayout(
   typeParam: string | null | undefined,
   centerParam: string | null | undefined
 ): QuoteLayout {
-  const candidate = (layoutParam ?? typeParam ?? '').trim().toLowerCase();
-  const isVertical =
-    candidate === 'vertical' ||
-    candidate === 'center' ||
-    candidate === 'v' ||
-    centerParam === 'true' ||
-    centerParam === '1';
+  const candidate = normalizeQueryToken(layoutParam) || normalizeQueryToken(typeParam);
+  const isVertical = candidate
+    ? VERTICAL_LAYOUT_TOKENS.has(candidate)
+    : TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam));
   return isVertical ? 'vertical' : 'horizontal';
 }
 
 /**
  * Resolve `?icon=` query overrides, preserving `defaultIcon` on the left when the `,right` shorthand is used.
- * @param iconParam     Raw `?icon=` query parameter value.
+ * @param iconParam     Raw `?icon=` query parameter value (empty keeps `defaultIcon`; `none` removes it).
  * @param defaultIcon   Preset icon slug (e.g., from a service preset).
  * @returns Effective icon specification.
  */
@@ -365,9 +415,9 @@ export function resolveIconQueryParam(
   iconParam: string | null | undefined,
   defaultIcon?: string
 ): string | undefined {
-  if (iconParam === undefined || iconParam === null) {
+  const trimmed = (iconParam ?? '').trim();
+  if (!trimmed) {
     return defaultIcon;
   }
-  const trimmed = iconParam.trim();
   return trimmed.startsWith(',') && defaultIcon ? `${defaultIcon}${trimmed}` : trimmed;
 }

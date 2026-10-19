@@ -2,8 +2,9 @@
  * Liberapay service preset – Patron count and weekly donations received by a user or team (`/badge/liberapay/:user/:metric`).
  */
 
-import { createCountTransform, formatCurrency } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
+import { createCommunityMetric, formatCurrency } from '@/services/metrics';
+import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -26,17 +27,19 @@ interface LiberapayPublicPayload {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Liberapay public profile endpoint with profile page redirect. */
-const LIBERAPAY_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, user: string): string =>
-    `https://liberapay.com/${user}/public.json`,
-  buildRedirectUrl: (_owner: string, user: string): string => `https://liberapay.com/${user}`,
-};
+const LIBERAPAY_ENDPOINT = createEndpoint({
+  api: 'https://liberapay.com/{target}/public.json',
+  page: 'https://liberapay.com/{target}',
+  project: pickFields<LiberapayPublicPayload>(['npatrons', 'receiving']),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Transform a Liberapay profile into its weekly receipts (`'€640.85/wk'`), or `'hidden'`. */
-function transformLiberapayReceiving(data: unknown): Partial<MetricResult> {
-  const { receiving } = (data ?? {}) as Partial<LiberapayPublicPayload>;
+function transformLiberapayReceiving(
+  profile: Partial<LiberapayPublicPayload>
+): Partial<MetricResult> {
+  const { receiving } = profile;
   if (!receiving) {
     return { value: 'hidden' };
   }
@@ -46,27 +49,23 @@ function transformLiberapayReceiving(data: unknown): Partial<MetricResult> {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Liberapay service preset (`liberapay`). */
-export const LIBERAPAY_SERVICE: ServiceDefinition = {
+export const LIBERAPAY_SERVICE = defineService({
   docs: {
     description: 'Patron count and weekly donations received (hidden when private).',
-    targetName: ':user',
     title: 'Liberapay',
   },
   metrics: {
-    patrons: {
-      ...LIBERAPAY_ENDPOINT,
-      defaultColor: 'amber',
-      defaultIcon: 'liberapay',
-      defaultLabel: 'patrons',
-      transform: createCountTransform<LiberapayPublicPayload>((payload) => payload.npatrons),
-    },
-    receives: {
-      ...LIBERAPAY_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'liberapay',
-      defaultLabel: 'receives',
-      transform: transformLiberapayReceiving,
-    },
+    patrons: createCommunityMetric(
+      LIBERAPAY_ENDPOINT,
+      'patrons',
+      'liberapay',
+      (profile) => profile.npatrons
+    ),
+    receives: createMetric(
+      LIBERAPAY_ENDPOINT,
+      { defaultColor: 'emerald', defaultIcon: 'liberapay', defaultLabel: 'receives' },
+      transformLiberapayReceiving
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':user' } },
+});

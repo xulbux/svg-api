@@ -3,29 +3,31 @@
  */
 
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  resolveNpmPackageName,
-  TOTAL_DOWNLOADS,
-  WEEKLY_DOWNLOADS,
+  createEndpoint,
+  createMetric,
+  defineService,
+  isJsonObject,
+  pickFields,
+} from '@/services/endpoint';
+import {
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
+  encodeNpmPackageName,
+  readLicenseName,
 } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial npm Registry latest version metadata payload (`registry.npmjs.org/:pkg/latest`). */
-interface NpmLatestPayload {
-  /** SPDX license identifier or legacy license object. */
-  license: string | { type?: string };
-  /** Bundled TypeScript `.d.ts` entrypoint. */
-  types: string;
-  /** Legacy TypeScript `.d.ts` entrypoint. */
-  typings: string;
+/** Projected npm Registry latest version metadata (`registry.npmjs.org/:pkg/latest`). */
+interface NpmLatestProjection {
+  /** Whether the package ships TypeScript declarations (`types`, `typings`, or an `exports` `types` condition). */
+  hasTypes: boolean;
+  /** SPDX license identifier (from a string or a legacy `{ type }` object). */
+  license?: string;
   /** Latest published npm version. */
-  version: string;
+  version?: string;
 }
 
 /** Partial npm Downloads API payload (`api.npmjs.org/downloads/point/:period/:pkg`). */
@@ -34,84 +36,135 @@ interface NpmDownloadsPayload {
   downloads: number;
 }
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Build the npm package page redirect URL. */
-function buildNpmRedirectUrl(scope: string, pkg: string): string {
-  return `https://www.npmjs.com/package/${resolveNpmPackageName(scope, pkg)}`;
+/** Remaining key budget of the bounded `exports` walk. */
+interface ExportsWalkBudget {
+  /** Number of object keys that may still be visited. */
+  remainingKeys: number;
 }
 
-/** Create an npm Downloads API endpoint for a period (`last-week`, `last-month`, `last-year`). */
-function createNpmDownloadsEndpoint(period: string): MetricEndpoint {
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Maximum nesting depth of the `exports` map searched for `types` conditions. */
+const MAX_EXPORTS_DEPTH = 4;
+
+/** Maximum number of `exports` keys visited (huge subpath maps stay cheap). */
+const MAX_EXPORTS_KEYS = 256;
+
+/** Projection of the npm Downloads API (only the count). */
+const DOWNLOADS_PROJECTION = pickFields<NpmDownloadsPayload>(['downloads']);
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether an `exports` node declares a `types` condition (bounded depth and key count). */
+function hasTypesCondition(node: unknown, depth: number, budget: ExportsWalkBudget): boolean {
+  if (depth > MAX_EXPORTS_DEPTH || typeof node !== 'object' || node === null) {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    // Fallback arrays (`["./a.js", { "types": … }]`).
+    for (const entry of node) {
+      budget.remainingKeys -= 1;
+      if (budget.remainingKeys < 0) {
+        return false;
+      }
+      if (hasTypesCondition(entry, depth + 1, budget)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  const conditions = node as Record<string, unknown>;
+  for (const key of Object.keys(conditions)) {
+    budget.remainingKeys -= 1;
+    if (budget.remainingKeys < 0) {
+      return false;
+    }
+    const value = conditions[key];
+    if (key === 'types' && (typeof value === 'string' || isJsonObject(value))) {
+      return true;
+    }
+    if (hasTypesCondition(value, depth + 1, budget)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Project npm latest metadata into its version, license, and TypeScript declarations flag. */
+function projectNpmLatest(data: unknown): NpmLatestProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const hasTopLevelTypes = Boolean(data.types) || Boolean(data.typings);
   return {
-    buildApiUrl: (scope: string, pkg: string): string =>
-      `https://api.npmjs.org/downloads/point/${period}/${resolveNpmPackageName(scope, pkg)}`,
-    buildRedirectUrl: buildNpmRedirectUrl,
+    hasTypes:
+      hasTopLevelTypes || hasTypesCondition(data.exports, 0, { remainingKeys: MAX_EXPORTS_KEYS }),
+    license: readLicenseName(data.license),
+    version: typeof data.version === 'string' ? data.version : undefined,
   };
 }
 
-/** Transform npm latest metadata into a TypeScript definitions indicator. */
-function transformNpmTypes(data: unknown): Partial<MetricResult> {
-  const payload = (data ?? {}) as Partial<NpmLatestPayload>;
-  return { value: payload.types || payload.typings ? 'included' : 'none' };
+/** Create an npm Downloads API endpoint for a period (`last-week`, `last-month`, `last-year`). */
+function createNpmDownloadsEndpoint(period: string): MetricEndpoint<Partial<NpmDownloadsPayload>> {
+  return createEndpoint({
+    api: ({ owner, target }) =>
+      `https://api.npmjs.org/downloads/point/${period}/${encodeNpmPackageName(owner, target)}`,
+    page: ({ owner, target }) =>
+      `https://www.npmjs.com/package/${encodeNpmPackageName(owner, target)}`,
+    project: DOWNLOADS_PROJECTION,
+  });
 }
 
-/** npm Registry latest version metadata endpoint. */
-const NPM_LATEST_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (scope: string, pkg: string): string =>
-    `https://registry.npmjs.org/${resolveNpmPackageName(scope, pkg)}/latest`,
-  buildRedirectUrl: buildNpmRedirectUrl,
-};
+/** Create the npm service preset. */
+function createNpmService(): ServiceDefinition {
+  const latestEndpoint = createEndpoint({
+    api: ({ owner, target }) =>
+      `https://registry.npmjs.org/${encodeNpmPackageName(owner, target)}/latest`,
+    page: ({ owner, target }) =>
+      `https://www.npmjs.com/package/${encodeNpmPackageName(owner, target)}`,
+    project: projectNpmLatest,
+  });
+  return defineService({
+    docs: {
+      description:
+        'Version, weekly/monthly/yearly downloads (dw/dl/dy), license, and bundled TS types.',
+      title: 'npm',
+    },
+    // `dt` reported the last-year downloads before the download keys were normalized.
+    metricAliases: { dt: 'dy' },
+    metrics: {
+      dl: createDownloadsMetric(
+        createNpmDownloadsEndpoint('last-month'),
+        'dl',
+        (stats) => stats.downloads
+      ),
+      dw: createDownloadsMetric(
+        createNpmDownloadsEndpoint('last-week'),
+        'dw',
+        (stats) => stats.downloads
+      ),
+      dy: createDownloadsMetric(
+        createNpmDownloadsEndpoint('last-year'),
+        'dy',
+        (stats) => stats.downloads
+      ),
+      license: createLicenseMetric(latestEndpoint, (latest) => latest.license),
+      types: createMetric(
+        latestEndpoint,
+        { defaultColor: 'blue', defaultIcon: 'ts', defaultLabel: 'types' },
+        (latest) => ({ value: latest.hasTypes ? 'included' : 'none' })
+      ),
+      v: createVersionMetric(
+        latestEndpoint,
+        { defaultColor: 'rose', defaultIcon: 'npm', defaultLabel: 'npm' },
+        (latest) => latest.version
+      ),
+    },
+    route: { owner: { isRequired: false, placeholder: ':scope' }, target: { placeholder: ':pkg' } },
+  });
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** npm Registry service preset (`npm`). */
-export const NPM_SERVICE: ServiceDefinition = {
-  docs: {
-    description:
-      'Version, weekly/monthly downloads, last-year downloads (dt), license, and bundled TS types.',
-    ownerName: ':scope',
-    targetName: ':pkg',
-    title: 'npm',
-  },
-  metricAliases: { dm: 'dl', dy: 'dt', l: 'license' },
-  metrics: {
-    dl: {
-      ...createNpmDownloadsEndpoint('last-month'),
-      ...RECENT_DOWNLOADS,
-      transform: createCountTransform<NpmDownloadsPayload>((payload) => payload.downloads, '/mo'),
-    },
-    dt: {
-      ...createNpmDownloadsEndpoint('last-year'),
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<NpmDownloadsPayload>((payload) => payload.downloads, '/yr'),
-    },
-    dw: {
-      ...createNpmDownloadsEndpoint('last-week'),
-      ...WEEKLY_DOWNLOADS,
-      transform: createCountTransform<NpmDownloadsPayload>((payload) => payload.downloads, '/wk'),
-    },
-    license: {
-      ...NPM_LATEST_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<NpmLatestPayload>((payload) =>
-        typeof payload.license === 'string' ? payload.license : payload.license?.type
-      ),
-    },
-    types: {
-      ...NPM_LATEST_ENDPOINT,
-      defaultColor: 'blue',
-      defaultIcon: 'ts',
-      defaultLabel: 'types',
-      transform: transformNpmTypes,
-    },
-    v: {
-      ...NPM_LATEST_ENDPOINT,
-      defaultColor: 'rose',
-      defaultIcon: 'npm',
-      defaultLabel: 'npm',
-      transform: createVersionTransform<NpmLatestPayload>((payload) => payload.version),
-    },
-  },
-  ownerMode: 'optional',
-};
+export const NPM_SERVICE: ServiceDefinition = createNpmService();

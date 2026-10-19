@@ -2,8 +2,8 @@
  * Docker Hub service preset – Image pull and star counts for official and namespaced images (`/badge/docker/[:owner/]:repo/:metric`).
  */
 
-import { createCountTransform, STARS } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createCountMetric, STARS } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -17,18 +17,18 @@ interface DockerHubRepoPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Docker Hub namespace of official images. */
+/** Docker Hub namespace of official images (the default owner). */
 const OFFICIAL_NAMESPACE = 'library';
 
 /** Docker Hub repository endpoint with official (`/_/`) or namespaced (`/r/`) page redirect. */
-const DOCKER_HUB_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (owner: string, repo: string): string =>
-    `https://hub.docker.com/v2/repositories/${owner}/${repo}/`,
-  buildRedirectUrl: (owner: string, repo: string): string =>
+const DOCKER_HUB_ENDPOINT = createEndpoint({
+  api: 'https://hub.docker.com/v2/repositories/{owner}/{target}/',
+  page: ({ owner, target }) =>
     owner === OFFICIAL_NAMESPACE
-      ? `https://hub.docker.com/_/${repo}`
-      : `https://hub.docker.com/r/${owner}/${repo}`,
-};
+      ? `https://hub.docker.com/_/${encodeURIComponent(target)}`
+      : `https://hub.docker.com/r/${encodeURIComponent(owner)}/${encodeURIComponent(target)}`,
+  project: pickFields<DockerHubRepoPayload>(['pull_count', 'star_count']),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -40,29 +40,26 @@ function resolveDefaultDockerOwner(): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Docker Hub service preset (`docker`). */
-export const DOCKER_SERVICE: ServiceDefinition = {
-  defaultOwner: resolveDefaultDockerOwner,
+export const DOCKER_SERVICE = defineService({
   docs: {
     description: 'Image pulls and stars (omit :owner for official library images).',
-    ownerName: ':owner',
-    targetName: ':repo',
     title: 'Docker Hub',
   },
   metricAliases: { dl: 'pulls', dt: 'pulls' },
   metrics: {
-    pulls: {
-      ...DOCKER_HUB_ENDPOINT,
-      defaultColor: 'sky',
-      defaultIcon: 'docker',
-      defaultLabel: 'docker pulls',
-      transform: createCountTransform<DockerHubRepoPayload>((payload) => payload.pull_count),
-    },
-    stars: {
-      ...DOCKER_HUB_ENDPOINT,
-      ...STARS,
-      defaultLabel: 'docker stars',
-      transform: createCountTransform<DockerHubRepoPayload>((payload) => payload.star_count),
-    },
+    pulls: createCountMetric(
+      DOCKER_HUB_ENDPOINT,
+      { defaultColor: 'sky', defaultIcon: 'docker', defaultLabel: 'docker pulls' },
+      (repo) => repo.pull_count
+    ),
+    stars: createCountMetric(
+      DOCKER_HUB_ENDPOINT,
+      { ...STARS, defaultLabel: 'docker stars' },
+      (repo) => repo.star_count
+    ),
   },
-  ownerMode: 'optional',
-};
+  route: {
+    owner: { isRequired: false, placeholder: ':owner', resolveDefault: resolveDefaultDockerOwner },
+    target: { placeholder: ':repo' },
+  },
+});

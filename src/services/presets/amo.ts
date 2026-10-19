@@ -2,40 +2,47 @@
  * Firefox Add-ons service preset – AMO add-on version, daily users, weekly downloads, rating, and license (`/badge/amo/:addon/:metric`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createRatingTransform,
-  createVersionTransform,
-  LICENSE,
-  RATING,
-  WEEKLY_DOWNLOADS,
+  createCountMetric,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createRatingMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** License metadata of an AMO add-on version. */
+interface AmoLicense {
+  /** Whether the license is a custom (non-SPDX) license. */
+  is_custom?: boolean;
+  /** SPDX license identifier (e.g., `'GPL-3.0-only'`). */
+  slug?: string | null;
+}
+
+/** Listed version of an AMO add-on. */
+interface AmoVersion {
+  /** License metadata (`null` for unlisted licenses). */
+  license?: AmoLicense | null;
+  /** Version string. */
+  version?: string;
+}
+
+/** Rating summary of an AMO add-on. */
+interface AmoRatings {
+  /** Average star rating (`0`–`5`). */
+  average?: number;
+}
 
 /** Partial AMO add-on API payload (`addons.mozilla.org/api/v5/addons/addon/:addon/?lang=en-US`). */
 interface AmoAddonPayload {
   /** Average daily users. */
   average_daily_users: number;
   /** Current listed version. */
-  current_version: {
-    /** License metadata (`null` for unlisted licenses). */
-    license?: {
-      /** Whether the license is a custom (non-SPDX) license. */
-      is_custom?: boolean;
-      /** SPDX license identifier (e.g., `'GPL-3.0-only'`). */
-      slug?: string | null;
-    } | null;
-    /** Version string. */
-    version?: string;
-  };
+  current_version: AmoVersion | null;
   /** Rating summary. */
-  ratings: {
-    /** Average star rating (`0`–`5`). */
-    average?: number;
-  };
+  ratings: AmoRatings | null;
   /** Downloads in the last 7 days. */
   weekly_downloads: number;
 }
@@ -43,61 +50,43 @@ interface AmoAddonPayload {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** AMO add-on endpoint (`lang=en-US` shrinks the payload from `~130 KB` to `~8 KB`) with listing redirect. */
-const AMO_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, addon: string): string =>
-    `https://addons.mozilla.org/api/v5/addons/addon/${encodeURIComponent(addon)}/?lang=en-US`,
-  buildRedirectUrl: (_owner: string, addon: string): string =>
-    `https://addons.mozilla.org/firefox/addon/${addon}/`,
-};
+const AMO_ENDPOINT = createEndpoint({
+  api: 'https://addons.mozilla.org/api/v5/addons/addon/{target}/?lang=en-US',
+  page: 'https://addons.mozilla.org/firefox/addon/{target}/',
+  project: pickFields<AmoAddonPayload>([
+    'average_daily_users',
+    'current_version',
+    'ratings',
+    'weekly_downloads',
+  ]),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Firefox Add-ons (AMO) service preset (`amo`). */
-export const AMO_SERVICE: ServiceDefinition = {
+export const AMO_SERVICE = defineService({
   docs: {
-    description: 'Add-on version, average daily users, weekly downloads, rating, and license.',
-    targetName: ':addon',
+    description: 'Add-on version, average daily users, weekly downloads (dw), rating, and license.',
     title: 'Firefox Add-ons',
   },
-  metricAliases: { dl: 'dw', l: 'license' },
+  metricAliases: { dl: 'dw' },
   metrics: {
-    dw: {
-      ...AMO_ENDPOINT,
-      ...WEEKLY_DOWNLOADS,
-      transform: createCountTransform<AmoAddonPayload>(
-        (payload) => payload.weekly_downloads,
-        '/wk'
-      ),
-    },
-    license: {
-      ...AMO_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<AmoAddonPayload>((payload) => {
-        const license = payload.current_version?.license;
-        return license?.slug || (license?.is_custom ? 'custom' : undefined);
-      }),
-    },
-    rating: {
-      ...AMO_ENDPOINT,
-      ...RATING,
-      transform: createRatingTransform<AmoAddonPayload>((payload) => [payload.ratings?.average, 5]),
-    },
-    users: {
-      ...AMO_ENDPOINT,
-      defaultColor: 'indigo',
-      defaultIcon: 'users',
-      defaultLabel: 'users',
-      transform: createCountTransform<AmoAddonPayload>((payload) => payload.average_daily_users),
-    },
-    v: {
-      ...AMO_ENDPOINT,
-      defaultColor: 'orange',
-      defaultIcon: 'firefoxbrowser',
-      defaultLabel: 'firefox',
-      transform: createVersionTransform<AmoAddonPayload>(
-        (payload) => payload.current_version?.version
-      ),
-    },
+    dw: createDownloadsMetric(AMO_ENDPOINT, 'dw', (addon) => addon.weekly_downloads),
+    license: createLicenseMetric(AMO_ENDPOINT, (addon) => {
+      const license = addon.current_version?.license;
+      return license?.slug || (license?.is_custom ? 'custom' : undefined);
+    }),
+    rating: createRatingMetric(AMO_ENDPOINT, (addon) => [addon.ratings?.average, 5]),
+    users: createCountMetric(
+      AMO_ENDPOINT,
+      { defaultColor: 'indigo', defaultIcon: 'users', defaultLabel: 'users' },
+      (addon) => addon.average_daily_users
+    ),
+    v: createVersionMetric(
+      AMO_ENDPOINT,
+      { defaultColor: 'orange', defaultIcon: 'firefoxbrowser', defaultLabel: 'firefox' },
+      (addon) => addon.current_version?.version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':addon' } },
+});

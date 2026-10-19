@@ -2,8 +2,13 @@
  * JSR service preset – JavaScript Registry package version and JSR quality score (`/badge/jsr/:scope/:pkg/:metric`).
  */
 
-import { createScoreTransform, createVersionTransform } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import {
+  createPercentScoreMetric,
+  createVersionMetric,
+  SCORE,
+  stripScopePrefix,
+} from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -17,57 +22,31 @@ interface JsrPackagePayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Maximum JSR package quality score. */
-const MAX_JSR_SCORE = 100;
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Strip an optional leading `@` from a JSR scope segment. */
-function normalizeJsrScope(scope: string): string {
-  return scope.startsWith('@') ? scope.slice(1) : scope;
-}
-
-/** Format a JSR score as a percentage (`'94%'`). */
-function formatJsrScore(achieved: number): string {
-  return `${achieved}%`;
-}
-
-/** JSR package endpoint with package page redirect. */
-const JSR_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (scope: string, pkg: string): string =>
-    `https://api.jsr.io/scopes/${normalizeJsrScope(scope)}/packages/${pkg}`,
-  buildRedirectUrl: (scope: string, pkg: string): string =>
-    `https://jsr.io/@${normalizeJsrScope(scope)}/${pkg}`,
-};
+/** JSR package endpoint (the optional `@` of the scope segment is dropped) with package page redirect. */
+const JSR_ENDPOINT = createEndpoint({
+  api: ({ owner, target }) =>
+    `https://api.jsr.io/scopes/${encodeURIComponent(stripScopePrefix(owner))}/packages/${encodeURIComponent(target)}`,
+  page: ({ owner, target }) =>
+    `https://jsr.io/@${encodeURIComponent(stripScopePrefix(owner))}/${encodeURIComponent(target)}`,
+  project: pickFields<JsrPackagePayload>(['latestVersion', 'score']),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** JavaScript Registry service preset (`jsr`). */
-export const JSR_SERVICE: ServiceDefinition = {
-  docs: {
-    description: 'Latest version and JSR quality score (with ring gauge).',
-    ownerName: ':scope',
-    targetName: ':pkg',
-    title: 'JSR',
-  },
+export const JSR_SERVICE = defineService({
+  docs: { description: 'Latest version and JSR quality score (with ring gauge).', title: 'JSR' },
   metrics: {
-    score: {
-      ...JSR_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'gauge',
-      defaultLabel: 'jsr score',
-      transform: createScoreTransform<JsrPackagePayload>(
-        (payload) => [payload.score, MAX_JSR_SCORE],
-        formatJsrScore
-      ),
-    },
-    v: {
-      ...JSR_ENDPOINT,
-      defaultColor: 'yellow',
-      defaultIcon: 'jsr',
-      defaultLabel: 'jsr',
-      transform: createVersionTransform<JsrPackagePayload>((payload) => payload.latestVersion),
-    },
+    score: createPercentScoreMetric(
+      JSR_ENDPOINT,
+      { ...SCORE, defaultLabel: 'jsr score' },
+      (pkg) => pkg.score
+    ),
+    v: createVersionMetric(
+      JSR_ENDPOINT,
+      { defaultColor: 'yellow', defaultIcon: 'jsr', defaultLabel: 'jsr' },
+      (pkg) => pkg.latestVersion
+    ),
   },
-  ownerMode: 'required',
-};
+  route: { owner: { isRequired: true, placeholder: ':scope' }, target: { placeholder: ':pkg' } },
+});

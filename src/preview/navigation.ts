@@ -28,7 +28,7 @@ const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
  * Documentation pages in sidebar and pager order.
  * Single source of truth for the docs sidebar, the previous/next pager, page titles, and meta descriptions.
  */
-export const DOCS_PAGES: readonly DocsSectionMeta[] = [
+export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   {
     description:
       'Getting started with svg.xul.is: URL anatomy, path segment encoding, shared query parameters, embedding in Markdown and HTML, click-through redirects, and caching.',
@@ -107,7 +107,7 @@ export const DOCS_PAGES: readonly DocsSectionMeta[] = [
  * Builder pages in sidebar order.
  * Single source of truth for the builder sidebar, page headings, titles, and meta descriptions.
  */
-export const BUILDER_PAGES: readonly BuilderPageMeta[] = [
+export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
   {
     description:
       'Build static and status badge URLs with labels, icons, colors, status dots, inline data widgets, and animations, then copy the Markdown, HTML, or URL.',

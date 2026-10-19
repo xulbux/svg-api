@@ -6,33 +6,35 @@
  * (`gtk%2B3`), because a literal `+` in a path segment decodes to a space.
  */
 
+import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  TOTAL_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type {
-  MetricEndpoint,
-  MetricPresentation,
-  ServiceDefinition,
-  ServiceMetricConfig,
-} from '@/types';
+import type { MetricEndpoint, MetricPresentation, ServiceMetricConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Install analytics period keys of the Homebrew formulae API. */
 type HomebrewAnalyticsPeriod = '30d' | '90d' | '365d';
 
+/** Homebrew install analytics of a formula or cask. */
+interface HomebrewAnalytics {
+  /** Install counts per period, keyed by formula/cask name and option variant (e.g., `'wget --HEAD'`). */
+  install?: Partial<Record<HomebrewAnalyticsPeriod, Record<string, unknown>>>;
+}
+
 /** Homebrew install analytics block shared by formula and cask payloads. */
 interface HomebrewAnalyticsPayload {
   /** Install analytics. */
-  analytics: {
-    /** Install counts per period, keyed by formula/cask name and option variant (e.g., `'wget --HEAD'`). */
-    install?: Partial<Record<HomebrewAnalyticsPeriod, Record<string, number>>>;
-  };
+  analytics: HomebrewAnalytics | null;
+}
+
+/** Version metadata of a Homebrew formula. */
+interface HomebrewFormulaVersions {
+  /** Latest stable version. */
+  stable?: string;
 }
 
 /** Partial Homebrew formula API payload (`formulae.brew.sh/api/formula/:formula.json`). */
@@ -40,10 +42,7 @@ interface HomebrewFormulaPayload extends HomebrewAnalyticsPayload {
   /** SPDX license expression. */
   license: string | null;
   /** Version metadata. */
-  versions: {
-    /** Latest stable version. */
-    stable?: string;
-  };
+  versions: HomebrewFormulaVersions | null;
 }
 
 /** Partial Homebrew cask API payload (`formulae.brew.sh/api/cask/:cask.json`). */
@@ -54,9 +53,6 @@ interface HomebrewCaskPayload extends HomebrewAnalyticsPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Tier-1 JSON cache TTL in seconds (Homebrew analytics refresh daily). */
-const HOMEBREW_CACHE_TTL_SECONDS = 3600;
-
 /** Shared presentation of the Homebrew version badges. */
 const HOMEBREW_VERSION: MetricPresentation = {
   defaultColor: 'amber',
@@ -64,18 +60,29 @@ const HOMEBREW_VERSION: MetricPresentation = {
   defaultLabel: 'homebrew',
 };
 
-// -------------------------------------- INTERNALS --------------------------------------
+/** Presentation override of the install metrics. */
+const INSTALLS_LABEL = { defaultLabel: 'installs' } as const;
 
-/** Create a Homebrew formulae API endpoint for a package kind (`formula` or `cask`). */
-function createHomebrewEndpoint(kind: 'cask' | 'formula'): MetricEndpoint {
-  return {
-    buildApiUrl: (_owner: string, name: string): string =>
-      `https://formulae.brew.sh/api/${kind}/${encodeURIComponent(name)}.json`,
-    buildRedirectUrl: (_owner: string, name: string): string =>
-      `https://formulae.brew.sh/${kind}/${name}`,
-    cacheTtlSeconds: HOMEBREW_CACHE_TTL_SECONDS,
-  };
-}
+/** Homebrew formula endpoint (analytics refresh daily). */
+const FORMULA_ENDPOINT = createEndpoint({
+  api: 'https://formulae.brew.sh/api/formula/{target}.json',
+  page: 'https://formulae.brew.sh/formula/{target}',
+  project: pickFields<HomebrewFormulaPayload>(['analytics', 'license', 'versions']),
+  ttl: CACHE_TTL.daily,
+});
+
+/** Homebrew cask endpoint (analytics refresh daily). */
+const CASK_ENDPOINT = createEndpoint({
+  api: 'https://formulae.brew.sh/api/cask/{target}.json',
+  page: 'https://formulae.brew.sh/cask/{target}',
+  project: pickFields<HomebrewCaskPayload>(['analytics', 'version']),
+  ttl: CACHE_TTL.daily,
+});
+
+/** Docs note on the install metric keys. */
+const INSTALLS_DOCS = '30/90/365-day installs (dl/dq/dy)';
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Sum every install count of an analytics period (all option variants), or `undefined` when missing. */
 function sumInstalls(
@@ -88,98 +95,71 @@ function sumInstalls(
   }
   let total = 0;
   for (const count of Object.values(counts)) {
-    total += typeof count === 'number' ? count : 0;
+    total += typeof count === 'number' && Number.isFinite(count) ? count : 0;
   }
   return total;
 }
 
 /** Create the 30/90/365-day install metrics of a Homebrew endpoint. */
-function createHomebrewInstallMetrics(
-  endpoint: MetricEndpoint
-): Record<'dl' | 'dq' | 'dt', ServiceMetricConfig> {
+function createInstallMetrics<P extends Partial<HomebrewAnalyticsPayload>>(
+  endpoint: MetricEndpoint<P>
+): Record<'dl' | 'dq' | 'dy', ServiceMetricConfig> {
   return {
-    dl: {
-      ...endpoint,
-      ...RECENT_DOWNLOADS,
-      defaultLabel: 'installs',
-      transform: createCountTransform<HomebrewAnalyticsPayload>(
-        (payload) => sumInstalls(payload, '30d'),
-        '/mo'
-      ),
-    },
-    dq: {
-      ...endpoint,
-      ...RECENT_DOWNLOADS,
-      defaultColor: 'sky',
-      defaultLabel: 'installs',
-      transform: createCountTransform<HomebrewAnalyticsPayload>(
-        (payload) => sumInstalls(payload, '90d'),
-        '/90d'
-      ),
-    },
-    dt: {
-      ...endpoint,
-      ...TOTAL_DOWNLOADS,
-      defaultLabel: 'installs',
-      transform: createCountTransform<HomebrewAnalyticsPayload>(
-        (payload) => sumInstalls(payload, '365d'),
-        '/yr'
-      ),
-    },
+    dl: createDownloadsMetric(
+      endpoint,
+      'dl',
+      (payload) => sumInstalls(payload, '30d'),
+      INSTALLS_LABEL
+    ),
+    dq: createDownloadsMetric(
+      endpoint,
+      'dq',
+      (payload) => sumInstalls(payload, '90d'),
+      INSTALLS_LABEL
+    ),
+    dy: createDownloadsMetric(
+      endpoint,
+      'dy',
+      (payload) => sumInstalls(payload, '365d'),
+      INSTALLS_LABEL
+    ),
   };
 }
-
-/** Homebrew formula endpoint. */
-const FORMULA_ENDPOINT = createHomebrewEndpoint('formula');
-
-/** Homebrew cask endpoint. */
-const CASK_ENDPOINT = createHomebrewEndpoint('cask');
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Homebrew formula service preset (`brew`). */
-export const HOMEBREW_FORMULA_SERVICE: ServiceDefinition = {
+export const HOMEBREW_FORMULA_SERVICE = defineService({
   docs: {
-    description:
-      'Formula version, license, and 30/90/365-day installs (dl/dq/dt; encode + as %2B).',
-    targetName: ':formula',
+    description: `Formula version, license, and ${INSTALLS_DOCS}; Encode + as %2B.`,
     title: 'Homebrew',
   },
-  metricAliases: { dm: 'dl', dy: 'dt', l: 'license' },
+  // `dt` reported the 365-day installs before the download keys were normalized.
+  metricAliases: { dt: 'dy' },
   metrics: {
-    ...createHomebrewInstallMetrics(FORMULA_ENDPOINT),
-    license: {
-      ...FORMULA_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<HomebrewFormulaPayload>((payload) => payload.license),
-    },
-    v: {
-      ...FORMULA_ENDPOINT,
-      ...HOMEBREW_VERSION,
-      transform: createVersionTransform<HomebrewFormulaPayload>(
-        (payload) => payload.versions?.stable
-      ),
-    },
+    ...createInstallMetrics(FORMULA_ENDPOINT),
+    license: createLicenseMetric(FORMULA_ENDPOINT, (formula) => formula.license),
+    v: createVersionMetric(
+      FORMULA_ENDPOINT,
+      HOMEBREW_VERSION,
+      (formula) => formula.versions?.stable
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':formula' } },
+});
 
 /** Homebrew cask service preset (`cask`). */
-export const HOMEBREW_CASK_SERVICE: ServiceDefinition = {
-  docs: {
-    description: 'Cask version and 30/90/365-day installs (dl/dq/dt).',
-    targetName: ':cask',
-    title: 'Homebrew Cask',
-  },
-  metricAliases: { dm: 'dl', dy: 'dt' },
+export const HOMEBREW_CASK_SERVICE = defineService({
+  docs: { description: `Cask version and ${INSTALLS_DOCS}.`, title: 'Homebrew Cask' },
+  // `dt` reported the 365-day installs before the download keys were normalized.
+  metricAliases: { dt: 'dy' },
   metrics: {
-    ...createHomebrewInstallMetrics(CASK_ENDPOINT),
-    v: {
-      ...CASK_ENDPOINT,
-      ...HOMEBREW_VERSION,
-      defaultLabel: 'homebrew cask',
-      transform: createVersionTransform<HomebrewCaskPayload>((payload) => payload.version),
-    },
+    ...createInstallMetrics(CASK_ENDPOINT),
+    v: createVersionMetric(
+      CASK_ENDPOINT,
+      { ...HOMEBREW_VERSION, defaultLabel: 'homebrew cask' },
+      (cask) => cask.version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':cask' } },
+});

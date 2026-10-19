@@ -7,10 +7,13 @@
  * the builder client script (`src/preview/scripts/builder.client.js`).
  */
 
-import { listPublicServices, STATUS_PRESET_MAP } from '@/config/services';
+import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
+import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/preview/glossary';
 import { ICON_MOTION_TOKENS, SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
+import { listServiceMetricAliases } from '@/services/fetcher';
+import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
   MAX_QUOTE_TEXT_LENGTH,
@@ -34,38 +37,30 @@ import {
   STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
 import type {
-  BadgeSpecialElement,
-  BadgeVariant,
   BuilderAnimScope,
   BuilderField,
   BuilderKind,
   BuilderOption,
   BuilderSchema,
+  BuilderServiceMetric,
   BuilderServiceOption,
   BuilderTarget,
   NumericRange,
   ServiceDefinition,
+  ServiceMetricConfig,
 } from '@/types';
 
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Owner and target values of one redirect template probe. */
+interface RedirectProbe {
+  /** Effective owner passed to `buildRedirectUrl`. */
+  owner: string;
+  /** Target passed to `buildRedirectUrl`. */
+  target: string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Visual hierarchy tier names of the shared variants. */
-const VARIANT_LABELS: Readonly<Record<BadgeVariant, string>> = {
-  1: 'Primary',
-  2: 'Secondary',
-  3: 'Tertiary',
-};
-
-/** Display labels and payload examples of the inline data widget kinds. */
-const SPECIAL_KIND_DETAILS: Readonly<
-  Record<BadgeSpecialElement['type'], { label: string; placeholder: string }>
-> = {
-  bar: { label: 'Progress bar', placeholder: '92' },
-  delta: { label: 'Delta pill', placeholder: '+24%' },
-  ring: { label: 'Donut ring', placeholder: '84' },
-  sparkline: { label: 'Sparkline', placeholder: '22,19,21,17,15,16,14' },
-  strip: { label: 'Uptime strip', placeholder: '9987998999' },
-};
 
 /** Example `/stack` groups the tech stack builder starts with. */
 const EXAMPLE_STACK_GROUPS = 'html,css,js,ts:4|react,nodejs,docker:3';
@@ -74,15 +69,36 @@ const EXAMPLE_STACK_GROUPS = 'html,css,js,ts:4|react,nodejs,docker:3';
 const EXAMPLE_QUOTE_TEXT =
   'Your quote goes here. Long quotes wrap onto multiple lines automatically.';
 
+/** Owner placeholder of upstream redirect templates. */
+const REDIRECT_OWNER_PLACEHOLDER = '{owner}';
+
+/** Target placeholder of upstream redirect templates. */
+const REDIRECT_TARGET_PLACEHOLDER = '{target}';
+
+/** Unique values substituted by the redirect template placeholders while deriving a template. */
+const REDIRECT_TEMPLATE_PROBE: RedirectProbe = { owner: 'zqownerzq', target: 'zqtargetzq' };
+
+/** Explicit owner used to verify a derived redirect template (mixed case catches case transforms). */
+const REDIRECT_VERIFY_OWNER = 'Owner-1';
+
+/** Single-segment target used to verify a derived redirect template. */
+const REDIRECT_VERIFY_TARGET = 'Pkg.Name_2';
+
+/** Multi-segment target used to verify the redirect templates of multi-segment services. */
+const REDIRECT_VERIFY_PATH_TARGET = 'Host.example/a-B/c_d';
+
 /** Memoized builder schemas keyed by element kind. */
 const BUILDER_SCHEMA_CACHE = new Map<BuilderKind, BuilderSchema>();
 
-// -------------------------------------- INTERNALS --------------------------------------
+/** Memoized public service keys (`undefined` until first used). */
+let publicServiceKeysCache: ReadonlySet<string> | undefined = undefined;
 
-/** Capitalize the first character of a word (e.g., `'nudge'` -> `'Nudge'`). */
-function capitalizeWord(word: string): string {
-  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
-}
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches owner and target segments the derived redirect templates are verified for (word characters, `.`, `-`). */
+const REDIRECT_SAFE_VALUE_RX = /^[\w.-]+$/;
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Build the leading "omit the parameter" option. */
 function buildDefaultOption(label = 'Default'): BuilderOption {
@@ -93,7 +109,7 @@ function buildDefaultOption(label = 'Default'): BuilderOption {
 function buildVariantField(): BuilderField {
   const options: BuilderOption[] = [buildDefaultOption()];
   for (const variant of VARIANT_TOKENS) {
-    options.push({ label: `${variant} · ${VARIANT_LABELS[variant]}`, value: variant });
+    options.push({ label: `${variant} · ${VARIANT_TIERS[variant].name}`, value: variant });
   }
   return { control: 'select', id: 'variant', label: 'Variant', options, param: 'variant' };
 }
@@ -143,7 +159,15 @@ function buildDotField(): BuilderField {
 function buildSpecialField(): BuilderField {
   const options: BuilderOption[] = [buildDefaultOption('None')];
   for (const kind of SPECIAL_ELEMENT_KINDS) {
-    options.push({ ...SPECIAL_KIND_DETAILS[kind], value: kind });
+    const detail = SPECIAL_KIND_DETAILS[kind];
+    const modifiers: BuilderOption[] = [];
+    if (detail.modifiers.length > 0) {
+      modifiers.push(buildDefaultOption());
+      for (const modifier of detail.modifiers) {
+        modifiers.push({ label: capitalizeWord(modifier), value: modifier });
+      }
+    }
+    options.push({ label: detail.label, modifiers, placeholder: detail.example, value: kind });
   }
   return {
     control: 'special',
@@ -236,36 +260,118 @@ function buildStatusOptions(): BuilderOption[] {
 
 /** Build the owner segment placeholder of a service preset (default owner, optional, or required). */
 function buildServiceOwnerHint(service: ServiceDefinition): string | undefined {
-  if (service.ownerMode === 'none') {
+  const { owner } = service.route;
+  if (!owner) {
     return undefined;
   }
-  if (service.ownerMode === 'required') {
+  if (owner.isRequired) {
     return 'required';
   }
-  const defaultOwner = service.defaultOwner?.(DEFAULT_ENV);
+  const defaultOwner = owner.resolveDefault?.(DEFAULT_ENV);
   return defaultOwner ? `${defaultOwner} (default)` : 'optional';
+}
+
+/** Fill the `{owner}` and `{target}` placeholders of a redirect template. */
+function fillRedirectTemplate(template: string, probe: RedirectProbe): string {
+  return template
+    .replaceAll(REDIRECT_OWNER_PLACEHOLDER, probe.owner)
+    .replaceAll(REDIRECT_TARGET_PLACEHOLDER, probe.target);
+}
+
+/** Collect the probes a derived redirect template must reproduce (explicit, default, and missing owners; single- and multi-segment targets). */
+function collectRedirectProbes(
+  service: ServiceDefinition,
+  defaultOwner: string | undefined
+): RedirectProbe[] {
+  const owners: string[] = [];
+  const ownerMode = resolveServiceOwnerMode(service);
+  if (ownerMode === 'none') {
+    owners.push(defaultOwner ?? '');
+  } else {
+    owners.push(REDIRECT_VERIFY_OWNER);
+    if (defaultOwner !== undefined || ownerMode === 'optional') {
+      owners.push(defaultOwner ?? '');
+    }
+  }
+  const targets = [REDIRECT_VERIFY_TARGET];
+  if ((service.route.target.maxSegments ?? 1) > 1) {
+    targets.push(REDIRECT_VERIFY_PATH_TARGET);
+  }
+  const probes: RedirectProbe[] = [];
+  for (const owner of owners) {
+    for (const target of targets) {
+      probes.push({ owner, target });
+    }
+  }
+  return probes;
+}
+
+/**
+ * Derive the upstream page URL template of a metric by substituting unique probe values, then verify it
+ * against every probe (conditional or transforming URL builders yield no template).
+ */
+function deriveRedirectTemplate(
+  metric: ServiceMetricConfig,
+  service: ServiceDefinition,
+  defaultOwner: string | undefined
+): string | undefined {
+  const { buildPageUrl } = metric.endpoint;
+  const derivationOwner =
+    service.route.owner === undefined ? (defaultOwner ?? '') : REDIRECT_TEMPLATE_PROBE.owner;
+  const template = buildPageUrl({ owner: derivationOwner, target: REDIRECT_TEMPLATE_PROBE.target })
+    .replaceAll(REDIRECT_TEMPLATE_PROBE.owner, REDIRECT_OWNER_PLACEHOLDER)
+    .replaceAll(REDIRECT_TEMPLATE_PROBE.target, REDIRECT_TARGET_PLACEHOLDER);
+  if (!template.includes(REDIRECT_TARGET_PLACEHOLDER)) {
+    return undefined;
+  }
+  for (const probe of collectRedirectProbes(service, defaultOwner)) {
+    if (buildPageUrl(probe) !== fillRedirectTemplate(template, probe)) {
+      return undefined;
+    }
+  }
+  return template;
 }
 
 /** Build the service preset options of the service badge builder (public presets only). */
 function buildServiceOptions(): BuilderServiceOption[] {
   const services: BuilderServiceOption[] = [];
   for (const [key, service] of listPublicServices()) {
-    const metrics: BuilderOption[] = [];
+    const { owner, target } = service.route;
+    const defaultOwner = owner?.resolveDefault?.(DEFAULT_ENV) || undefined;
+    const metrics: BuilderServiceMetric[] = [];
     for (const [metric, config] of Object.entries(service.metrics)) {
-      metrics.push({ label: `${metric} · ${config.defaultLabel}`, value: metric });
+      metrics.push({
+        label: `${metric} · ${config.defaultLabel}`,
+        redirect: deriveRedirectTemplate(config, service, defaultOwner),
+        value: metric,
+      });
     }
     services.push({
+      defaultOwner,
       key,
-      maxTargetSegments: service.maxTargetSegments ?? 1,
+      maxTargetSegments: target.maxSegments ?? 1,
+      metricAliases: Object.fromEntries(listServiceMetricAliases(service)),
       metrics,
       ownerHint: buildServiceOwnerHint(service),
-      ownerMode: service.ownerMode,
-      ownerName: service.docs.ownerName,
-      targetName: service.docs.targetName,
+      ownerMode: resolveServiceOwnerMode(service),
+      ownerName: owner?.placeholder,
+      targetName: target.placeholder,
       title: service.docs.title,
     });
   }
   return services;
+}
+
+/** Collect (once per isolate) the route keys of every public service preset. */
+function getPublicServiceKeys(): ReadonlySet<string> {
+  if (publicServiceKeysCache === undefined) {
+    const keys = new Set<string>();
+    for (const [key] of listPublicServices()) {
+      keys.add(key);
+    }
+    publicServiceKeysCache = keys;
+  }
+  return publicServiceKeysCache;
 }
 
 /** Build the badge builder fields (static and status presets share one builder). */
@@ -332,7 +438,13 @@ function buildBadgeFields(): BuilderField[] {
 function buildServiceFields(): BuilderField[] {
   return [
     { control: 'select', id: 'service', label: 'Service', options: [] },
-    { control: 'text', id: 'owner', label: 'Owner', placeholder: 'optional' },
+    {
+      control: 'text',
+      hasDynamicRequirement: true,
+      id: 'owner',
+      label: 'Owner',
+      placeholder: 'optional',
+    },
     { control: 'text', id: 'target', isRequired: true, label: 'Target' },
     { control: 'select', id: 'metric', label: 'Metric', options: [] },
     {
@@ -404,7 +516,7 @@ function buildIconFields(): BuilderField[] {
   ];
 }
 
-/** Build the tech stack builder fields. */
+/** Build the tech stack builder fields (`aliases` lists the query fallbacks of the path segment in Worker precedence). */
 function buildStackFields(): BuilderField[] {
   return [
     {
@@ -436,7 +548,7 @@ function buildStackFields(): BuilderField[] {
   ];
 }
 
-/** Build the quote card builder fields. */
+/** Build the quote card builder fields (`aliases` of path segment fields list their query fallbacks). */
 function buildQuoteFields(): BuilderField[] {
   return [
     {
@@ -463,7 +575,7 @@ function buildQuoteFields(): BuilderField[] {
       options: [
         buildDefaultOption('Default (horizontal)'),
         { label: 'Horizontal (left accent bar)', value: 'horizontal' },
-        { label: 'Vertical (centered watermarks)', value: 'vertical' },
+        { aliases: ['center', 'v'], label: 'Vertical (centered watermarks)', value: 'vertical' },
       ],
       param: 'layout',
     },
@@ -471,11 +583,11 @@ function buildQuoteFields(): BuilderField[] {
     buildSizePresetField(
       QUOTE_SIZE_MAP,
       QUOTE_FONT_SIZE_RANGE,
-      'Typography preset or custom font size.'
+      'Typography preset or custom font size (defaults to md, or lg for vertical cards).'
     ),
     buildColorField(),
     buildNumberField('width', 'Width (px)', QUOTE_WIDTH_RANGE, {
-      description: `Defaults to ${QUOTE_WIDTH_RANGE.default}px (horizontal) or ${DEFAULT_VERTICAL_QUOTE_WIDTH}px (vertical).`,
+      description: `Defaults to ${QUOTE_WIDTH_RANGE.default}px (horizontal) or ${DEFAULT_VERTICAL_QUOTE_WIDTH}px (vertical) and grows with text sizes above the layout's default.`,
       placeholder: 'auto',
     }),
     buildAnimField('sheen'),
@@ -484,7 +596,12 @@ function buildQuoteFields(): BuilderField[] {
 
 /** Build the schema of one element kind. */
 function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
-  const base = { isBrandFirst: false, kind, origin: SITE_ORIGIN };
+  const base = {
+    isBrandFirst: false,
+    kind,
+    maxIconSlugLength: MAX_ICON_SLUG_LENGTH,
+    origin: SITE_ORIGIN,
+  };
   switch (kind) {
     case 'badge': {
       return {
@@ -523,6 +640,7 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
         ...base,
         fields: buildServiceFields(),
         initialState: { metric: 'v', service: 'npm', target: 'react' },
+        redirectValuePattern: REDIRECT_SAFE_VALUE_RX.source,
         services: buildServiceOptions(),
       };
     }
@@ -571,7 +689,7 @@ export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
       const isServicePath = rest.length >= 2 && firstLower !== 'status';
       if (!isServicePath) {
         kind = 'badge';
-      } else if (listPublicServices().some(([key]) => key === firstLower)) {
+      } else if (getPublicServiceKeys().has(firstLower)) {
         kind = 'service';
       }
       break;

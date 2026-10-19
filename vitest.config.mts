@@ -1,6 +1,12 @@
+/**
+ * Vitest configuration – Mirrors the Wrangler module rules (`.ttf` binaries as `ArrayBuffer`, `*.css` and `*.client.js` as text) and the `@/` path alias for the test suite.
+ */
+
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
+
+// ---------------------------------------- CONSTS ---------------------------------------
 
 /** Virtual module ID prefix of text-imported website stylesheets and browser scripts. */
 const TEXT_MODULE_PREFIX = '\0text:';
@@ -8,20 +14,31 @@ const TEXT_MODULE_PREFIX = '\0text:';
 /** Virtual module ID suffix (keeps Vite's CSS pipeline away from text-imported `.css` files). */
 const TEXT_MODULE_SUFFIX = '.text-module';
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
 /** Matches module IDs bundled as plain text by Wrangler (`rules` in `wrangler.jsonc`). */
 const TEXT_MODULE_RX = /\.(?:css|client\.js)$/;
+
+// ----------------------------------------- MAIN ----------------------------------------
 
 export default defineConfig({
   plugins: [
     {
-      name: 'ttf-arraybuffer',
-      transform(_code, id) {
+      // Mirror Wrangler's `Data` module rule: `*.ttf` imports default-export an `ArrayBuffer`. The
+      // generated module reads the file itself instead of inlining (and re-parsing) a base64 copy.
+      enforce: 'pre',
+      load(id) {
         if (!id.endsWith('.ttf')) {
           return undefined;
         }
-        const b64 = readFileSync(id).toString('base64');
-        return `export default Uint8Array.from(atob('${b64}'), (c) => c.charCodeAt(0)).buffer;`;
+        this.addWatchFile(id);
+        return [
+          "import { readFileSync } from 'node:fs';",
+          `const bytes = readFileSync(${JSON.stringify(id)});`,
+          'export default bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);',
+        ].join('\n');
       },
+      name: 'ttf-arraybuffer',
     },
     {
       // Mirror Wrangler's `Text` module rule: `*.css` and `*.client.js` imports default-export their raw source.
@@ -45,5 +62,5 @@ export default defineConfig({
     },
   ],
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
-  test: { include: ['test/**/*.test.ts'], root: '.' },
+  test: { include: ['test/**/*.test.ts'], restoreMocks: true, root: '.' },
 });

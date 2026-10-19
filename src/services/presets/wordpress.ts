@@ -2,14 +2,14 @@
  * WordPress service presets – Plugin and theme version, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createRatingTransform,
-  createVersionTransform,
-  RATING,
-  TOTAL_DOWNLOADS,
+  createCountMetric,
+  createDownloadsMetric,
+  createRatingMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -36,7 +36,7 @@ interface WordPressDirectory {
   /** Directory path segment (`plugins`, `themes`). */
   path: string;
   /** Target segment placeholder (e.g., `':plugin'`). */
-  targetName: string;
+  targetPlaceholder: string;
   /** Human-readable service name. */
   title: string;
   /** Extra `request[fields]` toggles that trim the response (e.g., `sections=0`). */
@@ -65,6 +65,14 @@ const TRIMMED_PLUGIN_FIELDS: readonly string[] = [
 /** Fields disabled for theme requests. */
 const TRIMMED_THEME_FIELDS: readonly string[] = ['sections', 'tags'];
 
+/** Projection of the info payload (only the badge fields). */
+const INFO_PROJECTION = pickFields<WordPressInfoPayload>([
+  'active_installs',
+  'downloaded',
+  'rating',
+  'version',
+]);
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build the `request[fields]` query of a directory (enables installs/downloads, disables bulky fields). */
@@ -78,54 +86,31 @@ function buildFieldsQuery(directory: WordPressDirectory): string {
 
 /** Create a WordPress.org service preset for a directory kind. */
 function createWordPressService(directory: WordPressDirectory): ServiceDefinition {
-  const fieldsQuery = buildFieldsQuery(directory);
-  const endpoint: MetricEndpoint = {
-    buildApiUrl: (_owner: string, slug: string): string =>
-      `https://api.wordpress.org/${directory.path}/info/1.2/?action=${directory.action}&request%5Bslug%5D=${encodeURIComponent(slug)}${fieldsQuery}`,
-    buildRedirectUrl: (_owner: string, slug: string): string =>
-      `https://wordpress.org/${directory.path}/${slug}/`,
-  };
-  return {
-    docs: {
-      description: directory.description,
-      targetName: directory.targetName,
-      title: directory.title,
-    },
+  const endpoint = createEndpoint({
+    api: `https://api.wordpress.org/${directory.path}/info/1.2/?action=${directory.action}&request%5Bslug%5D={target}${buildFieldsQuery(directory)}`,
+    page: `https://wordpress.org/${directory.path}/{target}/`,
+    project: INFO_PROJECTION,
+  });
+  return defineService({
+    docs: { description: directory.description, title: directory.title },
     metricAliases: { dl: 'dt' },
     metrics: {
-      dt: {
-        ...endpoint,
-        ...TOTAL_DOWNLOADS,
-        transform: createCountTransform<WordPressInfoPayload>((payload) => payload.downloaded),
-      },
-      installs: {
-        ...endpoint,
-        defaultColor: 'emerald',
-        defaultIcon: 'users',
-        defaultLabel: 'active installs',
-        transform: createCountTransform<WordPressInfoPayload>(
-          (payload) => payload.active_installs,
-          '+'
-        ),
-      },
-      rating: {
-        ...endpoint,
-        ...RATING,
-        transform: createRatingTransform<WordPressInfoPayload>((payload) => [
-          payload.rating,
-          MAX_WORDPRESS_RATING,
-        ]),
-      },
-      v: {
-        ...endpoint,
-        defaultColor: 'sky',
-        defaultIcon: 'wordpress',
-        defaultLabel: directory.label,
-        transform: createVersionTransform<WordPressInfoPayload>((payload) => payload.version),
-      },
+      dt: createDownloadsMetric(endpoint, 'dt', (info) => info.downloaded),
+      installs: createCountMetric(
+        endpoint,
+        { defaultColor: 'emerald', defaultIcon: 'users', defaultLabel: 'active installs' },
+        (info) => info.active_installs,
+        '+'
+      ),
+      rating: createRatingMetric(endpoint, (info) => [info.rating, MAX_WORDPRESS_RATING]),
+      v: createVersionMetric(
+        endpoint,
+        { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: directory.label },
+        (info) => info.version
+      ),
     },
-    ownerMode: 'none',
-  };
+    route: { target: { placeholder: directory.targetPlaceholder } },
+  });
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -136,7 +121,7 @@ export const WORDPRESS_PLUGIN_SERVICE: ServiceDefinition = createWordPressServic
   description: 'Plugin version, active installs, all-time downloads, and rating.',
   label: 'wordpress',
   path: 'plugins',
-  targetName: ':plugin',
+  targetPlaceholder: ':plugin',
   title: 'WordPress Plugins',
   trimmedFields: TRIMMED_PLUGIN_FIELDS,
 });
@@ -147,7 +132,7 @@ export const WORDPRESS_THEME_SERVICE: ServiceDefinition = createWordPressService
   description: 'Theme version, active installs, all-time downloads, and rating.',
   label: 'wordpress theme',
   path: 'themes',
-  targetName: ':theme',
+  targetPlaceholder: ':theme',
   title: 'WordPress Themes',
   trimmedFields: TRIMMED_THEME_FIELDS,
 });

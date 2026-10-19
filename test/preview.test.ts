@@ -10,15 +10,20 @@ import { getSiteAsset } from '@/preview/assets';
 import { renderBuilderHtml } from '@/preview/builder';
 import { formatCountLowerBound, getIconSetCounts } from '@/preview/catalog';
 import { renderParamTable } from '@/preview/components';
+import { formatSpecialExamples, formatVariantTierSummary } from '@/preview/glossary';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/preview/navigation';
 import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
-import { getSiteStylesheet } from '@/preview/styles';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
+import siteScript from '@/preview/scripts/site.client.js';
+import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/preview/styles';
+import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
+import { listServiceMetricAliases } from '@/services/fetcher';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
+import { escapeXml } from '@/svg/shared';
 import { GROUP_GAP_RATIO } from '@/svg/stack';
+import { requireDefined } from './helpers';
 
-/********************************* Fixtures *********************************/
+/*************************************** Fixtures ***************************************/
 
 /** Rendered documentation page with its canonical path. */
 interface RenderedPage {
@@ -54,6 +59,9 @@ const HTML_TAG_RX = /<[^>]+>/g;
 /** Matches every top navigation link (`href` and active state). */
 const NAV_LINK_RX = /<a href="(?<href>[^"]+)" class="nav-link(?<active> is-active)?"/g;
 
+/** Matches every primary or secondary call-to-action link (`href` and button kind). */
+const CTA_LINK_RX = /<a href="(?<href>[^"]+)" class="(?<kind>btn-primary|btn-secondary)">/g;
+
 /** Matches every sidebar link (`href`, active state, and label). */
 const SIDEBAR_LINK_RX =
   /<a href="(?<href>[^"]+)" class="sidebar-link(?<active> is-active)?"[^>]*>(?<label>[^<]+)<\/a>/g;
@@ -61,6 +69,30 @@ const SIDEBAR_LINK_RX =
 /** Matches the header's sidebar drawer toggle and its current page label. */
 const SIDEBAR_TOGGLE_RX =
   /<button type="button" class="sidebar-toggle" popovertarget="sidebar-drawer"[^>]*>[\s\S]*?<span class="sidebar-toggle-label"[^>]*>(?<label>[^<]*)<\/span>/;
+
+/** Matches class names that were removed from the markup because no stylesheet or script uses them. */
+const DEAD_CLASS_RX =
+  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text)[\s"]/;
+
+/** Fallback popover placement options of the site script. */
+interface PopoverPlacementOptions {
+  /** Horizontal alignment with the anchor. */
+  align?: 'end' | 'start';
+  /** Distance between anchor and popover in pixels. */
+  gap?: number;
+  /** Whether the popover is at least as wide as its anchor. */
+  isWidthMatched?: boolean;
+}
+
+/** Pure helpers exposed by the site script without a DOM (`svgSiteCore`). */
+interface SiteCore {
+  computePopoverPlacement: (
+    anchorRect: Readonly<Record<'bottom' | 'left' | 'right' | 'top' | 'width', number>>,
+    popoverSize: Readonly<Record<'height' | 'width', number>>,
+    viewportSize: Readonly<Record<'height' | 'width', number>>,
+    options: PopoverPlacementOptions
+  ) => Readonly<Record<'left' | 'top', number> & Record<'minWidth', number | undefined>>;
+}
 
 /** Render the homepage, every documentation page, and every builder page. */
 function renderAllPages(): RenderedPage[] {
@@ -77,6 +109,17 @@ function renderAllPages(): RenderedPage[] {
 /** Read the site script asset source. */
 function readSiteScript(): string {
   return getSiteAsset('site.js')?.body ?? '';
+}
+
+/** Evaluate the site script without a DOM and return its exposed pure helpers. */
+function loadSiteCore(): SiteCore {
+  const sandbox: { svgSiteCore?: SiteCore } = {};
+  // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- The script is evaluated exactly as shipped to browsers.
+  new Function('globalThis', siteScript)(sandbox);
+  if (!sandbox.svgSiteCore) {
+    throw new Error('The site script did not expose svgSiteCore without a DOM.');
+  }
+  return sandbox.svgSiteCore;
 }
 
 /** Collect a named capture group of every match. */
@@ -111,7 +154,7 @@ function collectListedMetrics(row: string): ListedMetrics {
   return listed;
 }
 
-/********************************* HTML validity *********************************/
+/************************************ HTML validity *************************************/
 
 describe('documentation pages – HTML validity', () => {
   it('never repeats an element ID on a page (regression: inlined previews duplicated bg-dark, grad-*, sheen-*)', () => {
@@ -153,8 +196,11 @@ describe('documentation pages – HTML validity', () => {
         page.path
       ).toHaveLength(1);
       expect(levels[0], page.path).toBe(1);
-      for (let i = 1; i < levels.length; i += 1) {
-        expect(levels[i] - levels[i - 1], `${page.path} heading ${i}`).toBeLessThanOrEqual(1);
+      for (const [i, level] of levels.entries()) {
+        const previousLevel = levels[i - 1];
+        if (previousLevel !== undefined) {
+          expect(level - previousLevel, `${page.path} heading ${i}`).toBeLessThanOrEqual(1);
+        }
       }
     }
   });
@@ -182,7 +228,7 @@ describe('documentation pages – HTML validity', () => {
   });
 });
 
-/********************************* Accessibility *********************************/
+/************************************ Accessibility *************************************/
 
 describe('documentation pages – accessibility', () => {
   it('exposes the theme switch state via aria-checked and starts the body with a skip link', () => {
@@ -210,7 +256,9 @@ describe('documentation pages – accessibility', () => {
   it('announces copy feedback and describes each copy button by its card title', () => {
     const buttonsHtml = renderDocsHtml('buttons');
     expect(buttonsHtml).toMatch(/class="copy-btn" aria-describedby="[\w-]+-title"/);
-    expect(buttonsHtml).toContain('<span class="copy-btn-text" aria-live="polite">Copy</span>');
+    expect(buttonsHtml).toContain(
+      '<span class="copy-btn-text" data-copy-label aria-live="polite">Copy</span>'
+    );
   });
 
   it('adds deep-link anchors to section subheads and cards', () => {
@@ -260,7 +308,7 @@ describe('documentation pages – head metadata & client script', () => {
       expect(page.html, page.path).toContain('media="(prefers-color-scheme: dark)"');
       const description = /<meta name="description" content="(?<content>[^"]+)"/.exec(page.html)
         ?.groups?.content;
-      expect(description, page.path).toBeTruthy();
+      expect(description, page.path).toMatch(/\S/);
       descriptions.add(description ?? '');
     }
     expect(descriptions.size).toBe(DOCS_PAGES.length + BUILDER_PAGES.length + 1);
@@ -274,7 +322,7 @@ describe('documentation pages – head metadata & client script', () => {
     expect(html).toContain("if(storedScheme==='dark'||storedScheme==='light')");
     expect(script).toContain("return value === 'dark' || value === 'light' ? value : undefined;");
     expect(script).toContain(
-      "typeof value === 'string' && SITE_CONFIG.previewBgValues.includes(value)"
+      "typeof value === 'string' && siteConfig.previewBgValues.includes(value)"
     );
     expect(script).not.toContain('event.newValue ||');
     expect(html).not.toContain('<script blocking="render">');
@@ -306,15 +354,31 @@ describe('documentation pages – head metadata & client script', () => {
     expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]light['"]/);
   });
+
   it('memoizes rendered pages per isolate', () => {
     expect(renderDocsHtml('stack')).toBe(renderDocsHtml('stack'));
     expect(renderHomeHtml()).toBe(renderHomeHtml());
   });
 });
 
-/********************************* Navigation & assets *********************************/
+/********************************* Navigation & assets **********************************/
 
 describe('documentation pages – navigation & static assets', () => {
+  it('makes the Builder the primary homepage call to action and the docs the secondary one (regression: docs-first hero)', () => {
+    const html = renderHomeHtml();
+    const heroHtml = html.slice(html.indexOf('class="hero-cta-row"'), html.indexOf('</section>'));
+    const endHtml = html.slice(html.indexOf('class="pager-row is-end"'));
+    for (const ctaHtml of [heroHtml, endHtml]) {
+      const links: string[] = [];
+      for (const match of ctaHtml.matchAll(CTA_LINK_RX)) {
+        links.push(`${match.groups?.kind ?? ''} ${match.groups?.href ?? ''}`);
+      }
+      expect(links).toContain(`btn-primary ${buildBuilderPath('badge')}`);
+      expect(links).toContain(`btn-secondary ${buildDocsPath('overview')}`);
+      expect(links.filter((link) => link.startsWith('btn-primary'))).toHaveLength(1);
+    }
+  });
+
   it('renders exactly three header tabs and marks the active one with aria-current', () => {
     const expectedActive: Readonly<Record<string, string>> = {
       '/': '/',
@@ -325,7 +389,7 @@ describe('documentation pages – navigation & static assets', () => {
     for (const page of renderAllPages()) {
       const headerHtml = page.html.slice(0, page.html.indexOf('</header>'));
       const navHrefs = collectGroups(headerHtml, NAV_LINK_RX, 'href');
-      expect(navHrefs, page.path).toEqual(['/', '/docs', '/builder']);
+      expect(navHrefs, page.path).toEqual(['/', '/builder', '/docs']);
       const activeHrefs: string[] = [];
       for (const match of headerHtml.matchAll(NAV_LINK_RX)) {
         if (match.groups?.active) {
@@ -344,7 +408,8 @@ describe('documentation pages – navigation & static assets', () => {
   it('lists every docs page and builder page exactly once in its grouped sidebar with one active link', () => {
     const docsHrefs = DOCS_PAGES.map((page) => buildDocsPath(page.slug));
     const builderHrefs = BUILDER_PAGES.map((page) => buildBuilderPath(page.kind));
-    const [homePage, ...sidebarPages] = renderAllPages();
+    const [firstPage, ...sidebarPages] = renderAllPages();
+    const homePage = requireDefined(firstPage, 'the homepage');
     expect(collectGroups(homePage.html, SIDEBAR_LINK_RX, 'href')).toEqual([]);
     expect(homePage.html).not.toContain('class="has-sidebar"');
     expect(homePage.html).not.toContain('popovertarget="sidebar-drawer"');
@@ -367,15 +432,17 @@ describe('documentation pages – navigation & static assets', () => {
   });
 
   it('chains the docs pager in sidebar order from Home through every docs page back to Home', () => {
-    for (let i = 0; i < DOCS_PAGES.length; i += 1) {
-      const html = renderDocsHtml(DOCS_PAGES[i].slug);
+    for (const [i, page] of DOCS_PAGES.entries()) {
+      const html = renderDocsHtml(page.slug);
       const pagerHtml = html.slice(html.indexOf('<nav class="pager-row"'));
-      const previousHref = i === 0 ? '/' : buildDocsPath(DOCS_PAGES[i - 1].slug);
-      const nextHref = i === DOCS_PAGES.length - 1 ? '/' : buildDocsPath(DOCS_PAGES[i + 1].slug);
-      expect(pagerHtml, DOCS_PAGES[i].slug).toContain(
+      const previousPage = DOCS_PAGES[i - 1];
+      const nextPage = DOCS_PAGES[i + 1];
+      const previousHref = previousPage ? buildDocsPath(previousPage.slug) : '/';
+      const nextHref = nextPage ? buildDocsPath(nextPage.slug) : '/';
+      expect(pagerHtml, page.slug).toContain(
         `<a href="${previousHref}" class="btn-secondary" rel="prev">`
       );
-      expect(pagerHtml, DOCS_PAGES[i].slug).toContain(
+      expect(pagerHtml, page.slug).toContain(
         `<a href="${nextHref}" class="btn-primary" rel="next">`
       );
     }
@@ -400,7 +467,7 @@ describe('documentation pages – navigation & static assets', () => {
     expect(getSiteAsset('__proto__')).toBeUndefined();
   });
 });
-/********************************* Docs drift guards *********************************/
+/********************************** Docs drift guards ***********************************/
 
 describe('documentation drift guards', () => {
   it('lists every metric and metric alias of every public service in the generated services table', () => {
@@ -412,7 +479,9 @@ describe('documentation drift guards', () => {
         const listed = collectListedMetrics(extractServiceRow(servicesHtml, key));
         expect(listed.metrics.toSorted(), key).toEqual(Object.keys(service.metrics).toSorted());
         expect(listed.aliases.toSorted(), key).toEqual(
-          Object.keys(service.metricAliases ?? {}).toSorted()
+          listServiceMetricAliases(service)
+            .map(([alias]) => alias)
+            .toSorted()
         );
       }
     }
@@ -423,7 +492,7 @@ describe('documentation drift guards', () => {
     for (const state of Object.keys(STATUS_PRESET_MAP)) {
       expect(badgesHtml, state).toContain(`${SITE_ORIGIN}/badge/status/${state}/`);
     }
-    expect(badgesHtml).toContain('unknown states fall back to online');
+    expect(badgesHtml).toContain('unknown states render a neutral slate dot');
     expect(badgesHtml).toContain(`(${THEME_COLOR_NAMES.length} colors)`);
     expect(badgesHtml).toContain('Accepts a status preset name or any theme color');
   });
@@ -470,7 +539,7 @@ describe('documentation drift guards', () => {
     ]) {
       expect(quotesHtml, name).toContain(`<th scope="row" role="rowheader">${name}</th>`);
     }
-    expect(quotesHtml).toContain('<span class="route-path">/quote/:text</span>');
+    expect(quotesHtml).toContain('<span class="route-method">GET</span>/quote/:text</code>');
   });
 
   it('computes every headline count instead of hard-coding it', () => {
@@ -494,8 +563,238 @@ describe('documentation drift guards', () => {
   it('uses path-only route pills on every page', () => {
     for (const page of renderAllPages()) {
       expect(page.html, page.path).not.toMatch(
-        /<span class="route-path">(?:https?:\/\/|svg\.xul\.is)/
+        /<span class="route-method">GET<\/span>(?:https?:\/\/|svg\.xul\.is)/
       );
     }
+  });
+});
+
+/********************************* Website regressions **********************************/
+
+describe('website client scripts & markup regressions', () => {
+  it('places fallback popovers from their measured size inside the viewport (regression: hard-coded 420/380 sizes)', () => {
+    const { computePopoverPlacement } = loadSiteCore();
+    const viewport = { height: 700, width: 1000 };
+    const anchor = { bottom: 630, left: 900, right: 960, top: 600, width: 60 };
+    expect(computePopoverPlacement(anchor, { height: 452, width: 384 }, viewport, {})).toEqual({
+      left: 608,
+      minWidth: undefined,
+      top: 140,
+    });
+    expect(
+      computePopoverPlacement(anchor, { height: 200, width: 176 }, viewport, { align: 'end' })
+    ).toEqual({ left: 784, minWidth: undefined, top: 392 });
+    const lowAnchor = { bottom: 40, left: 10, right: 210, top: 10, width: 200 };
+    expect(
+      computePopoverPlacement(lowAnchor, { height: 120, width: 150 }, viewport, {
+        gap: 4,
+        isWidthMatched: true,
+      })
+    ).toEqual({ left: 10, minWidth: 200, top: 44 });
+    expect(computePopoverPlacement(lowAnchor, { height: 690, width: 150 }, viewport, {}).top).toBe(
+      8
+    );
+  });
+
+  it('keeps the theme-color meta tags in sync with the manual scheme override (regression: system color only)', () => {
+    const html = renderHomeHtml();
+    const script = readSiteScript();
+    const config = JSON.parse(
+      /<script type="application\/json" id="site-config">(?<json>[^<]*)<\/script>/.exec(html)
+        ?.groups?.json ?? '{}'
+    ) as { drawerMediaQuery?: string; themeColors?: Record<string, string> };
+    expect(config.themeColors).toEqual({ dark: DARK_BG, light: LIGHT_BG });
+    expect(html.indexOf('name="theme-color"')).toBeLessThan(html.indexOf('<script>try{'));
+    expect(html).toContain(
+      `document.querySelectorAll('meta[name="theme-color"]').forEach(function(meta){meta.content=`
+    );
+    expect(script).toContain(
+      'themeColorMeta.content = siteConfig.themeColors[storedScheme ?? mediaScheme]'
+    );
+  });
+
+  it('closes the mobile sidebar drawer from inside and when the viewport widens (regression: stuck drawer)', () => {
+    const html = renderDocsHtml('badges');
+    const drawerHtml = html.slice(
+      html.indexOf('<aside class="sidebar" id="sidebar-drawer" popover>')
+    );
+    expect(drawerHtml).toMatch(
+      /^<aside class="sidebar" id="sidebar-drawer" popover>\s*<button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-label="Close /
+    );
+    expect(html).toContain('"drawerMediaQuery":"(max-width: 960px)"');
+    expect(readSiteScript()).toContain("drawerQuery.addEventListener('change'");
+  });
+
+  it('disables code scroll buttons natively and follows drawer width changes without window listeners (regressions)', () => {
+    const script = readSiteScript();
+    expect(script).toContain('leftButton.disabled =');
+    expect(script).toContain('rightButton.disabled =');
+    expect(script).not.toContain('is-disabled');
+    expect(script).toContain('new ResizeObserver(');
+    expect(script).not.toContain("addEventListener('resize'");
+    expect(script).not.toContain('setTimeout(() => updateScrollButtons');
+    expect(script).not.toContain('.code-output');
+    expect(script).not.toContain('`null` when unavailable');
+  });
+
+  it('exposes the shared clipboard and popover helpers for the builder script', () => {
+    const script = readSiteScript();
+    expect(script).toMatch(
+      /globalThis\.svgSite = \{\s*closePopover,\s*copyText,\s*hasAnchorPositioning,\s*isPopoverOpen,\s*placePopover,?\s*\};/
+    );
+    expect(script).toContain("button.querySelector('[data-copy-label]')");
+  });
+
+  it('emits repeated UI icons once per page as sprite symbols referenced with <use>', () => {
+    for (const page of renderAllPages()) {
+      expect(page.html.split('<svg class="ui-sprite"').length - 1, page.path).toBe(1);
+      expect(page.html.split('<symbol id="ui-copy"').length - 1, page.path).toBe(1);
+    }
+    const badgesHtml = renderDocsHtml('badges');
+    expect(badgesHtml.split('<use href="#ui-copy"></use>').length - 1).toBeGreaterThan(5);
+    expect(badgesHtml.split('<use href="#ui-chevron-right"></use>').length - 1).toBeGreaterThan(5);
+  });
+
+  it('drops unstyled class names from the markup and uses the shared popover and grid classes', () => {
+    for (const page of renderAllPages()) {
+      expect(page.html, page.path).not.toMatch(DEAD_CLASS_RX);
+    }
+    const docsHtml = renderDocsHtml('buttons');
+    expect(docsHtml).toContain('<div class="card-grid is-3col">');
+    expect(docsHtml).toContain('class="popover-panel bg-picker-menu"');
+    const builderHtml = renderBuilderHtml('badge');
+    expect(builderHtml).toContain('class="popover-panel select-menu"');
+    expect(builderHtml).toContain('class="popover-panel icon-picker"');
+  });
+
+  it('documents variant tiers, widget examples, sizes, quote widths, and alias rules from shared sources (docs drift)', () => {
+    const badgesHtml = renderDocsHtml('badges');
+    expect(badgesHtml).toContain(`Hierarchy tier: ${formatVariantTierSummary()}.`);
+    for (const example of formatSpecialExamples().split(' | ')) {
+      expect(badgesHtml, example).toContain(escapeXml(example));
+    }
+    const buttonsHtml = renderDocsHtml('buttons');
+    expect(buttonsHtml).toContain(`Button Size Scale (?size=${SIZE_TOKENS.join('|')})`);
+    expect(buttonsHtml).toContain('Open “Discussions Join” in the Builder');
+    const quotesHtml = renderDocsHtml('quotes');
+    expect(quotesHtml).toContain('The default grows proportionally with text sizes');
+    expect(quotesHtml).toContain('Only read when ?layout= and ?type= are empty.');
+    const stackHtml = renderDocsHtml('stack');
+    expect(stackHtml).toContain('then ?groups=, ?icons=, and ?i= (empty values fall through)');
+    expect(renderDocsHtml('overview')).toContain('Unknown query parameters are ignored per route');
+  });
+});
+
+/*********************************** Site stylesheet ************************************/
+
+/** Matches every `var(--c-…)` custom property reference. */
+const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
+
+/** Matches every `--c-…:` custom property definition. */
+const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
+
+/** Matches every `:hover` rule that moves or resizes its target (translate, scale, rotate, or transform). */
+const HOVER_TRANSFORM_RULE_RX = /:hover[^{}]*\{[^}]*\b(?:translate|scale|rotate|transform):/;
+
+/** Remove every block of an at-rule (e.g., `@media (hover: hover)`) including its nested rules. */
+function stripAtRuleBlocks(css: string, prelude: string): string {
+  let stripped = '';
+  let cursor = 0;
+  let start = css.indexOf(prelude, cursor);
+  while (start !== -1) {
+    stripped += css.slice(cursor, start);
+    let depth = 0;
+    let i = css.indexOf('{', start);
+    for (; i < css.length; i += 1) {
+      if (css[i] === '{') {
+        depth += 1;
+      } else if (css[i] === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          break;
+        }
+      }
+    }
+    cursor = i + 1;
+    start = css.indexOf(prelude, cursor);
+  }
+  return stripped + css.slice(cursor);
+}
+
+describe('site stylesheet', () => {
+  it('only references defined --c-* tokens (regression: .brand-mark used the undefined --c-btn-brand-text)', () => {
+    const css = getSiteStylesheet();
+    const defined = new Set(collectGroups(css, COLOR_TOKEN_DEFINITION_RX, 'name'));
+    const undefinedTokens = collectGroups(css, COLOR_TOKEN_USAGE_RX, 'name').filter(
+      (name) => !defined.has(name)
+    );
+    expect(undefinedTokens).toEqual([]);
+    expect(css).toMatch(/\.brand-mark \{[^}]*color: var\(--c-on-brand\);/);
+    expect(css).not.toContain('--c-btn-brand-text');
+  });
+
+  it('drops the removed tokens and uses the renamed brand gradient stops', () => {
+    const css = getSiteStylesheet();
+    for (const removed of ['--c-bg-alt', '--c-brand-3', '--base-brand']) {
+      expect(css, removed).not.toContain(removed);
+    }
+    expect(css).toContain('--brand-gradient-end: #4F46E5;');
+    expect(css).toContain('var(--brand-gradient-start) 0%');
+    expect(css).toContain('var(--brand-gradient-end) 100%');
+  });
+
+  it('hides [hidden] elements with exactly one global rule', () => {
+    const css = getSiteStylesheet();
+    expect(css.split('[hidden]').length - 1).toBe(1);
+    expect(css).toMatch(/\[hidden\] \{\s*display: none !important;\s*\}/);
+  });
+
+  it('offsets in-page anchors below the sticky header with root scroll padding instead of per-element scroll margins', () => {
+    const css = getSiteStylesheet();
+    expect(css).not.toContain('scroll-margin-block-start');
+    expect(css).toMatch(
+      /:root \{[^}]*scroll-padding-block-start: calc\(var\(--header-height\) \+ 32px\);/
+    );
+  });
+
+  it('shares one elevated popover panel base for every popover', () => {
+    const css = getSiteStylesheet();
+    expect(css).toMatch(/\.popover-panel \{[^}]*background: var\(--c-bg-elv\);/);
+    expect(css).toContain('.popover-panel:where(:popover-open, .is-open) {');
+    expect(css).toContain('.popover-panel:not(:where(:popover-open, .is-open)) {');
+    for (const popover of ['.bg-picker-menu', '.select-menu', '.icon-picker']) {
+      expect(css, popover).not.toContain(`${popover}:where(:popover-open, .is-open) {`);
+    }
+  });
+
+  it('colors errors and warnings with status tokens and keeps --c-hl-op for syntax highlighting', () => {
+    const css = getSiteStylesheet();
+    expect(css).toContain('--c-danger: light-dark(#C5002B, #FFA4AA);');
+    expect(css).toContain(
+      '--c-warning: light-dark(color-mix(in srgb, #FFB900, #000000 50%), #FFB900);'
+    );
+    expect(css).toMatch(/\.copy-btn\.is-failed \{[^}]*color: var\(--c-danger\);/);
+    expect(css).toMatch(/\.builder-status\.is-warning \{\s*color: var\(--c-warning\);/);
+    expect(css.split('var(--c-hl-op)').length - 1).toBe(1);
+    expect(css).toMatch(/\.hl-op \{\s*color: var\(--c-hl-op\);/);
+  });
+
+  it('turns the 3-column card grid into an .is-3col modifier and styles native disabled scroll buttons', () => {
+    const css = getSiteStylesheet();
+    expect(css).not.toContain('.card-grid-3');
+    expect(css).toContain('.card-grid.is-3col {');
+    expect(css).not.toContain('.is-disabled');
+    expect(css).toMatch(/\.scroll-btn:disabled \{[^}]*opacity: 0\.35;/);
+  });
+
+  it('merges every reduced-motion override into a single media block', () => {
+    expect(getSiteStylesheet().split('@media (prefers-reduced-motion: reduce)').length - 1).toBe(1);
+  });
+
+  it('only applies hover transforms on devices that can hover', () => {
+    const css = getSiteStylesheet();
+    expect(css).toMatch(/@media \(hover: hover\) \{[^@]*\.preview-link:hover \{\s*translate:/);
+    expect(css).toMatch(/@media \(hover: hover\) \{[^@]*\.swatch:hover \.swatch-dot \{\s*scale:/);
+    expect(stripAtRuleBlocks(css, '@media (hover: hover)')).not.toMatch(HOVER_TRANSFORM_RULE_RX);
   });
 });

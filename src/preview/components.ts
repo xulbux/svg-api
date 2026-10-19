@@ -10,10 +10,10 @@ import { renderSvgPath, resolveSvgPathRedirectUrl } from '@/routes/svg';
 import { resolveIcon } from '@/svg/icons';
 import { escapeXml, hashText } from '@/svg/shared';
 import type {
+  HighlightToken,
   ParamTableRow,
   SectionHeaderOptions,
   ShowcaseCardConfig,
-  ShowcaseItem,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -28,16 +28,34 @@ interface TrailingParenthetical {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** SVG paint attributes of Lucide stroke icons (UI icons and the builder's icon picker glyphs). */
+export const LUCIDE_STROKE_ATTRS =
+  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+
+/** SVG paint attributes of filled brand icons (UI icons and the builder's icon picker glyphs). */
+export const BRAND_FILL_ATTRS = 'fill="currentColor"';
+
 /** Shared SVG root attributes of every inline UI icon. */
 const UI_ICON_SVG_ATTRS =
   'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"';
 
-/** Additional SVG root attributes of Lucide stroke UI icons. */
-const LUCIDE_STROKE_ATTRS =
-  'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+/** UI icons repeated on most pages: Emitted once per page as `<symbol>` elements and referenced with `<use>`. */
+const UI_SPRITE_ICON_SLUGS: ReadonlySet<string> = new Set([
+  'check',
+  'chevron-down',
+  'chevron-left',
+  'chevron-right',
+  'copy',
+  'layout-grid',
+  'sparkles',
+  'x',
+]);
 
 /** Memoized inline UI icon HTML keyed by `slug|size|extraClass`. */
 const UI_ICON_HTML_CACHE = new Map<string, string>();
+
+/** Memoized UI icon sprite (`undefined` until first rendered). */
+let uiSpriteHtmlCache: string | undefined = undefined;
 
 /** Default column header labels of parameter reference tables. */
 const DEFAULT_PARAM_TABLE_COLUMNS: ParamTableRow = {
@@ -73,6 +91,12 @@ const INLINE_STRONG_RX = /\*\*(?<strong>[^*]+)\*\*/g;
 /** Matches inline markup characters (backticks and double asterisks) for plain-text labels. */
 const INLINE_MARKUP_CHARS_RX = /`|\*\*/g;
 
+/** Matches characters escaped with a backslash inside Markdown image alt text (same rule as the builder client). */
+const MARKDOWN_ALT_RX = /[[\]\\]/g;
+
+/** Matches characters percent-encoded inside Markdown link destinations (same rule as the builder client). */
+const MARKDOWN_DESTINATION_RX = /[ ()<>]/g;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Convert free text into a URL-fragment-safe anchor ID (e.g., `'variant=1 · Primary'` -> `'variant-1-primary'`). */
@@ -105,44 +129,55 @@ function renderAnchorLink(targetId: string, label: string): string {
   return `<a class="anchor-link" href="#${escapeXml(targetId)}" aria-label="Link to “${escapeXml(label)}”">#</a>`;
 }
 
-/** Highlight a URL's base path and query parameters (`?key=value&...`) for Markdown code drawers. */
-function highlightUrlHtml(rawUrl: string): string {
-  const queryIndex = rawUrl.indexOf('?');
+/**
+ * Split a URL into highlight tokens (base, `?`, keys, `=`, values, `&`); Same algorithm as `tokenizeUrl` in the
+ * builder client (`src/preview/scripts/builder.client.js`), guarded by a parity test.
+ */
+function tokenizeUrl(url: string): HighlightToken[] {
+  const queryIndex = url.indexOf('?');
   if (queryIndex === -1) {
-    return `<span class="hl-url">${escapeXml(rawUrl)}</span>`;
+    return [['hl-url', url]];
   }
-
-  const basePath = rawUrl.slice(0, queryIndex);
-  const pairs = rawUrl.slice(queryIndex + 1).split('&');
-  let queryHtml = '';
-
-  for (let i = 0; i < pairs.length; i += 1) {
+  const tokens: HighlightToken[] = [
+    ['hl-url', url.slice(0, queryIndex)],
+    ['hl-op', '?'],
+  ];
+  for (const [i, pair] of url
+    .slice(queryIndex + 1)
+    .split('&')
+    .entries()) {
     if (i > 0) {
-      queryHtml += '<span class="hl-op">&amp;</span>';
+      tokens.push(['hl-op', '&']);
     }
-    const pair = pairs[i];
     const equalsIndex = pair.indexOf('=');
     if (equalsIndex === -1) {
-      queryHtml += `<span class="hl-key">${escapeXml(pair)}</span>`;
+      tokens.push(['hl-key', pair]);
     } else {
-      const key = pair.slice(0, equalsIndex);
-      const value = pair.slice(equalsIndex + 1);
-      queryHtml += `<span class="hl-key">${escapeXml(key)}</span><span class="hl-op">=</span><span class="hl-val">${escapeXml(value)}</span>`;
+      tokens.push(
+        ['hl-key', pair.slice(0, equalsIndex)],
+        ['hl-op', '='],
+        ['hl-val', pair.slice(equalsIndex + 1)]
+      );
     }
   }
-
-  return `<span class="hl-url">${escapeXml(basePath)}</span><span class="hl-op">?</span>${queryHtml}`;
+  return tokens;
 }
 
-/** Format a `ShowcaseItem` into a syntax-highlighted GitHub README Markdown line whose `.textContent` is exact Markdown. */
-function formatHighlightedMarkdownSnippet(item: ShowcaseItem): string {
-  const fullUrl = `${SITE_ORIGIN}${item.path}`;
-  const imageHtml = `<span class="hl-p">![</span><span class="hl-alt">${escapeXml(item.alt)}</span><span class="hl-p">](</span>${highlightUrlHtml(fullUrl)}<span class="hl-p">)</span>`;
-  const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
-  if (!href) {
-    return imageHtml;
+/** Percent-encode the characters that would end or break a Markdown link destination (space, `(`, `)`, `<`, `>`). */
+function encodeMarkdownDestination(text: string): string {
+  return text.replace(
+    MARKDOWN_DESTINATION_RX,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+/** Render highlight tokens as escaped `<span class="hl-*">` HTML (its text content is the exact snippet). */
+function renderHighlightTokensHtml(tokens: readonly HighlightToken[]): string {
+  let html = '';
+  for (const [className, text] of tokens) {
+    html += `<span class="${className}">${escapeXml(text)}</span>`;
   }
-  return `<span class="hl-p">[</span>${imageHtml}<span class="hl-p">](</span><span class="hl-href">${escapeXml(href)}</span><span class="hl-p">)</span>`;
+  return html;
 }
 
 /**
@@ -260,7 +295,53 @@ export function serializeInlineJson(value: unknown): string {
 }
 
 /**
- * Render an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`.
+ * Build the highlight tokens of a (linked) Markdown image snippet with the same escaping rules as the builder
+ * client's `buildSnippetTokens` (alt text escapes `[`, `]`, `\`; destinations percent-encode space, `(`, `)`, `<`, `>`).
+ * @param url    Absolute image URL.
+ * @param alt    Alt text.
+ * @param href   Optional link target (`undefined` for an unlinked image).
+ * @returns Tokens whose joined text is the exact Markdown snippet.
+ */
+export function buildMarkdownSnippetTokens(
+  url: string,
+  alt: string,
+  href: string | undefined
+): HighlightToken[] {
+  const tokens: HighlightToken[] = href ? [['hl-p', '[']] : [];
+  tokens.push(
+    ['hl-p', '!['],
+    ['hl-alt', alt.replace(MARKDOWN_ALT_RX, String.raw`\$&`)],
+    ['hl-p', '](']
+  );
+  for (const [className, text] of tokenizeUrl(url)) {
+    tokens.push([className, encodeMarkdownDestination(text)]);
+  }
+  tokens.push(['hl-p', ')']);
+  if (href) {
+    tokens.push(['hl-p', ']('], ['hl-href', encodeMarkdownDestination(href)], ['hl-p', ')']);
+  }
+  return tokens;
+}
+
+/**
+ * Render (once per isolate) the hidden UI icon sprite: One `<symbol id="ui-<slug>">` per repeated UI icon,
+ * referenced by `renderUiIcon` with `<use href>`; Every page layout emits it once.
+ * @returns Hidden inline `<svg>` sprite HTML.
+ */
+export function renderUiSprite(): string {
+  if (uiSpriteHtmlCache === undefined) {
+    let symbolsHtml = '';
+    for (const slug of UI_SPRITE_ICON_SLUGS) {
+      symbolsHtml += `<symbol id="ui-${slug}" viewBox="0 0 24 24">${resolveIcon(slug)?.innerSvg ?? ''}</symbol>`;
+    }
+    uiSpriteHtmlCache = `<svg class="ui-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">${symbolsHtml}</svg>`;
+  }
+  return uiSpriteHtmlCache;
+}
+
+/**
+ * Render an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`;
+ * Repeated icons (`UI_SPRITE_ICON_SLUGS`) reference the page's UI sprite instead of repeating their paths.
  * @param slug         Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`).
  * @param size         Width and height in pixels (defaults to `16`).
  * @param extraClass   Optional additional CSS class name(s) appended to `ui-icon`.
@@ -274,12 +355,24 @@ export function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
   }
   const resolved = resolveIcon(slug);
   const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
-  const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : 'fill="currentColor"';
+  const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : BRAND_FILL_ATTRS;
+  const bodyHtml = UI_SPRITE_ICON_SLUGS.has(slug)
+    ? `<use href="#ui-${slug}"></use>`
+    : (resolved?.innerSvg ?? '');
   const iconHtml = resolved
-    ? `<svg class="${classAttr}" ${UI_ICON_SVG_ATTRS} width="${size}" height="${size}" ${paintAttrs}>${resolved.innerSvg}</svg>`
+    ? `<svg class="${classAttr}" ${UI_ICON_SVG_ATTRS} width="${size}" height="${size}" ${paintAttrs}>${bodyHtml}</svg>`
     : '';
   UI_ICON_HTML_CACHE.set(cacheKey, iconHtml);
   return iconHtml;
+}
+
+/**
+ * Render a copy button (copy and check icons plus a polite live label announced by the site script).
+ * @param extraAttrs   Additional button attributes (e.g., `'data-copy-target="builder-code"'`).
+ * @returns Copy button HTML.
+ */
+export function renderCopyButton(extraAttrs: string): string {
+  return `<button type="button" class="copy-btn" ${extraAttrs}>${renderUiIcon('copy', 13, 'icon-copy')}${renderUiIcon('check', 13, 'icon-check')}<span class="copy-btn-text" data-copy-label aria-live="polite">Copy</span></button>`;
 }
 
 /**
@@ -296,14 +389,18 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
   let svgsHtml = '';
   const markdownLines: string[] = [];
 
-  for (let i = 0; i < card.items.length; i += 1) {
-    const item = card.items[i];
+  for (const [i, item] of card.items.entries()) {
     const svg = scopeSvgIds(renderSvgPath(item.path, item.sample), `${scopePrefix}-${i}`);
     const builderTarget = resolveBuilderTarget(item.path);
     svgsHtml += builderTarget
       ? `<a class="preview-link" href="${escapeXml(builderTarget.href)}" aria-label="Open “${escapeXml(item.alt)}” in the Builder" title="Open in Builder">${svg}</a>\n`
       : `${svg}\n`;
-    markdownLines.push(formatHighlightedMarkdownSnippet(item));
+    const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
+    markdownLines.push(
+      renderHighlightTokensHtml(
+        buildMarkdownSnippetTokens(`${SITE_ORIGIN}${item.path}`, item.alt, href)
+      )
+    );
   }
 
   const stageClass = card.isCentered ? 'preview-stage is-centered' : 'preview-stage';
@@ -315,8 +412,6 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
   const chevronIcon = renderUiIcon('chevron-right', 14, 'drawer-chevron');
   const leftScrollIcon = renderUiIcon('chevron-left', 14);
   const rightScrollIcon = renderUiIcon('chevron-right', 14);
-  const copyIcon = renderUiIcon('copy', 13, 'icon-copy');
-  const checkIcon = renderUiIcon('check', 13, 'icon-check');
 
   return `<div class="card-container" id="${cardId}">
     <div class="card">
@@ -329,14 +424,14 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
       </div>
       <div class="${stageClass}">${svgsHtml}</div>
       <details class="code-drawer">
-        <summary>${chevronIcon}<span class="drawer-summary-text">View Markdown</span></summary>
+        <summary>${chevronIcon}View Markdown</summary>
         <div class="code-drawer-body">
           <div class="code-drawer-toolbar">
             <span class="code-drawer-label">Markdown</span>
             <div class="code-toolbar-actions">
               <button type="button" class="scroll-btn scroll-btn-left" aria-label="Scroll code left">${leftScrollIcon}</button>
               <button type="button" class="scroll-btn scroll-btn-right" aria-label="Scroll code right">${rightScrollIcon}</button>
-              <button type="button" class="copy-btn" aria-describedby="${titleId}">${copyIcon}${checkIcon}<span class="copy-btn-text" aria-live="polite">Copy</span></button>
+              ${renderCopyButton(`aria-describedby="${titleId}"`)}
             </div>
           </div>
           <div class="code-pre-wrap">
@@ -369,7 +464,7 @@ export function renderCardsHtml(cards: readonly ShowcaseCardConfig[]): string {
 export function renderRoutePills(patterns: readonly string[]): string {
   let pillsHtml = '';
   for (const pattern of patterns) {
-    pillsHtml += `<code class="route-pill"><span class="route-method">GET</span><span class="route-path">${escapeXml(pattern)}</span></code>`;
+    pillsHtml += `<code class="route-pill"><span class="route-method">GET</span>${escapeXml(pattern)}</code>`;
   }
   return `<div class="route-pills">${pillsHtml}</div>`;
 }
@@ -399,7 +494,7 @@ export function renderSectionSubhead(iconSlug: string, text: string): string {
   const plainText = stripInlineMarkup(text);
   const subheadId = slugifyText(plainText);
   return `<div class="subhead-row" id="${subheadId}">
-      <h2 class="section-subhead">${renderUiIcon(iconSlug, 16)}<span class="subhead-text">${formatInlineMarkupHtml(text)}</span></h2>
+      <h2 class="section-subhead">${renderUiIcon(iconSlug, 16)}<span class="section-subhead-text">${formatInlineMarkupHtml(text)}</span></h2>
       ${renderAnchorLink(subheadId, plainText)}
     </div>`;
 }
@@ -455,8 +550,10 @@ export function renderParamTable(
  */
 export function renderAliasList(aliases: Readonly<Record<string, string>>, label: string): string {
   let itemsHtml = '';
-  for (const alias of Object.keys(aliases).toSorted()) {
-    itemsHtml += `<li class="alias-item"><code class="param-code">${escapeXml(alias)}</code><span class="alias-arrow" aria-hidden="true">→</span><span class="visually-hidden"> resolves to </span><code class="param-code">${escapeXml(aliases[alias])}</code></li>`;
+  for (const [alias, canonical] of Object.entries(aliases).toSorted(([left], [right]) =>
+    left < right ? -1 : 1
+  )) {
+    itemsHtml += `<li class="alias-item"><code class="param-code">${escapeXml(alias)}</code><span class="alias-arrow" aria-hidden="true">→</span><span class="visually-hidden"> resolves to </span><code class="param-code">${escapeXml(canonical)}</code></li>`;
   }
   return `<ul class="alias-list" role="list" aria-label="${escapeXml(label)}">${itemsHtml}</ul>`;
 }

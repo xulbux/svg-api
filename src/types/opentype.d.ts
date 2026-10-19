@@ -1,8 +1,9 @@
 /**
- * Ambient TypeScript declarations for `opentype.js` (`v2.0.0`) and bundled `.ttf` binary modules.
+ * OpenType module declarations – Ambient TypeScript declarations for `opentype.js` (`v2.0.0`) and bundled `.ttf` binary modules.
  */
 
 declare module '*.ttf' {
+  /** Raw font binary (Wrangler `Data` module rule; Mirrored by the `ttf-arraybuffer` plugin in `vitest.config.mts`). */
   const fontBuffer: ArrayBuffer;
   export default fontBuffer;
 }
@@ -45,6 +46,20 @@ declare module 'opentype.js' {
     tracking?: number;
   }
 
+  /** Subset of the OpenType `OS/2` table used for vertical text metrics. */
+  export interface FontOs2Table {
+    /** Cap height in font design units. */
+    sCapHeight?: number;
+    /** Lowercase x-height in font design units. */
+    sxHeight?: number;
+  }
+
+  /** Parsed OpenType tables used by the text measurement (`os2`). */
+  export interface FontTables {
+    /** `OS/2` table with cap and x-height metrics. */
+    os2?: FontOs2Table;
+  }
+
   /** Parsed OpenType font instance. */
   export interface Font {
     /** Typographic ascender in font design units. */
@@ -54,25 +69,19 @@ declare module 'opentype.js' {
     /** Font design units per `em` (typically `1000` or `2048`). */
     unitsPerEm: number;
     /** Parsed OpenType tables (`os2`, `head`, etc.). */
-    tables: { os2?: { sCapHeight?: number; sxHeight?: number } };
+    tables: FontTables;
     /** Compute total horizontal advance width of `text` at `fontSize`. */
     getAdvanceWidth: (text: string, fontSize?: number, options?: RenderOptions) => number;
-    /** Build a vector `Path` for `text` positioned at `(x, y)` baseline at `fontSize`. */
+    /** Build a vector `Path` for `text` positioned at `(originX, baselineY)` at `fontSize`. */
     getPath: (
       text: string,
-      x?: number,
-      y?: number,
+      originX?: number,
+      baselineY?: number,
       fontSize?: number,
       options?: RenderOptions
     ) => Path;
   }
 
-  /** Namespace interface for default `opentype.js` export. */
-  interface OpenTypeNamespace {
-    /** Parse an `ArrayBuffer` containing a `.ttf`/`.otf`/`.woff` binary into a `Font`. */
-    parse: (buffer: ArrayBuffer) => Font;
-  }
-
-  const opentype: OpenTypeNamespace;
-  export default opentype;
+  /** Parse an `ArrayBuffer` containing a `.ttf`/`.otf`/`.woff` binary into a `Font`. */
+  export function parse(buffer: ArrayBuffer): Font;
 }

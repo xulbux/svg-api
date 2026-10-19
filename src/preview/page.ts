@@ -124,7 +124,10 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
     isCentered: true,
     items: [
-      { alt: 'Tech Stack', path: '/stack/c,cpp,cs,rust,py,ts:6|docker,cloudflare,linux,git:4' },
+      {
+        alt: 'Tech Stack',
+        path: '/stack/c,cpp,cs,rust,java,py,js,ts:4|docker,cloudflare,linux,git:2;vue,nodejs,threejs,tauri,tailwind,vite:6;figma,blender,obsidian,notion:4|aws,azure:2',
+      },
     ],
     subtitle:
       'Multi-group icon grids with per-group columns (:N), side-by-side groups (|), and row bands (;).',
@@ -216,15 +219,15 @@ function renderHomeFeaturesHtml(): string {
 
 /** Render the bottom navigation links between documentation pages (in sidebar order). */
 function renderDocsPager(slug: DocsPageSlug): string {
-  const leftArrow = renderUiIcon('arrow-left', 16, 'btn-icon-left');
-  const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
+  const leftArrow = renderUiIcon('arrow-left', 16);
+  const rightArrow = renderUiIcon('arrow-right', 16);
   const pageIndex = findDocsPageIndex(slug);
   const prev = toPagerLink(DOCS_PAGES[pageIndex - 1]);
   const next = toPagerLink(DOCS_PAGES[pageIndex + 1]);
 
   return `<nav class="pager-row" aria-label="Documentation pages">
-    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev">${leftArrow}<span class="btn-label">${escapeXml(prev.label)}</span></a>
-    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next"><span class="btn-label">${escapeXml(next.label)}</span>${rightArrow}</a>
+    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev">${leftArrow}${escapeXml(prev.label)}</a>
+    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next">${escapeXml(next.label)}${rightArrow}</a>
   </nav>`;
 }
 
@@ -244,23 +247,21 @@ export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
  * @returns Complete HTML document string for the homepage.
  */
 export function renderHomeHtml(): string {
-  if (homeHtmlCache !== undefined) {
-    return homeHtmlCache;
-  }
+  if (homeHtmlCache === undefined) {
+    const bookIcon = renderUiIcon('book-open', 16);
+    const rightArrow = renderUiIcon('arrow-right', 16);
+    const builderIcon = renderUiIcon('wand-sparkles', 16);
+    const docsPath = buildDocsPath('overview');
+    const builderPath = buildBuilderPath(DEFAULT_BUILDER_KIND);
 
-  const bookIcon = renderUiIcon('book-open', 16);
-  const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
-  const builderIcon = renderUiIcon('wand-sparkles', 16);
-  const docsPath = buildDocsPath('overview');
-
-  const bodyHtml = `<section class="hero">
-    <h1 class="hero-title">One Cohesive <span class="hero-gradient-text">Edge SVG Engine</span> for READMEs &amp; Docs</h1>
+    const bodyHtml = `<section class="hero">
+    <h1 class="hero-title">One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs &amp; Docs</h1>
     <p class="hero-lead">
-      Dynamic badges, CTA buttons, icons, tech stacks, and quote cards rendered at the edge in a unified 3D Kumo and Tailwind v4 OKLCH design system.
+      Dynamic badges, CTA buttons, icons, tech stacks, and quote cards: Every element is a plain URL, composed visually in seconds and rendered at the edge (no signup, no tokens).
     </p>
     <div class="hero-cta-row">
-      <a href="${docsPath}" class="btn-primary">${bookIcon}<span class="btn-label">Explore Docs &amp; Previews</span>${rightArrow}</a>
-      <a href="${buildBuilderPath(DEFAULT_BUILDER_KIND)}" class="btn-secondary">${builderIcon}<span class="btn-label">Open Builder</span></a>
+      <a href="${builderPath}" class="btn-primary">${builderIcon}Start Building${rightArrow}</a>
+      <a href="${docsPath}" class="btn-secondary">${bookIcon}Explore Docs &amp; Previews</a>
     </div>
   </section>
 
@@ -276,18 +277,20 @@ export function renderHomeHtml(): string {
     })}
     <div class="card-grid">${renderCardsHtml(HOME_OVERVIEW_CARDS)}</div>
     <div class="pager-row is-end">
-      <a href="${docsPath}" class="btn-primary">${bookIcon}<span class="btn-label">Browse Documentation</span>${rightArrow}</a>
+      <a href="${docsPath}" class="btn-secondary">${bookIcon}Browse Documentation</a>
+      <a href="${builderPath}" class="btn-primary">${builderIcon}Start Building${rightArrow}</a>
     </div>
   </section>`;
 
-  homeHtmlCache = renderPageLayout({
-    activeNav: 'home',
-    bodyHtml,
-    canonicalPath: '/',
-    description:
-      'Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, and quote card engine for svg.xul.is.',
-    title: 'svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack & Quote API',
-  });
+    homeHtmlCache = renderPageLayout({
+      activeNav: 'home',
+      bodyHtml,
+      canonicalPath: '/',
+      description:
+        'Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, and quote card engine for svg.xul.is.',
+      title: 'svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack & Quote API',
+    });
+  }
   return homeHtmlCache;
 }
 

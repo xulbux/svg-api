@@ -1,20 +1,53 @@
 /**
- * Service metric helpers – Compact number, byte size, date, version, and license formatting plus reusable transform factories, endpoint factories, and badge presentations for service presets.
+ * Service metric helpers – Compact number, byte size, date, version, and license formatting plus typed metric factories, the shared download period and community count tables, and badge presentations for service presets.
  */
 
+import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
+import { getOwnValue } from '@/svg/shared';
 import type {
+  CommunityMetricKind,
+  DownloadMetricKey,
   MetricEndpoint,
   MetricPresentation,
   MetricResult,
-  MetricTransform,
+  RawCount,
   ScoreColorThreshold,
+  ServiceDefinition,
+  ServiceMetricConfig,
   ThemeColorName,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Raw numeric upstream value (number or numeric string), possibly missing. */
-type RawCount = number | string | null | undefined;
+/** Badge color and value suffix of a download period. */
+interface DownloadPeriodSpec {
+  /** Default theme color of the period's badges. */
+  color: ThemeColorName;
+  /** Unit suffix appended to the formatted count (e.g., `'/mo'`). */
+  suffix: string;
+}
+
+/** Projected coverage payload of `createCoverageService` endpoints. */
+interface CoveragePayload {
+  /** Raw coverage percentage (`0`–`100`), possibly missing. */
+  percent: unknown;
+}
+
+/** Options of a coverage service preset (`createCoverageService`). */
+interface CoverageServiceOptions<P extends object> {
+  /** Upstream API URL template (`{owner}`, `{target}`). */
+  api: string;
+  /** Docs description. */
+  description: string;
+  /** Default icon slug of the coverage badge. */
+  icon: string;
+  /** Browser page URL template (`{owner}`, `{target}`). */
+  page: string;
+  /** Reads the raw coverage percentage from the upstream payload. */
+  readPercent: (payload: Partial<P>) => unknown;
+  /** Human-readable service name. */
+  title: string;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -72,17 +105,56 @@ const COVERAGE_THRESHOLDS: readonly ScoreColorThreshold[] = [
   { color: 'rose', minPercent: 0 },
 ];
 
-/** Maximum coverage percentage. */
-const MAX_COVERAGE_PERCENT = 100;
+/** Maximum percentage of percent-based scores. */
+const MAX_PERCENT = 100;
 
-/** Maximum rendered license string length before truncation with `..`. */
-const MAX_LICENSE_LENGTH = 18;
+/** Maximum OpenSSF Scorecard score. */
+const MAX_SCORECARD_SCORE = 10;
+
+/** OpenSSF Scorecard color thresholds: `>= 7.0` emerald, `>= 4.0` amber, otherwise rose. */
+const SCORECARD_THRESHOLDS: readonly ScoreColorThreshold[] = [
+  { color: 'emerald', minPercent: 70 },
+  { color: 'amber', minPercent: 40 },
+  { color: 'rose', minPercent: 0 },
+];
+
+/** Maximum rendered license string length before truncation with `..` (fits `MIT OR Apache-2.0`). */
+const MAX_LICENSE_LENGTH = 24;
 
 /** Currency symbols prefixed to formatted amounts; Other ISO 4217 codes are appended instead. */
 const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = { EUR: '€', GBP: '£', USD: '$' };
 
 /** Amount below which non-integer currency values keep exactly 2 decimals (`'€640.80'`). */
 const CURRENCY_CENTS_THRESHOLD = 1000;
+
+/**
+ * Download period table (single source of truth for every download metric): Short periods are
+ * sky, recent periods emerald, and long periods indigo.
+ */
+const DOWNLOAD_PERIODS: Readonly<Record<DownloadMetricKey, DownloadPeriodSpec>> = {
+  dd: { color: 'sky', suffix: '/day' },
+  dl: { color: 'emerald', suffix: '/mo' },
+  dq: { color: 'emerald', suffix: '/90d' },
+  dt: { color: 'indigo', suffix: '' },
+  dw: { color: 'sky', suffix: '/wk' },
+  dy: { color: 'indigo', suffix: '/yr' },
+};
+
+/**
+ * Community count table (single source of truth for every community metric): Audience counts are
+ * sky/indigo, appreciation counts rose, supporter counts pink, and live presence emerald.
+ */
+const COMMUNITY_KINDS: Readonly<Record<CommunityMetricKind, ThemeColorName>> = {
+  backers: 'pink',
+  followers: 'sky',
+  likes: 'rose',
+  members: 'indigo',
+  online: 'emerald',
+  patrons: 'pink',
+  players: 'emerald',
+  posts: 'violet',
+  votes: 'rose',
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -96,15 +168,6 @@ const LEADING_DIGIT_RX = /^\d/;
 const LICENSE_REF_PREFIX_RX = /^LicenseRef-/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Convert a numeric or numeric-string upstream value into a finite number, or `undefined`. */
-function toFiniteNumber(raw: RawCount): number | undefined {
-  if (raw === undefined || raw === null || raw === '') {
-    return undefined;
-  }
-  const parsed = typeof raw === 'number' ? raw : Number(raw);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
 
 /** Format `num` with the first matching `[threshold, suffix]` unit (1 decimal, trailing `.0` stripped). */
 function formatWithUnits(
@@ -122,13 +185,34 @@ function formatWithUnits(
 
 /** Capitalize a single SPDX license id part (`apache` -> `Apache`, `mit` -> `MIT`, `or` -> `or`). */
 function formatSpdxPart(part: string): string {
-  const lowerPart = part.toLowerCase();
-  if (Object.hasOwn(SPDX_PART_OVERRIDES, lowerPart)) {
-    return SPDX_PART_OVERRIDES[lowerPart];
+  const override = getOwnValue(SPDX_PART_OVERRIDES, part.toLowerCase());
+  if (override !== undefined) {
+    return override;
   }
   return part.length <= SPDX_ACRONYM_MAX_LENGTH
     ? part.toUpperCase()
     : part.charAt(0).toUpperCase() + part.slice(1);
+}
+
+/** Strip one pair of enclosing parentheses (`(MIT OR Apache-2.0)`), keeping `(A) OR (B)` intact. */
+function stripOuterParentheses(text: string): string {
+  if (!text.startsWith('(') || !text.endsWith(')')) {
+    return text;
+  }
+  let depth = 0;
+  for (let i = 0; i < text.length - 1; i += 1) {
+    const char = text[i];
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+      // The opening parenthesis closes before the end, so it does not enclose the whole text.
+      if (depth === 0) {
+        return text;
+      }
+    }
+  }
+  return text.slice(1, -1).trim();
 }
 
 /** Resolve the theme color of a score percentage from descending `thresholds`. */
@@ -144,28 +228,37 @@ function resolveThresholdColor(
   return undefined;
 }
 
+/** Read a finite number from an unknown JSON value. */
+function readFiniteNumber(raw: unknown): number | undefined {
+  return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
+}
+
+/** Format an out-of-N score with at most 1 decimal (`'8.3/10'`). */
+function formatScoreOutOf(achieved: number, maximum: number): string {
+  return `${Number(achieved.toFixed(1))}/${maximum}`;
+}
+
+/** Build score badge properties (value plus ring gauge, optionally threshold-colored). */
+function buildScoreResult(
+  rawAchieved: unknown,
+  rawMaximum: unknown,
+  format: (achieved: number, maximum: number) => string,
+  thresholds: readonly ScoreColorThreshold[] | undefined
+): Partial<MetricResult> {
+  const achieved = readFiniteNumber(rawAchieved);
+  const maximum = readFiniteNumber(rawMaximum);
+  if (achieved === undefined || maximum === undefined || maximum <= 0) {
+    return { value: MISSING_VALUE };
+  }
+  const percent = Math.round((achieved / maximum) * 100);
+  return {
+    color: thresholds ? resolveThresholdColor(percent, thresholds) : undefined,
+    special: { type: 'ring', value: percent },
+    value: format(achieved, maximum),
+  };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
-
-/** Default presentation for all-time total download metrics (`dt`). */
-export const TOTAL_DOWNLOADS: MetricPresentation = {
-  defaultColor: 'indigo',
-  defaultIcon: 'download',
-  defaultLabel: 'downloads',
-};
-
-/** Default presentation for monthly or recent download metrics (`dl`). */
-export const RECENT_DOWNLOADS: MetricPresentation = {
-  defaultColor: 'emerald',
-  defaultIcon: 'download',
-  defaultLabel: 'downloads',
-};
-
-/** Default presentation for weekly download metrics (`dw`). */
-export const WEEKLY_DOWNLOADS: MetricPresentation = {
-  defaultColor: 'sky',
-  defaultIcon: 'download',
-  defaultLabel: 'downloads',
-};
 
 /** Default presentation for license metrics (`license`). */
 export const LICENSE: MetricPresentation = {
@@ -223,12 +316,35 @@ export const RATING: MetricPresentation = {
   defaultLabel: 'rating',
 };
 
-/** Default presentation for test coverage metrics (`coverage`), recolored by `createCoverageTransform`. */
+/** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
+export const SCORE: MetricPresentation = {
+  defaultColor: 'emerald',
+  defaultIcon: 'gauge',
+  defaultLabel: 'score',
+};
+
+/** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
 export const COVERAGE: MetricPresentation = {
   defaultColor: 'emerald',
   defaultIcon: 'shield-check',
   defaultLabel: 'coverage',
 };
+
+/**
+ * Convert a numeric or numeric-string upstream value into a finite number.
+ * @param raw   Raw count (number or numeric string).
+ * @returns Finite number, or `undefined` for missing, blank, or non-numeric values.
+ */
+export function toFiniteNumber(raw: RawCount): number | undefined {
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : undefined;
+  }
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
 
 /**
  * Format a number into a compact human-readable string (e.g., `1.2k`, `3.4M`, `1.1B`).
@@ -305,16 +421,16 @@ export function formatCurrency(
 
 /**
  * Format an ISO 8601 timestamp into a concise relative age label (e.g., `'today'`, `'3d ago'`, `'2mo ago'`).
- * @param isoTimestamp   ISO 8601 timestamp string from an upstream API.
- * @param nowMs          Optional reference timestamp in milliseconds (defaults to `Date.now()`).
+ * @param isoTimestamp    ISO 8601 timestamp string from an upstream API.
+ * @param referenceTime   Optional reference timestamp in milliseconds (defaults to `Date.now()`).
  * @returns Compact relative time label, or `'n/a'` when the timestamp is missing or invalid.
  */
-export function formatRelativeDate(isoTimestamp?: string, nowMs = Date.now()): string {
-  const parsedMs = isoTimestamp ? Date.parse(isoTimestamp) : Number.NaN;
-  if (!Number.isFinite(parsedMs)) {
+export function formatRelativeDate(isoTimestamp?: string, referenceTime = Date.now()): string {
+  const parsedTime = isoTimestamp ? Date.parse(isoTimestamp) : Number.NaN;
+  if (!Number.isFinite(parsedTime)) {
     return MISSING_VALUE;
   }
-  const diffDays = Math.max(0, Math.floor((nowMs - parsedMs) / MS_PER_DAY));
+  const diffDays = Math.max(0, Math.floor((referenceTime - parsedTime) / MS_PER_DAY));
   if (diffDays === 0) {
     return 'today';
   }
@@ -339,7 +455,7 @@ export function formatRelativeDate(isoTimestamp?: string, nowMs = Date.now()): s
  * @returns Badge value (e.g., `'v1.2.3'`), or `'n/a'` when missing.
  */
 export function formatVersion(rawVersion: string | null | undefined): string {
-  const trimmed = (rawVersion ?? '').trim();
+  const trimmed = (typeof rawVersion === 'string' ? rawVersion : '').trim();
   if (!trimmed) {
     return MISSING_VALUE;
   }
@@ -347,19 +463,71 @@ export function formatVersion(rawVersion: string | null | undefined): string {
 }
 
 /**
- * Format a raw license string as a badge value, dropping the SPDX `LicenseRef-` prefix and
- * truncating overly long license texts with `..`.
+ * Build a version metric result that highlights an out-of-date flag in amber (e.g., AUR, Arch Linux).
+ * @param rawVersion    Upstream version string.
+ * @param isOutOfDate   Whether the package is flagged out-of-date.
+ * @returns Badge properties (e.g., `'v1.2.3'`, or amber `'v1.2.3 (outdated)'`).
+ */
+export function buildFlaggedVersionResult(
+  rawVersion: string | null | undefined,
+  isOutOfDate: boolean
+): Partial<MetricResult> {
+  const version = formatVersion(rawVersion);
+  return isOutOfDate ? { color: 'amber', value: `${version} (outdated)` } : { value: version };
+}
+
+/**
+ * Join distribution package version parts in pacman/RPM notation (`[epoch:]version[-release]`),
+ * omitting a zero or missing epoch and a missing release.
+ * @param epoch     Raw epoch (number or numeric string, e.g., Arch Linux `2`, Fedora `'0'`).
+ * @param version   Upstream version (e.g., `'9.0.2'`).
+ * @param release   Upstream package release (e.g., Arch Linux `'1'`, Fedora `'1.fc46'`).
+ * @returns Joined version (e.g., `'2:9.0.2-1'`), or `undefined` when the version is missing.
+ */
+export function buildPackageVersion(
+  epoch: RawCount,
+  version: unknown,
+  release: unknown
+): string | undefined {
+  if (typeof version !== 'string' || version.trim() === '') {
+    return undefined;
+  }
+  const epochNumber = toFiniteNumber(epoch) ?? 0;
+  const prefix = epochNumber > 0 ? `${epochNumber}:` : '';
+  const suffix = typeof release === 'string' && release !== '' ? `-${release}` : '';
+  return `${prefix}${version.trim()}${suffix}`;
+}
+
+/**
+ * Format a raw license string as a badge value, stripping one pair of enclosing parentheses and the
+ * SPDX `LicenseRef-` prefix, and truncating overly long license texts with `..`.
  * @param rawLicense   Upstream SPDX expression or license name.
- * @returns Badge value (e.g., `'MIT'`), or `'unknown'` when missing.
+ * @returns Badge value (e.g., `'MIT OR Apache-2.0'`), or `'unknown'` when missing.
  */
 export function formatLicense(rawLicense: string | null | undefined): string {
-  const trimmed = (rawLicense ?? '').trim().replace(LICENSE_REF_PREFIX_RX, '');
+  const trimmed = stripOuterParentheses(
+    (typeof rawLicense === 'string' ? rawLicense : '').trim()
+  ).replace(LICENSE_REF_PREFIX_RX, '');
   if (!trimmed) {
     return 'unknown';
   }
   return trimmed.length > MAX_LICENSE_LENGTH
     ? `${trimmed.slice(0, MAX_LICENSE_LENGTH - 2)}..`
     : trimmed;
+}
+
+/**
+ * Read a license name from an SPDX string or a legacy `{ type }` license object (npm, CocoaPods).
+ * @param rawLicense   Upstream `license` field.
+ * @returns License name, or `undefined` when missing.
+ */
+export function readLicenseName(rawLicense: unknown): string | undefined {
+  if (typeof rawLicense === 'string') {
+    return rawLicense;
+  }
+  return isJsonObject(rawLicense) && typeof rawLicense.type === 'string'
+    ? rawLicense.type
+    : undefined;
 }
 
 /**
@@ -379,178 +547,6 @@ export function formatSpdxKey(key: string | null | undefined): string | undefine
 }
 
 /**
- * Create a transform that reads a numeric count from a typed payload and formats it compactly.
- * @param readCount   Reads the raw count (number or numeric string) from the payload.
- * @param suffix      Optional unit suffix appended to the formatted count (e.g., `'/mo'`).
- * @returns Metric transform rendering e.g. `'4.2M/mo'`, or `'n/a'` when the count is missing.
- */
-export function createCountTransform<T>(
-  readCount: (payload: Partial<T>) => RawCount,
-  suffix = ''
-): MetricTransform {
-  return function transformCount(data: unknown): Partial<MetricResult> {
-    return { value: formatCount(readCount((data ?? {}) as Partial<T>), suffix) };
-  };
-}
-
-/**
- * Create a transform that reads a byte size from a typed payload and formats it with binary units.
- * @param readBytes   Reads the raw byte count from the payload.
- * @returns Metric transform rendering e.g. `'7.8 kB'`, or `'n/a'` when the size is missing.
- */
-export function createBytesTransform<T>(
-  readBytes: (payload: Partial<T>) => RawCount
-): MetricTransform {
-  return function transformBytes(data: unknown): Partial<MetricResult> {
-    return { value: formatBytes(readBytes((data ?? {}) as Partial<T>)) };
-  };
-}
-
-/**
- * Create a transform that reads a version string from a typed payload.
- * @param readVersion   Reads the raw version string from the payload.
- * @returns Metric transform rendering e.g. `'v1.2.3'`, or `'n/a'` when the version is missing.
- */
-export function createVersionTransform<T>(
-  readVersion: (payload: Partial<T>) => string | null | undefined
-): MetricTransform {
-  return function transformVersion(data: unknown): Partial<MetricResult> {
-    return { value: formatVersion(readVersion((data ?? {}) as Partial<T>)) };
-  };
-}
-
-/**
- * Create a transform that reads a license string from a typed payload.
- * @param readLicense   Reads the raw license string from the payload.
- * @returns Metric transform rendering e.g. `'MIT'`, or `'unknown'` when the license is missing.
- */
-export function createLicenseTransform<T>(
-  readLicense: (payload: Partial<T>) => string | null | undefined
-): MetricTransform {
-  return function transformLicense(data: unknown): Partial<MetricResult> {
-    return { value: formatLicense(readLicense((data ?? {}) as Partial<T>)) };
-  };
-}
-
-/**
- * Create a transform that reads an ISO 8601 timestamp from a typed payload and renders its relative age.
- * @param readTimestamp   Reads the raw ISO 8601 timestamp from the payload.
- * @returns Metric transform rendering e.g. `'3d ago'`, or `'n/a'` when the timestamp is missing.
- */
-export function createRelativeDateTransform<T>(
-  readTimestamp: (payload: Partial<T>) => string | null | undefined
-): MetricTransform {
-  return function transformRelativeDate(data: unknown): Partial<MetricResult> {
-    return { value: formatRelativeDate(readTimestamp((data ?? {}) as Partial<T>) ?? undefined) };
-  };
-}
-
-/**
- * Create a transform that rates on a 5-star scale (e.g., `'4.8/5'`), or `'unrated'` when missing or zero.
- * @param readRating   Reads `[rating, maximum]` from the payload (e.g., `[94, 100]` for WordPress).
- * @returns Metric transform rendering the rating scaled to 5 stars.
- */
-export function createRatingTransform<T>(
-  readRating: (payload: Partial<T>) => readonly [rating: unknown, maximum: number]
-): MetricTransform {
-  return function transformRating(data: unknown): Partial<MetricResult> {
-    const [rawRating, maximum] = readRating((data ?? {}) as Partial<T>);
-    const rating = typeof rawRating === 'number' ? rawRating : 0;
-    return {
-      value: rating > 0 && maximum > 0 ? `${((rating / maximum) * 5).toFixed(1)}/5` : 'unrated',
-    };
-  };
-}
-
-/**
- * Create a transform that renders a score percentage with an inline ring gauge (`?special=ring:<pct>`).
- * @param readScore    Reads `[achieved, maximum]` points from the payload.
- * @param format       Formats the achieved and maximum points into the badge value.
- * @param thresholds   Optional descending percentage thresholds that override the default color.
- * @returns Metric transform rendering the formatted score plus ring, or `'n/a'` when missing.
- */
-export function createScoreTransform<T>(
-  readScore: (payload: Partial<T>) => readonly [achieved: unknown, maximum: unknown],
-  format: (achieved: number, maximum: number) => string,
-  thresholds?: readonly ScoreColorThreshold[]
-): MetricTransform {
-  return function transformScore(data: unknown): Partial<MetricResult> {
-    const [rawAchieved, rawMaximum] = readScore((data ?? {}) as Partial<T>);
-    const achieved = typeof rawAchieved === 'number' ? rawAchieved : undefined;
-    const maximum = typeof rawMaximum === 'number' ? rawMaximum : undefined;
-    if (achieved === undefined || maximum === undefined || maximum <= 0) {
-      return { value: MISSING_VALUE };
-    }
-    const percent = Math.round((achieved / maximum) * 100);
-    return {
-      color: thresholds ? resolveThresholdColor(percent, thresholds) : undefined,
-      special: { type: 'ring', value: percent },
-      value: format(achieved, maximum),
-    };
-  };
-}
-
-/**
- * Create a transform that renders a coverage percentage with a ring gauge, colored by threshold
- * (`>= 80%` emerald, `>= 60%` amber, otherwise rose).
- * @param readPercent   Reads the raw coverage percentage (`0`–`100`) from the payload.
- * @returns Metric transform rendering e.g. `'96.4%'` plus ring, or `'n/a'` when missing.
- */
-export function createCoverageTransform<T>(
-  readPercent: (payload: Partial<T>) => unknown
-): MetricTransform {
-  return createScoreTransform<T>(
-    (payload) => [readPercent(payload), MAX_COVERAGE_PERCENT],
-    formatPercent,
-    COVERAGE_THRESHOLDS
-  );
-}
-
-/**
- * Create a transform that applies `transformEntry` to the first entry of an upstream result list,
- * reporting an empty or missing list as not found (e.g., AUR `results`, NuGet `data`, cranlogs rows).
- * @param readEntries      Reads the result list from the payload.
- * @param transformEntry   Metric transform applied to the first entry.
- * @returns Metric transform returning `undefined` (not found) when the list is empty.
- */
-export function createFirstEntryTransform<T>(
-  readEntries: (payload: Partial<T>) => unknown,
-  transformEntry: MetricTransform
-): MetricTransform {
-  return function transformFirstEntry(
-    data: unknown,
-    owner: string,
-    target: string
-  ): Partial<MetricResult> | undefined {
-    const entries = readEntries((data ?? {}) as Partial<T>);
-    const entry: unknown = Array.isArray(entries) ? entries[0] : undefined;
-    return entry !== null && typeof entry === 'object'
-      ? transformEntry(entry, owner, target)
-      : undefined;
-  };
-}
-
-/**
- * Create an endpoint factory for a code forge's `/:owner/:repo` API resources and web pages (GitHub, GitLab, Codeberg, Gitea).
- * @param buildApiBase   Builds the repository API base URL (without a trailing slash) for `(owner, repo)`.
- * @param webOrigin      Forge web origin (e.g., `'https://github.com'`).
- * @returns Factory creating an endpoint from an API sub-resource suffix and a web page suffix.
- */
-export function createRepoEndpointFactory(
-  buildApiBase: (owner: string, repo: string) => string,
-  webOrigin: string
-): (apiSuffix: string, pageSuffix: string) => MetricEndpoint {
-  return function createRepoEndpoint(apiSuffix: string, pageSuffix: string): MetricEndpoint {
-    return {
-      buildApiUrl: (owner: string, repo: string): string =>
-        `${buildApiBase(owner, repo)}${apiSuffix}`,
-      buildRedirectUrl: (owner: string, repo: string): string =>
-        `${webOrigin}/${owner}/${repo}${pageSuffix}`,
-    };
-  };
-}
-
-/**
  * Combine an optional npm scope (`owner`) and package name into a full npm package identifier.
  * @param owner   Optional scope with or without a leading `@` (e.g., `'@hono'`, `'hono'`, `''`).
  * @param pkg     Package name.
@@ -561,4 +557,298 @@ export function resolveNpmPackageName(owner: string, pkg: string): string {
     return pkg;
   }
   return owner.startsWith('@') ? `${owner}/${pkg}` : `@${owner}/${pkg}`;
+}
+
+/**
+ * Strip an optional leading `@` from a package scope segment (npm, JSR).
+ * @param owner   Scope with or without a leading `@` (e.g., `'@std'`, `'std'`).
+ * @returns Scope without `@` (e.g., `'std'`).
+ */
+export function stripScopePrefix(owner: string): string {
+  return owner.startsWith('@') ? owner.slice(1) : owner;
+}
+
+/**
+ * Build a URL path for an npm package name, encoding the scope and name individually.
+ * @param owner   Optional scope with or without a leading `@` (e.g., `'@hono'`, `'hono'`, `''`).
+ * @param pkg     Package name.
+ * @returns URL path (e.g., `'@hono/node-server'` or `'hono'`).
+ */
+export function encodeNpmPackageName(owner: string, pkg: string): string {
+  const scope = stripScopePrefix(owner);
+  return scope
+    ? `@${encodeURIComponent(scope)}/${encodeURIComponent(pkg)}`
+    : encodeURIComponent(pkg);
+}
+
+/**
+ * Create a metric that formats a numeric count compactly.
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readCount      Reads the raw count from the projected payload.
+ * @param suffix         Optional unit suffix (e.g., `' followers'`).
+ * @returns Metric rendering (e.g., `'4.2M'`), or `'n/a'` when the count is missing.
+ */
+export function createCountMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readCount: (payload: P) => RawCount,
+  suffix = ''
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => ({
+    value: formatCount(readCount(payload), suffix),
+  }));
+}
+
+/**
+ * Create a download metric whose suffix and default color come from the shared period table.
+ * @param endpoint    Upstream endpoint.
+ * @param period      Canonical download metric key (e.g., `'dw'` -> `/wk`, `'dt'` -> all-time).
+ * @param readCount   Reads the raw download count from the projected payload.
+ * @param overrides   Optional presentation overrides (e.g., `{ defaultLabel: 'installs' }`).
+ * @returns Metric rendering (e.g., `'1.1M/wk'`).
+ */
+export function createDownloadsMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  period: DownloadMetricKey,
+  readCount: (payload: P) => RawCount,
+  overrides?: Partial<MetricPresentation>
+): ServiceMetricConfig {
+  const spec = DOWNLOAD_PERIODS[period];
+  return createCountMetric(
+    endpoint,
+    {
+      defaultColor: overrides?.defaultColor ?? spec.color,
+      defaultIcon: overrides?.defaultIcon ?? 'download',
+      defaultLabel: overrides?.defaultLabel ?? 'downloads',
+    },
+    readCount,
+    spec.suffix
+  );
+}
+
+/**
+ * Create a community count metric whose label and default color come from the shared community table.
+ * @param endpoint    Upstream endpoint.
+ * @param kind        Community count kind (e.g., `'followers'`, `'likes'`, `'members'`).
+ * @param icon        Service brand icon identifying the platform (e.g., `'discord'`).
+ * @param readCount   Reads the raw count from the projected payload.
+ * @returns Metric rendering (e.g., `'12.4k'` labeled `followers`).
+ */
+export function createCommunityMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  kind: CommunityMetricKind,
+  icon: string,
+  readCount: (payload: P) => RawCount
+): ServiceMetricConfig {
+  return createCountMetric(
+    endpoint,
+    { defaultColor: COMMUNITY_KINDS[kind], defaultIcon: icon, defaultLabel: kind },
+    readCount
+  );
+}
+
+/**
+ * Create a metric that formats a byte size with binary units.
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readBytes      Reads the raw byte count from the projected payload.
+ * @returns Metric rendering (e.g., `'7.8 kB'`), or `'n/a'` when the size is missing.
+ */
+export function createBytesMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readBytes: (payload: P) => RawCount
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => ({
+    value: formatBytes(readBytes(payload)),
+  }));
+}
+
+/**
+ * Create a metric that renders a version string with a `v` prefix for numeric versions.
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readVersion    Reads the raw version from the projected payload.
+ * @returns Metric rendering (e.g., `'v1.2.3'`), or `'n/a'` when the version is missing.
+ */
+export function createVersionMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readVersion: (payload: P) => string | null | undefined
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => ({
+    value: formatVersion(readVersion(payload)),
+  }));
+}
+
+/**
+ * Create a latest release tag metric (`release`) for a code forge.
+ * @param endpoint   Upstream latest release endpoint.
+ * @param readTag    Reads the release tag name from the projected payload.
+ * @returns Metric rendering (e.g., `'v2.1.0'`).
+ */
+export function createReleaseMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  readTag: (payload: P) => string | null | undefined
+): ServiceMetricConfig {
+  return createVersionMetric(endpoint, RELEASE, readTag);
+}
+
+/**
+ * Create a license metric (`license`).
+ * @param endpoint      Upstream endpoint.
+ * @param readLicense   Reads the raw license string from the projected payload.
+ * @returns Metric rendering (e.g., `'MIT'`), or `'unknown'` when the license is missing.
+ */
+export function createLicenseMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  readLicense: (payload: P) => string | null | undefined
+): ServiceMetricConfig {
+  return createMetric(endpoint, LICENSE, (payload) => ({
+    value: formatLicense(readLicense(payload)),
+  }));
+}
+
+/**
+ * Create a metric that renders the relative age of an ISO 8601 timestamp.
+ * @param endpoint        Upstream endpoint.
+ * @param presentation    Default color, icon, and label.
+ * @param readTimestamp   Reads the raw timestamp from the projected payload.
+ * @returns Metric rendering (e.g., `'3d ago'`), or `'n/a'` when the timestamp is missing.
+ */
+export function createRelativeDateMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readTimestamp: (payload: P) => string | null | undefined
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => {
+    const timestamp = readTimestamp(payload);
+    return { value: formatRelativeDate(typeof timestamp === 'string' ? timestamp : undefined) };
+  });
+}
+
+/**
+ * Create a rating metric on a 5-star scale (e.g., `'4.8/5'`), or `'unrated'` when missing or zero.
+ * @param endpoint     Upstream endpoint.
+ * @param readRating   Reads `[rating, maximum]` from the projected payload (e.g., `[94, 100]` for WordPress).
+ * @returns Metric rendering the rating scaled to 5 stars.
+ */
+export function createRatingMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  readRating: (payload: P) => readonly [rating: unknown, maximum: number]
+): ServiceMetricConfig {
+  return createMetric(endpoint, RATING, (payload) => {
+    const [rawRating, maximum] = readRating(payload);
+    const rating = typeof rawRating === 'number' && Number.isFinite(rawRating) ? rawRating : 0;
+    return {
+      value: rating > 0 && maximum > 0 ? `${((rating / maximum) * 5).toFixed(1)}/5` : 'unrated',
+    };
+  });
+}
+
+/**
+ * Create a score metric with an inline ring gauge (`?special=ring:<pct>`).
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readScore      Reads `[achieved, maximum]` points from the projected payload.
+ * @param format         Formats the achieved and maximum points into the badge value.
+ * @param thresholds     Optional descending percentage thresholds that override the default color.
+ * @returns Metric rendering the formatted score plus ring, or `'n/a'` when missing.
+ */
+export function createScoreMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readScore: (payload: P) => readonly [achieved: unknown, maximum: unknown],
+  format: (achieved: number, maximum: number) => string,
+  thresholds?: readonly ScoreColorThreshold[]
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => {
+    const [achieved, maximum] = readScore(payload);
+    return buildScoreResult(achieved, maximum, format, thresholds);
+  });
+}
+
+/**
+ * Create a percentage score metric (`0`–`100`) with a ring gauge (e.g., `'94%'`).
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readPercent    Reads the raw percentage from the projected payload.
+ * @param thresholds     Optional descending percentage thresholds that override the default color.
+ * @returns Metric rendering the percentage plus ring, or `'n/a'` when missing.
+ */
+export function createPercentScoreMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readPercent: (payload: P) => unknown,
+  thresholds?: readonly ScoreColorThreshold[]
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) =>
+    buildScoreResult(readPercent(payload), MAX_PERCENT, formatPercent, thresholds)
+  );
+}
+
+/**
+ * Create a test coverage metric (`coverage`) with a ring gauge, colored by threshold
+ * (`>= 80%` emerald, `>= 60%` amber, otherwise rose).
+ * @param endpoint      Upstream endpoint.
+ * @param icon          Default icon slug (e.g., `'codecov'`).
+ * @param readPercent   Reads the raw coverage percentage (`0`–`100`) from the projected payload.
+ * @returns Metric rendering (e.g., `'96.4%'`) plus ring, or `'n/a'` when missing.
+ */
+export function createCoverageMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  icon: string,
+  readPercent: (payload: P) => unknown
+): ServiceMetricConfig {
+  return createPercentScoreMetric(
+    endpoint,
+    { ...COVERAGE, defaultIcon: icon },
+    readPercent,
+    COVERAGE_THRESHOLDS
+  );
+}
+
+/**
+ * Create an OpenSSF Scorecard score metric (`0`–`10`, e.g., `'8.3/10'`) with a ring gauge, colored
+ * by threshold (`>= 7.0` emerald, `>= 4.0` amber, otherwise rose).
+ * @param endpoint    Upstream endpoint.
+ * @param readScore   Reads the raw aggregate score from the projected payload.
+ * @returns Metric rendering the score plus ring, or `'n/a'` when missing.
+ */
+export function createScorecardMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  readScore: (payload: P) => unknown
+): ServiceMetricConfig {
+  return createScoreMetric(
+    endpoint,
+    { defaultColor: 'emerald', defaultIcon: 'shield-check', defaultLabel: 'openssf scorecard' },
+    (payload) => [readScore(payload), MAX_SCORECARD_SCORE],
+    formatScoreOutOf,
+    SCORECARD_THRESHOLDS
+  );
+}
+
+/**
+ * Create a test coverage service preset for a GitHub repository (`/badge/:service/:owner/:repo/coverage`),
+ * colored by threshold (`>= 80%` emerald, `>= 60%` amber, otherwise rose).
+ * @param options   Upstream URL templates, coverage reader, icon, and docs metadata.
+ * @returns Coverage service definition (`coverage` metric with a `cov` alias).
+ */
+export function createCoverageService<P extends object>(
+  options: CoverageServiceOptions<P>
+): ServiceDefinition {
+  const endpoint = createEndpoint<CoveragePayload>({
+    api: options.api,
+    page: options.page,
+    project: (data) =>
+      isJsonObject(data) ? { percent: options.readPercent(data as Partial<P>) } : undefined,
+  });
+  return defineService({
+    docs: { description: options.description, title: options.title },
+    metrics: {
+      coverage: createCoverageMetric(endpoint, options.icon, (payload) => payload.percent),
+    },
+    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+  });
 }

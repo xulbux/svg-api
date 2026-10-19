@@ -2,18 +2,22 @@
  * jsDelivr service preset – CDN request hits for unscoped and scoped npm packages (`/badge/jsdelivr/[:scope/]:pkg/:metric`).
  */
 
-import { createCountTransform, resolveNpmPackageName } from '@/services/metrics';
-import type { MetricEndpoint, MetricPresentation, ServiceDefinition } from '@/types';
+import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createCountMetric, encodeNpmPackageName } from '@/services/metrics';
+import type { MetricEndpoint, MetricPresentation } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Request hit statistics of a jsDelivr package. */
+interface JsDelivrHits {
+  /** Total hits in the requested period. */
+  total?: number;
+}
 
 /** Partial jsDelivr package statistics payload (`data.jsdelivr.com/v1/stats/packages/npm/:pkg`). */
 interface JsDelivrStatsPayload {
   /** Request hit statistics for the requested period. */
-  hits: {
-    /** Total hits in the requested period. */
-    total?: number;
-  };
+  hits: JsDelivrHits | null;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -25,54 +29,51 @@ const HITS: MetricPresentation = {
   defaultLabel: 'jsdelivr',
 };
 
+/** Projection of the jsDelivr statistics (only the hit totals). */
+const HITS_PROJECTION = pickFields<JsDelivrStatsPayload>(['hits']);
+
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Create a jsDelivr npm package statistics endpoint for a period (`week`, `month`, `year`). */
-function createJsDelivrEndpoint(period: string): MetricEndpoint {
-  return {
-    buildApiUrl: (scope: string, pkg: string): string =>
-      `https://data.jsdelivr.com/v1/stats/packages/npm/${resolveNpmPackageName(scope, pkg)}?period=${period}`,
-    buildRedirectUrl: (scope: string, pkg: string): string =>
-      `https://www.jsdelivr.com/package/npm/${resolveNpmPackageName(scope, pkg)}`,
-  };
+/** Create a jsDelivr npm package statistics endpoint for a period (`week`, `month`, `year`; Refreshed daily). */
+function createJsDelivrEndpoint(period: string): MetricEndpoint<Partial<JsDelivrStatsPayload>> {
+  return createEndpoint({
+    api: ({ owner, target }) =>
+      `https://data.jsdelivr.com/v1/stats/packages/npm/${encodeNpmPackageName(owner, target)}?period=${period}`,
+    page: ({ owner, target }) =>
+      `https://www.jsdelivr.com/package/npm/${encodeNpmPackageName(owner, target)}`,
+    project: HITS_PROJECTION,
+    ttl: CACHE_TTL.daily,
+  });
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** jsDelivr CDN statistics service preset (`jsdelivr`). */
-export const JSDELIVR_SERVICE: ServiceDefinition = {
+export const JSDELIVR_SERVICE = defineService({
   docs: {
-    description: 'Weekly, monthly, and yearly CDN request hits for any npm package.',
-    ownerName: ':scope',
-    targetName: ':pkg',
+    description: 'Weekly, monthly, and yearly CDN request hits for any npm package (hw/hm/hy).',
     title: 'jsDelivr',
   },
   metricAliases: { hits: 'hm' },
   metrics: {
-    hm: {
-      ...createJsDelivrEndpoint('month'),
-      ...HITS,
-      transform: createCountTransform<JsDelivrStatsPayload>(
-        (payload) => payload.hits?.total,
-        '/mo'
-      ),
-    },
-    hw: {
-      ...createJsDelivrEndpoint('week'),
-      ...HITS,
-      transform: createCountTransform<JsDelivrStatsPayload>(
-        (payload) => payload.hits?.total,
-        '/wk'
-      ),
-    },
-    hy: {
-      ...createJsDelivrEndpoint('year'),
-      ...HITS,
-      transform: createCountTransform<JsDelivrStatsPayload>(
-        (payload) => payload.hits?.total,
-        '/yr'
-      ),
-    },
+    hm: createCountMetric(
+      createJsDelivrEndpoint('month'),
+      HITS,
+      (stats) => stats.hits?.total,
+      '/mo'
+    ),
+    hw: createCountMetric(
+      createJsDelivrEndpoint('week'),
+      HITS,
+      (stats) => stats.hits?.total,
+      '/wk'
+    ),
+    hy: createCountMetric(
+      createJsDelivrEndpoint('year'),
+      HITS,
+      (stats) => stats.hits?.total,
+      '/yr'
+    ),
   },
-  ownerMode: 'optional',
-};
+  route: { owner: { isRequired: false, placeholder: ':scope' }, target: { placeholder: ':pkg' } },
+});

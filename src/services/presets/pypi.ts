@@ -1,52 +1,58 @@
 /**
  * PyPI service preset – Package version, required Python, and license from PyPI plus ClickHouse ClickPy download statistics (`/badge/pypi/:pkg/:metric`).
+ *
+ * The PyPI JSON document lists every release file (e.g., `~3.3 MB` for `boto3`), but its leading
+ * `info` object holds every needed field, so the body stream is cancelled as soon as `info` is
+ * complete (`leadingKey`).
  */
 
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  TOTAL_DOWNLOADS,
+  CACHE_TTL,
+  createEndpoint,
+  createMetric,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
+import {
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import type { MetricResult, ServiceDefinition, ServiceRouteParams } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial PyPI package metadata API payload. */
-interface PyPiPackagePayload {
-  /** Package metadata block. */
-  info: {
-    /** Legacy license string. */
-    license?: string | null;
-    /** PEP 639 SPDX license expression. */
-    license_expression?: string | null;
-    /** Required Python version specifier. */
-    requires_python?: string | null;
-    /** Latest published package version. */
-    version?: string;
-  };
+/** Projected PyPI package metadata (`pypi.org/pypi/:pkg/json` `info` object). */
+interface PyPiInfoProjection {
+  /** License (PEP 639 expression, short legacy license, or the last `License ::` classifier). */
+  license?: string;
+  /** Required Python version specifier. */
+  requiresPython?: string;
+  /** Latest published package version. */
+  version?: string;
+}
+
+/** Result row of the ClickHouse ClickPy downloads query. */
+interface ClickPyDownloadsRow {
+  /** Downloads in the last 30 full days (today excluded). */
+  last_month?: number | string;
+  /** All-time total downloads (`sum(count)`). */
+  total?: number | string;
 }
 
 /** Partial ClickHouse ClickPy (`pypi.pypi_downloads_per_day`) `JSONObjectEachRow` payload. */
 interface ClickPyDownloadsPayload {
   /** First result row. */
-  row_1: {
-    /** Downloads in the last 30 days (`sumIf(count, date >= today() - 30)`). */
-    last_month?: number | string;
-    /** All-time total downloads (`sum(count)`). */
-    total?: number | string;
-  };
+  row_1: ClickPyDownloadsRow | null;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** PyPI JSON API endpoint (`pypi.org/pypi/:pkg/json`) with project page redirect. */
-const PYPI_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => `https://pypi.org/pypi/${pkg}/json`,
-  buildRedirectUrl: (_owner: string, pkg: string): string => `https://pypi.org/project/${pkg}/`,
-};
+/** Prefix of trove license classifiers (`License :: OSI Approved :: MIT License`). */
+const LICENSE_CLASSIFIER_PREFIX = 'License :: ';
+
+/** Separator of trove classifier levels. */
+const CLASSIFIER_SEPARATOR = ' :: ';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -68,67 +74,102 @@ function normalizePyPiName(pkg: string): string {
   return pkg.replace(PEP503_SEPARATOR_RX, '-').toLowerCase();
 }
 
-/** Transform PyPI package metadata into a required Python version metric. */
-function transformPyPiPythonVersion(data: unknown): Partial<MetricResult> {
-  const requirement = ((data ?? {}) as Partial<PyPiPackagePayload>).info?.requires_python;
-  return { value: requirement ? requirement.replace(WHITESPACE_RX, '') : 'any' };
+/** Read a non-empty string field. */
+function readText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
-/** ClickHouse ClickPy SQL endpoint returning all-time and 30-day downloads in one read-only query. */
-const CLICKPY_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => {
-    const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30) AS last_month FROM pypi.pypi_downloads_per_day WHERE project = '${normalizePyPiName(pkg)}'`;
-    return `https://sql-clickhouse.clickhouse.com/?user=play&default_format=JSONObjectEachRow&query=${encodeURIComponent(sql)}`;
-  },
-  buildRedirectUrl: (_owner: string, pkg: string): string =>
-    `https://clickpy.clickhouse.com/dashboard/${normalizePyPiName(pkg)}`,
-};
+/** Read the most specific level of the last `License ::` trove classifier (`MIT License`). */
+function readLicenseClassifier(classifiers: unknown): string | undefined {
+  if (!Array.isArray(classifiers)) {
+    return undefined;
+  }
+  let license: string | undefined = undefined;
+  for (const classifier of classifiers) {
+    if (typeof classifier === 'string' && classifier.startsWith(LICENSE_CLASSIFIER_PREFIX)) {
+      license = classifier.slice(
+        classifier.lastIndexOf(CLASSIFIER_SEPARATOR) + CLASSIFIER_SEPARATOR.length
+      );
+    }
+  }
+  return license;
+}
+
+/** Project the PyPI `info` object into the badge fields (the README `description` is dropped). */
+function projectPyPiInfo(data: unknown): PyPiInfoProjection | undefined {
+  const info = isJsonObject(data) ? data.info : undefined;
+  if (!isJsonObject(info)) {
+    return undefined;
+  }
+  // Legacy `license` fields sometimes hold the full license text; Only short names are usable.
+  const legacyLicense = readText(info.license);
+  const shortLegacyLicense = legacyLicense?.includes('\n') ? undefined : legacyLicense;
+  return {
+    license:
+      readText(info.license_expression) ??
+      shortLegacyLicense ??
+      readLicenseClassifier(info.classifiers),
+    requiresPython: readText(info.requires_python),
+    version: readText(info.version),
+  };
+}
+
+/** Transform PyPI metadata into a required Python version metric. */
+function transformPyPiPythonVersion(info: PyPiInfoProjection): Partial<MetricResult> {
+  return { value: info.requiresPython ? info.requiresPython.replace(WHITESPACE_RX, '') : 'any' };
+}
+
+/** Build the read-only ClickPy SQL URL returning all-time and last-30-full-days downloads. */
+function buildClickPyApiUrl({ target }: ServiceRouteParams): string {
+  const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30 AND date < today()) AS last_month FROM pypi.pypi_downloads_per_day WHERE project = '${normalizePyPiName(target)}'`;
+  return `https://sql-clickhouse.clickhouse.com/?user=play&default_format=JSONObjectEachRow&query=${encodeURIComponent(sql)}`;
+}
+
+/** Build the ClickPy dashboard URL. */
+function buildClickPyPageUrl({ target }: ServiceRouteParams): string {
+  return `https://clickpy.clickhouse.com/dashboard/${encodeURIComponent(normalizePyPiName(target))}`;
+}
+
+/** Create the PyPI service preset. */
+function createPyPiService(): ServiceDefinition {
+  const pypiEndpoint = createEndpoint({
+    api: 'https://pypi.org/pypi/{target}/json',
+    leadingKey: 'info',
+    page: 'https://pypi.org/project/{target}/',
+    project: projectPyPiInfo,
+  });
+  // ClickPy aggregates daily download rows, so the statistics only change once a day.
+  const clickPyEndpoint = createEndpoint<Partial<ClickPyDownloadsPayload>>({
+    api: buildClickPyApiUrl,
+    page: buildClickPyPageUrl,
+    ttl: CACHE_TTL.daily,
+  });
+  return defineService({
+    docs: {
+      description:
+        'PyPI version, ClickPy total/30-day downloads (dt/dl), required Python, and license.',
+      title: 'PyPI',
+    },
+    metrics: {
+      dl: createDownloadsMetric(clickPyEndpoint, 'dl', (stats) => stats.row_1?.last_month),
+      dt: createDownloadsMetric(clickPyEndpoint, 'dt', (stats) => stats.row_1?.total),
+      license: createLicenseMetric(pypiEndpoint, (info) => info.license),
+      py: createMetric(
+        pypiEndpoint,
+        { defaultColor: 'amber', defaultIcon: 'python', defaultLabel: 'python' },
+        transformPyPiPythonVersion
+      ),
+      v: createVersionMetric(
+        pypiEndpoint,
+        { defaultColor: 'sky', defaultIcon: 'pypi', defaultLabel: 'pypi' },
+        (info) => info.version
+      ),
+    },
+    route: { target: { placeholder: ':pkg' } },
+  });
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** PyPI and ClickPy service preset (`pypi`). */
-export const PYPI_SERVICE: ServiceDefinition = {
-  docs: {
-    description: 'PyPI version, ClickPy total/monthly downloads, required Python, and license.',
-    targetName: ':pkg',
-    title: 'PyPI',
-  },
-  metricAliases: { dm: 'dl', l: 'license' },
-  metrics: {
-    dl: {
-      ...CLICKPY_ENDPOINT,
-      ...RECENT_DOWNLOADS,
-      transform: createCountTransform<ClickPyDownloadsPayload>(
-        (payload) => payload.row_1?.last_month,
-        '/mo'
-      ),
-    },
-    dt: {
-      ...CLICKPY_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<ClickPyDownloadsPayload>((payload) => payload.row_1?.total),
-    },
-    license: {
-      ...PYPI_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<PyPiPackagePayload>(
-        (payload) => payload.info?.license_expression || payload.info?.license
-      ),
-    },
-    py: {
-      ...PYPI_ENDPOINT,
-      defaultColor: 'amber',
-      defaultIcon: 'python',
-      defaultLabel: 'python',
-      transform: transformPyPiPythonVersion,
-    },
-    v: {
-      ...PYPI_ENDPOINT,
-      defaultColor: 'sky',
-      defaultIcon: 'pypi',
-      defaultLabel: 'pypi',
-      transform: createVersionTransform<PyPiPackagePayload>((payload) => payload.info?.version),
-    },
-  },
-  ownerMode: 'none',
-};
+export const PYPI_SERVICE: ServiceDefinition = createPyPiService();

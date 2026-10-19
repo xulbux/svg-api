@@ -29,14 +29,27 @@ export type BuilderAnimScope = 'pair' | 'sheen' | 'single';
 
 /** Selectable option of a builder field (an empty `value` means "omit the parameter"). */
 export interface BuilderOption {
+  /** Alternative (lowercase) values the parser accepts for this option; Prefilled links map them onto `value`. */
+  aliases?: readonly string[];
   /** Visible option label. */
   label: string;
+  /** Modifier options offered while the option is selected (e.g., `:static` for `?special=bar:`), led by the default `''`. */
+  modifiers?: readonly BuilderOption[];
   /** Placeholder of a dependent input when the option is selected (e.g., a `?special=` payload example). */
   placeholder?: string;
   /** CSS color of the option swatch (`color` fields only). */
   swatch?: string;
   /** Serialized parameter value. */
   value: string;
+}
+
+/** Metric option of a service preset. */
+export interface BuilderServiceMetric extends BuilderOption {
+  /**
+   * Upstream page URL template with `{owner}` and `{target}` placeholders (the effective owner falls back to
+   * the service's default owner); Omitted when the upstream URL cannot be expressed as a plain template.
+   */
+  redirect?: string;
 }
 
 /** Condition under which a builder field is shown (all other fields are always shown). */
@@ -57,6 +70,8 @@ export interface BuilderField {
   control: BuilderControl;
   /** Help text shown below the control. */
   description?: string;
+  /** Whether the client toggles the required state at runtime (service owner segments). */
+  hasDynamicRequirement?: boolean;
   /** Whether an empty value keeps a route preset (service badge icons); `none` then removes it explicitly. */
   hasPresetValue?: boolean;
   /** Field ID (state key and DOM ID suffix). */
@@ -85,12 +100,16 @@ export interface BuilderField {
 
 /** Service preset offered by the service badge builder. */
 export interface BuilderServiceOption {
+  /** Owner used when the owner segment is omitted (e.g., `'library'`), if the preset defines one. */
+  defaultOwner?: string;
   /** Service route key (e.g., `'npm'`). */
   key: string;
   /** Maximum number of `/`-separated target segments. */
   maxTargetSegments: number;
-  /** Canonical metrics with their default labels. */
-  metrics: readonly BuilderOption[];
+  /** Alternative metric slugs mapped to their canonical metric (e.g., `l` -> `license`). */
+  metricAliases?: Readonly<Record<string, string>>;
+  /** Canonical metrics with their default labels and upstream page templates. */
+  metrics: readonly BuilderServiceMetric[];
   /** Placeholder of the owner segment (e.g., `'library (default)'`). */
   ownerHint?: string;
   /** Whether the route accepts, requires, or rejects an explicit owner segment. */
@@ -113,10 +132,35 @@ export interface BuilderSchema {
   isBrandFirst: boolean;
   /** Element kind. */
   kind: BuilderKind;
+  /** Maximum icon slug length in characters; Longer slugs never resolve (mirrors `resolveIcon`). */
+  maxIconSlugLength: number;
   /** Public origin used in the generated snippets (e.g., `'https://svg.xul.is'`). */
   origin: string;
+  /**
+   * Pattern (`RegExp` source) every owner and target segment must match before a service redirect template
+   * is filled; Other values link to the badge URL, which the Worker redirects itself.
+   */
+  redirectValuePattern?: string;
   /** Service presets (service badge builder only). */
   services?: readonly BuilderServiceOption[];
+}
+
+/** Visual hierarchy tier of a shared variant (`?variant=`). */
+export interface VariantTier {
+  /** Tier name (e.g., `'Primary'`). */
+  name: string;
+  /** Short surface description (e.g., `'gradient'`). */
+  surface: string;
+}
+
+/** Display label, payload example, and modifiers of an inline data widget kind (`?special=`). */
+export interface SpecialKindDetail {
+  /** Valid payload example (builder placeholder and docs value). */
+  example: string;
+  /** Display label. */
+  label: string;
+  /** Trailing `:<modifier>` tokens accepted by the parser (e.g., `'static'` for bars). */
+  modifiers: readonly string[];
 }
 
 /** Builder target of a documented SVG path (used by the "Open in Builder" preview links). */

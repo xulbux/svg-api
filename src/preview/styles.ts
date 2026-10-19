@@ -12,6 +12,7 @@ import {
   ISOLUX_GRAY,
   ISOLUX_SYNTAX,
   ISOLUX_UI,
+  STRIP_DARK_COLORS,
   WHITE,
 } from '@/config/palette';
 import type { SchemeColor } from '@/types';
@@ -53,6 +54,15 @@ const MONO_FONT_STACK =
 /** Recessed surfaces (cards, tables, code drawers) below the page background. */
 const SOFT_SURFACE: SchemeColor = { dark: ISOLUX_GRAY[950], light: ISOLUX_GRAY[50] };
 
+/**
+ * Warning text: The amber strip tick (`#FFB900`, at least 11:1 on the dark surfaces), mixed half with
+ * black in the light scheme (`#805C00`, at least 5.8:1 on white and gray `50`).
+ */
+const WARNING_COLOR: SchemeColor = {
+  dark: STRIP_DARK_COLORS[3],
+  light: `color-mix(in srgb, ${STRIP_DARK_COLORS[3]}, ${ISOLUX_GRAY[950]} 50%)`,
+};
+
 /** Static stylesheets in cascade order. */
 const STATIC_STYLESHEETS: readonly string[] = [
   baseCss,
@@ -75,6 +85,14 @@ function buildColorToken(name: string, color: SchemeColor): ThemeToken {
   return { dark: color.dark, isColor: true, light: color.light, name };
 }
 
+/**
+ * Build a scheme-independent color token derived from other `--c-*` tokens; It is emitted once, and
+ * its `var()` references resolve against whichever scheme bindings are active on `:root`.
+ */
+function buildDerivedToken(name: string, expression: string): ThemeToken {
+  return { dark: expression, isColor: true, light: expression, name };
+}
+
 /** Swap the dark and light variant of a palette color (e.g., the inverted preview stage). */
 function invertScheme(color: SchemeColor): SchemeColor {
   return { dark: color.light, light: color.dark };
@@ -87,17 +105,24 @@ function invertScheme(color: SchemeColor): SchemeColor {
 function getThemeTokens(): readonly ThemeToken[] {
   themeTokensCache ??= [
     buildColorToken('bg', { dark: DARK_BG, light: LIGHT_BG }),
-    buildColorToken('bg-alt', SOFT_SURFACE),
     buildColorToken('bg-elv', ISOLUX_UI.raised),
     buildColorToken('bg-soft', SOFT_SURFACE),
     buildColorToken('divider', ISOLUX_UI.border),
+    // 3-tier border hierarchy: Outer divider > standard border > inner subtle border.
+    buildDerivedToken('border', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 72%)'),
+    buildDerivedToken('border-subtle', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 42%)'),
+    buildDerivedToken('code-bg', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 65%)'),
     buildColorToken('text-1', ISOLUX_UI.foreground),
     buildColorToken('text-2', ISOLUX_UI.foregroundSecondary),
     // WCAG AA (= 4.5:1) for small text on both `bg` and `bg-soft`.
     buildColorToken('text-3', ISOLUX_UI.foregroundMuted),
     buildColorToken('brand-1', { dark: BRAND_GRADIENT_START, light: BRAND_GRADIENT_END }),
     buildColorToken('brand-2', { dark: BRAND_INDIGO[500], light: BRAND_INDIGO[500] }),
-    buildColorToken('brand-3', { dark: BRAND_GRADIENT_END, light: BRAND_GRADIENT_START }),
+    buildDerivedToken('brand-soft', 'color-mix(in srgb, var(--c-brand-1) 12%, transparent)'),
+    buildDerivedToken('brand-border', 'color-mix(in srgb, var(--c-brand-1) 36%, transparent)'),
+    // Status colors (WCAG AA for small text on both `bg` and `bg-soft`); Danger keeps the Isolux operator red.
+    buildColorToken('danger', ISOLUX_SYNTAX.operator),
+    buildColorToken('warning', WARNING_COLOR),
     buildColorToken('nav-bg', {
       dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
       light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
@@ -154,6 +179,7 @@ function renderLightDarkTokenBindings(): string {
   }
   return css;
 }
+
 /** Build the `color-scheme` meta selector for an explicit scheme override. */
 function buildSchemeOverrideSelector(scheme: 'dark' | 'light'): string {
   return `:root:has(> head > meta[name="color-scheme"][content="${scheme}"])`;
@@ -163,8 +189,8 @@ function buildSchemeOverrideSelector(scheme: 'dark' | 'light'): string {
 function renderTokenCss(): string {
   return `/* Generated Design Tokens (src/config/palette.ts via src/preview/styles.ts) */
 :root {
-  --base-brand: ${BRAND_GRADIENT_END};
   --brand-gradient-start: ${BRAND_GRADIENT_START};
+  --brand-gradient-end: ${BRAND_GRADIENT_END};
   --font-mono: ${MONO_FONT_STACK};
 ${renderThemeTokenBindings('light', true)}}
 

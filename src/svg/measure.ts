@@ -3,15 +3,16 @@
  *
  * Each distinct `text|fontSize|weight|style` combination is laid out once at the `(0, 0)` baseline;
  * Its ink bounds and serialized outline are cached (LRU) and positioned with `transform="translate(…)"`.
- * Probe measurements used while wrapping and truncating go through uncached helpers so they never evict hot entries.
+ * Probe measurements used while wrapping and truncating go through uncached helpers, and one-off text
+ * (quote lines and authors) is rendered with `isUncached`, so neither ever evicts hot entries.
  */
 
-import opentype from 'opentype.js';
+import { parse as parseFont } from 'opentype.js';
 import type { Font, Path, PathCommand, RenderOptions } from 'opentype.js';
 import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
 import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
 import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
-import { createLruCache, readLruCache, writeLruCache } from '@/svg/shared';
+import { BADGE_FONT_SIZE, createLruCache, readLruCache, writeLruCache } from '@/svg/shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -59,6 +60,11 @@ interface TextPathOptions {
   isBold?: boolean;
   /** Whether to use Geist Sans SemiBold Italic (`600` italic). */
   isItalic?: boolean;
+  /**
+   * Whether to lay the text out without reading or writing the shared outline cache (one-off text such
+   * as quote lines, which would otherwise evict hot badge labels; Defaults to `false`).
+   */
+  isUncached?: boolean;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -97,14 +103,14 @@ const OUTLINE_CACHE = createLruCache<TextOutline>(
 /** Return the lazily initialized Geist Sans `Font` instance for the requested weight and style. */
 function resolveGeistFont(isBold: boolean, isItalic: boolean): Font {
   if (isItalic) {
-    FONT_SINGLETONS.italic ??= opentype.parse(geistSemiBoldItalicBuffer);
+    FONT_SINGLETONS.italic ??= parseFont(geistSemiBoldItalicBuffer);
     return FONT_SINGLETONS.italic;
   }
   if (isBold) {
-    FONT_SINGLETONS.semiBold ??= opentype.parse(geistSemiBoldBuffer);
+    FONT_SINGLETONS.semiBold ??= parseFont(geistSemiBoldBuffer);
     return FONT_SINGLETONS.semiBold;
   }
-  FONT_SINGLETONS.medium ??= opentype.parse(geistMediumBuffer);
+  FONT_SINGLETONS.medium ??= parseFont(geistMediumBuffer);
   return FONT_SINGLETONS.medium;
 }
 
@@ -193,14 +199,14 @@ function getTextOutline(
 /**
  * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string in Geist Sans (cached).
  * @param text       Text string to measure.
- * @param fontSize   Font size in pixels (defaults to `11`).
+ * @param fontSize   Font size in pixels (defaults to the `22px` badge font size, `BADGE_FONT_SIZE`).
  * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
  * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
  * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
 export function measureTextWidth(
   text: string,
-  fontSize = 11,
+  fontSize = BADGE_FONT_SIZE,
   isBold = false,
   isItalic = false
 ): number {
@@ -268,12 +274,11 @@ export function renderTextPathMarkup(text: string, options: TextPathOptions): st
     return '';
   }
   const { align = 'center', anchorX, baselineY, fill, fontSize } = options;
-  const outline = getTextOutline(
-    text,
-    fontSize,
-    options.isBold ?? false,
-    options.isItalic ?? false
-  );
+  const isBold = options.isBold ?? false;
+  const isItalic = options.isItalic ?? false;
+  const outline = options.isUncached
+    ? buildTextOutline(text, fontSize, isBold, isItalic)
+    : getTextOutline(text, fontSize, isBold, isItalic);
   if (outline.isEmpty || outline.pathData.length === 0) {
     return '';
   }

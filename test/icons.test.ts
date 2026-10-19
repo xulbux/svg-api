@@ -2,18 +2,19 @@
  * Icon resolution tests – Lucide stroke icons, Simple Icons brand fills, and full XulbuX tech stack coverage (`src/svg/icons.ts`).
  */
 
-/* oxlint-disable typescript/no-non-null-assertion */
-
 import { describe, expect, it } from 'vitest';
 import {
   FALLBACK_ICON_SLUG,
   ICON_SLUG_ALIASES,
   computeIconXBounds,
+  inspectResolvedIconCache,
   normalizeIconSlug,
   resolveIcon,
+  resolveIconLookup,
   resolveIconWithFallback,
 } from '@/svg/icons';
 import { resolveStackIconColor } from '@/svg/stack';
+import { requireDefined } from './helpers';
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -27,38 +28,33 @@ describe('resolveIcon', () => {
   });
 
   it('resolves single-word, multi-word, and aliased Lucide icons', () => {
-    const starIcon = resolveIcon('star');
-    expect(starIcon).toBeDefined();
-    expect(starIcon!.type).toBe('lucide');
-    expect(starIcon!.innerSvg).toContain('<');
+    const starIcon = requireDefined(resolveIcon('star'), 'star icon');
+    expect(starIcon.type).toBe('lucide');
+    expect(starIcon.innerSvg).toContain('<');
 
-    const bookOpenIcon = resolveIcon('book-open');
-    expect(bookOpenIcon).toBeDefined();
-    expect(bookOpenIcon!.type).toBe('lucide');
-    expect(bookOpenIcon!.innerSvg).toContain('<path');
+    const bookOpenIcon = requireDefined(resolveIcon('book-open'), 'book-open icon');
+    expect(bookOpenIcon.type).toBe('lucide');
+    expect(bookOpenIcon.innerSvg).toContain('<path');
 
-    const globeCodeIcon = resolveIcon('globe-code');
-    expect(globeCodeIcon).toBeDefined();
-    expect(globeCodeIcon!.type).toBe('lucide');
-    expect(globeCodeIcon!.innerSvg).toContain('<circle');
+    const globeCodeIcon = requireDefined(resolveIcon('globe-code'), 'globe-code icon');
+    expect(globeCodeIcon.type).toBe('lucide');
+    expect(globeCodeIcon.innerSvg).toContain('<circle');
 
-    const squareTextIcon = resolveIcon('square-text');
-    expect(squareTextIcon).toBeDefined();
-    expect(squareTextIcon!.type).toBe('lucide');
-    expect(squareTextIcon!.innerSvg).toContain('<path');
+    const squareTextIcon = requireDefined(resolveIcon('square-text'), 'square-text icon');
+    expect(squareTextIcon.type).toBe('lucide');
+    expect(squareTextIcon.innerSvg).toContain('<path');
 
-    const puzzleAlias = resolveIcon('puzzle-piece');
-    expect(puzzleAlias).toBeDefined();
-    expect(puzzleAlias!.type).toBe('lucide');
+    const puzzleAlias = requireDefined(resolveIcon('puzzle-piece'), 'puzzle-piece icon');
+    expect(puzzleAlias.type).toBe('lucide');
   });
 
   it('resolves Iconify brand/tech slugs with unified C/C++/C# hexagon style and all 60+ tech stack slugs', () => {
-    const cIcon = resolveIcon('c', true);
-    const cppIcon = resolveIcon('cpp', true);
-    const csIcon = resolveIcon('cs', true);
-    expect(cIcon!.innerSvg).toContain('transform="scale(0.1875)"');
-    expect(cppIcon!.innerSvg).toContain('transform="scale(0.1875)"');
-    expect(csIcon!.innerSvg).toContain('transform="scale(0.1875)"');
+    const cIcon = requireDefined(resolveIcon('c', true), 'c brand icon');
+    const cppIcon = requireDefined(resolveIcon('cpp', true), 'cpp brand icon');
+    const csIcon = requireDefined(resolveIcon('cs', true), 'cs brand icon');
+    expect(cIcon.innerSvg).toContain('transform="scale(0.1875)"');
+    expect(cppIcon.innerSvg).toContain('transform="scale(0.1875)"');
+    expect(csIcon.innerSvg).toContain('transform="scale(0.1875)"');
     const stackSlugs = [
       'c',
       'cpp',
@@ -131,8 +127,8 @@ describe('resolveIcon', () => {
     }
 
     // With isBrandFirst=true, "blender" resolves to the Simple Icons 3D Blender logo rather than Lucide's kitchen blender.
-    const blenderBrand = resolveIcon('blender', true);
-    expect(blenderBrand!.type).toBe('simple');
+    const blenderBrand = requireDefined(resolveIcon('blender', true), 'blender brand icon');
+    expect(blenderBrand.type).toBe('simple');
   });
 
   it('returns undefined for unknown icon slugs and Object.prototype keys', () => {
@@ -174,6 +170,43 @@ describe('resolveIcon', () => {
     expect(normalizeIconSlug('cpp')).toBe('cplusplus');
     expect(normalizeIconSlug('rocket')).toBe('rocket');
     expect(ICON_SLUG_ALIASES.ts).toBe('typescript');
+  });
+
+  it('returns the canonical key together with the resolved data (normalized once)', () => {
+    const lookup = resolveIconLookup(' TS ', true);
+    expect(lookup.key).toBe('typescript');
+    expect(lookup.data).toBe(resolveIcon('typescript', true));
+    expect(resolveIconLookup('none')).toEqual({ data: undefined, key: 'none' });
+  });
+
+  it('never serves a raw-slug fallback result for the canonical slug (regression: cached under the alias target key)', () => {
+    // A temporary alias whose canonical target does not exist, so the raw slug resolves it.
+    const alias = 'zap';
+    const missingTarget = 'zzz-no-such-canonical-icon';
+    Reflect.set(ICON_SLUG_ALIASES, alias, missingTarget);
+    try {
+      expect(resolveIcon(alias)).toBeDefined();
+      expect(resolveIcon(missingTarget)).toBeUndefined();
+    } finally {
+      Reflect.deleteProperty(ICON_SLUG_ALIASES, alias);
+    }
+    expect(resolveIcon(alias)).toBeDefined();
+  });
+
+  it('bounds the resolved icon cache by total body size, not only by entry count (regression: count-only bound)', () => {
+    for (const slug of ['elsevier', 'rust', 'typescript', 'star', 'rocket']) {
+      resolveIcon(slug, true);
+    }
+    const cache = inspectResolvedIconCache();
+    const rustIcon = requireDefined(resolveIcon('rust', true), 'rust brand icon');
+    expect(Number.isFinite(cache.maxWeight)).toBe(true);
+    expect(cache.weigh(rustIcon)).toBe(rustIcon.innerSvg.length);
+    let summedWeight = 0;
+    for (const icon of cache.entries.values()) {
+      summedWeight += icon.innerSvg.length;
+    }
+    expect(cache.totalWeight).toBe(summedWeight);
+    expect(cache.totalWeight).toBeLessThanOrEqual(cache.maxWeight);
   });
 });
 

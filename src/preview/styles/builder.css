@@ -3,8 +3,8 @@
 .builder-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  gap: 24px;
   align-items: start;
+  gap: 24px;
 }
 
 @media (max-width: 1200px) {
@@ -13,11 +13,10 @@
   }
 }
 
+/* Form & Panel Surfaces (shared surface card in base.css) */
+
 .builder-form,
 .builder-panel-inner {
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
   padding: clamp(16px, 2.2vw, 22px);
 }
 
@@ -36,11 +35,6 @@
   min-inline-size: 0;
 }
 
-.builder-field[hidden],
-.builder-subfield[hidden] {
-  display: none;
-}
-
 .builder-label-row {
   display: flex;
   align-items: baseline;
@@ -56,7 +50,7 @@
 
 .builder-required {
   margin-inline-start: 3px;
-  color: var(--c-hl-op);
+  color: var(--c-danger);
 }
 
 .builder-param {
@@ -80,14 +74,14 @@
   min-block-size: 36px;
   padding: 7px 10px;
   border: 1px solid var(--c-border);
-  border-radius: 8px;
-  background: var(--c-bg);
-  color: var(--c-text-1);
+  border-radius: var(--radius-md);
   font: inherit;
   font-size: 0.86rem;
+  color: var(--c-text-1);
+  background: var(--c-bg);
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
 .builder-input::placeholder {
@@ -99,15 +93,15 @@
 }
 
 .builder-input:focus-visible {
-  outline: none;
   border-color: var(--c-focus);
+  outline: none;
   box-shadow: 0 0 0 3px var(--c-hover);
 }
 
 .builder-textarea {
   min-block-size: 88px;
-  resize: vertical;
   line-height: 1.5;
+  resize: vertical;
 }
 
 .builder-textarea.is-mono {
@@ -123,7 +117,7 @@
 }
 
 .builder-hint.is-warning {
-  color: var(--c-hl-op);
+  color: var(--c-warning);
 }
 
 .builder-validation:empty {
@@ -209,13 +203,13 @@
   flex: 1;
   min-inline-size: 0;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .select-chevron {
   color: var(--c-text-3);
-  transition: rotate 0.2s ease;
+  transition: rotate var(--duration-base) ease;
 }
 
 .select:has(.select-menu:where(:popover-open, .is-open)) .select-chevron {
@@ -234,33 +228,12 @@
   background: var(--swatch);
 }
 
-.select-swatch[hidden] {
-  display: none;
-}
+/* Listbox Panel: Shared popover surface (`.popover-panel` in base.css) */
 
 .select-menu {
-  position: fixed;
-  inset: auto;
   min-inline-size: 180px;
   max-inline-size: min(360px, calc(100vw - 16px));
   max-block-size: min(320px, 60vh);
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  flex-direction: column;
-  border: 1px solid var(--c-divider);
-  border-radius: 10px;
-  background: var(--c-bg-soft);
-  color: var(--c-text-1);
-  box-shadow: 0 10px 30px rgba(0 0 0 / 0.18);
-}
-
-.select-menu:where(:popover-open, .is-open) {
-  display: flex;
-}
-
-.select-menu:not(:where(:popover-open, .is-open)) {
-  display: none;
 }
 
 /* Fallback without the Popover API: The menu stays in flow, so position it below the trigger */
@@ -269,45 +242,56 @@
   position: absolute;
   inset-block-start: calc(100% + 4px);
   inset-inline-start: 0;
-  z-index: 10;
+  z-index: var(--z-popover);
 }
 
 @supports (position-area: block-end) {
   .select-menu {
-    min-inline-size: max(180px, anchor-size(width));
     position-area: block-end span-inline-end;
     position-try-fallbacks: flip-block;
+    min-inline-size: max(180px, anchor-size(width));
     margin-block: 4px;
   }
 }
 
-.select-search {
+/* Search Fields (dropdown listboxes and the icon picker) */
+
+.select-search,
+.icon-picker-search {
   display: flex;
   align-items: center;
   gap: 7px;
-  margin: 6px 6px 2px;
-  padding-inline: 9px;
   border: 1px solid var(--c-border);
-  border-radius: 7px;
-  background: var(--c-bg);
   color: var(--c-text-3);
-  transition: border-color 0.15s ease;
+  background: var(--c-bg);
+  transition: border-color var(--duration-fast) ease;
 }
 
-.select-search:focus-within {
+.select-search:focus-within,
+.icon-picker-search:focus-within {
   border-color: var(--c-focus);
 }
 
-.select-search-input {
+.select-search-input,
+.icon-picker-input {
   flex: 1;
   min-inline-size: 0;
-  padding: 6px 0;
   border: 0;
-  background: transparent;
-  color: var(--c-text-1);
   font: inherit;
-  font-size: 0.84rem;
+  color: var(--c-text-1);
+  background: transparent;
   outline: none;
+}
+
+.select-search {
+  margin: 6px 6px 2px;
+  padding-inline: 9px;
+  border-radius: 7px;
+}
+
+.select-search-input {
+  padding: 6px 0;
+  font-size: 0.84rem;
 }
 
 .select-options {
@@ -325,7 +309,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 9px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.84rem;
   color: var(--c-text-2);
   cursor: pointer;
@@ -336,22 +320,22 @@
 
 .select-option:hover,
 .select-option:focus-visible {
-  outline: none;
-  background: var(--c-hover);
   color: var(--c-text-1);
+  background: var(--c-hover);
+  outline: none;
 }
 
 .select-option[aria-selected='true'] {
-  background: var(--c-selected);
-  color: var(--c-text-1);
   font-weight: 600;
+  color: var(--c-text-1);
+  background: var(--c-selected);
 }
 
 .select-option-label {
   min-inline-size: 0;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .select-empty {
@@ -360,7 +344,7 @@
   color: var(--c-text-3);
 }
 
-/* Color Swatches */
+/* Color Swatches (the hidden radio overlay lives in base.css) */
 
 .swatch-grid {
   display: flex;
@@ -374,14 +358,6 @@
   cursor: pointer;
 }
 
-.swatch-input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
 .swatch-dot {
   inline-size: 22px;
   block-size: 22px;
@@ -391,23 +367,27 @@
     0 0 0 2px var(--c-bg-soft),
     0 0 0 3px var(--c-border);
   transition:
-    box-shadow 0.15s ease,
-    scale 0.15s ease;
+    box-shadow var(--duration-fast) ease,
+    scale var(--duration-fast) ease;
 }
+
+/* The "Default" swatch is crossed out with a diagonal slash. */
 
 .swatch-dot.is-default {
   background:
     linear-gradient(
       135deg,
       transparent calc(50% - 1px),
-      var(--c-hl-op) calc(50% - 1px) calc(50% + 1px),
+      var(--c-danger) calc(50% - 1px) calc(50% + 1px),
       transparent calc(50% + 1px)
     ),
     var(--c-bg);
 }
 
-.swatch:hover .swatch-dot {
-  scale: 1.1;
+@media (hover: hover) {
+  .swatch:hover .swatch-dot {
+    scale: 1.1;
+  }
 }
 
 .swatch-input:checked + .swatch-dot {
@@ -450,28 +430,25 @@
   flex: 1;
   min-inline-size: 0;
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.icon-select-value.is-placeholder {
-  color: var(--c-text-3);
-}
-
+.icon-select-value.is-placeholder,
 .icon-select-grid {
   color: var(--c-text-3);
 }
 
 .icon-input-glyph {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   inline-size: 26px;
   block-size: 26px;
-  border-radius: 6px;
-  background: var(--c-hover);
+  border-radius: var(--radius-sm);
   color: var(--c-text-1);
+  background: var(--c-hover);
 }
 
 .icon-input-glyph svg {
@@ -481,20 +458,20 @@
 
 .icon-select-clear {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   inline-size: 36px;
   block-size: 36px;
   padding: 0;
   border: 1px solid var(--c-border);
-  border-radius: 8px;
-  background: var(--c-bg);
+  border-radius: var(--radius-md);
   color: var(--c-text-2);
+  background: var(--c-bg);
   cursor: pointer;
   transition:
-    border-color 0.15s ease,
-    color 0.15s ease;
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
 }
 
 .icon-select-clear:hover {
@@ -502,17 +479,7 @@
   color: var(--c-text-1);
 }
 
-.icon-select-clear[hidden] {
-  display: none;
-}
-
 /* Small Buttons (builder actions) */
-
-button.btn-primary,
-button.btn-secondary {
-  font-family: inherit;
-  cursor: pointer;
-}
 
 .btn-small {
   gap: 6px;
@@ -521,16 +488,22 @@ button.btn-secondary {
   font-size: 0.78rem;
 }
 
-/* Sticky Preview & Output Panel */
+/* Sticky Preview & Output Panel (scrolls on its own when taller than the viewport) */
 
 .builder-panel {
   position: sticky;
   inset-block-start: calc(var(--header-height) + 20px);
+  max-block-size: calc(100dvh - var(--header-height) - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
 }
 
 @media (max-width: 1200px) {
   .builder-panel {
     position: static;
+    max-block-size: none;
+    overflow-y: visible;
   }
 }
 
@@ -548,7 +521,7 @@ button.btn-secondary {
 .builder-preview {
   max-inline-size: 100%;
   block-size: auto;
-  transition: opacity 0.15s ease;
+  transition: opacity var(--duration-fast) ease;
 }
 
 .builder-preview.is-loading {
@@ -559,11 +532,6 @@ button.btn-secondary {
   margin: 0;
   font-size: 0.84rem;
   color: var(--c-text-3);
-}
-
-.builder-placeholder[hidden],
-.builder-preview[hidden] {
-  display: none;
 }
 
 .builder-status {
@@ -577,7 +545,15 @@ button.btn-secondary {
 }
 
 .builder-status.is-warning {
-  color: var(--c-hl-op);
+  color: var(--c-warning);
+}
+
+/* Segmented Tabs (snippet formats and icon sets) */
+
+.builder-tabs,
+.icon-picker-tabs {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .builder-tabs {
@@ -587,44 +563,69 @@ button.btn-secondary {
   border: 1px solid var(--c-border-subtle);
   border-radius: 9px;
   background: var(--c-bg);
-  user-select: none;
-  -webkit-user-select: none;
+}
+
+.icon-picker-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.builder-tab,
+.icon-picker-tab span {
+  border-radius: var(--radius-sm);
+  color: var(--c-text-2);
+  transition:
+    background-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.builder-tab:hover,
+.icon-picker-tab:hover span {
+  color: var(--c-text-1);
+  background: var(--c-hover);
+}
+
+.builder-tab.is-active,
+.icon-picker-tab input:checked + span {
+  color: var(--c-text-1);
+  background: var(--c-selected);
 }
 
 .builder-tab {
   padding: 5px 13px;
   border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--c-text-2);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
+  background: transparent;
   cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.builder-tab:hover {
-  background: var(--c-hover);
-  color: var(--c-text-1);
-}
-
-.builder-tab.is-active {
-  background: var(--c-selected);
-  color: var(--c-text-1);
 }
 
 .builder-tab:focus-visible {
   outline-offset: -2px;
 }
 
+.icon-picker-tab {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-picker-tab span {
+  padding: 4px 11px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.icon-picker-tab input:focus-visible + span {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 1px;
+}
+
 /* Wrap long URLs instead of scrolling (the builder shows a single snippet). */
 
 .builder-code {
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   -webkit-mask-image: none;
   mask-image: none;
 }
@@ -647,30 +648,13 @@ button.btn-secondary {
   margin-block-start: 14px;
 }
 
-/* Icon Picker Popover (anchored below its trigger where supported) */
+/* Icon Picker Popover (shared popover surface in base.css, anchored below its trigger where supported) */
 
 .icon-picker {
-  position: fixed;
-  inset: auto;
   inline-size: min(384px, calc(100vw - 16px));
   block-size: min(452px, 72vh);
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  flex-direction: column;
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
-  background: var(--c-bg-soft);
-  color: var(--c-text-1);
+  border-radius: var(--radius-lg);
   box-shadow: 0 16px 40px rgba(0 0 0 / 0.22);
-}
-
-.icon-picker:where(:popover-open, .is-open) {
-  display: flex;
-}
-
-.icon-picker:not(:where(:popover-open, .is-open)) {
-  display: none;
 }
 
 @supports (position-area: block-end) {
@@ -694,31 +678,13 @@ button.btn-secondary {
 }
 
 .icon-picker-search {
-  display: flex;
-  align-items: center;
-  gap: 7px;
   padding-inline: 10px;
-  border: 1px solid var(--c-border);
-  border-radius: 8px;
-  background: var(--c-bg);
-  color: var(--c-text-3);
-  transition: border-color 0.15s ease;
-}
-
-.icon-picker-search:focus-within {
-  border-color: var(--c-focus);
+  border-radius: var(--radius-md);
 }
 
 .icon-picker-input {
-  flex: 1;
-  min-inline-size: 0;
   padding: 7px 0;
-  border: 0;
-  background: transparent;
-  color: var(--c-text-1);
-  font: inherit;
   font-size: 0.85rem;
-  outline: none;
 }
 
 .icon-picker-row {
@@ -728,59 +694,9 @@ button.btn-secondary {
   gap: 8px;
 }
 
-.icon-picker-none[hidden] {
-  display: none;
-}
-
-.icon-picker-tabs {
-  display: flex;
-  gap: 4px;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.icon-picker-tab {
-  position: relative;
-  display: inline-flex;
-}
-
-.icon-picker-tab input {
-  position: absolute;
-  inset: 0;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.icon-picker-tab span {
-  padding: 4px 11px;
-  border-radius: 6px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--c-text-2);
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.icon-picker-tab:hover span {
-  background: var(--c-hover);
-  color: var(--c-text-1);
-}
-
-.icon-picker-tab input:checked + span {
-  background: var(--c-selected);
-  color: var(--c-text-1);
-}
-
-.icon-picker-tab input:focus-visible + span {
-  outline: 2px solid var(--c-focus);
-  outline-offset: 1px;
-}
-
 .icon-picker-grid {
-  flex: 1;
   display: grid;
+  flex: 1;
   grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
   align-content: start;
   gap: 4px;
@@ -797,9 +713,9 @@ button.btn-secondary {
   aspect-ratio: 1;
   padding: 0;
   border: 0;
-  border-radius: 8px;
-  background: transparent;
+  border-radius: var(--radius-md);
   color: var(--c-text-2);
+  background: transparent;
   cursor: pointer;
   transition:
     background-color 0.12s ease,
@@ -808,13 +724,13 @@ button.btn-secondary {
 
 .icon-tile:hover,
 .icon-tile:focus-visible {
-  background: var(--c-hover);
   color: var(--c-text-1);
+  background: var(--c-hover);
 }
 
 .icon-tile[aria-selected='true'] {
-  background: var(--c-selected);
   color: var(--c-text-1);
+  background: var(--c-selected);
 }
 
 .icon-tile:focus-visible {
@@ -837,6 +753,16 @@ button.btn-secondary {
   background: var(--c-border-subtle);
 }
 
+/* Empty search results (spans the whole grid, with a "Clear search" text button) */
+
+.icon-picker-empty {
+  grid-column: 1 / -1;
+  padding: 24px 12px;
+  font-size: 0.8rem;
+  text-align: center;
+  color: var(--c-text-3);
+}
+
 .icon-picker-sentinel {
   grid-column: 1 / -1;
   block-size: 1px;
@@ -849,7 +775,7 @@ button.btn-secondary {
   border-block-start: 1px solid var(--c-border-subtle);
   font-family: var(--font-mono);
   font-size: 0.74rem;
-  color: var(--c-text-3);
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text-3);
 }

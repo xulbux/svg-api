@@ -2,14 +2,12 @@
  * RubyGems service preset – Ruby gem version, total downloads, and license (`/badge/gem/:gem/:metric`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  TOTAL_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -26,40 +24,31 @@ interface RubyGemPayload {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** RubyGems gem endpoint with gem page redirect. */
-const RUBYGEMS_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, gem: string): string =>
-    `https://rubygems.org/api/v1/gems/${gem}.json`,
-  buildRedirectUrl: (_owner: string, gem: string): string => `https://rubygems.org/gems/${gem}`,
-};
+const RUBYGEMS_ENDPOINT = createEndpoint({
+  api: 'https://rubygems.org/api/v1/gems/{target}.json',
+  page: 'https://rubygems.org/gems/{target}',
+  project: pickFields<RubyGemPayload>(['downloads', 'licenses', 'version']),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** RubyGems service preset (`gem`). */
-export const RUBYGEMS_SERVICE: ServiceDefinition = {
+export const RUBYGEMS_SERVICE = defineService({
   docs: {
     description: 'Latest version, all-time downloads, and license of any Ruby gem.',
-    targetName: ':gem',
     title: 'RubyGems',
   },
-  metricAliases: { dl: 'dt', l: 'license' },
+  metricAliases: { dl: 'dt' },
   metrics: {
-    dt: {
-      ...RUBYGEMS_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<RubyGemPayload>((payload) => payload.downloads),
-    },
-    license: {
-      ...RUBYGEMS_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<RubyGemPayload>((payload) => payload.licenses?.[0]),
-    },
-    v: {
-      ...RUBYGEMS_ENDPOINT,
-      defaultColor: 'red',
-      defaultIcon: 'rubygems',
-      defaultLabel: 'gem',
-      transform: createVersionTransform<RubyGemPayload>((payload) => payload.version),
-    },
+    dt: createDownloadsMetric(RUBYGEMS_ENDPOINT, 'dt', (gem) => gem.downloads),
+    license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) =>
+      Array.isArray(gem.licenses) ? gem.licenses[0] : undefined
+    ),
+    v: createVersionMetric(
+      RUBYGEMS_ENDPOINT,
+      { defaultColor: 'red', defaultIcon: 'rubygems', defaultLabel: 'gem' },
+      (gem) => gem.version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':gem' } },
+});

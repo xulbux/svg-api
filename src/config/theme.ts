@@ -45,15 +45,6 @@ const CHROMA_SEARCH_STEPS = 24;
 /** Upper bound for OKLCH chroma search. */
 const MAX_SEARCH_CHROMA = 0.4;
 
-/** Base neutral dark carbon surface tokens (Isolux Pro Dark grays from `src/config/palette.ts`). */
-export const BASE_DARK: BaseDarkPalette = {
-  bgBottom: ISOLUX_GRAY[900],
-  bgTop: ISOLUX_GRAY[800],
-  borderNeutral: ISOLUX_UI.border.dark,
-  textMuted: ISOLUX_UI.foregroundSecondary.dark,
-  textPrimary: ISOLUX_UI.foreground.dark,
-};
-
 /** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */
 const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> = {
   amber: {
@@ -195,8 +186,11 @@ const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> 
   },
 };
 
-/** All 22 Tailwind v4 theme color names in canonical rainbow + neutral order. */
-export const THEME_COLOR_NAMES: readonly ThemeColorName[] = [
+/**
+ * All 22 Tailwind v4 theme color names in canonical rainbow + neutral order (a literal tuple, so
+ * `test/routes.test.ts` can assert at the type level that it covers every `ThemeColorName`).
+ */
+export const THEME_COLOR_NAMES = [
   'red',
   'orange',
   'amber',
@@ -219,7 +213,7 @@ export const THEME_COLOR_NAMES: readonly ThemeColorName[] = [
   'zinc',
   'neutral',
   'stone',
-];
+] as const satisfies readonly ThemeColorName[];
 
 /** Internal cache for lazily computed theme palettes. */
 const PALETTE_CACHE: Partial<Record<ThemeColorName, ThemePalette>> = {};
@@ -236,9 +230,9 @@ function toByte(channel: number): number {
   return Math.round(Math.min(1, Math.max(0, channel)) * 255);
 }
 
-/** Convert a `0`–`1` channel value into a 2-digit lowercase hex byte. */
+/** Convert a `0`–`1` channel value into a 2-digit upper-case hex byte (matching `src/config/palette.ts`). */
 function toHexByte(channel: number): string {
-  return toByte(channel).toString(16).padStart(2, '0');
+  return toByte(channel).toString(16).padStart(2, '0').toUpperCase();
 }
 
 /** Convert OKLCH coordinates to linear-light sRGB channels (may exceed `[0, 1]` outside sRGB gamut). */
@@ -386,12 +380,16 @@ function createLazyPaletteMap<T>(
   return target as Record<ThemeColorName, T>;
 }
 
-/** Check whether an untrusted key is an own `ThemeColorName` key (inherited keys like `constructor` are rejected). */
-function isThemeColorName(key: string): key is ThemeColorName {
-  return Object.hasOwn(TAILWIND_V4_SCALES, key);
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/** Base neutral dark carbon surface tokens (Isolux Pro Dark grays from `src/config/palette.ts`). */
+export const BASE_DARK: BaseDarkPalette = {
+  bgBottom: ISOLUX_GRAY[900],
+  bgTop: ISOLUX_GRAY[800],
+  borderNeutral: ISOLUX_UI.border.dark,
+  textMuted: ISOLUX_UI.foregroundSecondary.dark,
+  textPrimary: ISOLUX_UI.foreground.dark,
+};
 
 /** Named Tailwind v4 theme color palettes, lazily computed in OKLCH on first access. */
 export const THEMES: Record<ThemeColorName, ThemePalette> = createLazyPaletteMap(
@@ -402,6 +400,15 @@ export const THEMES: Record<ThemeColorName, ThemePalette> = createLazyPaletteMap
 export const DOT_COLORS: Record<DotState, string> = createLazyPaletteMap(
   (palette) => palette.glowColor
 );
+
+/**
+ * Check whether an untrusted, already normalized key is a `ThemeColorName` (inherited keys like `constructor` are rejected).
+ * @param key   Candidate color token (trimmed and lower-cased by the caller).
+ * @returns `true` when `key` names one of the 22 Tailwind v4 color families.
+ */
+export function isThemeColorName(key: string): key is ThemeColorName {
+  return Object.hasOwn(TAILWIND_V4_SCALES, key);
+}
 
 /**
  * Resolve a raw color query parameter to a valid `ThemeColorName`.

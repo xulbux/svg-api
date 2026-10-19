@@ -4,9 +4,18 @@
 
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
+// oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; The whole namespace is the slug lookup table.
 import * as lucideIcons from 'lucide-static';
 import { createLruCache, getOwnValue, readLruCache, writeLruCache } from '@/svg/shared';
-import type { IconBody, IconPickerIndex, IconPickerSetId, ResolvedIcon } from '@/types';
+import type {
+  IconBody,
+  IconLookup,
+  IconPickerIndex,
+  IconPickerSetId,
+  IconXBounds,
+  LruCache,
+  ResolvedIcon,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -36,14 +45,6 @@ interface PathPen {
   subpathStartY: number;
 }
 
-/** Running horizontal ink bounds in `24x24` icon space. */
-interface IconXBounds {
-  /** Rightmost visible X coordinate. */
-  maxX: number;
-  /** Leftmost visible X coordinate. */
-  minX: number;
-}
-
 /** Absolute endpoint parameters of an SVG elliptical arc segment (`A`/`a`). */
 interface ArcSegment {
   /** Arc end X coordinate. */
@@ -59,7 +60,7 @@ interface ArcSegment {
   /** Ellipse Y radius. */
   radiusY: number;
   /** Ellipse X-axis rotation in degrees. */
-  rotationDeg: number;
+  rotation: number;
   /** Arc start X coordinate. */
   startX: number;
   /** Arc start Y coordinate. */
@@ -130,8 +131,20 @@ export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   vue: 'vuedotjs',
 };
 
+/** Default Lucide stroke width in `24x24` icon units (badges, buttons, and standalone icons). */
+export const DEFAULT_ICON_STROKE_WIDTH = 2.25;
+
+/** Slug rendered for empty requests: Standalone `/icon/` requests with an empty slug and stacks without any tiles. */
+export const DEFAULT_ICON_SLUG = 'sparkles';
+
 /** Lucide slug rendered by standalone `/icon/:icon` requests whose slug cannot be resolved. */
 export const FALLBACK_ICON_SLUG = 'circle-help';
+
+/** Lucide slug rendered for stack tiles whose slug cannot be resolved. */
+export const STACK_FALLBACK_ICON_SLUG = 'code-xml';
+
+/** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
+export const MAX_ICON_SLUG_LENGTH = 64;
 
 /** Inner SVG of the last-resort fallback icon (a plain `24x24` circle). */
 const FALLBACK_CIRCLE_SVG = '<circle cx="12" cy="12" r="9" />';
@@ -139,11 +152,8 @@ const FALLBACK_CIRCLE_SVG = '<circle cx="12" cy="12" r="9" />';
 /** Horizontal bounds used when an icon body contains no measurable geometry. */
 const DEFAULT_ICON_X_BOUNDS: Readonly<IconXBounds> = { maxX: 22, minX: 2 };
 
-/** Half of the default Lucide stroke width (`2.25 / 2`) added to stroked icon bounds. */
-const STROKE_BOUNDS_PAD = 1.125;
-
-/** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
-const MAX_ICON_SLUG_LENGTH = 64;
+/** Half of the default Lucide stroke width added to stroked icon bounds. */
+const STROKE_BOUNDS_PAD = DEFAULT_ICON_STROKE_WIDTH / 2;
 
 /**
  * Maximum number of resolved icons in the icon cache per Worker isolate. Misses are never cached: They
@@ -151,14 +161,27 @@ const MAX_ICON_SLUG_LENGTH = 64;
  */
 const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
 
+/**
+ * Maximum summed `innerSvg` length in UTF-16 code units of the resolved icon cache; The largest brand
+ * bodies reach ~54k code units, so the entry count alone cannot bound the isolate's memory.
+ */
+const MAX_RESOLVED_ICON_CACHE_WEIGHT = 2_000_000;
+
 /** Number of icons per icon picker body page (`/assets/icons-<set>-<page>.json`). */
 export const ICON_PICKER_PAGE_SIZE = 120;
 
 /** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
 const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
 
-/** Bounded LRU cache of resolved icons keyed by `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`. */
-const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(MAX_RESOLVED_ICON_CACHE_SIZE);
+/**
+ * Bounded LRU cache of resolved icons keyed by icon set and the exact slug looked up in it
+ * (`b:<slug>` for brand icons, `l:<slug>` for Lucide icons), weighted by body size.
+ */
+const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(
+  MAX_RESOLVED_ICON_CACHE_SIZE,
+  (icon) => icon.innerSvg.length,
+  MAX_RESOLVED_ICON_CACHE_WEIGHT
+);
 
 /** Lazily built fallback icons. */
 const LAZY_ICONS: LazyIconCache = {};
@@ -193,7 +216,7 @@ const RECT_TAG_RX = /<rect\b[^>]*>/g;
 const LINE_TAG_RX = /<line\b[^>]*>/g;
 
 /** Matches `<polyline ... points="...">` and `<polygon ... points="...">` elements in SVG markup. */
-const POLY_POINTS_RX = /<(?:polyline|polygon)\b[^>]*\bpoints="(?<pts>[^"]+)"/g;
+const POLY_POINTS_RX = /<(?:polyline|polygon)\b[^>]*\bpoints="(?<points>[^"]+)"/g;
 
 /** Matches `d="..."` path data attributes in SVG markup. */
 const PATH_D_RX = /\bd="(?<d>[^"]+)"/g;
@@ -271,7 +294,7 @@ function recordShapeBounds(svgStr: string, scale: number, bounds: IconXBounds): 
     updateBounds(bounds, extractNumericAttr(match[0], X2_ATTR_RX), scale);
   }
   for (const match of svgStr.matchAll(POLY_POINTS_RX)) {
-    const points = (match.groups?.pts ?? '').trim().split(COORD_SPLIT_RX);
+    const points = (match.groups?.points ?? '').trim().split(COORD_SPLIT_RX);
     for (let i = 0; i < points.length; i += 2) {
       updateBounds(bounds, Number(points[i]), scale);
     }
@@ -305,21 +328,21 @@ function recordCubicXBounds(
   bounds: IconXBounds
 ): void {
   // Roots of the derivative `3 * (a * t² + b * t + c)` are the interior extrema candidates.
-  const coefA = -startX + 3 * control1X - 3 * control2X + endX;
-  const coefB = 2 * (startX - 2 * control1X + control2X);
-  const coefC = control1X - startX;
+  const quadraticCoef = -startX + 3 * control1X - 3 * control2X + endX;
+  const linearCoef = 2 * (startX - 2 * control1X + control2X);
+  const constantCoef = control1X - startX;
   const roots: number[] = [];
-  if (Math.abs(coefA) < 1e-12) {
-    if (Math.abs(coefB) > 1e-12) {
-      roots.push(-coefC / coefB);
+  if (Math.abs(quadraticCoef) < 1e-12) {
+    if (Math.abs(linearCoef) > 1e-12) {
+      roots.push(-constantCoef / linearCoef);
     }
   } else {
-    const discriminant = coefB * coefB - 4 * coefA * coefC;
+    const discriminant = linearCoef * linearCoef - 4 * quadraticCoef * constantCoef;
     if (discriminant >= 0) {
       const sqrtDiscriminant = Math.sqrt(discriminant);
       roots.push(
-        (-coefB + sqrtDiscriminant) / (2 * coefA),
-        (-coefB - sqrtDiscriminant) / (2 * coefA)
+        (-linearCoef + sqrtDiscriminant) / (2 * quadraticCoef),
+        (-linearCoef - sqrtDiscriminant) / (2 * quadraticCoef)
       );
     }
   }
@@ -374,9 +397,9 @@ function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): 
     return;
   }
 
-  const rotation = (arc.rotationDeg * Math.PI) / 180;
-  const cosRotation = Math.cos(rotation);
-  const sinRotation = Math.sin(rotation);
+  const axisAngle = (arc.rotation * Math.PI) / 180;
+  const cosRotation = Math.cos(axisAngle);
+  const sinRotation = Math.sin(axisAngle);
   const primeX = cosRotation * halfDeltaX + sinRotation * halfDeltaY;
   const primeY = -sinRotation * halfDeltaX + cosRotation * halfDeltaY;
 
@@ -431,7 +454,7 @@ function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): 
 function skipPathSeparators(cursor: PathCursor): void {
   while (
     cursor.index < cursor.pathData.length &&
-    ' ,\n\t\r'.includes(cursor.pathData[cursor.index])
+    ' ,\n\t\r'.includes(cursor.pathData.charAt(cursor.index))
   ) {
     cursor.index += 1;
   }
@@ -441,18 +464,18 @@ function skipPathSeparators(cursor: PathCursor): void {
 function readPathNumber(cursor: PathCursor): number {
   skipPathSeparators(cursor);
   PATH_NUMBER_RX.lastIndex = cursor.index;
-  const numMatch = PATH_NUMBER_RX.exec(cursor.pathData);
-  if (!numMatch) {
+  const numberMatch = PATH_NUMBER_RX.exec(cursor.pathData);
+  if (!numberMatch) {
     return Number.NaN;
   }
-  cursor.index += numMatch[0].length;
-  return Number(numMatch[0]);
+  cursor.index += numberMatch[0].length;
+  return Number(numberMatch[0]);
 }
 
 /** Read an arc flag at `cursor`, which may be packed without separators (e.g., `a1 1 0 011 1`). */
 function readPathArcFlag(cursor: PathCursor): number {
   skipPathSeparators(cursor);
-  const char = cursor.pathData[cursor.index];
+  const char = cursor.pathData.charAt(cursor.index);
   if (char === '0' || char === '1') {
     cursor.index += 1;
     return Number(char);
@@ -539,7 +562,7 @@ function applyPathCommand(
     case 'A': {
       const radiusX = readPathNumber(cursor);
       const radiusY = readPathNumber(cursor);
-      const rotationDeg = readPathNumber(cursor);
+      const rotation = readPathNumber(cursor);
       const isLargeArc = readPathArcFlag(cursor) === 1;
       const isSweep = readPathArcFlag(cursor) === 1;
       const startY = pen.currentY;
@@ -552,7 +575,7 @@ function applyPathCommand(
           isSweep,
           radiusX,
           radiusY,
-          rotationDeg,
+          rotation,
           startX,
           startY,
         },
@@ -592,7 +615,7 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
       break;
     }
     const iterationStart = cursor.index;
-    const char = pathData[cursor.index];
+    const char = pathData.charAt(cursor.index);
     if ((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')) {
       pen.command = char;
       cursor.index += 1;
@@ -605,8 +628,15 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
   }
 }
 
-/** Compute the exact horizontal visual bounding box `[minX, maxX]` in `24x24` coordinate space for an icon SVG body. */
-function measureIconXBounds(svgStr: string, isStroke: boolean, coordScale: number): IconXBounds {
+/**
+ * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
+ * Exported from the `PUBLIC API` section; Declared here because the internal icon lookups measure with it.
+ * @param svgStr       Inner SVG markup of the icon body.
+ * @param isStroke     Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
+ * @param coordScale   Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
+ * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
+ */
+function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): IconXBounds {
   const bounds: IconXBounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
   recordShapeBounds(svgStr, coordScale, bounds);
   for (const match of svgStr.matchAll(PATH_D_RX)) {
@@ -705,17 +735,7 @@ function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
     return undefined;
   }
   // The Devicon scale wrapper carries no geometry, so the native coordinates are measured with coordScale.
-  return { ...body, ...measureIconXBounds(body.innerSvg, body.type === 'lucide', body.coordScale) };
-}
-
-/** Look up a brand/tech slug in `@iconify-json/devicon-plain` and `@iconify-json/simple-icons`. */
-function lookupBrandIcon(slug: string): ResolvedIcon | undefined {
-  return measureIconBody(getBrandIconBody(slug));
-}
-
-/** Look up a UI stroke icon slug in `lucide-static`. */
-function lookupLucideIcon(slug: string): ResolvedIcon | undefined {
-  return measureIconBody(getLucideIconBody(slug));
+  return { ...body, ...computeIconXBounds(body.innerSvg, body.type === 'lucide', body.coordScale) };
 }
 
 /** Convert a PascalCase `lucide-static` export name into its kebab-case slug (e.g., `'ArrowDown01'` -> `'arrow-down01'`). */
@@ -758,13 +778,44 @@ function buildIconPickerIndex(): IconPickerIndex {
     sets: { brands: [...brandSlugs].toSorted(), lucide: lucideSlugs },
   };
 }
-/** Run `lookup` with the canonical slug, then with the raw (pre-alias) slug when it differs. */
-function lookupWithAlias(
-  cleanSlug: string,
+
+/**
+ * Look up one exact slug in one icon set, memoized under `<set>:<slug>` so a cached entry always
+ * belongs to the slug it is keyed by (misses are never cached).
+ */
+function lookupCachedIcon(slug: string, isBrand: boolean): ResolvedIcon | undefined {
+  const cacheKey = `${isBrand ? 'b' : 'l'}:${slug}`;
+  const cached = readLruCache(RESOLVED_ICON_CACHE, cacheKey);
+  if (cached) {
+    return cached;
+  }
+  const resolved = measureIconBody(isBrand ? getBrandIconBody(slug) : getLucideIconBody(slug));
+  if (resolved) {
+    writeLruCache(RESOLVED_ICON_CACHE, cacheKey, resolved);
+  }
+  return resolved;
+}
+
+/** Look up the canonical key in one icon set, then the raw (pre-alias) slug when it differs. */
+function lookupInIconSet(key: string, rawSlug: string, isBrand: boolean): ResolvedIcon | undefined {
+  return (
+    lookupCachedIcon(key, isBrand) ??
+    (key === rawSlug ? undefined : lookupCachedIcon(rawSlug, isBrand))
+  );
+}
+
+/** Resolve a trimmed, lowercase slug and its canonical key (`undefined` for empty, `'none'`, or over-long slugs). */
+function resolveNormalizedIcon(
   rawSlug: string,
-  lookup: (slug: string) => ResolvedIcon | undefined
+  key: string,
+  isBrandFirst: boolean
 ): ResolvedIcon | undefined {
-  return lookup(cleanSlug) ?? (cleanSlug === rawSlug ? undefined : lookup(rawSlug));
+  if (!rawSlug || rawSlug === 'none' || rawSlug.length > MAX_ICON_SLUG_LENGTH) {
+    return undefined;
+  }
+  return (
+    lookupInIconSet(key, rawSlug, isBrandFirst) ?? lookupInIconSet(key, rawSlug, !isBrandFirst)
+  );
 }
 
 /** Return the lazily built last-resort fallback icon (a plain stroked circle). */
@@ -772,7 +823,7 @@ function getCircleFallbackIcon(): ResolvedIcon {
   LAZY_ICONS.circle ??= {
     coordScale: 1,
     innerSvg: FALLBACK_CIRCLE_SVG,
-    ...measureIconXBounds(FALLBACK_CIRCLE_SVG, true, 1),
+    ...computeIconXBounds(FALLBACK_CIRCLE_SVG, true),
     type: 'lucide',
   };
   return LAZY_ICONS.circle;
@@ -780,16 +831,7 @@ function getCircleFallbackIcon(): ResolvedIcon {
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/**
- * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
- * @param svgStr       Inner SVG markup of the icon body.
- * @param isStroke     Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
- * @param coordScale   Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
- * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
- */
-export function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): IconXBounds {
-  return measureIconXBounds(svgStr, isStroke, coordScale);
-}
+export { computeIconXBounds };
 
 /**
  * Normalize an icon slug to its canonical lookup key (trimmed, lowercase, alias-resolved).
@@ -802,35 +844,34 @@ export function normalizeIconSlug(slug: string): string {
 }
 
 /**
+ * Resolve an icon slug and return the resolved data together with its canonical key (normalized once).
+ * @param slug           Icon slug (e.g., `'star'`, `'ts'`, `'rust'`) or `'none'`.
+ * @param isBrandFirst   When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
+ * @returns Resolved icon data (`undefined` if `'none'`, empty, too long, or not found) and the canonical key.
+ */
+export function resolveIconLookup(slug: string, isBrandFirst = false): IconLookup {
+  const rawSlug = slug.trim().toLowerCase();
+  const key = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
+  return { data: resolveNormalizedIcon(rawSlug, key, isBrandFirst), key };
+}
+
+/**
  * Resolve an icon slug to its inner SVG markup and horizontal visual bounds from `lucide-static`, `@iconify-json/simple-icons`, or `@iconify-json/devicon-plain`.
  * @param slug           Icon slug (e.g., `'star'`, `'globe-code'`, `'rust'`, `'archlinux'`) or `'none'`.
  * @param isBrandFirst   When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
  * @returns The resolved icon data, or `undefined` if `'none'`, empty, too long, or not found.
  */
 export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon | undefined {
-  if (!slug) {
-    return undefined;
-  }
-  const rawSlug = slug.trim().toLowerCase();
-  if (!rawSlug || rawSlug === 'none' || rawSlug.length > MAX_ICON_SLUG_LENGTH) {
-    return undefined;
-  }
-  const cleanSlug = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
-  const cacheKey = `${isBrandFirst ? 'b' : 'l'}:${cleanSlug}`;
-  const cached = readLruCache(RESOLVED_ICON_CACHE, cacheKey);
-  if (cached) {
-    return cached;
-  }
+  return slug ? resolveIconLookup(slug, isBrandFirst).data : undefined;
+}
 
-  const resolved = isBrandFirst
-    ? (lookupWithAlias(cleanSlug, rawSlug, lookupBrandIcon) ??
-      lookupWithAlias(cleanSlug, rawSlug, lookupLucideIcon))
-    : (lookupWithAlias(cleanSlug, rawSlug, lookupLucideIcon) ??
-      lookupWithAlias(cleanSlug, rawSlug, lookupBrandIcon));
-  if (resolved) {
-    writeLruCache(RESOLVED_ICON_CACHE, cacheKey, resolved);
-  }
-  return resolved;
+/**
+ * Resolve a fallback icon slug (Lucide-first), falling back to a plain circle so a glyph is always drawn.
+ * @param fallbackSlug   Fallback icon slug (e.g., `FALLBACK_ICON_SLUG` or `STACK_FALLBACK_ICON_SLUG`).
+ * @returns The resolved fallback icon data (never `undefined`).
+ */
+export function resolveFallbackIcon(fallbackSlug: string): ResolvedIcon {
+  return resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
 }
 
 /**
@@ -845,7 +886,15 @@ export function resolveIconWithFallback(
   fallbackSlug: string,
   isBrandFirst = false
 ): ResolvedIcon {
-  return resolveIcon(slug, isBrandFirst) ?? resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
+  return resolveIcon(slug, isBrandFirst) ?? resolveFallbackIcon(fallbackSlug);
+}
+
+/**
+ * Inspect the bounded resolved-icon cache (entry count, summed body size, and its limits) without mutating it.
+ * @returns Read-only cache state.
+ */
+export function inspectResolvedIconCache(): Readonly<LruCache<ResolvedIcon>> {
+  return RESOLVED_ICON_CACHE;
 }
 
 /**

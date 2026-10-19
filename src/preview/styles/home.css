@@ -1,48 +1,32 @@
-/* Hero Banner */
+/* Hero Banner (shared surface card in base.css) */
 
 .hero {
-  position: relative;
-  overflow: hidden;
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 14px;
-  padding: clamp(28px, 4.5vw, 44px);
   margin-block-end: 44px;
+  padding: clamp(28px, 4.5vw, 44px);
+  border-radius: 14px;
 }
 
 .hero-title {
-  position: relative;
+  margin-block-end: 12px;
   font-size: clamp(1.65rem, 1.2rem + 2vw, 2.45rem);
   font-weight: 800;
-  letter-spacing: -0.025em;
   line-height: 1.22;
-  margin-block-end: 12px;
+  letter-spacing: -0.025em;
   color: var(--c-text-1);
 }
 
-.hero-gradient-text {
+.hero-accent {
   color: var(--c-brand-1);
 }
 
 .hero-lead {
-  position: relative;
-  font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
-  color: var(--c-text-2);
   max-inline-size: 66ch;
   margin-block: 0 22px;
-}
-
-.hero-lead code {
-  color: var(--c-brand-1);
-  background: var(--c-brand-soft);
-  border: 1px solid color-mix(in srgb, var(--c-brand-1) 24%, transparent);
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-size: 0.88em;
+  font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
+  color: var(--c-text-2);
 }
 
 .hero-cta-row {
-  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
@@ -60,23 +44,19 @@
 }
 
 .feature-card {
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-border);
-  border-radius: 12px;
-  padding: 20px 22px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 20px 22px;
+  border-color: var(--c-border);
 }
 
 .feature-icon {
-  inline-size: fit-content;
-  block-size: auto;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  color: var(--c-brand-1);
+  inline-size: fit-content;
   margin-block-end: 4px;
+  color: var(--c-brand-1);
 }
 
 .feature-title {
@@ -88,6 +68,6 @@
 .feature-desc {
   margin: 0;
   font-size: 0.84rem;
-  color: var(--c-text-2);
   line-height: 1.55;
+  color: var(--c-text-2);
 }

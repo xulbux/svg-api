@@ -1,5 +1,5 @@
 /**
- * Shared SVG primitives – XML escaping, display text normalization and truncation, numeric clamping, prototype-safe record lookups, bounded LRU caches, content hashing, Kumo 3D top-edge crescent geometry, surface layers, gradient defs, icon groups, specular sheen overlays, and the root `<svg>` document template.
+ * Shared SVG primitives – XML escaping, display text normalization and truncation, numeric clamping, prototype-safe record lookups, bounded LRU caches, content hashing, foreground paints, Kumo 3D top-edge crescent geometry, surface layers, gradient defs, sweep animations, icon groups, specular sheen overlays, and the root `<svg>` document template.
  */
 
 import { WHITE } from '@/config/palette';
@@ -8,10 +8,13 @@ import type {
   AnimationMode,
   BadgeVariant,
   BandStop,
+  ForegroundPaint,
   IconMotionMode,
   IconType,
   LruCache,
   NumericRange,
+  ResolvedIcon,
+  SweepTiming,
   ThemeColorName,
 } from '@/types';
 
@@ -92,7 +95,7 @@ interface IconGroupOptions {
 
 /** Options for `renderSvgDocument`. */
 interface SvgDocumentOptions {
-  /** Raw, unescaped accessible label (escaped by `renderSvgDocument`). */
+  /** Raw, unescaped accessible label (escaped by `renderSvgDocument`; Also rendered as the `<title>`). */
   ariaLabel: string;
   /** Visible SVG body markup. */
   body: string;
@@ -113,11 +116,46 @@ interface SvgDocumentOptions {
 /** ID of the shared dark-slate surface `<linearGradient>`. */
 export const BG_DARK_ID = 'bg-dark';
 
-/** Opacity of white foreground accents (icons, arrows, bars) drawn on vivid primary (`variant=1`) surfaces. */
-export const PRIMARY_FOREGROUND_OPACITY = 0.82;
+/** Font size in pixels of `22px` badge labels and values (also the default text measurement size). */
+export const BADGE_FONT_SIZE = 11;
+
+/**
+ * Opacity of white foreground elements drawn on vivid primary (`variant=1`) surfaces: Icons, delta
+ * arrows, gauge fills, sparkline strokes, accent bars, and secondary text (author lines, split
+ * button values, neutral delta readouts); Primary text (labels, values, quotes) stays fully white.
+ */
+export const PRIMARY_FOREGROUND_OPACITY = 0.85;
+
+/** Opacity of the white split divider line on vivid primary (`variant=1`) surfaces. */
+export const PRIMARY_DIVIDER_OPACITY = 0.28;
 
 /** Ellipsis appended to truncated text. */
 export const ELLIPSIS = '…';
+
+/** Valid per-icon motion tokens inside an `AnimationMode`, sorted alphabetically (everything except the `'sheen'` surface token). */
+export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
+  'auto',
+  'default',
+  'float',
+  'none',
+  'nudge',
+  'pulse',
+  'shake',
+  'spin',
+];
+
+/** Timing of the diagonal surface sheen sweep (also the base timing of the standalone icon sheen). */
+export const SHEEN_SWEEP_TIMING: Readonly<SweepTiming> = {
+  duration: '4s',
+  easing: '0.42 0 0.25 1',
+  sweepEnd: 0.34,
+};
+
+/** White paint of secondary foreground text on vivid primary surfaces (`PRIMARY_FOREGROUND_OPACITY` baked into the color). */
+const PRIMARY_FOREGROUND_COLOR = `rgba(255,255,255,${PRIMARY_FOREGROUND_OPACITY})`;
+
+/** White paint of the split divider line on vivid primary surfaces. */
+const PRIMARY_DIVIDER_COLOR = `rgba(255,255,255,${PRIMARY_DIVIDER_OPACITY})`;
 
 /** Single-pass XML replacements: entities for markup characters; Tab, LF, and CR are kept; Every other match is stripped. */
 const XML_REPLACEMENT_MAP: Readonly<Record<string, string>> = {
@@ -131,17 +169,8 @@ const XML_REPLACEMENT_MAP: Readonly<Record<string, string>> = {
   '>': '&gt;',
 };
 
-/** Valid per-icon motion tokens inside an `AnimationMode` (everything except the `'sheen'` surface token). */
-const ICON_MOTION_MODES: ReadonlySet<string> = new Set<IconMotionMode>([
-  'auto',
-  'default',
-  'float',
-  'none',
-  'nudge',
-  'pulse',
-  'shake',
-  'spin',
-]);
+/** Set of valid per-icon motion tokens (derived from `ICON_MOTION_TOKENS`). */
+const ICON_MOTION_MODES: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
 
 /** White highlight stops of the diagonal surface sheen band. */
 const SHEEN_BAND_STOPS: readonly BandStop[] = [
@@ -167,6 +196,9 @@ const LAZY_MARKUP: LazyMarkupCache = {};
 /** Memoized `<linearGradient id="grad-<color>">` definitions by theme color. */
 const THEME_GRADIENT_DEF_CACHE = new Map<ThemeColorName, string>();
 
+/** Memoized content hashes of icon bodies (released together with the resolved icon). */
+const ICON_BODY_HASH_CACHE = new WeakMap<ResolvedIcon, string>();
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches XML markup characters (`&`, `<`, `>`, `"`, `'`), control characters, lone surrogates, and the noncharacters `U+FFFE`/`U+FFFF` in a single pass. */
@@ -187,13 +219,9 @@ function isIconMotionMode(token: string): token is IconMotionMode {
   return ICON_MOTION_MODES.has(token);
 }
 
-/** Compute a deterministic, content-addressed base-36 hash of a string (polynomial rolling hash modulo a 32-bit prime). */
-function hashContent(text: string): string {
-  let hash = HASH_SEED;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = (hash * HASH_MULTIPLIER + text.charCodeAt(i)) % HASH_MODULUS;
-  }
-  return hash.toString(36);
+/** Render a `1px` vertical divider `<line>` at `lineX` from `topY` to `bottomY`. */
+function renderDividerLine(lineX: number, topY: number, bottomY: number, stroke: string): string {
+  return `<line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="${stroke}" stroke-width="1" />`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -298,26 +326,46 @@ export function escapeXml(unsafe: string): string {
 }
 
 /**
- * Hash text into a short, deterministic base-36 token (polynomial rolling hash modulo a 31-bit prime).
- * Used for per-card SVG ID scopes and static asset versions; Not a cryptographic hash.
+ * Hash text into a short, deterministic base-36 token (polynomial rolling hash over UTF-16 code units
+ * modulo a 32-bit prime). Used for content-addressed SVG IDs, per-card SVG ID scopes, static asset
+ * versions, and ETags; Not a cryptographic hash.
  * @param text   Text to hash.
  * @returns Base-36 hash token (e.g., `'1x2k9f'`).
  */
 export function hashText(text: string): string {
-  let hash = 7;
+  let hash = HASH_SEED;
   for (let i = 0; i < text.length; i += 1) {
-    hash = (hash * 31 + (text.codePointAt(i) ?? 0)) % 2_147_483_647;
+    hash = (hash * HASH_MULTIPLIER + text.charCodeAt(i)) % HASH_MODULUS;
   }
   return hash.toString(36);
 }
 
 /**
+ * Build a content-addressed `<defs>` ID for an icon body (`<prefix>-<hash of innerSvg>`), hashing each
+ * resolved icon only once; Equal IDs always carry identical bodies, even across inlined SVGs.
+ * @param icon     Resolved icon whose body is referenced via `<use>`.
+ * @param prefix   ID prefix (e.g., `'stack-icon'`, `'icon-body'`).
+ * @returns Element ID (e.g., `'stack-icon-1x2k9f'`).
+ */
+export function buildIconBodyId(icon: ResolvedIcon, prefix: string): string {
+  let bodyHash = ICON_BODY_HASH_CACHE.get(icon);
+  if (bodyHash === undefined) {
+    bodyHash = hashText(icon.innerSvg);
+    ICON_BODY_HASH_CACHE.set(icon, bodyHash);
+  }
+  return `${prefix}-${bodyHash}`;
+}
+
+/**
  * Return the first `end` UTF-16 code units of `text`, backing off by one unit so a surrogate pair is never split.
  * @param text   Source string.
- * @param end    Desired exclusive end index in UTF-16 code units.
+ * @param end    Desired exclusive end index in UTF-16 code units (`<= 0` yields `''`).
  * @returns Prefix of `text` that ends on a code point boundary.
  */
 export function sliceAtCodePoint(text: string, end: number): string {
+  if (end <= 0) {
+    return '';
+  }
   const lastCode = text.charCodeAt(end - 1);
   const isHighSurrogate = lastCode >= 0xd8_00 && lastCode <= 0xdb_ff;
   return text.slice(0, isHighSurrogate ? end - 1 : end);
@@ -440,6 +488,31 @@ export function resolveSurfaceTextColor(
 }
 
 /**
+ * Resolve the paint of a foreground element drawn as a group (icons, delta arrows): White at
+ * `PRIMARY_FOREGROUND_OPACITY` on vivid primary surfaces, the opaque accent color otherwise.
+ * @param isOnPrimary   Whether the element sits on a vivid primary surface.
+ * @param accentColor   Color used on dark surfaces (e.g., `palette.iconColor`).
+ * @returns Color and optional group opacity.
+ */
+export function resolveForegroundPaint(isOnPrimary: boolean, accentColor: string): ForegroundPaint {
+  return isOnPrimary
+    ? { color: WHITE, opacity: PRIMARY_FOREGROUND_OPACITY }
+    : { color: accentColor, opacity: undefined };
+}
+
+/**
+ * Resolve the single paint color of a foreground element without a group opacity (gauge fills,
+ * sparkline strokes, secondary text): White with `PRIMARY_FOREGROUND_OPACITY` baked in on vivid
+ * primary surfaces, the accent color otherwise.
+ * @param isOnPrimary   Whether the element sits on a vivid primary surface.
+ * @param accentColor   Color used on dark surfaces (e.g., `palette.accentText`).
+ * @returns Paint color.
+ */
+export function resolveForegroundColor(isOnPrimary: boolean, accentColor: string): string {
+  return isOnPrimary ? PRIMARY_FOREGROUND_COLOR : accentColor;
+}
+
+/**
  * Build the ID of the vertical theme `<linearGradient>` for a color (`'grad-<color>'`).
  * @param color   Theme color token.
  * @returns Gradient element ID.
@@ -449,11 +522,36 @@ export function buildThemeGradientId(color: ThemeColorName): string {
 }
 
 /**
+ * Render a top-to-bottom two-stop `<linearGradient>` definition.
+ * @param id              Gradient element ID.
+ * @param topColor        Color of the top (`0%`) stop.
+ * @param bottomColor     Color of the bottom (`100%`) stop.
+ * @param topOpacity      Optional `stop-opacity` of the top stop (omitted when `undefined`).
+ * @param bottomOpacity   Optional `stop-opacity` of the bottom stop (omitted when `undefined`).
+ * @returns `<linearGradient>` SVG string.
+ */
+export function renderVerticalGradientDef(
+  id: string,
+  topColor: string,
+  bottomColor: string,
+  topOpacity?: number,
+  bottomOpacity?: number
+): string {
+  const topOpacityAttr = topOpacity === undefined ? '' : ` stop-opacity="${topOpacity}"`;
+  const bottomOpacityAttr = bottomOpacity === undefined ? '' : ` stop-opacity="${bottomOpacity}"`;
+  return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${topColor}"${topOpacityAttr} /><stop offset="100%" stop-color="${bottomColor}"${bottomOpacityAttr} /></linearGradient>`;
+}
+
+/**
  * Render the shared `<linearGradient id="bg-dark">` definition for dark-slate surfaces (built once per isolate).
  * @returns `<linearGradient>` SVG string.
  */
 export function renderDarkBgGradientDef(): string {
-  LAZY_MARKUP.darkBgGradientDef ??= `<linearGradient id="${BG_DARK_ID}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${BASE_DARK.bgTop}" /><stop offset="100%" stop-color="${BASE_DARK.bgBottom}" /></linearGradient>`;
+  LAZY_MARKUP.darkBgGradientDef ??= renderVerticalGradientDef(
+    BG_DARK_ID,
+    BASE_DARK.bgTop,
+    BASE_DARK.bgBottom
+  );
   return LAZY_MARKUP.darkBgGradientDef;
 }
 
@@ -466,10 +564,32 @@ export function renderThemeGradientDef(color: ThemeColorName): string {
   let gradientDef = THEME_GRADIENT_DEF_CACHE.get(color);
   if (gradientDef === undefined) {
     const palette = THEMES[color];
-    gradientDef = `<linearGradient id="${buildThemeGradientId(color)}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${palette.gradStart}" /><stop offset="100%" stop-color="${palette.gradEnd}" /></linearGradient>`;
+    gradientDef = renderVerticalGradientDef(
+      buildThemeGradientId(color),
+      palette.gradStart,
+      palette.gradEnd
+    );
     THEME_GRADIENT_DEF_CACHE.set(color, gradientDef);
   }
   return gradientDef;
+}
+
+/**
+ * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme
+ * gradient per primary color (shared by badges, buttons, stacks, and quote cards).
+ * @param hasDarkBg      Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
+ * @param themeColors    Theme colors whose `grad-<color>` gradient is referenced.
+ * @returns Concatenated `<linearGradient>` SVG strings.
+ */
+export function renderSurfaceGradientDefs(
+  hasDarkBg: boolean,
+  themeColors: Iterable<ThemeColorName>
+): string {
+  let defs = hasDarkBg ? renderDarkBgGradientDef() : '';
+  for (const color of themeColors) {
+    defs += renderThemeGradientDef(color);
+  }
+  return defs;
 }
 
 /**
@@ -486,13 +606,32 @@ export function renderWhiteBandStops(stops: readonly BandStop[]): string {
 }
 
 /**
+ * Render a periodic SMIL highlight sweep: Eases from `from` to `to`, then holds `to` until the cycle repeats.
+ * @param element       SMIL element name (`'animate'` for attributes, `'animateTransform'` for transforms).
+ * @param targetAttrs   Target attributes (e.g., `'attributeName="x1"'`).
+ * @param from          Start value of the sweep.
+ * @param to            End value of the sweep (held during the pause).
+ * @param timing        Sweep duration, easing, and end fraction.
+ * @returns SMIL animation element string.
+ */
+export function renderSweepAnimation(
+  element: 'animate' | 'animateTransform',
+  targetAttrs: string,
+  from: string,
+  to: string,
+  timing: Readonly<SweepTiming>
+): string {
+  return `<${element} ${targetAttrs} values="${from};${to};${to}" keyTimes="0;${timing.sweepEnd};1" calcMode="spline" keySplines="${timing.easing};0 0 1 1" dur="${timing.duration}" repeatCount="indefinite" />`;
+}
+
+/**
  * Build the SVG `<path>` `d` attribute for Cloudflare Kumo's upper-edge 3D highlight crescent.
  * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
  * highlight is `1px` thick along the top straight edge and tapers smoothly to `0px` around the
  * top corner curve without extending down the vertical sides.
  * @param startX                 Left X coordinate of the capsule or tile.
  * @param endX                   Right X coordinate of the capsule or tile.
- * @param radiusX                Outer border radius in pixels.
+ * @param radius                 Outer border radius in pixels.
  * @param hasRoundedLeftCorner   Whether the left edge is rounded (`true` for full pills/tiles, `false` for split right capsules).
  * @param topY                   Top Y coordinate of the capsule or tile (defaults to `0`).
  * @returns SVG `<path>` `d` attribute string.
@@ -500,46 +639,69 @@ export function renderWhiteBandStops(stops: readonly BandStop[]): string {
 export function buildTopCrescentPath(
   startX: number,
   endX: number,
-  radiusX: number,
+  radius: number,
   hasRoundedLeftCorner: boolean,
   topY = 0
 ): string {
-  const innerR = radiusX - 1;
-  const innerRy = innerR - 1;
-  const rightArcStart = endX - 1 - innerR;
+  const innerRadius = radius - 1;
+  const innerRadiusY = innerRadius - 1;
+  const rightArcStart = endX - 1 - innerRadius;
   const rightTangentX = endX - 1;
   const outerTopY = topY + 1;
   const innerTopY = topY + 2;
-  const cornerEndY = outerTopY + innerR;
+  const cornerEndY = outerTopY + innerRadius;
 
   if (!hasRoundedLeftCorner) {
     const leftEdgeX = startX + 1;
-    return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerR} ${innerR} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerR} ${innerRy} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
+    return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
   }
 
   const leftTangentX = startX + 1;
-  const leftArcEnd = startX + 1 + innerR;
-  return `M ${leftTangentX} ${cornerEndY} A ${innerR} ${innerR} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerR} ${innerR} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerR} ${innerRy} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerR} ${innerRy} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
+  const leftArcEnd = startX + 1 + innerRadius;
+  return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
+}
+
+/**
+ * Build the SVG `<path>` `d` attribute for the left capsule of a split badge (rounded left corners, square right edge).
+ * @param startX     Left X coordinate of the capsule.
+ * @param endX       Right X coordinate of the capsule (the split position).
+ * @param height     Capsule height in pixels.
+ * @param radius     Outer corner radius in pixels.
+ * @param topY       Top Y coordinate of the capsule (defaults to `0`).
+ * @param isClosed   Whether to close the path along the square right edge (`false` for open border strokes; Defaults to `true`).
+ * @returns SVG `<path>` `d` attribute string.
+ */
+export function buildLeftCapsulePath(
+  startX: number,
+  endX: number,
+  height: number,
+  radius: number,
+  topY = 0,
+  isClosed = true
+): string {
+  const bottomY = topY + height;
+  const cornerX = startX + radius;
+  return `M ${endX} ${topY} H ${cornerX} A ${radius} ${radius} 0 0 0 ${startX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 0 ${cornerX} ${bottomY} H ${endX}${isClosed ? ' Z' : ''}`;
 }
 
 /**
  * Build the SVG `<path>` `d` attribute for the right capsule of a split badge (square left edge, rounded right corners).
- * @param startX    Left X coordinate of the capsule (the split position).
- * @param endX      Right X coordinate of the capsule.
- * @param height    Capsule height in pixels.
- * @param radiusX   Outer corner radius in pixels.
- * @param topY      Top Y coordinate of the capsule (defaults to `0`).
+ * @param startX   Left X coordinate of the capsule (the split position).
+ * @param endX     Right X coordinate of the capsule.
+ * @param height   Capsule height in pixels.
+ * @param radius   Outer corner radius in pixels.
+ * @param topY     Top Y coordinate of the capsule (defaults to `0`).
  * @returns SVG `<path>` `d` attribute string.
  */
 export function buildRightCapsulePath(
   startX: number,
   endX: number,
   height: number,
-  radiusX: number,
+  radius: number,
   topY = 0
 ): string {
   const bottomY = topY + height;
-  return `M ${startX} ${topY} H ${endX - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${endX} ${topY + radiusX} V ${bottomY - radiusX} A ${radiusX} ${radiusX} 0 0 1 ${endX - radiusX} ${bottomY} H ${startX} Z`;
+  return `M ${startX} ${topY} H ${endX - radius} A ${radius} ${radius} 0 0 1 ${endX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 1 ${endX - radius} ${bottomY} H ${startX} Z`;
 }
 
 /**
@@ -590,45 +752,46 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     width,
   } = options;
   const palette = THEMES[options.color];
-  const posAttr = boxX === 0 && boxY === 0 ? '' : `x="${boxX}" y="${boxY}" `;
+  const positionAttrs = boxX === 0 && boxY === 0 ? '' : `x="${boxX}" y="${boxY}" `;
   const ringGeometry = `x="${boxX + 0.5}" y="${boxY + 0.5}" width="${width - 1}" height="${height - 1}" rx="${radius - 0.5}"`;
-  const crescentD = buildTopCrescentPath(boxX, boxX + width, radius, true, boxY);
+  const crescentPath = buildTopCrescentPath(boxX, boxX + width, radius, true, boxY);
+  const bottomY = boxY + height;
 
   if (variant === '1') {
-    const gradientBody = `<rect ${posAttr}width="${width}" height="${height}" rx="${radius}" fill="url(#${buildThemeGradientId(options.color)})" />`;
-    const topCrescent = `<path d="${crescentD}" fill="${palette.emphasisBg}" />`;
+    const gradientBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${buildThemeGradientId(options.color)})" />`;
+    const topCrescent = `<path d="${crescentPath}" fill="${palette.emphasisBg}" />`;
     const splitDivider =
       splitLineX === undefined
         ? ''
-        : `<line x1="${splitLineX}" y1="${boxY + 5}" x2="${splitLineX}" y2="${boxY + height - 5}" stroke="rgba(255,255,255,0.28)" stroke-width="1" />`;
+        : renderDividerLine(splitLineX, boxY + 5, bottomY - 5, PRIMARY_DIVIDER_COLOR);
     const outerRing = `<rect ${ringGeometry} stroke="${palette.emphasisRing}" stroke-width="1" />`;
     return `${gradientBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
-  const darkBody = `<rect ${posAttr}width="${width}" height="${height}" rx="${radius}" fill="url(#${BG_DARK_ID})" />`;
+  const darkBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${BG_DARK_ID})" />`;
 
   if (variant === '2') {
     const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
     const tintBody = isRightCapsuleOnly
       ? `<path d="${buildRightCapsulePath(rightCapsuleStartX, boxX + width, height, radius, boxY)}" fill="${palette.tintBg}" />`
-      : `<rect ${posAttr}width="${width}" height="${height}" rx="${radius}" fill="${palette.tintBg}" />`;
-    const secondaryCrescentD = isRightCapsuleOnly
+      : `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="${palette.tintBg}" />`;
+    const secondaryCrescentPath = isRightCapsuleOnly
       ? buildTopCrescentPath(rightCapsuleStartX, boxX + width, radius, false, boxY)
-      : crescentD;
-    const topCrescent = `<path d="${secondaryCrescentD}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
+      : crescentPath;
+    const topCrescent = `<path d="${secondaryCrescentPath}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
     const splitDivider =
       splitLineX === undefined
         ? ''
-        : `<line x1="${splitLineX}" y1="${boxY}" x2="${splitLineX}" y2="${boxY + height}" stroke="${palette.borderColor}" stroke-width="1" />`;
+        : renderDividerLine(splitLineX, boxY, bottomY, palette.borderColor);
     const outerRing = `<rect ${ringGeometry} stroke="${palette.borderColor}" stroke-width="1" />`;
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
-  const topCrescent = `<path d="${crescentD}" fill="${WHITE}" fill-opacity="0.045" />`;
+  const topCrescent = `<path d="${crescentPath}" fill="${WHITE}" fill-opacity="0.045" />`;
   const splitDivider =
     splitLineX === undefined
       ? ''
-      : `<line x1="${splitLineX}" y1="${boxY + 4}" x2="${splitLineX}" y2="${boxY + height - 4}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />`;
+      : renderDividerLine(splitLineX, boxY + 4, bottomY - 4, BASE_DARK.borderNeutral);
   const outerRing = `<rect ${ringGeometry} stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />`;
   return `${darkBody}${topCrescent}${splitDivider}${outerRing}`;
 }
@@ -646,7 +809,7 @@ export function renderSheenOverlay(options: SheenOverlayOptions): SheenOverlay {
     return { clipDef: '', overlay: '' };
   }
   const { clipContent, height, idPrefix = 'sheen', radius, width } = options;
-  const contentKey = clipContent === undefined ? String(radius) : hashContent(clipContent);
+  const contentKey = clipContent === undefined ? String(radius) : hashText(clipContent);
   const idSuffix = `${width}-${height}-${contentKey}`;
   const clipId = `${idPrefix}-clip-${idSuffix}`;
   const gradId = `${idPrefix}-grad-${idSuffix}`;
@@ -656,12 +819,20 @@ export function renderSheenOverlay(options: SheenOverlayOptions): SheenOverlay {
   const clipInner = clipContent ?? `<rect width="${width}" height="${height}" rx="${radius}" />`;
   LAZY_MARKUP.sheenBandStops ??= renderWhiteBandStops(SHEEN_BAND_STOPS);
   const clipDef = `<clipPath id="${clipId}">${clipInner}</clipPath><linearGradient id="${gradId}" x1="0" y1="0" x2="1" y2="0">${LAZY_MARKUP.sheenBandStops}</linearGradient>`;
-  const overlay = `<g clip-path="url(#${clipId})"><g><animateTransform attributeName="transform" type="translate" values="0 0;${endTranslate} 0;${endTranslate} 0" keyTimes="0;0.34;1" calcMode="spline" keySplines="0.42 0 0.25 1;0 0 1 1" dur="4s" repeatCount="indefinite" /><rect x="-52" y="-6" width="40" height="${bandHeight}" transform="skewX(-22)" fill="url(#${gradId})" /></g></g>`;
+  const sweep = renderSweepAnimation(
+    'animateTransform',
+    'attributeName="transform" type="translate"',
+    '0 0',
+    `${endTranslate} 0`,
+    SHEEN_SWEEP_TIMING
+  );
+  const overlay = `<g clip-path="url(#${clipId})"><g>${sweep}<rect x="-52" y="-6" width="40" height="${bandHeight}" transform="skewX(-22)" fill="url(#${gradId})" /></g></g>`;
   return { clipDef, overlay };
 }
 
 /**
- * Render the compact single-line root `<svg>` document shared by every renderer.
+ * Render the compact single-line root `<svg>` document shared by every renderer, with the accessible
+ * label as both `aria-label` and the first-child `<title>` (tooltip and fallback for assistive tech).
  * @param options   Document size, accessible label, paint attributes, `<defs>`, and body markup.
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -669,6 +840,7 @@ export function renderSvgDocument(options: SvgDocumentOptions): string {
   const { height, width } = options;
   const viewBox = options.viewBox ?? `0 0 ${width} ${height}`;
   const paintAttrs = options.paintAttrs ?? 'fill="none"';
+  const label = escapeXml(options.ariaLabel);
   const defsMarkup = options.defs ? `<defs>${options.defs}</defs>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewBox}" ${paintAttrs} role="img" aria-label="${escapeXml(options.ariaLabel)}">${defsMarkup}${options.body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewBox}" ${paintAttrs} role="img" aria-label="${label}"><title>${label}</title>${defsMarkup}${options.body}</svg>`;
 }

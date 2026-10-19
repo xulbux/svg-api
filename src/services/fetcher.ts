@@ -2,11 +2,13 @@
  * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing, an in-isolate memory cache, and Tier-1 JSON edge caching.
  *
  * Lookup order per upstream URL: in-isolate memory cache -> in-flight request -> Cloudflare edge
- * cache -> upstream `fetch` (with timeout). Failures never throw; They resolve to error badges.
+ * cache -> upstream `fetch` (with timeout and a response size cap). Only the endpoint projection
+ * of a payload is kept in both caches, and failures are cached briefly as small markers. Failures
+ * never throw; They resolve to error badges.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { FALLBACK_REDIRECT_URL, SITE_ORIGIN } from '@/config/site';
+import { FALLBACK_REDIRECT_URL, SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
 import {
   clearLruCache,
@@ -18,76 +20,126 @@ import {
 } from '@/svg/shared';
 import type {
   Env,
+  MetricEndpoint,
   MetricResult,
   ResolvedServiceMetric,
   ServiceDefinition,
   ServiceMetricConfig,
   ServicePreviewSample,
   ServiceRequest,
+  ServiceRouteParams,
   ThemeColorName,
   WaitUntilContext,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Outcome of loading an upstream JSON document. */
+/** Outcome of loading an upstream JSON document (also the in-isolate memory cache entry). */
 interface UpstreamOutcome {
-  /** Parsed JSON payload (only present for successful `2xx` responses). */
+  /** Projected payload (only present for successful `2xx` responses other than `202`). */
   data?: unknown;
-  /** Serialized payload size in UTF-16 code units (`0` for failures; Weighs memory cache entries). */
+  /** Expiry timestamp of the outcome in milliseconds. */
+  expiresAt: number;
+  /** Whether the payload could not be projected (rendered as `invalid data`). */
+  isInvalidData?: boolean;
+  /** Serialized projected payload size in UTF-16 code units (`0` for failures; Weighs memory cache entries). */
   size: number;
-  /** Upstream HTTP status (`504` for timeouts, `502` for network or JSON errors). */
+  /** Upstream HTTP status (`504` for timeouts, `502` for network or JSON errors, `413` for oversized bodies). */
   status: number;
 }
 
-/** Raw upstream response body before JSON parsing. */
-interface UpstreamText {
-  /** Upstream HTTP status (`504` for timeouts, `502` for network errors). */
+/** Raw upstream response body before JSON parsing and projection. */
+interface UpstreamBody {
+  /** Leading value already parsed by the streaming prefix reader (`{ [leadingKey]: value }`). */
+  data?: unknown;
+  /** Seconds until a rate limit resets (`Retry-After` or `x-ratelimit-reset`). */
+  retryAfter?: number;
+  /** Upstream HTTP status (`504` for timeouts, `502` for network errors, `413` for oversized bodies). */
   status: number;
-  /** Response body (only present for successful `2xx` responses). */
+  /** Complete response body (successful responses without a parsed leading value). */
   text?: string;
 }
 
-/** Entry of the bounded in-isolate memory cache. */
-interface MemoryCacheEntry {
-  /** Expiry timestamp in milliseconds. */
-  expiresAt: number;
-  /** Cached upstream outcome. */
-  outcome: UpstreamOutcome;
-}
-
-/** Validated service request with its resolved preset, metric, and owner. */
+/** Validated service request with its resolved preset, metric, and route params. */
 interface ResolvedServiceContext {
   /** Resolved metric configuration. */
   metric: ServiceMetricConfig;
-  /** Effective owner (explicit, default, or empty). */
-  owner: string;
+  /** Effective owner and target. */
+  params: ServiceRouteParams;
   /** Resolved service definition. */
   service: ServiceDefinition;
 }
 
+/** Optional overrides of an error badge. */
+interface ErrorResultOptions {
+  /** Theme color token (defaults to `rose`). */
+  color?: ThemeColorName;
+  /** Icon slug (defaults to `circle-alert`). */
+  icon?: string;
+  /** Redirect destination (defaults to `FALLBACK_REDIRECT_URL`). */
+  redirectUrl?: string;
+}
+
+/** Merged upstream request headers of a service, memoized per environment object. */
+interface MergedHeadersEntry {
+  /** Environment the headers were built for. */
+  env: Env;
+  /** Default headers merged with the service headers. */
+  headers: Readonly<Record<string, string>>;
+}
+
+/** Incremental scan state of the leading JSON value (string, escape, and nesting tracking). */
+interface LeadingValueScan {
+  /** Current object/array nesting depth relative to the value start. */
+  depth: number;
+  /** Whether the previous character was a backslash inside a string. */
+  isEscaped: boolean;
+  /** Whether the scanner is inside a JSON string. */
+  isInString: boolean;
+  /** Next buffer index to scan. */
+  position: number;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Default Tier-1 upstream JSON cache TTL in seconds. */
-const DEFAULT_JSON_CACHE_TTL = 600;
-
-/** Memory cache TTL in seconds for failed or pending upstream outcomes. */
+/** Memory and edge cache TTL in seconds for failed or pending upstream outcomes. */
 const ERROR_CACHE_TTL = 60;
 
+/** Memory and edge cache TTL in seconds for missing (`404`) and oversized (`413`) upstream documents. */
+const NOT_FOUND_CACHE_TTL = 300;
+
+/** Minimum and maximum cache TTL in seconds for rate-limited (`429`) outcomes. */
+const RATE_LIMIT_CACHE_TTL = { max: 900, min: 60 } as const;
+
+/**
+ * Smallest `x-ratelimit-reset` value read as an epoch timestamp in seconds (September 2001);
+ * Smaller values are seconds until the reset, larger ones epochs (GitHub).
+ */
+const RATE_LIMIT_RESET_EPOCH_THRESHOLD = 1_000_000_000;
+
+/** Minimum remaining memory cache lifetime in milliseconds of an edge cache hit. */
+const MIN_MEMORY_LIFETIME = 1000;
+
 /** Upstream request timeout in milliseconds. */
-const UPSTREAM_TIMEOUT_MS = 8000;
+const UPSTREAM_TIMEOUT = 8000;
+
+/** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
+const MAX_UPSTREAM_BYTES = 2_097_152;
 
 /** Maximum number of upstream outcomes kept in the in-isolate memory cache. */
 const MAX_MEMORY_CACHE_ENTRIES = 256;
 
-/**
- * Maximum summed payload size in UTF-16 code units of the in-isolate memory cache; Larger payloads
- * (e.g., huge PyPI release lists) are still served from the edge cache, just not kept parsed in memory.
- */
+/** Maximum summed projected payload size in UTF-16 code units of the in-isolate memory cache. */
 const MAX_MEMORY_CACHE_WEIGHT = 4_000_000;
 
-/** Synthetic origin used to build Tier-1 JSON edge cache keys. */
-const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/';
+/** Synthetic origin of Tier-1 JSON edge cache keys (versioned, because entries hold projections). */
+const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/v2/';
+
+/** Edge cache entry header holding the outcome expiry timestamp in milliseconds. */
+const EXPIRES_AT_HEADER = 'X-Svg-Api-Expires-At';
+
+/** Edge cache entry header holding the upstream status of negative outcome markers. */
+const STATUS_HEADER = 'X-Svg-Api-Status';
 
 /** Default upstream request headers. */
 const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
@@ -98,15 +150,43 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 /** HTTP status of rate-limited upstream responses (GitHub's `403` + `x-ratelimit-remaining: 0` is normalized to it). */
 const RATE_LIMITED_STATUS = 429;
 
+/** HTTP status of upstream responses exceeding `MAX_UPSTREAM_BYTES`. */
+const TOO_LARGE_STATUS = 413;
+
+/** Badge status of payloads that could not be projected or transformed. */
+const INVALID_DATA_STATUS = 502;
+
+/** Leading value scan result: The JSON header is incomplete, so more data is needed. */
+const LEADING_VALUE_PENDING = -1;
+
+/** Leading value scan result: The payload does not start with the expected key and an object/array value. */
+const LEADING_VALUE_MISMATCH = -2;
+
+/**
+ * Global default metric aliases (alias -> canonical metric); An alias applies to every service that
+ * defines the canonical metric, unless the service defines a metric or alias with the same slug.
+ */
+const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
+  cov: 'coverage',
+  dm: 'dl',
+  l: 'license',
+  'last-commit': 'commit',
+  pulls: 'prs',
+  version: 'v',
+};
+
 /** Bounded in-isolate LRU memory cache of upstream outcomes keyed by API URL, weighted by payload size. */
-const MEMORY_CACHE = createLruCache<MemoryCacheEntry>(
+const MEMORY_CACHE = createLruCache<UpstreamOutcome>(
   MAX_MEMORY_CACHE_ENTRIES,
-  (entry) => entry.outcome.size,
+  (outcome) => outcome.size,
   MAX_MEMORY_CACHE_WEIGHT
 );
 
 /** Pending upstream loads keyed by API URL, so concurrent badge requests share one upstream call. */
 const IN_FLIGHT_LOADS = new Map<string, Promise<UpstreamOutcome>>();
+
+/** Merged request headers per service (bounded by the number of service presets). */
+const MERGED_HEADERS = new WeakMap<ServiceDefinition, MergedHeadersEntry>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -117,6 +197,9 @@ const IN_FLIGHT_LOADS = new Map<string, Promise<UpstreamOutcome>>();
  */
 const SAFE_SEGMENT_RX = /^(?!\.+$)[\w.@+-]{1,214}$/;
 
+/** Matches a non-negative integer (delta-seconds `Retry-After` and epoch `x-ratelimit-reset` values). */
+const DIGITS_RX = /^\d+$/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build a resolved error badge result. */
@@ -124,7 +207,7 @@ function buildErrorResult(
   label: string,
   value: string,
   status: number,
-  options: { color?: ThemeColorName; icon?: string; redirectUrl?: string } = {}
+  options: ErrorResultOptions = {}
 ): ResolvedServiceMetric {
   return {
     result: {
@@ -136,6 +219,11 @@ function buildErrorResult(
     },
     status,
   };
+}
+
+/** Build an amber `invalid route` / `missing owner` / `invalid metric` badge. */
+function buildRouteErrorResult(serviceKey: string, value: string): ResolvedServiceMetric {
+  return buildErrorResult(serviceKey, value, 404, { color: 'amber', icon: 'circle-help' });
 }
 
 /** Check whether `owner` is permitted by the service's owner allowlist. */
@@ -154,22 +242,38 @@ function isOwnerAllowed(service: ServiceDefinition, owner: string, env: Env): bo
 }
 
 /**
- * Check whether `target` is valid for `service`: At most `maxTargetSegments` (default `1`)
- * `/`-separated segments, each one matching `SAFE_SEGMENT_RX`.
+ * Check whether `target` is valid for `service`: Between `route.target.minSegments` and
+ * `route.target.maxSegments` (both default `1`) `/`-separated segments, each one matching
+ * `SAFE_SEGMENT_RX` and the optional `route.target.pattern`.
  */
 function isTargetValid(service: ServiceDefinition, target: string): boolean {
-  const maxSegments = service.maxTargetSegments ?? 1;
+  const { maxSegments = 1, minSegments = 1, pattern } = service.route.target;
   let segmentCount = 0;
   for (const segment of target.split('/')) {
     segmentCount += 1;
-    if (segmentCount > maxSegments || !SAFE_SEGMENT_RX.test(segment)) {
+    if (
+      segmentCount > maxSegments ||
+      !SAFE_SEGMENT_RX.test(segment) ||
+      (pattern !== undefined && !pattern.test(segment))
+    ) {
       return false;
     }
   }
-  return true;
+  return segmentCount >= minSegments;
 }
 
-/** Validate a service request and resolve its preset, metric, and effective owner. */
+/** Resolve a requested metric slug to its canonical metric key (metrics, then service aliases, then global aliases). */
+function resolveMetricKey(service: ServiceDefinition, metricKey: string): string {
+  if (Object.hasOwn(service.metrics, metricKey)) {
+    return metricKey;
+  }
+  const serviceAlias = service.metricAliases
+    ? getOwnValue(service.metricAliases, metricKey)
+    : undefined;
+  return serviceAlias ?? getOwnValue(DEFAULT_METRIC_ALIASES, metricKey) ?? metricKey;
+}
+
+/** Validate a service request and resolve its preset, metric, and effective route params. */
 function resolveServiceContext(
   request: ServiceRequest,
   env: Env
@@ -180,42 +284,40 @@ function resolveServiceContext(
     return buildErrorResult(request.service, 'unknown service', 404);
   }
 
-  const hasExplicitOwner = request.owner !== undefined;
-  if (service.ownerMode === 'none' && hasExplicitOwner) {
-    return buildErrorResult(serviceKey, 'invalid route', 404, {
-      color: 'amber',
-      icon: 'circle-help',
-    });
+  const ownerSegment = service.route.owner;
+  let owner = request.owner ?? '';
+  if (!ownerSegment && request.owner !== undefined) {
+    return buildRouteErrorResult(serviceKey, 'invalid route');
   }
-  if (service.ownerMode === 'required' && !hasExplicitOwner) {
-    return buildErrorResult(serviceKey, 'missing owner', 404, {
-      color: 'amber',
-      icon: 'circle-help',
-    });
+  if (ownerSegment && request.owner === undefined) {
+    if (ownerSegment.isRequired) {
+      return buildRouteErrorResult(serviceKey, 'missing owner');
+    }
+    if (ownerSegment.resolveDefault) {
+      owner = ownerSegment.resolveDefault(env) ?? '';
+      if (!owner) {
+        return buildRouteErrorResult(serviceKey, 'missing owner');
+      }
+    }
   }
 
-  const owner = request.owner ?? service.defaultOwner?.(env) ?? '';
   const isOwnerValid = owner === '' || SAFE_SEGMENT_RX.test(owner);
   if (!isOwnerValid || !isTargetValid(service, request.target)) {
     return buildErrorResult(serviceKey, 'invalid name', 400);
   }
   if (!isOwnerAllowed(service, owner, env)) {
-    return buildErrorResult('svg.xul.is', 'restricted', 403, { icon: 'lock' });
+    return buildErrorResult(SITE_HOST, 'restricted', 403, { icon: 'lock' });
   }
 
-  const metricKey = request.metric.toLowerCase();
-  const canonicalKey = service.metricAliases
-    ? (getOwnValue(service.metricAliases, metricKey) ?? metricKey)
-    : metricKey;
-  const metric = getOwnValue(service.metrics, canonicalKey);
+  const metric = getOwnValue(
+    service.metrics,
+    resolveMetricKey(service, request.metric.toLowerCase())
+  );
   if (!metric) {
-    return buildErrorResult(serviceKey, 'invalid metric', 404, {
-      color: 'amber',
-      icon: 'circle-help',
-    });
+    return buildRouteErrorResult(serviceKey, 'invalid metric');
   }
 
-  return { metric, owner, service };
+  return { metric, params: { owner, target: request.target }, service };
 }
 
 /** Narrow a `resolveServiceContext` result to an error result. */
@@ -225,22 +327,34 @@ function isResolvedError(
   return 'status' in candidate;
 }
 
-/** Read a non-expired upstream outcome from the in-isolate memory cache. */
-function readMemoryCache(apiUrl: string, nowMs: number): UpstreamOutcome | undefined {
-  const entry = readLruCache(MEMORY_CACHE, apiUrl);
-  if (!entry) {
+/** Resolve the upstream request headers of a service (memoized per service and environment). */
+function resolveRequestHeaders(
+  service: ServiceDefinition,
+  env: Env
+): Readonly<Record<string, string>> {
+  if (!service.buildHeaders) {
+    return DEFAULT_HEADERS;
+  }
+  const cached = MERGED_HEADERS.get(service);
+  if (cached?.env === env) {
+    return cached.headers;
+  }
+  const headers = { ...DEFAULT_HEADERS, ...service.buildHeaders(env) };
+  MERGED_HEADERS.set(service, { env, headers });
+  return headers;
+}
+
+/** Read a non-expired upstream outcome from the in-isolate memory cache (`now` in milliseconds). */
+function readMemoryCache(apiUrl: string, now: number): UpstreamOutcome | undefined {
+  const outcome = readLruCache(MEMORY_CACHE, apiUrl);
+  if (!outcome) {
     return undefined;
   }
-  if (entry.expiresAt <= nowMs) {
+  if (outcome.expiresAt <= now) {
     deleteLruEntry(MEMORY_CACHE, apiUrl);
     return undefined;
   }
-  return entry.outcome;
-}
-
-/** Store an upstream outcome in the in-isolate memory cache for `ttlSeconds`. */
-function writeMemoryCache(apiUrl: string, outcome: UpstreamOutcome, ttlSeconds: number): void {
-  writeLruCache(MEMORY_CACHE, apiUrl, { expiresAt: Date.now() + ttlSeconds * 1000, outcome });
+  return outcome;
 }
 
 /** Check whether a response signals an exhausted rate limit (`429`, or GitHub's `403` with no remaining quota). */
@@ -251,80 +365,374 @@ function isRateLimited(response: Response): boolean {
   );
 }
 
-/** Fetch an upstream document body, mapping timeouts, network errors, and rate limits to statuses. */
-async function fetchUpstreamText(
+/**
+ * Read the seconds until a rate limit resets from `Retry-After` (seconds or HTTP date) or
+ * `x-ratelimit-reset` (epoch seconds like GitHub, or delta seconds; Values below
+ * `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas); `now` is a timestamp in milliseconds.
+ */
+function readRetryAfter(response: Response, now: number): number | undefined {
+  const retryAfter = response.headers.get('retry-after')?.trim();
+  if (retryAfter) {
+    if (DIGITS_RX.test(retryAfter)) {
+      return Number(retryAfter);
+    }
+    const retryAt = Date.parse(retryAfter);
+    return Number.isFinite(retryAt) ? (retryAt - now) / 1000 : undefined;
+  }
+  const resetHeader = response.headers.get('x-ratelimit-reset')?.trim();
+  if (!resetHeader || !DIGITS_RX.test(resetHeader)) {
+    return undefined;
+  }
+  const resetValue = Number(resetHeader);
+  return resetValue < RATE_LIMIT_RESET_EPOCH_THRESHOLD ? resetValue : resetValue - now / 1000;
+}
+
+/** Resolve the cache TTL in seconds of a failed upstream outcome. */
+function resolveFailureTtl(status: number, retryAfter: number | undefined): number {
+  if (status === 404 || status === TOO_LARGE_STATUS) {
+    return NOT_FOUND_CACHE_TTL;
+  }
+  if (status === RATE_LIMITED_STATUS) {
+    const seconds = retryAfter ?? RATE_LIMIT_CACHE_TTL.min;
+    return Math.min(
+      RATE_LIMIT_CACHE_TTL.max,
+      Math.max(RATE_LIMIT_CACHE_TTL.min, Math.ceil(seconds))
+    );
+  }
+  return ERROR_CACHE_TTL;
+}
+
+/** Check whether a failed outcome is cached at the edge as a negative marker (`404`, `413`, `429`, `5xx`). */
+function isEdgeCacheableFailure(outcome: UpstreamOutcome): boolean {
+  const { status } = outcome;
+  return (
+    !outcome.isInvalidData &&
+    (status === 404 ||
+      status === TOO_LARGE_STATUS ||
+      status === RATE_LIMITED_STATUS ||
+      status >= 500)
+  );
+}
+
+/** Ignore a stream cancellation failure (the stream is discarded either way). */
+function ignoreCancelError(): void {
+  // Intentionally empty.
+}
+
+/**
+ * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body (e.g., a
+ * cloned cache response) only settles once every branch is cancelled.
+ */
+function cancelBody(
+  body: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null
+): void {
+  body?.cancel().catch(ignoreCancelError);
+}
+
+/** Advance past JSON whitespace starting at `index`. */
+function skipJsonWhitespace(text: string, index: number): number {
+  let position = index;
+  while (position < text.length) {
+    const char = text[position];
+    if (char !== ' ' && char !== '\n' && char !== '\r' && char !== '\t') {
+      break;
+    }
+    position += 1;
+  }
+  return position;
+}
+
+/**
+ * Locate the start of the value of `key` when it is the first key of the top-level JSON object
+ * (`{"key": {…}` or `{"key": […]`); `key` must not contain quotes or backslashes.
+ * @returns Value start index, `LEADING_VALUE_PENDING`, or `LEADING_VALUE_MISMATCH`.
+ */
+function locateLeadingValue(buffer: string, key: string): number {
+  let index = skipJsonWhitespace(buffer, 0);
+  if (index >= buffer.length) {
+    return LEADING_VALUE_PENDING;
+  }
+  if (buffer[index] !== '{') {
+    return LEADING_VALUE_MISMATCH;
+  }
+  index = skipJsonWhitespace(buffer, index + 1);
+  const quotedKey = `"${key}"`;
+  const available = buffer.slice(index, index + quotedKey.length);
+  if (!quotedKey.startsWith(available)) {
+    return LEADING_VALUE_MISMATCH;
+  }
+  if (available.length < quotedKey.length) {
+    return LEADING_VALUE_PENDING;
+  }
+  index = skipJsonWhitespace(buffer, index + quotedKey.length);
+  if (index >= buffer.length) {
+    return LEADING_VALUE_PENDING;
+  }
+  if (buffer[index] !== ':') {
+    return LEADING_VALUE_MISMATCH;
+  }
+  index = skipJsonWhitespace(buffer, index + 1);
+  if (index >= buffer.length) {
+    return LEADING_VALUE_PENDING;
+  }
+  return buffer[index] === '{' || buffer[index] === '[' ? index : LEADING_VALUE_MISMATCH;
+}
+
+/**
+ * Continue scanning the leading object/array value (single pass, no backtracking): Tracks string,
+ * escape, and nesting state across chunks.
+ * @returns Exclusive end index of the value, or `-1` when it is not complete yet.
+ */
+function scanLeadingValueEnd(buffer: string, scan: LeadingValueScan): number {
+  for (let i = scan.position; i < buffer.length; i += 1) {
+    const char = buffer[i];
+    if (scan.isInString) {
+      if (scan.isEscaped) {
+        scan.isEscaped = false;
+      } else if (char === '\\') {
+        scan.isEscaped = true;
+      } else if (char === '"') {
+        scan.isInString = false;
+      }
+    } else if (char === '"') {
+      scan.isInString = true;
+    } else if (char === '{' || char === '[') {
+      scan.depth += 1;
+    } else if (char === '}' || char === ']') {
+      scan.depth -= 1;
+      if (scan.depth === 0) {
+        scan.position = i + 1;
+        return i + 1;
+      }
+    }
+  }
+  scan.position = buffer.length;
+  return -1;
+}
+
+/**
+ * Read a response body with a byte cap; With a `leadingKey`, stop reading (and cancel the stream)
+ * as soon as the leading value is complete, falling back to the complete body otherwise.
+ */
+async function readResponseBody(
+  response: Response,
+  leadingKey: string | undefined
+): Promise<UpstreamBody> {
+  const { body } = response;
+  if (!body) {
+    return { status: response.status, text: await response.text() };
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  const scan: LeadingValueScan = { depth: 0, isEscaped: false, isInString: false, position: 0 };
+  let valueStart = leadingKey === undefined ? LEADING_VALUE_MISMATCH : LEADING_VALUE_PENDING;
+  let buffer = '';
+  let byteCount = 0;
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- Stream chunks can only be read sequentially.
+    const chunk = await reader.read();
+    if (chunk.done) {
+      break;
+    }
+    byteCount += chunk.value.byteLength;
+    if (byteCount > MAX_UPSTREAM_BYTES) {
+      cancelBody(reader);
+      return { status: TOO_LARGE_STATUS };
+    }
+    buffer += decoder.decode(chunk.value, { stream: true });
+    if (leadingKey !== undefined && valueStart === LEADING_VALUE_PENDING) {
+      valueStart = locateLeadingValue(buffer, leadingKey);
+      scan.position = Math.max(valueStart, 0);
+    }
+    const valueEnd =
+      leadingKey !== undefined && valueStart >= 0 ? scanLeadingValueEnd(buffer, scan) : -1;
+    if (leadingKey !== undefined && valueEnd >= 0) {
+      try {
+        const value = JSON.parse(buffer.slice(valueStart, valueEnd)) as unknown;
+        cancelBody(reader);
+        return { data: { [leadingKey]: value }, status: response.status };
+      } catch {
+        // Unexpected structure; Keep reading and parse the complete body instead.
+        valueStart = LEADING_VALUE_MISMATCH;
+      }
+    }
+  }
+  return { status: response.status, text: buffer + decoder.decode() };
+}
+
+/**
+ * Fetch an upstream document body, mapping timeouts, network errors, rate limits, oversized bodies,
+ * and the endpoint's `missingStatuses` (to `404`) to statuses.
+ */
+async function fetchUpstreamBody(
   apiUrl: string,
-  headers: Readonly<Record<string, string>>
-): Promise<UpstreamText> {
+  headers: Readonly<Record<string, string>>,
+  endpoint: MetricEndpoint
+): Promise<UpstreamBody> {
   let response: Response | undefined = undefined;
   try {
-    response = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+    response = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT) });
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'TimeoutError';
     return { status: isTimeout ? 504 : 502 };
   }
   if (!response.ok) {
-    return { status: isRateLimited(response) ? RATE_LIMITED_STATUS : response.status };
+    cancelBody(response.body);
+    if (isRateLimited(response)) {
+      return { retryAfter: readRetryAfter(response, Date.now()), status: RATE_LIMITED_STATUS };
+    }
+    return { status: endpoint.missingStatuses?.includes(response.status) ? 404 : response.status };
+  }
+  // Prefix reads (`leadingKey`) stop early, so only the streaming byte counter may reject them.
+  const contentLength = Number(response.headers.get('content-length') ?? '0');
+  if (endpoint.leadingKey === undefined && contentLength > MAX_UPSTREAM_BYTES) {
+    cancelBody(response.body);
+    return { status: TOO_LARGE_STATUS };
   }
   try {
-    return { status: response.status, text: await response.text() };
-  } catch {
-    return { status: 502 };
+    return await readResponseBody(response, endpoint.leadingKey);
+  } catch (error) {
+    const isTimeout = error instanceof Error && error.name === 'TimeoutError';
+    return { status: isTimeout ? 504 : 502 };
   }
 }
 
-/** Parse a JSON document body into an outcome, mapping invalid JSON to `502`. */
-function parseJsonOutcome(text: string, status: number): UpstreamOutcome {
+/** Build a failed outcome cached for its failure TTL. */
+function buildFailureOutcome(status: number, retryAfter?: number): UpstreamOutcome {
+  return { expiresAt: Date.now() + resolveFailureTtl(status, retryAfter) * 1000, size: 0, status };
+}
+
+/** Parse and project a fetched body into an outcome and the serialized projection stored at the edge. */
+function buildFetchedOutcome(
+  fetched: UpstreamBody,
+  endpoint: MetricEndpoint
+): [outcome: UpstreamOutcome, edgeBody: string | undefined] {
+  if (fetched.status === 202) {
+    return [{ expiresAt: Date.now() + ERROR_CACHE_TTL * 1000, size: 0, status: 202 }, undefined];
+  }
+  if (fetched.data === undefined && fetched.text === undefined) {
+    return [buildFailureOutcome(fetched.status, fetched.retryAfter), undefined];
+  }
+  let parsed: unknown = fetched.data;
+  if (fetched.text !== undefined) {
+    try {
+      parsed = JSON.parse(fetched.text) as unknown;
+    } catch {
+      return [buildFailureOutcome(502), undefined];
+    }
+  }
+  let projected: unknown = undefined;
   try {
-    return { data: JSON.parse(text) as unknown, size: text.length, status };
+    projected = endpoint.project ? endpoint.project(parsed) : (parsed ?? {});
   } catch {
-    return { size: 0, status: 502 };
+    const invalid = buildFailureOutcome(INVALID_DATA_STATUS);
+    return [{ ...invalid, isInvalidData: true }, undefined];
+  }
+  if (projected === undefined) {
+    return [buildFailureOutcome(404), undefined];
+  }
+  // Keep the verbatim body of unprojected payloads; Serialize projections (always small).
+  const edgeBody =
+    endpoint.project || fetched.text === undefined ? JSON.stringify(projected) : fetched.text;
+  const outcome: UpstreamOutcome = {
+    data: projected,
+    expiresAt: Date.now() + endpoint.ttl * 1000,
+    size: edgeBody.length,
+    status: fetched.status,
+  };
+  return [outcome, edgeBody];
+}
+
+/** Read an edge cache entry (projected payload or negative marker) into an outcome, or `undefined` when corrupt. */
+async function readEdgeCacheEntry(cached: Response): Promise<UpstreamOutcome | undefined> {
+  const now = Date.now();
+  const expiresAt = Math.max(
+    Number(cached.headers.get(EXPIRES_AT_HEADER) ?? '0') || 0,
+    now + MIN_MEMORY_LIFETIME
+  );
+  const markerStatus = Number(cached.headers.get(STATUS_HEADER) ?? '0');
+  if (markerStatus > 0) {
+    cancelBody(cached.body);
+    return { expiresAt, size: 0, status: markerStatus };
+  }
+  try {
+    const text = await cached.text();
+    return { data: JSON.parse(text) as unknown, expiresAt, size: text.length, status: 200 };
+  } catch {
+    return undefined;
   }
 }
 
-/** Load an upstream JSON document through the edge cache, writing successful `200` bodies back verbatim. */
+/** Write an outcome into the edge cache (projected payload or negative marker), never throwing. */
+async function writeEdgeCacheEntry(
+  edgeCache: Cache,
+  cacheKey: Request,
+  outcome: UpstreamOutcome,
+  edgeBody: string | undefined,
+  executionCtx: WaitUntilContext | undefined
+): Promise<void> {
+  const isPositive = outcome.status === 200 && edgeBody !== undefined;
+  if (!isPositive && !isEdgeCacheableFailure(outcome)) {
+    return;
+  }
+  const maxAge = Math.max(1, Math.ceil((outcome.expiresAt - Date.now()) / 1000));
+  const headers: Record<string, string> = {
+    'Cache-Control': `public, max-age=${maxAge}, s-maxage=${maxAge}`,
+    'Content-Type': 'application/json',
+    [EXPIRES_AT_HEADER]: String(outcome.expiresAt),
+  };
+  if (!isPositive) {
+    headers[STATUS_HEADER] = String(outcome.status);
+  }
+  try {
+    await putInEdgeCache(
+      edgeCache,
+      cacheKey,
+      new Response(edgeBody ?? '', { headers }),
+      executionCtx
+    );
+  } catch {
+    // Edge cache writes are best-effort.
+  }
+}
+
+/** Load an upstream JSON document through the edge cache, writing projections and negative markers back. */
 async function loadThroughEdgeCache(
+  endpoint: MetricEndpoint,
   apiUrl: string,
   headers: Readonly<Record<string, string>>,
-  ttlSeconds: number,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
   const edgeCache = getEdgeCache();
   const cacheKey = new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(apiUrl)}`);
 
   if (edgeCache) {
-    const cachedResponse = await edgeCache.match(cacheKey);
-    if (cachedResponse) {
-      const cachedOutcome = parseJsonOutcome(await cachedResponse.text(), 200);
-      // A corrupt cache entry falls through to a fresh upstream fetch.
-      if (cachedOutcome.data !== undefined) {
-        return cachedOutcome;
-      }
+    let cached: Response | undefined = undefined;
+    try {
+      cached = await edgeCache.match(cacheKey);
+    } catch {
+      // A failing edge cache falls through to a fresh upstream fetch.
+    }
+    const cachedOutcome = cached ? await readEdgeCacheEntry(cached) : undefined;
+    // A corrupt cache entry falls through to a fresh upstream fetch.
+    if (cachedOutcome) {
+      return cachedOutcome;
     }
   }
 
-  const fetched = await fetchUpstreamText(apiUrl, headers);
-  if (fetched.text === undefined) {
-    return { size: 0, status: fetched.status };
-  }
-  const outcome = parseJsonOutcome(fetched.text, fetched.status);
-  if (edgeCache && outcome.status === 200) {
-    const bodyToCache = new Response(fetched.text, {
-      headers: {
-        'Cache-Control': `public, max-age=${ttlSeconds}, s-maxage=${ttlSeconds}`,
-        'Content-Type': 'application/json',
-      },
-    });
-    await putInEdgeCache(edgeCache, cacheKey, bodyToCache, executionCtx);
+  const fetched = await fetchUpstreamBody(apiUrl, headers, endpoint);
+  const [outcome, edgeBody] = buildFetchedOutcome(fetched, endpoint);
+  if (edgeCache) {
+    await writeEdgeCacheEntry(edgeCache, cacheKey, outcome, edgeBody, executionCtx);
   }
   return outcome;
 }
 
 /** Load an upstream JSON document via memory cache, in-flight request coalescing, and the edge cache. */
 async function loadUpstreamJson(
+  endpoint: MetricEndpoint,
   apiUrl: string,
   headers: Readonly<Record<string, string>>,
-  ttlSeconds: number,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
   const memoryHit = readMemoryCache(apiUrl, Date.now());
@@ -337,10 +745,13 @@ async function loadUpstreamJson(
     return pending;
   }
 
-  const load = loadThroughEdgeCache(apiUrl, headers, ttlSeconds, executionCtx).then((outcome) => {
-    writeMemoryCache(apiUrl, outcome, outcome.status === 200 ? ttlSeconds : ERROR_CACHE_TTL);
-    return outcome;
-  });
+  const load = loadThroughEdgeCache(endpoint, apiUrl, headers, executionCtx)
+    // A rejected load must never reject every coalesced request.
+    .catch((): UpstreamOutcome => buildFailureOutcome(502))
+    .then((outcome) => {
+      writeLruCache(MEMORY_CACHE, apiUrl, outcome);
+      return outcome;
+    });
   IN_FLIGHT_LOADS.set(apiUrl, load);
   try {
     return await load;
@@ -349,11 +760,17 @@ async function loadUpstreamJson(
   }
 }
 
-/** Map a failed upstream status to its short badge value. */
-function describeUpstreamFailure(status: number): string {
-  switch (status) {
+/** Map a failed upstream outcome to its short badge value. */
+function describeUpstreamFailure(outcome: UpstreamOutcome): string {
+  if (outcome.isInvalidData) {
+    return 'invalid data';
+  }
+  switch (outcome.status) {
     case 404: {
       return 'not found';
+    }
+    case TOO_LARGE_STATUS: {
+      return 'too large';
     }
     case RATE_LIMITED_STATUS: {
       return 'rate limited';
@@ -364,6 +781,19 @@ function describeUpstreamFailure(status: number): string {
     default: {
       return 'api error';
     }
+  }
+}
+
+/** Run a metric transform, mapping thrown errors (malformed upstream data) to `'invalid'`. */
+function runTransform(
+  metric: ServiceMetricConfig,
+  data: unknown,
+  params: ServiceRouteParams
+): Partial<MetricResult> | undefined | 'invalid' {
+  try {
+    return metric.transform(data, params);
+  } catch {
+    return 'invalid';
   }
 }
 
@@ -395,6 +825,29 @@ export function resetUpstreamCaches(): void {
 }
 
 /**
+ * List the effective metric aliases of a service (service aliases plus applicable global defaults).
+ * @param service   Service definition.
+ * @returns `[alias, canonicalMetric]` pairs, service aliases first.
+ */
+export function listServiceMetricAliases(
+  service: ServiceDefinition
+): [alias: string, metric: string][] {
+  const aliases: [alias: string, metric: string][] = [];
+  const serviceAliases = service.metricAliases ?? {};
+  for (const [alias, metric] of Object.entries(serviceAliases)) {
+    aliases.push([alias, metric]);
+  }
+  for (const [alias, metric] of Object.entries(DEFAULT_METRIC_ALIASES)) {
+    const isShadowed =
+      Object.hasOwn(serviceAliases, alias) || Object.hasOwn(service.metrics, alias);
+    if (!isShadowed && Object.hasOwn(service.metrics, metric)) {
+      aliases.push([alias, metric]);
+    }
+  }
+  return aliases;
+}
+
+/**
  * Resolve the browser redirect destination of a service preset badge without any network access.
  * @param request   Parsed service preset route.
  * @param env       Worker environment bindings.
@@ -404,15 +857,15 @@ export function resolveServiceRedirectUrl(request: ServiceRequest, env: Env): st
   const context = resolveServiceContext(request, env);
   return isResolvedError(context)
     ? context.result.redirectUrl
-    : context.metric.buildRedirectUrl(context.owner, request.target);
+    : context.metric.endpoint.buildPageUrl(context.params);
 }
 
 /**
  * Resolve a service preset badge from sample data without any network access (used by the docs previews).
- * Applies the exact same request validation and metric defaults as `resolveServiceMetric`.
+ * Applies the exact same request validation, projection, and metric defaults as `resolveServiceMetric`.
  * @param request   Parsed service preset route.
  * @param env       Worker environment bindings.
- * @param sample    Sample right-hand value text (e.g., `'4.2M/mo'`) or a sample upstream JSON payload run through the metric transform.
+ * @param sample    Sample right-hand value text (e.g., `'4.2M/mo'`) or a sample upstream JSON payload run through the projection and transform.
  * @returns Resolved metric result (an error badge when the request is invalid).
  */
 export function resolveServicePreview(
@@ -424,12 +877,17 @@ export function resolveServicePreview(
   if (isResolvedError(context)) {
     return context.result;
   }
-  const redirectUrl = context.metric.buildRedirectUrl(context.owner, request.target);
-  const transformed =
-    typeof sample === 'string'
-      ? { value: sample }
-      : (context.metric.transform(sample, context.owner, request.target) ?? { value: 'not found' });
-  return buildMetricResult(context.metric, transformed, redirectUrl);
+  const { metric, params } = context;
+  const redirectUrl = metric.endpoint.buildPageUrl(params);
+  if (typeof sample === 'string') {
+    return buildMetricResult(metric, { value: sample }, redirectUrl);
+  }
+  const projected = metric.endpoint.project ? metric.endpoint.project(sample) : sample;
+  const transformed = projected === undefined ? undefined : runTransform(metric, projected, params);
+  if (transformed === 'invalid') {
+    return buildMetricResult(metric, { value: 'invalid data' }, redirectUrl);
+  }
+  return buildMetricResult(metric, transformed ?? { value: 'not found' }, redirectUrl);
 }
 
 /**
@@ -449,15 +907,13 @@ export async function resolveServiceMetric(
     return context;
   }
 
-  const { metric, owner, service } = context;
-  const apiUrl = metric.buildApiUrl(owner, request.target);
-  const redirectUrl = metric.buildRedirectUrl(owner, request.target);
-  const headers = service.buildHeaders
-    ? { ...DEFAULT_HEADERS, ...service.buildHeaders(env) }
-    : DEFAULT_HEADERS;
-  const ttlSeconds = metric.cacheTtlSeconds ?? DEFAULT_JSON_CACHE_TTL;
-  const outcome = await loadUpstreamJson(apiUrl, headers, ttlSeconds, executionCtx);
-  const errorOptions = { icon: metric.defaultIcon, redirectUrl };
+  const { metric, params, service } = context;
+  const { endpoint } = metric;
+  const apiUrl = endpoint.buildApiUrl(params);
+  const redirectUrl = endpoint.buildPageUrl(params);
+  const headers = resolveRequestHeaders(service, env);
+  const outcome = await loadUpstreamJson(endpoint, apiUrl, headers, executionCtx);
+  const errorOptions: ErrorResultOptions = { icon: metric.defaultIcon, redirectUrl };
 
   if (outcome.status === 202) {
     return buildErrorResult(metric.defaultLabel, 'computing', 202, {
@@ -468,13 +924,16 @@ export async function resolveServiceMetric(
   if (outcome.data === undefined) {
     return buildErrorResult(
       metric.defaultLabel,
-      describeUpstreamFailure(outcome.status),
+      describeUpstreamFailure(outcome),
       outcome.status,
       errorOptions
     );
   }
 
-  const transformed = metric.transform(outcome.data, owner, request.target);
+  const transformed = runTransform(metric, outcome.data, params);
+  if (transformed === 'invalid') {
+    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions);
+  }
   if (!transformed) {
     return buildErrorResult(metric.defaultLabel, 'not found', 404, errorOptions);
   }

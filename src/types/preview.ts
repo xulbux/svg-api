@@ -31,6 +31,9 @@ export type NavPageId = 'builder' | 'docs' | 'home';
 /** Public file names of the static website assets served at `/assets/:name` (icon picker pages are resolved dynamically). */
 export type SiteAssetName = 'builder.js' | 'icons.json' | 'site.css' | 'site.js';
 
+/** Syntax highlighting token of a code snippet (`hl-*` class name and literal text). */
+export type HighlightToken = [className: string, text: string];
+
 /** Built static website asset. */
 export interface SiteAsset {
   /** Asset body (CSS, JavaScript, or JSON source). */

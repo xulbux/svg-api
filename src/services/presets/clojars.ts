@@ -4,16 +4,20 @@
  * The group segment may be omitted for artifacts whose group equals the artifact name (e.g., `hiccup`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  TOTAL_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** License declared by a Clojars artifact. */
+interface ClojarsLicense {
+  /** License display name (e.g., `'Eclipse Public License'`). */
+  name?: string;
+}
 
 /** Partial Clojars artifact API payload (`clojars.org/api/artifacts/[:group/]:artifact`). */
 interface ClojarsArtifactPayload {
@@ -24,61 +28,46 @@ interface ClojarsArtifactPayload {
   /** Latest version including snapshots. */
   latest_version: string;
   /** Declared licenses. */
-  licenses: {
-    /** License display name (e.g., `'Eclipse Public License'`). */
-    name?: string;
-  }[];
+  licenses: ClojarsLicense[];
 }
 
-// -------------------------------------- INTERNALS --------------------------------------
+// ---------------------------------------- CONSTS ---------------------------------------
 
-/** Build the `[:group/]:artifact` coordinate path (the group is omitted when empty). */
-function buildClojarsPath(group: string, artifact: string): string {
-  return group ? `${group}/${artifact}` : artifact;
-}
-
-/** Clojars artifact endpoint with clojars.org artifact page redirect. */
-const CLOJARS_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (group: string, artifact: string): string =>
-    `https://clojars.org/api/artifacts/${buildClojarsPath(group, artifact)}`,
-  buildRedirectUrl: (group: string, artifact: string): string =>
-    `https://clojars.org/${buildClojarsPath(group, artifact)}`,
-};
+/** Clojars artifact endpoint (`{path}` omits an empty group) with clojars.org artifact page redirect. */
+const CLOJARS_ENDPOINT = createEndpoint({
+  api: 'https://clojars.org/api/artifacts/{path}',
+  page: 'https://clojars.org/{path}',
+  project: pickFields<ClojarsArtifactPayload>([
+    'downloads',
+    'latest_release',
+    'latest_version',
+    'licenses',
+  ]),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Clojars service preset (`clojars`). */
-export const CLOJARS_SERVICE: ServiceDefinition = {
+export const CLOJARS_SERVICE = defineService({
   docs: {
     description:
       'Latest release, total downloads, and license (omit the group when it equals the artifact).',
-    ownerName: ':group',
-    targetName: ':artifact',
     title: 'Clojars',
   },
-  metricAliases: { dl: 'dt', l: 'license' },
+  metricAliases: { dl: 'dt' },
   metrics: {
-    dt: {
-      ...CLOJARS_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<ClojarsArtifactPayload>((payload) => payload.downloads),
-    },
-    license: {
-      ...CLOJARS_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<ClojarsArtifactPayload>(
-        (payload) => payload.licenses?.[0]?.name
-      ),
-    },
-    v: {
-      ...CLOJARS_ENDPOINT,
-      defaultColor: 'blue',
-      defaultIcon: 'clojure',
-      defaultLabel: 'clojars',
-      transform: createVersionTransform<ClojarsArtifactPayload>(
-        (payload) => payload.latest_release ?? payload.latest_version
-      ),
-    },
+    dt: createDownloadsMetric(CLOJARS_ENDPOINT, 'dt', (artifact) => artifact.downloads),
+    license: createLicenseMetric(CLOJARS_ENDPOINT, (artifact) =>
+      Array.isArray(artifact.licenses) ? artifact.licenses[0]?.name : undefined
+    ),
+    v: createVersionMetric(
+      CLOJARS_ENDPOINT,
+      { defaultColor: 'blue', defaultIcon: 'clojure', defaultLabel: 'clojars' },
+      (artifact) => artifact.latest_release ?? artifact.latest_version
+    ),
   },
-  ownerMode: 'optional',
-};
+  route: {
+    owner: { isRequired: false, placeholder: ':group' },
+    target: { placeholder: ':artifact' },
+  },
+});

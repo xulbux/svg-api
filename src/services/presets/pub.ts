@@ -2,23 +2,27 @@
  * pub.dev service preset – Dart/Flutter package version, likes, pub points, and 30-day downloads (`/badge/pub/:pkg/:metric`).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createScoreTransform,
-  createVersionTransform,
-  RECENT_DOWNLOADS,
+  createCommunityMetric,
+  createDownloadsMetric,
+  createScoreMetric,
+  createVersionMetric,
+  SCORE,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Stable release of a pub.dev package. */
+interface PubRelease {
+  /** Latest stable version. */
+  version?: string;
+}
 
 /** Partial pub.dev package API payload (`pub.dev/api/packages/:pkg`). */
 interface PubPackagePayload {
   /** Latest stable release. */
-  latest: {
-    /** Latest stable version. */
-    version?: string;
-  };
+  latest: PubRelease | null;
 }
 
 /** Partial pub.dev package score API payload (`pub.dev/api/packages/:pkg/score`). */
@@ -35,18 +39,24 @@ interface PubScorePayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** pub.dev package endpoint with package page redirect. */
-const PUB_PACKAGE_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => `https://pub.dev/api/packages/${pkg}`,
-  buildRedirectUrl: (_owner: string, pkg: string): string => `https://pub.dev/packages/${pkg}`,
-};
+/** pub.dev package endpoint with package page redirect (only the latest release is cached). */
+const PUB_PACKAGE_ENDPOINT = createEndpoint({
+  api: 'https://pub.dev/api/packages/{target}',
+  page: 'https://pub.dev/packages/{target}',
+  project: pickFields<PubPackagePayload>(['latest']),
+});
 
 /** pub.dev package score endpoint with score page redirect. */
-const PUB_SCORE_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, pkg: string): string => `https://pub.dev/api/packages/${pkg}/score`,
-  buildRedirectUrl: (_owner: string, pkg: string): string =>
-    `https://pub.dev/packages/${pkg}/score`,
-};
+const PUB_SCORE_ENDPOINT = createEndpoint({
+  api: 'https://pub.dev/api/packages/{target}/score',
+  page: 'https://pub.dev/packages/{target}/score',
+  project: pickFields<PubScorePayload>([
+    'downloadCount30Days',
+    'grantedPoints',
+    'likeCount',
+    'maxPoints',
+  ]),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -58,46 +68,25 @@ function formatPubPoints(achieved: number, maximum: number): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** pub.dev service preset (`pub`). */
-export const PUB_SERVICE: ServiceDefinition = {
+export const PUB_SERVICE = defineService({
   docs: {
     description: 'Latest version, likes, pub points (with ring gauge), and 30-day downloads.',
-    targetName: ':pkg',
     title: 'pub.dev',
   },
-  metricAliases: { dm: 'dl' },
   metrics: {
-    dl: {
-      ...PUB_SCORE_ENDPOINT,
-      ...RECENT_DOWNLOADS,
-      transform: createCountTransform<PubScorePayload>(
-        (payload) => payload.downloadCount30Days,
-        '/mo'
-      ),
-    },
-    likes: {
-      ...PUB_SCORE_ENDPOINT,
-      defaultColor: 'blue',
-      defaultIcon: 'thumbs-up',
-      defaultLabel: 'likes',
-      transform: createCountTransform<PubScorePayload>((payload) => payload.likeCount),
-    },
-    points: {
-      ...PUB_SCORE_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'gauge',
-      defaultLabel: 'pub points',
-      transform: createScoreTransform<PubScorePayload>(
-        (payload) => [payload.grantedPoints, payload.maxPoints],
-        formatPubPoints
-      ),
-    },
-    v: {
-      ...PUB_PACKAGE_ENDPOINT,
-      defaultColor: 'sky',
-      defaultIcon: 'dart',
-      defaultLabel: 'pub',
-      transform: createVersionTransform<PubPackagePayload>((payload) => payload.latest?.version),
-    },
+    dl: createDownloadsMetric(PUB_SCORE_ENDPOINT, 'dl', (score) => score.downloadCount30Days),
+    likes: createCommunityMetric(PUB_SCORE_ENDPOINT, 'likes', 'dart', (score) => score.likeCount),
+    points: createScoreMetric(
+      PUB_SCORE_ENDPOINT,
+      { ...SCORE, defaultLabel: 'pub points' },
+      (score) => [score.grantedPoints, score.maxPoints],
+      formatPubPoints
+    ),
+    v: createVersionMetric(
+      PUB_PACKAGE_ENDPOINT,
+      { defaultColor: 'sky', defaultIcon: 'dart', defaultLabel: 'pub' },
+      (pkg) => pkg.latest?.version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':pkg' } },
+});

@@ -4,28 +4,28 @@
   align-items: center;
   gap: 8px;
   padding: 9px 16px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: 0.85rem;
   font-weight: 600;
   text-decoration: none;
   user-select: none;
   -webkit-user-select: none;
   transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease,
-    color 0.2s ease;
+    background-color var(--duration-base) ease,
+    border-color var(--duration-base) ease,
+    color var(--duration-base) ease;
 }
 
 .btn-primary {
-  background: var(--c-btn-bg);
-  color: var(--c-btn-text);
   border: 1px solid var(--c-btn-border);
+  color: var(--c-btn-text);
+  background: var(--c-btn-bg);
 }
 
 .btn-secondary {
-  background: var(--c-border);
-  color: var(--c-text-1);
   border: 1px solid var(--c-divider);
+  color: var(--c-text-1);
+  background: var(--c-border);
 }
 
 .btn-primary:hover {
@@ -37,11 +37,24 @@
   background: color-mix(in srgb, var(--c-text-1), var(--c-border) 94%);
 }
 
+button.btn-primary,
+button.btn-secondary {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Disabled link buttons (e.g., the builder's "Open SVG" link without an `href` while required fields are empty) */
+
+.btn-secondary[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Section Headers & Spacious Subsections */
 
 .doc-section {
   margin-block-end: 60px;
-  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
 .section-header {
@@ -49,29 +62,29 @@
 }
 
 .section-title {
+  margin-block-end: 8px;
   font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.65rem);
   font-weight: 700;
   letter-spacing: -0.015em;
-  margin-block-end: 8px;
   color: var(--c-text-1);
 }
 
 .section-desc {
-  margin-block: 0;
-  color: var(--c-text-2);
-  font-size: 0.925rem;
   max-inline-size: 72ch;
+  margin-block: 0;
+  font-size: 0.925rem;
+  color: var(--c-text-2);
 }
 
 .section-desc code,
 .section-title code,
 .section-subhead code {
-  color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 50%);
-  background: var(--c-code-bg);
-  border: 1px solid var(--c-border-subtle);
   padding: 1px 6px;
+  border: 1px solid var(--c-border-subtle);
   border-radius: 5px;
   font-size: 0.86em;
+  color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 50%);
+  background: var(--c-code-bg);
 }
 
 .subhead-row {
@@ -79,7 +92,6 @@
   align-items: center;
   gap: 8px;
   margin-block: 52px 18px;
-  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
 .section-subhead {
@@ -95,21 +107,25 @@
   color: var(--c-brand-1);
 }
 
+.section-subhead-text {
+  min-inline-size: 0;
+}
+
 /* Hover/Focus Deep-Link Anchors */
 
 .anchor-link {
   flex-shrink: 0;
   padding-inline: 4px;
   border-radius: 4px;
-  color: var(--c-text-3);
   font-weight: 600;
   text-decoration: none;
+  color: var(--c-text-3);
   opacity: 0;
   user-select: none;
   -webkit-user-select: none;
   transition:
-    opacity 0.15s ease,
-    color 0.15s ease;
+    opacity var(--duration-fast) ease,
+    color var(--duration-fast) ease;
 }
 
 .anchor-link:hover {
@@ -141,20 +157,20 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: var(--c-bg-soft);
-  color: var(--c-text-1);
-  border: 1px solid var(--c-border);
+  max-inline-size: 100%;
   padding: 5px 11px;
+  overflow-x: auto;
+  border: 1px solid var(--c-border);
   border-radius: 7px;
   font-size: 0.78rem;
-  overflow-x: auto;
-  max-inline-size: 100%;
+  color: var(--c-text-1);
+  background: var(--c-bg-soft);
 }
 
 .route-method {
-  color: var(--c-brand-1);
-  font-weight: 700;
   font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--c-brand-1);
   user-select: none;
   -webkit-user-select: none;
 }
@@ -167,18 +183,14 @@
   gap: 20px;
 }
 
-.card-grid-3 {
-  display: grid;
+.card-grid.is-3col {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
-  gap: 20px;
 }
 
-.table-wrapper + .card-grid,
-.table-wrapper + .card-grid-3 {
+.table-wrapper + .card-grid {
   margin-block-start: 40px;
 }
 
-.card-grid-3 + .card-grid,
 .card-grid + .card-grid {
   margin-block-start: 20px;
 }
@@ -188,21 +200,17 @@
 .card-container {
   content-visibility: auto;
   contain-intrinsic-block-size: auto 320px;
-  scroll-margin-block-start: calc(var(--header-height) + 32px);
 }
 
-/* Outer Card: Distinct divider border + soft surface */
+/* Outer Card: Distinct divider border + soft surface (shared surface card in base.css) */
 
 .card {
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
-  padding: clamp(18px, 2.5vw, 24px);
   display: flex;
   flex-direction: column;
   gap: 16px;
   block-size: 100%;
-  transition: border-color 0.2s ease;
+  padding: clamp(18px, 2.5vw, 24px);
+  transition: border-color var(--duration-base) ease;
 }
 
 .card-container:target .card {
@@ -229,77 +237,73 @@
   gap: 7px;
   font-size: 0.94rem;
   font-weight: 700;
-  color: var(--c-text-1);
   line-height: 1.35;
-}
-
-.card-title-text {
   color: var(--c-text-1);
 }
 
 .card-title-code {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--c-brand-1) 28%, transparent);
+  border-radius: var(--radius-sm);
   font-size: 0.76rem;
   font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 6px;
   color: var(--c-brand-1);
   background: var(--c-brand-soft);
-  border: 1px solid color-mix(in srgb, var(--c-brand-1) 28%, transparent);
 }
 
 .card-title-meta {
+  padding: 1px 7px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 5px;
   font-size: 0.74rem;
   font-weight: 500;
-  padding: 1px 7px;
-  border-radius: 5px;
   color: var(--c-text-2);
   background: var(--c-bg);
-  border: 1px solid var(--c-border-subtle);
 }
 
 .card-title-pill {
+  padding: 2px 8px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius-pill);
   font-size: 0.7rem;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: calc(infinity * 1px);
   color: var(--c-text-2);
   background: var(--c-bg);
-  border: 1px solid var(--c-border-subtle);
   user-select: none;
   -webkit-user-select: none;
 }
 
 .card-subtitle {
-  font-size: 0.825rem;
-  color: var(--c-text-2);
   margin-block: 0;
+  font-size: 0.825rem;
   line-height: 1.48;
+  color: var(--c-text-2);
 }
 
 /* Inner Preview Stage: Subtle border and non-interactable SVG previews */
 
 .preview-stage {
   position: relative;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 9px;
-  padding: 18px 20px;
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
   align-items: center;
-  overflow-x: auto;
+  gap: 12px;
   max-inline-size: 100%;
+  padding: 18px 20px;
+  overflow-x: auto;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 9px;
+  background: var(--c-bg);
   user-select: none;
   -webkit-user-select: none;
   transition:
-    background-color 0.2s ease,
-    border-color 0.2s ease;
+    background-color var(--duration-base) ease,
+    border-color var(--duration-base) ease;
 }
 
 :root[data-preview-bg='inverse'] .preview-stage {
-  background: var(--c-preview-inverse-bg);
   border-color: var(--c-preview-inverse-border);
+  background: var(--c-preview-inverse-bg);
 }
 
 :root[data-preview-bg='checker'] .preview-stage {
@@ -317,12 +321,59 @@
 }
 
 .preview-stage svg {
+  flex-shrink: 0;
   max-inline-size: 100%;
   block-size: auto;
-  flex-shrink: 0;
   pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
+}
+
+/* Preview Links: Every documented preview opens its prefilled builder */
+
+.preview-link {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  max-inline-size: 100%;
+  border-radius: var(--radius-sm);
+  outline-offset: 4px;
+  transition: translate var(--duration-fast) ease;
+}
+
+/* "Edit" chip in the top-right corner, revealed on hover and keyboard focus (the link's `title` names the action) */
+
+.preview-link::after {
+  content: 'Edit' / '';
+  position: absolute;
+  inset-block-start: -8px;
+  inset-inline-end: -6px;
+  z-index: 1;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--c-btn-text);
+  background: var(--c-btn-bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.preview-link:focus-visible::after {
+  opacity: 1;
+}
+
+/* Hover only on devices that can hover: Lift slightly (no glow or scaling, so the preview keeps its colors and crisp text) */
+
+@media (hover: hover) {
+  .preview-link:hover {
+    translate: 0 -2px;
+  }
+
+  .preview-link:hover::after {
+    opacity: 1;
+  }
 }
 
 /* Expandable <details> Markdown Code Drawer (Subtle inner hierarchy) */
@@ -333,8 +384,8 @@ details.code-drawer {
 
 details.code-drawer::details-content {
   block-size: 0;
-  opacity: 0;
   overflow: clip;
+  opacity: 0;
   transition:
     block-size 0.22s ease,
     opacity 0.18s ease,
@@ -347,20 +398,20 @@ details.code-drawer[open]::details-content {
 }
 
 details.code-drawer > summary {
-  list-style: none;
-  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 7px;
+  list-style: none;
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--c-text-2);
+  background: var(--c-bg);
+  cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  padding: 5px 11px;
-  border-radius: 7px;
-  background: var(--c-bg);
-  border: 1px solid var(--c-border-subtle);
   transition:
     color 0.18s ease,
     border-color 0.18s ease,
@@ -372,14 +423,14 @@ details.code-drawer > summary::-webkit-details-marker {
 }
 
 details.code-drawer > summary:hover {
-  color: var(--c-text-1);
   border-color: var(--c-border-strong);
+  color: var(--c-text-1);
   background: color-mix(in srgb, var(--c-hover), var(--c-bg));
 }
 
 .drawer-chevron {
   display: inline-flex;
-  transition: rotate 0.2s ease;
+  transition: rotate var(--duration-base) ease;
 }
 
 details.code-drawer[open] .drawer-chevron {
@@ -388,12 +439,12 @@ details.code-drawer[open] .drawer-chevron {
 
 .code-drawer-body {
   margin-block-start: 10px;
-  background: var(--c-bg);
-  color: var(--c-text-1);
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 8px;
   padding: 10px 13px;
   overflow: hidden;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--c-text-1);
+  background: var(--c-bg);
 }
 
 .code-drawer-toolbar {
@@ -423,17 +474,17 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .scroll-btn {
-  inline-size: 22px;
-  block-size: 22px;
-  border-radius: 5px;
-  cursor: pointer;
   display: none;
   align-items: center;
   justify-content: center;
+  inline-size: 22px;
+  block-size: 22px;
+  padding: 0;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: 5px;
   color: var(--c-text-2);
   background: var(--c-bg-soft);
-  border: 1px solid var(--c-border-subtle);
-  padding: 0;
+  cursor: pointer;
   transition:
     border-color 0.18s ease,
     color 0.18s ease,
@@ -444,28 +495,27 @@ details.code-drawer[open] .drawer-chevron {
   display: inline-flex;
 }
 
-.scroll-btn:hover:not(.is-disabled) {
+.scroll-btn:hover:not(:disabled) {
   border-color: var(--c-border-strong);
   color: var(--c-text-1);
 }
 
-.scroll-btn.is-disabled {
+.scroll-btn:disabled {
   opacity: 0.35;
   cursor: default;
-  pointer-events: none;
 }
 
 .copy-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--c-bg-soft);
-  color: var(--c-text-2);
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 6px;
   padding: 3px 9px;
+  border: 1px solid var(--c-border-subtle);
+  border-radius: var(--radius-sm);
   font-size: 0.71rem;
   font-weight: 600;
+  color: var(--c-text-2);
+  background: var(--c-bg-soft);
   cursor: pointer;
   transition:
     border-color 0.18s ease,
@@ -473,9 +523,14 @@ details.code-drawer[open] .drawer-chevron {
     background-color 0.18s ease;
 }
 
-.copy-btn:hover {
+.copy-btn:hover:not(:disabled) {
   border-color: var(--c-border-strong);
   color: var(--c-text-1);
+}
+
+.copy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .copy-btn.is-copied {
@@ -485,14 +540,11 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .copy-btn.is-failed {
-  border-color: color-mix(in srgb, var(--c-hl-op) 40%, transparent);
-  color: var(--c-hl-op);
+  border-color: color-mix(in srgb, var(--c-danger) 40%, transparent);
+  color: var(--c-danger);
 }
 
-.copy-btn .icon-check {
-  display: none;
-}
-
+.copy-btn .icon-check,
 .copy-btn.is-copied .icon-copy {
   display: none;
 }
@@ -501,35 +553,21 @@ details.code-drawer[open] .drawer-chevron {
   display: inline-block;
 }
 
-/* Soft-Edge Inner Fade-Out for Code Blocks */
+/* Soft-Edge Inner Fade-Out for Code Blocks (a horizontal mask on the scrolling `<pre>`) */
 
 .code-pre-wrap {
-  position: relative;
-  overflow: hidden;
   margin-inline: -13px;
   margin-block-end: -10px;
-}
-
-.code-pre-wrap::after {
-  content: '';
-  z-index: 2;
-  inset: 0;
-  position: absolute;
-  pointer-events: none;
-  box-shadow:
-    inset 10px 0 12px -4px var(--c-bg),
-    inset -10px 0 12px -4px var(--c-bg);
 }
 
 .code-pre {
   margin: 0;
   padding: 6px 14px 10px;
+  overflow-x: auto;
   font-size: 0.76rem;
   line-height: 1.55;
-  overflow-x: auto;
   white-space: pre;
   color: var(--c-hl-url);
-  scrollbar-width: none;
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0%,
@@ -544,6 +582,7 @@ details.code-drawer[open] .drawer-chevron {
     black calc(100% - 14px),
     transparent 100%
   );
+  scrollbar-width: none;
 }
 
 .code-pre:focus-visible {
@@ -589,13 +628,9 @@ details.code-drawer[open] .drawer-chevron {
 /* Responsive Parameter Reference Tables (Outer divider, subtle inner rows) */
 
 .table-wrapper {
-  overflow: auto;
-  max-inline-size: 100%;
   container-type: inline-size;
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
-  margin-block-end: 0;
+  max-inline-size: 100%;
+  overflow: auto;
 }
 
 .table-wrapper:focus-visible {
@@ -603,13 +638,14 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .param-table {
+  --label-2: 'Values';
+  --label-3: 'Default';
+  --label-4: 'Description';
+
   inline-size: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.83rem;
-  --label-2: 'Values';
-  --label-3: 'Default';
-  --label-4: 'Description';
 }
 
 .param-table thead {
@@ -620,19 +656,19 @@ details.code-drawer[open] .drawer-chevron {
 
 .param-table th,
 .param-table td {
-  text-align: start;
   padding: 10px 15px;
   border-block-end: 1px solid var(--c-border-subtle);
   vertical-align: top;
+  text-align: start;
 }
 
 .param-table thead th {
+  border-block-end: 1px solid var(--c-border);
   font-size: 0.73rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--c-text-2);
-  font-weight: 700;
-  border-block-end: 1px solid var(--c-border);
 }
 
 .param-table tbody tr:last-child th,
@@ -643,8 +679,8 @@ details.code-drawer[open] .drawer-chevron {
 .param-table tbody th {
   font-family: var(--font-mono);
   font-weight: 600;
-  color: var(--c-brand-1);
   white-space: nowrap;
+  color: var(--c-brand-1);
   background: var(--c-bg-soft);
 }
 
@@ -653,30 +689,30 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .param-code {
-  background: var(--c-bg);
-  color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 65%);
-  border: 1px solid var(--c-border-subtle);
   padding: 1px 6px;
+  border: 1px solid var(--c-border-subtle);
   border-radius: 5px;
   font-size: 0.77rem;
+  color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 65%);
+  background: var(--c-bg);
 }
 
 .param-sep {
-  color: var(--c-text-3);
   font-weight: 400;
+  color: var(--c-text-3);
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
 }
 
 .param-alias {
-  color: var(--c-text-3);
   font-weight: 400;
+  color: var(--c-text-3);
 }
 
 .param-note {
-  color: var(--c-text-3);
   font-size: 0.76rem;
+  color: var(--c-text-3);
   user-select: none;
   -webkit-user-select: none;
   pointer-events: none;
@@ -685,15 +721,12 @@ details.code-drawer[open] .drawer-chevron {
 /* Compact Alias Grid (e.g., icon slug aliases) */
 
 .alias-list {
-  list-style: none;
-  margin: 0;
-  padding: 16px 18px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
   gap: 10px 18px;
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
+  margin: 0;
+  padding: 16px 18px;
+  list-style: none;
 }
 
 .alias-item {
@@ -742,22 +775,21 @@ details.code-drawer[open] .drawer-chevron {
     border-block-end: none;
   }
 
-  .param-table td:nth-child(2)::before {
-    content: var(--label-2) ': ' / var(--label-2);
+  .param-table td:nth-child(n + 2)::before {
     font-weight: 600;
     color: var(--c-text-1);
+  }
+
+  .param-table td:nth-child(2)::before {
+    content: var(--label-2) ': ' / var(--label-2);
   }
 
   .param-table td:nth-child(3)::before {
     content: var(--label-3) ': ' / var(--label-3);
-    font-weight: 600;
-    color: var(--c-text-1);
   }
 
   .param-table td:nth-child(4)::before {
     content: var(--label-4) ': ' / var(--label-4);
-    font-weight: 600;
-    color: var(--c-text-1);
   }
 }
 
@@ -765,10 +797,10 @@ details.code-drawer[open] .drawer-chevron {
 
 .pager-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-block-start: 32px;
   padding-block-start: 22px;
   border-block-start: 1px solid var(--c-divider);
@@ -783,35 +815,32 @@ details.code-drawer[open] .drawer-chevron {
 /* Getting Started: Highlighted URL Anatomy */
 
 .anatomy {
-  margin: 0;
-  padding: 18px 20px;
-  background: var(--c-bg-soft);
-  border: 1px solid var(--c-divider);
-  border-radius: 12px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+  margin: 0;
+  padding: 18px 20px;
 }
 
 .anatomy-url {
   display: block;
-  overflow-x: auto;
   padding: 10px 13px;
-  background: var(--c-bg);
+  overflow-x: auto;
   border: 1px solid var(--c-border-subtle);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   font-size: clamp(0.74rem, 0.7rem + 0.2vw, 0.86rem);
   white-space: nowrap;
+  background: var(--c-bg);
   scrollbar-width: thin;
 }
 
 .anatomy-legend {
-  list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
   font-size: 0.8rem;
   color: var(--c-text-2);
   user-select: none;
@@ -829,25 +858,4 @@ details.code-drawer[open] .drawer-chevron {
   block-size: 10px;
   border-radius: 3px;
   background: currentColor;
-}
-
-.hero-cta-row + .subhead-row {
-  margin-block-start: 44px;
-}
-
-/* Preview Links: Every documented preview opens its prefilled builder */
-
-.preview-link {
-  display: inline-flex;
-  flex-shrink: 0;
-  max-inline-size: 100%;
-  border-radius: 6px;
-  outline-offset: 4px;
-  transition: translate 0.15s ease;
-}
-
-/* Lift slightly (no glow or scaling, so the preview keeps its colors and crisp text) */
-
-.preview-link:hover {
-  translate: 0 -2px;
 }

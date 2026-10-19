@@ -8,8 +8,9 @@
 
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
+// oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; Counting them needs the whole namespace.
 import * as lucideIcons from 'lucide-static';
-import { listPublicServices, STATUS_PRESET_MAP } from '@/config/services';
+import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
@@ -19,16 +20,21 @@ import {
   renderSectionHeader,
   renderSectionSubhead,
   renderShowcaseCard,
-  renderUiIcon,
 } from '@/preview/components';
-import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/preview/navigation';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
+import {
+  capitalizeWord,
+  formatSpecialExamples,
+  formatVariantTierSummary,
+  formatVariantValues,
+} from '@/preview/glossary';
+import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
 import {
   SERVICE_ERROR_TTL_SECONDS,
   SERVICE_TTL_SECONDS,
   STATIC_TTL_SECONDS,
   STATUS_TTL_SECONDS,
 } from '@/routes/svg';
+import { listServiceMetricAliases } from '@/services/fetcher';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
@@ -95,6 +101,9 @@ export const ENDPOINT_ROUTES: readonly string[] = [
   '/stack/*',
   '/quote/*',
 ];
+
+/** Generic service preset route shown in the `/docs/services` header (each exact route is listed in its reference table). */
+const SERVICE_ROUTE_PATTERN = '/badge/:service/[:owner/]:target/:metric';
 
 /** Showcase definitions for the 3 badge hierarchy variants (`1`, `2`, `3`). */
 const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
@@ -189,8 +198,8 @@ const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Large Button', path: '/button/Large+36px?icon=zap&size=lg&color=cyan' },
       { alt: 'XL Hero Button', path: '/button/XL+Hero+42px?icon=flame&size=xl&color=rose' },
     ],
-    subtitle: `Scale button height, padding, font size, and icon dimensions with ?size=sm|md|lg|xl or a custom pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
-    title: 'Button Size Scale (?size=sm|md|lg|xl)',
+    subtitle: `Scale button height, padding, font size, and icon dimensions with ?size=${SIZE_TOKENS.join('|')} or a custom pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
+    title: `Button Size Scale (?size=${SIZE_TOKENS.join('|')})`,
   },
   {
     items: [
@@ -236,7 +245,7 @@ const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/button/Download/v1.4.0?icon=download,arrow-right&color=emerald&variant=2',
       },
       {
-        alt: 'Discussions Open',
+        alt: 'Discussions Join',
         path: '/btn/Discussions/Join?icon=message-square&color=violet&variant=3',
       },
     ],
@@ -294,13 +303,13 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Open VSX Rating', path: '/badge/ovsx/xulbux/color-tracr/rating', sample: '5.0/5' },
     ],
     subtitle: 'Version, total downloads, and average star rating for any Open VSX extension.',
-    title: 'Open VSX Registry (/badge/ovsx/:owner/:ext/:metric)',
+    title: 'Open VSX Registry (/badge/ovsx/:namespace/:ext/:metric)',
   },
   {
     items: [
       { alt: 'Crates.io Version', path: '/badge/crates/serde/v', sample: 'v1.0.219' },
       { alt: 'Crates.io Total Downloads', path: '/badge/crates/serde/dt', sample: '490M' },
-      { alt: 'Crates.io Recent Downloads', path: '/badge/crates/serde/dl', sample: '68.4M/90d' },
+      { alt: 'Crates.io 90-Day Downloads', path: '/badge/crates/serde/dq', sample: '68.4M/90d' },
       { alt: 'Docker Pulls', path: '/badge/docker/alpine/pulls', sample: '1B' },
       { alt: 'Docker Stars', path: '/badge/docker/postgres/stars', sample: '14.2k' },
     ],
@@ -330,7 +339,7 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
       { alt: 'Hex Version', path: '/badge/hex/phoenix/v', sample: 'v1.8.15' },
-      { alt: 'Hex Recent Downloads', path: '/badge/hex/phoenix/dl', sample: '5.6M/90d' },
+      { alt: 'Hex 90-Day Downloads', path: '/badge/hex/phoenix/dq', sample: '5.6M/90d' },
       { alt: 'pub.dev Version', path: '/badge/pub/http/v', sample: 'v1.6.0' },
       { alt: 'pub.dev Likes', path: '/badge/pub/http/likes', sample: '8.5k' },
       {
@@ -355,11 +364,33 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
+      { alt: 'Arch Linux Version', path: '/badge/arch/firefox/v', sample: 'v158.0-1' },
+      { alt: 'Arch Linux Repository', path: '/badge/arch/firefox/repo', sample: 'extra' },
+      { alt: 'Fedora Rawhide Version', path: '/badge/fedora/python3/v', sample: 'v3.15.0-1.fc46' },
+      { alt: 'Fedora 43 Version', path: '/badge/fedora/f43/python3/v', sample: 'v3.14.8-1.fc43' },
+      { alt: 'MacPorts Version', path: '/badge/macports/git/v', sample: 'v2.56.0' },
+      {
+        alt: 'MacPorts License',
+        path: '/badge/macports/git/license',
+        sample: 'GPL-2 and LGPL-2.1+',
+      },
+    ],
+    subtitle:
+      'Official Arch Linux repository versions (amber when flagged out-of-date), Fedora branch versions (omit the branch for rawhide), and MacPorts ports.',
+    title: 'Arch Linux, Fedora & MacPorts (/badge/arch/*, /badge/fedora/*, /badge/macports/*)',
+  },
+  {
+    items: [
       { alt: 'GitLab Stars', path: '/badge/gitlab/gitlab-org/gitlab-runner/stars', sample: '2.6k' },
       {
         alt: 'GitLab Release',
         path: '/badge/gitlab/gitlab-org/gitlab-runner/release',
         sample: 'v19.5.0',
+      },
+      {
+        alt: 'GitLab Subgroup Project Stars',
+        path: '/badge/gitlab/gitlab-org/charts/gitlab-runner/stars',
+        sample: '512',
       },
       { alt: 'Codeberg Stars', path: '/badge/codeberg/forgejo/forgejo/stars', sample: '5.7k' },
       { alt: 'Codeberg Issues', path: '/badge/codeberg/forgejo/forgejo/issues', sample: '1.6k' },
@@ -373,7 +404,7 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Gitea Release', path: '/badge/gitea/gitea/tea/release', sample: 'v0.16.0' },
     ],
     subtitle:
-      'Public repository metrics for any GitLab.com, Codeberg, or gitea.com owner (no token required).',
+      'Public repository metrics for any GitLab.com (incl. nested subgroups), Codeberg, or gitea.com owner (no token required).',
     title: 'GitLab, Codeberg & Gitea (/badge/gitlab/*, /badge/codeberg/*, /badge/gitea/*)',
   },
   {
@@ -383,10 +414,10 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Homebrew License', path: '/badge/brew/wget/license', sample: 'GPL-3.0-or-later' },
       { alt: 'Versioned Formula', path: '/badge/brew/python@3.12/v', sample: 'v3.12.12' },
       { alt: 'Homebrew Cask Version', path: '/badge/cask/firefox/v', sample: 'v158.0' },
-      { alt: 'Homebrew Cask Installs', path: '/badge/cask/firefox/dt', sample: '184.8k/yr' },
+      { alt: 'Homebrew Cask Installs', path: '/badge/cask/firefox/dy', sample: '184.8k/yr' },
     ],
     subtitle:
-      'Formula and cask versions plus 30/90/365-day install analytics (dl/dq/dt); Encode + as %2B (gtk%2B3).',
+      'Formula and cask versions plus 30/90/365-day install analytics (dl/dq/dy); Encode + as %2B (gtk%2B3).',
     title: 'Homebrew (/badge/brew/:formula/:metric, /badge/cask/:cask/:metric)',
   },
   {
@@ -424,6 +455,29 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
     subtitle:
       'Modrinth project downloads, followers, and newest supported Minecraft release, plus Firefox add-on metrics.',
     title: 'Modrinth & Firefox Add-ons (/badge/modrinth/*, /badge/amo/*)',
+  },
+  {
+    items: [
+      { alt: 'SpigotMC Version', path: '/badge/spigot/9089/v', sample: 'v2.22.0' },
+      { alt: 'SpigotMC Downloads', path: '/badge/spigot/9089/dt', sample: '5.9M' },
+      { alt: 'SpigotMC Rating', path: '/badge/spigot/9089/rating', sample: '4.5/5' },
+      { alt: 'Hangar Downloads', path: '/badge/hangar/ViaVersion/ViaVersion/dt', sample: '514.2k' },
+      { alt: 'Hangar Stars', path: '/badge/hangar/ViaVersion/ViaVersion/stars', sample: '472' },
+      {
+        alt: 'Thunderstore Version',
+        path: '/badge/thunderstore/BepInEx/BepInExPack/v',
+        sample: 'v5.4.2305',
+      },
+      {
+        alt: 'Thunderstore Downloads',
+        path: '/badge/thunderstore/BepInEx/BepInExPack/dt',
+        sample: '33.9M',
+      },
+    ],
+    subtitle:
+      'SpigotMC resources (via Spiget, by numeric resource ID), Hangar (PaperMC) projects, and Thunderstore mods.',
+    title:
+      'SpigotMC, Hangar & Thunderstore (/badge/spigot/:id/*, /badge/hangar/*, /badge/thunderstore/*)',
   },
   {
     items: [
@@ -466,15 +520,39 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
+      { alt: 'deps.dev Stars', path: '/badge/depsdev/honojs/hono/stars', sample: '32.5k' },
       {
-        alt: 'Discord Online',
-        path: '/badge/discord/discord-developers/online',
-        sample: '71.4k online',
+        alt: 'deps.dev Scorecard',
+        path: '/badge/depsdev/expressjs/express/score',
+        sample: { scorecard: { overallScore: 8.5 } },
       },
+      {
+        alt: 'SonarCloud Quality Gate',
+        path: '/badge/sonarcloud/apache_struts/quality',
+        sample: { component: { measures: [{ metric: 'alert_status', value: 'OK' }] } },
+      },
+      {
+        alt: 'SonarCloud Coverage',
+        path: '/badge/sonarcloud/apache_struts/coverage',
+        sample: { component: { measures: [{ metric: 'coverage', value: '69.4' }] } },
+      },
+      {
+        alt: 'SonarCloud Maintainability',
+        path: '/badge/sonarcloud/apache_struts/maintainability',
+        sample: { component: { measures: [{ metric: 'sqale_rating', value: '1.0' }] } },
+      },
+    ],
+    subtitle:
+      'deps.dev GitHub repository metrics for any owner (refreshed about daily), plus SonarCloud quality gates, coverage, and A–E ratings.',
+    title: 'deps.dev & SonarCloud (/badge/depsdev/:owner/:repo/*, /badge/sonarcloud/:component/*)',
+  },
+  {
+    items: [
+      { alt: 'Discord Online', path: '/badge/discord/discord-developers/online', sample: '71.4k' },
       {
         alt: 'Discord Members',
         path: '/badge/discord/discord-developers/members',
-        sample: '308.6k members',
+        sample: '308.6k',
       },
       { alt: 'Bundle Size', path: '/badge/bundlephobia/react/min', sample: '7.8 kB' },
       {
@@ -551,6 +629,44 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
+      {
+        alt: 'Terraform Module Version',
+        path: '/badge/terraform/terraform-aws-modules/vpc/aws/v',
+        sample: 'v6.7.3',
+      },
+      {
+        alt: 'Terraform Module Downloads',
+        path: '/badge/terraform/terraform-aws-modules/vpc/aws/dt',
+        sample: '222.8M',
+      },
+      {
+        alt: 'Terraform Provider Version',
+        path: '/badge/tf-provider/hashicorp/aws/v',
+        sample: 'v6.69.1',
+      },
+      {
+        alt: 'Terraform Provider Downloads',
+        path: '/badge/tf-provider/hashicorp/aws/dt',
+        sample: '8.1B',
+      },
+      {
+        alt: 'Artifact Hub Chart Version',
+        path: '/badge/artifacthub/helm/bitnami/nginx/v',
+        sample: 'v25.2.5',
+      },
+      {
+        alt: 'Artifact Hub App Version',
+        path: '/badge/artifacthub/helm/bitnami/nginx/app',
+        sample: 'v1.31.7',
+      },
+    ],
+    subtitle:
+      'Terraform Registry module and provider versions and downloads, plus Artifact Hub package versions (e.g., Helm charts).',
+    title:
+      'Terraform & Artifact Hub (/badge/terraform/*, /badge/tf-provider/*, /badge/artifacthub/*)',
+  },
+  {
+    items: [
       { alt: 'F-Droid Version', path: '/badge/fdroid/org.fdroid.fdroid/v', sample: 'v1.23.2' },
       {
         alt: 'Read the Docs Build',
@@ -562,12 +678,8 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/badge/rtd/broken-docs/build',
         sample: { results: [{ state: { code: 'finished' }, success: false }] },
       },
-      {
-        alt: 'Bluesky Followers',
-        path: '/badge/bluesky/bsky.app/followers',
-        sample: '35.3M followers',
-      },
-      { alt: 'Bluesky Posts', path: '/badge/bluesky/bsky.app/posts', sample: '880 posts' },
+      { alt: 'Bluesky Followers', path: '/badge/bluesky/bsky.app/followers', sample: '35.3M' },
+      { alt: 'Bluesky Posts', path: '/badge/bluesky/bsky.app/posts', sample: '880' },
     ],
     subtitle:
       'Suggested F-Droid app versions, the latest Read the Docs build status (passing, failing, or building), and Bluesky profile counters.',
@@ -596,6 +708,27 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       'Open Collective backers and yearly budget, plus Liberapay patrons and weekly receipts (hidden when private).',
     title: 'Open Collective & Liberapay (/badge/opencollective/*, /badge/liberapay/*)',
   },
+  {
+    items: [
+      { alt: 'MetaCPAN Version', path: '/badge/cpan/Moose/v', sample: 'v2.4001' },
+      { alt: 'MetaCPAN License', path: '/badge/cpan/Moose/license', sample: 'Perl 5' },
+      { alt: 'MetaCPAN Last Release', path: '/badge/cpan/libwww-perl/updated', sample: '5mo ago' },
+      { alt: 'Zenodo Downloads', path: '/badge/zenodo/3835582/dt', sample: '76k' },
+      { alt: 'Zenodo Views', path: '/badge/zenodo/3835582/views', sample: '1.4k' },
+      { alt: 'Zenodo DOI', path: '/badge/zenodo/3835582/doi', sample: '10.5281/zenodo.3835582' },
+    ],
+    subtitle:
+      'Perl distribution versions, licenses, and release age from MetaCPAN, plus Zenodo record statistics (all versions) and DOIs.',
+    title: 'MetaCPAN & Zenodo (/badge/cpan/:dist/*, /badge/zenodo/:record/*)',
+  },
+  {
+    items: [
+      { alt: 'Steam Players', path: '/badge/steam/730/players', sample: '982.3k' },
+      { alt: 'Hacker News Karma', path: '/badge/hn/pg/karma', sample: '157.3k' },
+    ],
+    subtitle: 'Live Steam player counts by numeric app id and Hacker News karma.',
+    title: 'Steam & Hacker News (/badge/steam/*, /badge/hn/*)',
+  },
 ];
 
 /** Showcase cards for the dedicated `/docs/icons` page. */
@@ -611,7 +744,7 @@ const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Quick Start', path: '/icon/zap?color=amber&size=28' },
       { alt: 'Feedback', path: '/icon/heart-handshake?color=rose&size=28' },
     ],
-    subtitle: 'For README section headers (size=28 or 40) and inline lists (size=16).',
+    subtitle: 'For README section headers (size=28) and inline lists (size=16).',
     title: 'Lucide UI Stroke Icons (size=16 to 28)',
   },
   {
@@ -705,7 +838,6 @@ const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
   },
 ];
 
-/** Memoized icon set counts (`undefined` until first computed). */
 /** Highlighted parts of the URL anatomy example on the Getting Started page. */
 const URL_ANATOMY_PARTS: readonly UrlAnatomyPart[] = [
   { className: 'hl-p', label: 'Origin', text: SITE_ORIGIN },
@@ -798,6 +930,7 @@ const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
   },
 ];
 
+/** Memoized icon set counts (`undefined` until first computed). */
 let iconSetCountsCache: IconSetCounts | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -805,20 +938,6 @@ let iconSetCountsCache: IconSetCounts | undefined = undefined;
 /** Format a numeric range as a parameter table value (`'8 to 256'`). */
 function formatRange(range: NumericRange): string {
   return `${range.min} to ${range.max}`;
-}
-
-/** Capitalize the first character of a word (e.g., `'standby'` -> `'Standby'`). */
-function capitalizeWord(word: string): string {
-  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
-}
-
-/** Join the variant identifiers of a descriptor list as a parameter value (`'1 | 2 | 3'`). */
-function formatVariantValues(descriptors: readonly VariantDescriptor[]): string {
-  const variantIds: string[] = [];
-  for (const descriptor of descriptors) {
-    variantIds.push(descriptor.id);
-  }
-  return variantIds.join(' | ');
 }
 
 /** Format the `?color=` parameter row values. */
@@ -841,13 +960,13 @@ function buildDotParamRow(description: string): ParamTableRow {
   };
 }
 
-/** Build a `?variant=` parameter row. */
-function buildVariantParamRow(defaultVal: BadgeVariant, description: string): ParamTableRow {
+/** Build a `?variant=` parameter row (`'<topic>: 1 = Primary gradient, …'` from the shared tier table). */
+function buildVariantParamRow(defaultVal: BadgeVariant, topic: string): ParamTableRow {
   return {
     defaultVal,
-    description,
+    description: `${topic}: ${formatVariantTierSummary()}.`,
     name: '?variant=',
-    values: formatVariantValues(BADGE_VARIANT_DESCRIPTORS),
+    values: formatVariantValues(),
   };
 }
 
@@ -872,7 +991,7 @@ function buildSheenAnimParamRow(description: string): ParamTableRow {
   return { defaultVal: '~static', description, name: '?anim=', values: 'sheen | none' };
 }
 
-/** Build the status preset items (every preset in `STATUS_PRESET_MAP`, plus the unknown-state fallback). */
+/** Build the status preset items (every preset in `STATUS_PRESET_MAP`, plus the neutral unknown-state fallback). */
 function buildStatusPresetItems(): ShowcaseItem[] {
   const items: ShowcaseItem[] = [];
   for (const state of Object.keys(STATUS_PRESET_MAP)) {
@@ -881,7 +1000,7 @@ function buildStatusPresetItems(): ShowcaseItem[] {
       path: `/badge/status/${state}/${getOwnValue(STATUS_SAMPLE_TEXTS, state) ?? state}`,
     });
   }
-  items.push({ alt: 'Status Fallback', path: '/badge/status/unknown/falls+back+to+online' });
+  items.push({ alt: 'Status Unknown', path: '/badge/status/unknown/falls+back+to+neutral' });
   return items;
 }
 
@@ -918,7 +1037,7 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
     {
       items: buildStatusPresetItems(),
       subtitle:
-        'Outward radar ripple dots via /badge/status/:state/:text or ?dot=; Unknown states fall back to online.',
+        'Outward radar ripple dots via /badge/status/:state/:text or ?dot=; Unknown states render a neutral slate dot.',
       title: 'Pulsing Radar Status Presets (/badge/status/:state/:text)',
     },
     {
@@ -962,16 +1081,13 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
 function buildBadgeParamRows(): ParamTableRow[] {
   return [
     {
-      defaultVal: '~unknown states fall back to online',
+      defaultVal: '~unknown states render a neutral slate dot',
       description:
         'Status preset of /badge/status/:state/:text; Sets the label, color, and pulsing radar dot.',
       name: ':state',
       values: Object.keys(STATUS_PRESET_MAP).join(' | '),
     },
-    buildVariantParamRow(
-      '1',
-      'Hierarchy tier: 1 = Primary gradient, 2 = Secondary tinted dark, 3 = Tertiary neutral dark.'
-    ),
+    buildVariantParamRow('1', 'Hierarchy tier'),
     buildColorParamRow(
       'indigo',
       'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
@@ -985,8 +1101,7 @@ function buildBadgeParamRows(): ParamTableRow[] {
       defaultVal: 'none',
       description: `Inline data widget on the right side: sparkline (2 to ${MAX_SPARKLINE_POINTS} comma- or space-separated numbers), bar or ring percentage (bars shimmer unless :static; rings pulse only with :pulse), strip (up to ${MAX_STRIP_TICKS} ticks from 0 to 9, as digits or comma/space-separated), or a delta pill.`,
       name: '?special=',
-      values:
-        'sparkline:n,n,... | bar:92 | bar:92:static | ring:84 | ring:84:pulse | strip:9987998999 | strip:9,8,7 | delta:+24%',
+      values: formatSpecialExamples(),
     },
     buildAnimParamRow(),
   ];
@@ -999,15 +1114,12 @@ function buildButtonParamRows(): ParamTableRow[] {
     presetHeights.push(`${presetName}=${preset.height}px`);
   }
   return [
-    buildVariantParamRow(
-      '1',
-      'Surface tier: 1 = Primary 3D gradient, 2 = Secondary tinted dark, 3 = Tertiary neutral dark.'
-    ),
+    buildVariantParamRow('1', 'Surface tier'),
     {
       defaultVal: `md (${BUTTON_SIZE_PRESETS.md.height}px)`,
       description: `Button scale preset (${presetHeights.join(', ')}) or custom pixel height.`,
       name: '?size=',
-      values: `${Object.keys(BUTTON_SIZE_PRESETS).join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,
+      values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,
     },
     buildColorParamRow(
       'indigo',
@@ -1024,18 +1136,18 @@ function buildButtonParamRows(): ParamTableRow[] {
 
 /** Build the route pattern of a service preset (e.g., `/badge/npm/[:scope/]:pkg/:metric`). */
 function buildServiceRoutePattern(key: string, service: ServiceDefinition): string {
-  const { ownerName, targetName } = service.docs;
-  if (service.ownerMode === 'none' || !ownerName) {
-    return `/badge/${key}/${targetName}/:metric`;
+  const { owner, target } = service.route;
+  if (!owner) {
+    return `/badge/${key}/${target.placeholder}/:metric`;
   }
-  const ownerPart = service.ownerMode === 'optional' ? `[${ownerName}/]` : `${ownerName}/`;
-  return `/badge/${key}/${ownerPart}${targetName}/:metric`;
+  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
+  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
 }
 
-/** Format a service's metrics with their aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
+/** Format a service's metrics with their effective aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
 function formatServiceMetricValues(service: ServiceDefinition): string {
   const aliasesByMetric = new Map<string, string[]>();
-  for (const [alias, metric] of Object.entries(service.metricAliases ?? {})) {
+  for (const [alias, metric] of listServiceMetricAliases(service)) {
     const aliases = aliasesByMetric.get(metric);
     if (aliases) {
       aliases.push(alias);
@@ -1053,15 +1165,16 @@ function formatServiceMetricValues(service: ServiceDefinition): string {
 
 /** Format the `Default` cell of a service route row (default owner, optional owner, or required owner). */
 function formatServiceDefaultValue(service: ServiceDefinition): string {
-  const { ownerName } = service.docs;
-  if (service.ownerMode === 'none' || !ownerName) {
+  const { owner } = service.route;
+  const ownerMode = resolveServiceOwnerMode(service);
+  if (!owner || ownerMode === 'none') {
     return '~—';
   }
-  if (service.ownerMode === 'required') {
-    return `~${ownerName} required`;
+  if (ownerMode === 'required') {
+    return `~${owner.placeholder} required`;
   }
-  const defaultOwner = service.defaultOwner?.(DEFAULT_ENV);
-  return defaultOwner ? `${defaultOwner} (${ownerName})` : `~${ownerName} optional`;
+  const defaultOwner = owner.resolveDefault?.(DEFAULT_ENV);
+  return defaultOwner ? `${defaultOwner} (${owner.placeholder})` : `~${owner.placeholder} optional`;
 }
 
 /** Build the route and metric reference rows for `/docs/services` from `SERVICES_CONFIG`. */
@@ -1085,9 +1198,9 @@ function buildServiceParamRows(): ParamTableRow[] {
     {
       defaultVal: '~service preset',
       description:
-        'All standard badge query params (?variant=, ?color=, ?icon=, ?dot=, ?anim=, ?special=) apply.',
+        'All standard badge query params (?variant=, ?color=, ?icon=, ?dot=, ?anim=, ?special=) apply; An empty ?icon= keeps the preset icon.',
       name: '?variant= / ?color= / ...',
-      values: `${formatVariantValues(BADGE_VARIANT_DESCRIPTORS)} (and ${THEME_COLOR_NAMES.length} colors)`,
+      values: `${formatVariantValues()} (and ${THEME_COLOR_NAMES.length} colors)`,
     }
   );
   return rows;
@@ -1135,21 +1248,19 @@ function buildStackParamRows(): ParamTableRow[] {
     {
       defaultVal: '~required',
       description:
-        'Icon slugs with :N columns per group, | side-by-side groups, and ; row bands (path segment or any of the query aliases).',
+        'Icon slugs with :N columns per group, | side-by-side groups, and ; row bands; Read from the path segment, then ?groups=, ?icons=, and ?i= (empty values fall through).',
       name: ':groups / ?groups= / ?icons= / ?i=',
       values: 'c,cpp,cs,rust:4 | aws,cloudflare:2 ; figma,blender:2',
     },
-    buildVariantParamRow(
-      '2',
-      'Tile hierarchy: 1 = Primary gradient, 2 = Secondary tinted, 3 = Tertiary neutral.'
-    ),
+    buildVariantParamRow('2', 'Tile hierarchy'),
     buildColorParamRow(
       '~per-icon brand color',
       'Uniform theme color override applied to all tiles.'
     ),
     {
       defaultVal: String(STACK_PER_LINE_RANGE.default),
-      description: 'Fallback column count per row (or comma-separated list per group).',
+      description:
+        'Fallback column count per row, or a comma-separated list per group; Invalid list entries keep their position and use the group default.',
       name: '?perline=',
       values: `${formatRange(STACK_PER_LINE_RANGE)} (or 8,6,6,4,3,3)`,
     },
@@ -1193,36 +1304,35 @@ function buildQuoteParamRows(): ParamTableRow[] {
       name: '?text= / ?quote=',
       values: '~any string',
     },
-    buildVariantParamRow(
-      '2',
-      'Surface tier: 1 = Primary gradient, 2 = Secondary tinted, 3 = Tertiary neutral.'
-    ),
+    buildVariantParamRow('2', 'Surface tier'),
     {
       defaultVal: 'horizontal',
       description:
-        'Layout mode: horizontal (left accent bar) or vertical (centered watermarks); center and v are vertical aliases, and ?type= is an alias of ?layout=.',
+        'Layout mode: horizontal (left accent bar) or vertical (centered watermarks); center and v are vertical aliases, and ?type= is an alias of ?layout= (an empty ?layout= falls through to ?type=).',
       name: '?layout= / ?type=',
       values: 'horizontal | vertical | center | v',
     },
     {
       defaultVal: '~false',
-      description: 'Shorthand for the vertical layout.',
+      description:
+        'Shorthand for the vertical layout; Only read when ?layout= and ?type= are empty.',
       name: '?center=',
-      values: 'true | 1',
+      values: 'true | 1 | yes',
     },
     {
-      defaultVal: `md (${QUOTE_SIZE_MAP.md}px) / lg (vert)`,
+      defaultVal: `md (${QUOTE_SIZE_MAP.md}px) / lg (${QUOTE_SIZE_MAP.lg}px, vertical)`,
       description: 'Typography scale preset or custom pixel size.',
       name: '?size=',
-      values: `${Object.keys(QUOTE_SIZE_MAP).join(' | ')} | ${formatRange(QUOTE_FONT_SIZE_RANGE)}`,
+      values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(QUOTE_FONT_SIZE_RANGE)}`,
     },
     buildColorParamRow(
       'indigo',
       'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
     ),
     {
-      defaultVal: `${QUOTE_WIDTH_RANGE.default} (horiz) / ${DEFAULT_VERTICAL_QUOTE_WIDTH} (vert)`,
-      description: 'Card width in pixels; Height adapts automatically to wrapped lines.',
+      defaultVal: `${QUOTE_WIDTH_RANGE.default} (horizontal) / ${DEFAULT_VERTICAL_QUOTE_WIDTH} (vertical)`,
+      description:
+        "Card width in pixels; The default grows proportionally with text sizes above the layout's default size, and the height adapts to the wrapped lines.",
       name: '?width=',
       values: formatRange(QUOTE_WIDTH_RANGE),
     },
@@ -1334,14 +1444,13 @@ function buildSharedParamRows(): ParamTableRow[] {
       defaultVal: '/badge | /button | /icon | /stack | /quote',
       description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
       name: '?color=',
-      values: `indigo | emerald | rose | ... (${THEME_COLOR_NAMES.length} colors)`,
+      values: formatColorValues(),
     },
     {
       defaultVal: '/badge | /button | /stack | /quote',
-      description:
-        'Visual hierarchy tier: 1 = Primary gradient, 2 = Secondary tinted, 3 = Tertiary neutral.',
+      description: `Visual hierarchy tier: ${formatVariantTierSummary()}.`,
       name: '?variant=',
-      values: '1 | 2 | 3',
+      values: formatVariantValues(),
     },
     {
       defaultVal: '/badge | /button',
@@ -1356,6 +1465,13 @@ function buildSharedParamRows(): ParamTableRow[] {
         'Surface sheen and icon motions (stacks and quote cards support sheen only); none also stops widget and dot animations.',
       name: '?anim=',
       values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')}`,
+    },
+    {
+      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      description:
+        'Unknown query parameters are ignored per route, so tracking or cache-busting parameters never change the SVG.',
+      name: '?<other>=',
+      values: '~any parameter a route does not document',
     },
   ];
 }
@@ -1391,20 +1507,19 @@ function buildCachingRows(): ParamTableRow[] {
  * @returns Distinct Lucide and brand icon counts.
  */
 export function getIconSetCounts(): IconSetCounts {
-  if (iconSetCountsCache !== undefined) {
-    return iconSetCountsCache;
-  }
-  const lucideGlyphs = new Set<string>();
-  for (const glyph of Object.values(lucideIcons)) {
-    if (typeof glyph === 'string') {
-      lucideGlyphs.add(glyph);
+  if (iconSetCountsCache === undefined) {
+    const lucideGlyphs = new Set<string>();
+    for (const glyph of Object.values(lucideIcons)) {
+      if (typeof glyph === 'string') {
+        lucideGlyphs.add(glyph);
+      }
     }
+    const brandSlugs = new Set<string>(Object.keys(simpleIconSet.icons));
+    for (const slug of Object.keys(deviconPlainSet.icons)) {
+      brandSlugs.add(slug);
+    }
+    iconSetCountsCache = { brand: brandSlugs.size, lucide: lucideGlyphs.size };
   }
-  const brandSlugs = new Set<string>(Object.keys(simpleIconSet.icons));
-  for (const slug of Object.keys(deviconPlainSet.icons)) {
-    brandSlugs.add(slug);
-  }
-  iconSetCountsCache = { brand: brandSlugs.size, lucide: lucideGlyphs.size };
   return iconSetCountsCache;
 }
 
@@ -1430,7 +1545,7 @@ export function renderBadgesSectionHtml(): string {
     })}
     ${renderParamTable(buildBadgeParamRows(), 'Badge route segments and query parameters')}
     ${renderSectionSubhead('layers', 'Visual Hierarchy Variants (`?variant=`)')}
-    <div class="card-grid-3">${renderVariantCardsHtml(BADGE_VARIANT_DESCRIPTORS, buildBadgeVariantItems)}</div>
+    <div class="card-grid is-3col">${renderVariantCardsHtml(BADGE_VARIANT_DESCRIPTORS, buildBadgeVariantItems)}</div>
     ${renderSectionSubhead('zap', 'Inline Widgets, Status Presets & Layouts')}
     <div class="card-grid">${renderCardsHtml(buildBadgeUseCaseCards())}</div>
   </section>`;
@@ -1441,9 +1556,11 @@ export function renderBadgesSectionHtml(): string {
  * @returns HTML string for the `/docs/buttons` documentation and live preview section.
  */
 export function renderButtonsSectionHtml(): string {
-  const sizePresetsMarkup = Object.keys(BUTTON_SIZE_PRESETS)
-    .map((presetName) => `\`${presetName}\``)
-    .join(', ');
+  const sizePresetCodes: string[] = [];
+  for (const presetName of SIZE_TOKENS) {
+    sizePresetCodes.push(`\`${presetName}\``);
+  }
+  const sizePresetsMarkup = sizePresetCodes.join(', ');
   return `<section class="doc-section" id="buttons">
     ${renderSectionHeader({
       description: `Dedicated 3D Kumo action buttons with configurable size presets (${sizePresetsMarkup}), trailing icons, status dots, and split compartments.`,
@@ -1452,7 +1569,7 @@ export function renderButtonsSectionHtml(): string {
     })}
     ${renderParamTable(buildButtonParamRows(), 'Button query parameters')}
     ${renderSectionSubhead('layers', 'Visual Hierarchy Variants (`?variant=`)')}
-    <div class="card-grid-3">${renderVariantCardsHtml(BUTTON_VARIANT_DESCRIPTORS, buildButtonVariantItems)}</div>
+    <div class="card-grid is-3col">${renderVariantCardsHtml(BUTTON_VARIANT_DESCRIPTORS, buildButtonVariantItems)}</div>
     ${renderSectionSubhead('sliders-horizontal', 'Size Scale, Trailing Icons, Animations & Split Buttons')}
     <div class="card-grid">${renderCardsHtml(BUTTON_USE_CASE_CARDS)}</div>
   </section>`;
@@ -1464,20 +1581,17 @@ export function renderButtonsSectionHtml(): string {
  */
 export function renderServicesSectionHtml(): string {
   const publicServices = listPublicServices();
-  const routePatterns: string[] = [];
-  for (const [key, service] of publicServices) {
-    routePatterns.push(buildServiceRoutePattern(key, service));
-  }
 
   return `<section class="doc-section" id="services">
     ${renderSectionHeader({
-      description: `Auto-fetched metrics from ${publicServices.length} public registries and forges (no tokens required) with multi-tier edge caching and smart 302 redirects to the upstream page when opened in a browser tab. Metric aliases are shown in parentheses; Optional owner segments fall back to the owner in the Default column.`,
-      routes: routePatterns,
+      description: `Auto-fetched metrics from ${publicServices.length} public registries and forges (no tokens required) with multi-tier edge caching and smart 302 redirects to the upstream page when opened in a browser tab. The route reference below lists every service with its exact route, metrics (aliases in parentheses), and owner defaults.`,
+      routes: [SERVICE_ROUTE_PATTERN],
       title: 'Live Service Badges',
     })}
-    ${renderParamTable(buildServiceParamRows(), 'Service preset routes and metrics')}
     ${renderSectionSubhead('activity', 'Service Preset Examples')}
     <div class="card-grid">${renderCardsHtml(SERVICE_PRESET_CARDS)}</div>
+    ${renderSectionSubhead('book-open', 'Service Route Reference')}
+    ${renderParamTable(buildServiceParamRows(), 'Service preset routes and metrics')}
   </section>`;
 }
 
@@ -1535,7 +1649,7 @@ export function renderQuotesSectionHtml(): string {
     })}
     ${renderParamTable(buildQuoteParamRows(), 'Quote card route segments and query parameters')}
     ${renderSectionSubhead('rectangle-vertical', 'Vertical Layout (`?layout=vertical`)')}
-    <div class="card-grid-3">${renderCardsHtml(VERTICAL_QUOTE_CARDS)}</div>
+    <div class="card-grid is-3col">${renderCardsHtml(VERTICAL_QUOTE_CARDS)}</div>
     ${renderSectionSubhead('rectangle-horizontal', 'Horizontal Layout (`?layout=horizontal`)')}
     <div class="card-grid">${renderCardsHtml(HORIZONTAL_QUOTE_CARDS)}</div>
   </section>`;
@@ -1586,9 +1700,6 @@ export function renderColorsSectionHtml(): string {
  * @returns HTML string for the `/docs` overview section.
  */
 export function renderOverviewSectionHtml(): string {
-  const builderIcon = renderUiIcon('wand-sparkles', 16);
-  const bookIcon = renderUiIcon('book-open', 16);
-  const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
   return `<section class="doc-section" id="overview">
     ${renderSectionHeader({
       description:
@@ -1596,10 +1707,6 @@ export function renderOverviewSectionHtml(): string {
       routes: ENDPOINT_ROUTES,
       title: 'Getting Started',
     })}
-    <div class="hero-cta-row">
-      <a href="${buildBuilderPath(DEFAULT_BUILDER_KIND)}" class="btn-primary">${builderIcon}<span class="btn-label">Open the Builder</span>${rightArrow}</a>
-      <a href="${buildDocsPath('badges')}" class="btn-secondary">${bookIcon}<span class="btn-label">Badge Reference</span></a>
-    </div>
     ${renderSectionSubhead('link', 'URL Anatomy')}
     ${renderUrlAnatomyHtml()}
     ${renderSectionSubhead('binary', 'Encoding Path Segments')}

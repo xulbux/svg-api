@@ -1,97 +1,84 @@
 /**
  * Puppet Forge service preset – Module version, total downloads, license, and community feedback score with a ring gauge (`/badge/puppet/:owner/:module/:metric`).
  *
- * The module endpoint ignores `exclude_fields`, so the full (~300 kB) payload is fetched once and
- * shared by every metric through the upstream cache.
+ * Version and license come from the newest release (`/v3/releases?limit=1`, `~5 KB` with
+ * `exclude_fields`); Downloads and the feedback score need the module document, which ignores
+ * `exclude_fields` (`~300 KB`), so only its two counters are kept in the caches.
  */
 
+import { createEndpoint, defineService, pickFields, projectFirstEntry } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createScoreTransform,
-  createVersionTransform,
-  formatPercent,
-  LICENSE,
-  TOTAL_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createPercentScoreMetric,
+  createVersionMetric,
+  SCORE,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Partial Puppet Forge module API payload (`forgeapi.puppet.com/v3/modules/:owner-:module`). */
 interface PuppetModulePayload {
-  /** Latest module release. */
-  current_release: {
-    /** Release `metadata.json` contents. */
-    metadata?: {
-      /** SPDX license identifier. */
-      license?: string;
-    };
-    /** Release version. */
-    version?: string;
-  };
   /** All-time downloads of every release. */
   downloads: number;
   /** Community feedback score (`0`–`100`), or `null` without feedback. */
   feedback_score: number | null;
 }
 
+/** Release `metadata.json` contents of a Puppet Forge release. */
+interface PuppetReleaseMetadata {
+  /** SPDX license identifier. */
+  license?: string;
+}
+
+/** Single release entry of a Puppet Forge releases API response (`forgeapi.puppet.com/v3/releases?module=:owner-:module`). */
+interface PuppetReleaseEntry {
+  /** Release `metadata.json` contents. */
+  metadata: PuppetReleaseMetadata | null;
+  /** Release version. */
+  version: string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Maximum Puppet Forge feedback score. */
-const MAX_PUPPET_SCORE = 100;
+/** Puppet Forge module endpoint (only the download and feedback counters are cached). */
+const MODULE_ENDPOINT = createEndpoint({
+  api: ({ owner, target }) =>
+    `https://forgeapi.puppet.com/v3/modules/${encodeURIComponent(owner)}-${encodeURIComponent(target)}`,
+  page: 'https://forge.puppet.com/modules/{owner}/{target}',
+  project: pickFields<PuppetModulePayload>(['downloads', 'feedback_score']),
+});
 
-/** Puppet Forge module endpoint with module page redirect. */
-const PUPPET_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (owner: string, module: string): string =>
-    `https://forgeapi.puppet.com/v3/modules/${owner}-${module}`,
-  buildRedirectUrl: (owner: string, module: string): string =>
-    `https://forge.puppet.com/modules/${owner}/${module}`,
-};
+/** Puppet Forge newest release endpoint (an empty `results` list is not found). */
+const RELEASE_ENDPOINT = createEndpoint({
+  api: ({ owner, target }) =>
+    `https://forgeapi.puppet.com/v3/releases?module=${encodeURIComponent(`${owner}-${target}`)}&limit=1&sort_by=release_date&exclude_fields=readme,changelog,license,reference,tasks,plans`,
+  page: 'https://forge.puppet.com/modules/{owner}/{target}',
+  project: projectFirstEntry<PuppetReleaseEntry>('results', ['metadata', 'version']),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Puppet Forge service preset (`puppet`). */
-export const PUPPET_SERVICE: ServiceDefinition = {
+export const PUPPET_SERVICE = defineService({
   docs: {
     description: 'Latest version, total downloads, license, and feedback score (ring gauge).',
-    ownerName: ':owner',
-    targetName: ':module',
     title: 'Puppet Forge',
   },
-  metricAliases: { dl: 'dt', l: 'license' },
+  metricAliases: { dl: 'dt' },
   metrics: {
-    dt: {
-      ...PUPPET_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<PuppetModulePayload>((payload) => payload.downloads),
-    },
-    license: {
-      ...PUPPET_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<PuppetModulePayload>(
-        (payload) => payload.current_release?.metadata?.license
-      ),
-    },
-    score: {
-      ...PUPPET_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'gauge',
-      defaultLabel: 'puppet score',
-      transform: createScoreTransform<PuppetModulePayload>(
-        (payload) => [payload.feedback_score, MAX_PUPPET_SCORE],
-        formatPercent
-      ),
-    },
-    v: {
-      ...PUPPET_ENDPOINT,
-      defaultColor: 'amber',
-      defaultIcon: 'puppet',
-      defaultLabel: 'puppet forge',
-      transform: createVersionTransform<PuppetModulePayload>(
-        (payload) => payload.current_release?.version
-      ),
-    },
+    dt: createDownloadsMetric(MODULE_ENDPOINT, 'dt', (module) => module.downloads),
+    license: createLicenseMetric(RELEASE_ENDPOINT, (release) => release.metadata?.license),
+    score: createPercentScoreMetric(
+      MODULE_ENDPOINT,
+      { ...SCORE, defaultLabel: 'puppet score' },
+      (module) => module.feedback_score
+    ),
+    v: createVersionMetric(
+      RELEASE_ENDPOINT,
+      { defaultColor: 'amber', defaultIcon: 'puppet', defaultLabel: 'puppet forge' },
+      (release) => release.version
+    ),
   },
-  ownerMode: 'required',
-};
+  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':module' } },
+});

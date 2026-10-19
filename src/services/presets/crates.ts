@@ -1,88 +1,90 @@
 /**
  * crates.io service preset – Rust crate version, total/90-day downloads, and license (`/badge/crates/:crate/:metric`).
+ *
+ * `?include=default_version,downloads` shrinks the crate document from `~440 KB` (every version)
+ * to `~3 KB` (only the default version, whose license is reported).
  */
 
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createLicenseTransform,
-  createVersionTransform,
-  LICENSE,
-  RECENT_DOWNLOADS,
-  TOTAL_DOWNLOADS,
+  createDownloadsMetric,
+  createLicenseMetric,
+  createVersionMetric,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial crates.io crate metadata API payload (`crates.io/api/v1/crates/:crate`). */
+/** Crate summary object of the crates.io crate metadata API. */
+interface CratesIoCrate {
+  /** Default (latest stable, non-yanked) version string. */
+  default_version?: string | null;
+  /** Total all-time downloads. */
+  downloads?: number;
+  /** Downloads in the last 90 days. */
+  recent_downloads?: number;
+}
+
+/** Version object included in the crates.io crate metadata API. */
+interface CratesIoVersion {
+  /** SPDX license expression for the version. */
+  license?: string | null;
+  /** Version string. */
+  num?: string;
+}
+
+/** Partial crates.io crate metadata API payload (`crates.io/api/v1/crates/:crate?include=default_version,downloads`). */
 interface CratesIoPayload {
   /** Crate summary object. */
-  crate: {
-    /** Total all-time downloads. */
-    downloads?: number;
-    /** Latest stable version string. */
-    max_stable_version?: string | null;
-    /** Highest published version string. */
-    max_version?: string;
-    /** Downloads in the last 90 days. */
-    recent_downloads?: number;
-  };
-  /** Published versions (newest first). */
-  versions: {
-    /** SPDX license expression for the version. */
-    license?: string | null;
-  }[];
+  crate: CratesIoCrate | null;
+  /** Included versions (only the default version). */
+  versions: CratesIoVersion[];
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** crates.io crate metadata endpoint with crate page redirect. */
-const CRATES_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, crate: string): string =>
-    `https://crates.io/api/v1/crates/${crate}`,
-  buildRedirectUrl: (_owner: string, crate: string): string => `https://crates.io/crates/${crate}`,
-};
+/** crates.io crate metadata endpoint (default version only) with crate page redirect. */
+const CRATES_ENDPOINT = createEndpoint({
+  api: 'https://crates.io/api/v1/crates/{target}?include=default_version,downloads',
+  page: 'https://crates.io/crates/{target}',
+  project: pickFields<CratesIoPayload>(['crate', 'versions']),
+});
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Read the license of the crate's default version (falling back to the first included version). */
+function readDefaultVersionLicense(payload: Partial<CratesIoPayload>): string | null | undefined {
+  const { versions } = payload;
+  if (!Array.isArray(versions)) {
+    return undefined;
+  }
+  const defaultVersion = payload.crate?.default_version;
+  for (const version of versions) {
+    if (version?.num === defaultVersion) {
+      return version.license;
+    }
+  }
+  return versions[0]?.license;
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** crates.io service preset (`crates`). */
-export const CRATES_SERVICE: ServiceDefinition = {
+export const CRATES_SERVICE = defineService({
   docs: {
-    description: 'Latest stable version, total/90-day downloads, and license.',
-    targetName: ':crate',
+    description: 'Default version, total and 90-day downloads (dt/dq), and license.',
     title: 'crates.io',
   },
-  metricAliases: { l: 'license' },
+  // `dl` reported the 90-day downloads before the download keys were normalized.
+  metricAliases: { dl: 'dq' },
   metrics: {
-    dl: {
-      ...CRATES_ENDPOINT,
-      ...RECENT_DOWNLOADS,
-      transform: createCountTransform<CratesIoPayload>(
-        (payload) => payload.crate?.recent_downloads,
-        '/90d'
-      ),
-    },
-    dt: {
-      ...CRATES_ENDPOINT,
-      ...TOTAL_DOWNLOADS,
-      transform: createCountTransform<CratesIoPayload>((payload) => payload.crate?.downloads),
-    },
-    license: {
-      ...CRATES_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<CratesIoPayload>(
-        (payload) => payload.versions?.[0]?.license
-      ),
-    },
-    v: {
-      ...CRATES_ENDPOINT,
-      defaultColor: 'orange',
-      defaultIcon: 'rust',
-      defaultLabel: 'crates.io',
-      transform: createVersionTransform<CratesIoPayload>(
-        (payload) => payload.crate?.max_stable_version || payload.crate?.max_version
-      ),
-    },
+    dq: createDownloadsMetric(CRATES_ENDPOINT, 'dq', (payload) => payload.crate?.recent_downloads),
+    dt: createDownloadsMetric(CRATES_ENDPOINT, 'dt', (payload) => payload.crate?.downloads),
+    license: createLicenseMetric(CRATES_ENDPOINT, readDefaultVersionLicense),
+    v: createVersionMetric(
+      CRATES_ENDPOINT,
+      { defaultColor: 'orange', defaultIcon: 'rust', defaultLabel: 'crates.io' },
+      (payload) => payload.crate?.default_version
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':crate' } },
+});

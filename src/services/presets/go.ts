@@ -1,13 +1,14 @@
 /**
  * Go modules service preset – Latest module version from the Go module proxy (`/badge/go/:module/:metric`, e.g., `/badge/go/github.com/spf13/cobra/v`).
  *
- * Module paths span multiple path segments (`maxTargetSegments`); Every segment is validated
+ * Module paths span multiple path segments (`route.target.maxSegments`); Every segment is validated
  * individually, and uppercase letters are escaped as `!` + lowercase for the proxy (Go module
  * proxy protocol case-encoding).
  */
 
-import { createVersionTransform } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createVersionMetric } from '@/services/metrics';
+import type { ServiceDefinition, ServiceRouteParams } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -29,37 +30,47 @@ const UPPERCASE_LETTER_RX = /[A-Z]/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Escape a module path for the Go module proxy (`github.com/BurntSushi/toml` -> `github.com/!burnt!sushi/toml`). */
-function escapeGoModulePath(modulePath: string): string {
-  return modulePath.replace(UPPERCASE_LETTER_RX, (letter) => `!${letter.toLowerCase()}`);
+/** Escape an uppercase letter for the module proxy (`B` -> `!b`). */
+function escapeUppercaseLetter(letter: string): string {
+  return `!${letter.toLowerCase()}`;
 }
 
-/** Go module proxy `@latest` endpoint with pkg.go.dev redirect. */
-const GO_PROXY_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, modulePath: string): string =>
-    `https://proxy.golang.org/${escapeGoModulePath(modulePath)}/@latest`,
-  buildRedirectUrl: (_owner: string, modulePath: string): string =>
-    `https://pkg.go.dev/${modulePath}`,
-};
+/**
+ * Build the Go module proxy `@latest` URL, escaping uppercase letters
+ * (`github.com/BurntSushi/toml` -> `github.com/!burnt!sushi/toml`) and encoding every segment.
+ */
+function buildGoProxyUrl({ target }: ServiceRouteParams): string {
+  let escapedPath = '';
+  for (const segment of target.split('/')) {
+    escapedPath += `${encodeURIComponent(segment.replace(UPPERCASE_LETTER_RX, escapeUppercaseLetter))}/`;
+  }
+  return `https://proxy.golang.org/${escapedPath}@latest`;
+}
+
+/** Create the Go modules service preset. */
+function createGoService(): ServiceDefinition {
+  const proxyEndpoint = createEndpoint({
+    api: buildGoProxyUrl,
+    page: 'https://pkg.go.dev/{target}',
+    project: pickFields<GoLatestPayload>(['Version']),
+  });
+  return defineService({
+    docs: {
+      description: 'Latest version of any Go module (the full module path spans several segments).',
+      title: 'Go Modules',
+    },
+    metrics: {
+      v: createVersionMetric(
+        proxyEndpoint,
+        { defaultColor: 'cyan', defaultIcon: 'go', defaultLabel: 'go' },
+        (latest) => latest.Version
+      ),
+    },
+    route: { target: { maxSegments: MAX_MODULE_PATH_SEGMENTS, placeholder: ':module' } },
+  });
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Go modules service preset (`go`). */
-export const GO_SERVICE: ServiceDefinition = {
-  docs: {
-    description: 'Latest version of any Go module (the full module path spans several segments).',
-    targetName: ':module',
-    title: 'Go Modules',
-  },
-  maxTargetSegments: MAX_MODULE_PATH_SEGMENTS,
-  metrics: {
-    v: {
-      ...GO_PROXY_ENDPOINT,
-      defaultColor: 'cyan',
-      defaultIcon: 'go',
-      defaultLabel: 'go',
-      transform: createVersionTransform<GoLatestPayload>((payload) => payload.Version),
-    },
-  },
-  ownerMode: 'none',
-};
+export const GO_SERVICE: ServiceDefinition = createGoService();

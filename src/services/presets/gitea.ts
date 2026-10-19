@@ -5,16 +5,15 @@
  * built by the same `createGiteaService` factory.
  */
 
+import { createEndpoint, defineService, pickFields, withPageSuffix } from '@/services/endpoint';
 import {
-  createCountTransform,
-  createRelativeDateTransform,
-  createRepoEndpointFactory,
-  createVersionTransform,
+  createCountMetric,
+  createRelativeDateMetric,
+  createReleaseMetric,
   FORKS,
   ISSUES,
   LAST_COMMIT,
   PULL_REQUESTS,
-  RELEASE,
   STARS,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
@@ -49,58 +48,68 @@ interface GiteaInstanceOptions {
   title: string;
 }
 
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Repository payload fields read by the repository metrics. */
+const REPO_FIELDS: readonly (keyof GiteaRepoPayload)[] = [
+  'forks_count',
+  'open_issues_count',
+  'open_pr_counter',
+  'stars_count',
+  'updated_at',
+];
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Create a repository service preset for a Gitea-compatible forge instance. */
 function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefinition {
-  const createEndpoint = createRepoEndpointFactory(
-    (owner: string, repo: string): string => `https://${host}/api/v1/repos/${owner}/${repo}`,
-    `https://${host}`
-  );
-  return {
+  const repoEndpoint = createEndpoint({
+    api: `https://${host}/api/v1/repos/{owner}/{target}`,
+    page: `https://${host}/{owner}/{target}`,
+    project: pickFields<GiteaRepoPayload>(REPO_FIELDS),
+  });
+  const releaseEndpoint = createEndpoint({
+    api: `https://${host}/api/v1/repos/{owner}/{target}/releases/latest`,
+    page: `https://${host}/{owner}/{target}/releases`,
+    project: pickFields<GiteaReleasePayload>(['tag_name']),
+  });
+  return defineService({
     docs: {
       description:
         'Repository stars, forks, open issues, open pull requests, last activity, and latest release.',
-      ownerName: ':owner',
-      targetName: ':repo',
       title,
     },
-    metricAliases: { commit: 'updated', 'last-commit': 'updated', pulls: 'prs' },
+    metricAliases: { commit: 'updated', 'last-commit': 'updated' },
     metrics: {
-      forks: {
-        ...createEndpoint('', '/forks'),
-        ...FORKS,
-        transform: createCountTransform<GiteaRepoPayload>((payload) => payload.forks_count),
-      },
-      issues: {
-        ...createEndpoint('', '/issues'),
-        ...ISSUES,
-        transform: createCountTransform<GiteaRepoPayload>((payload) => payload.open_issues_count),
-      },
-      prs: {
-        ...createEndpoint('', '/pulls'),
-        ...PULL_REQUESTS,
-        transform: createCountTransform<GiteaRepoPayload>((payload) => payload.open_pr_counter),
-      },
-      release: {
-        ...createEndpoint('/releases/latest', '/releases'),
-        ...RELEASE,
-        transform: createVersionTransform<GiteaReleasePayload>((payload) => payload.tag_name),
-      },
-      stars: {
-        ...createEndpoint('', '/stars'),
-        ...STARS,
-        transform: createCountTransform<GiteaRepoPayload>((payload) => payload.stars_count),
-      },
-      updated: {
-        ...createEndpoint('', '/activity'),
-        ...LAST_COMMIT,
-        defaultLabel: 'last activity',
-        transform: createRelativeDateTransform<GiteaRepoPayload>((payload) => payload.updated_at),
-      },
+      forks: createCountMetric(
+        withPageSuffix(repoEndpoint, '/forks'),
+        FORKS,
+        (repo) => repo.forks_count
+      ),
+      issues: createCountMetric(
+        withPageSuffix(repoEndpoint, '/issues'),
+        ISSUES,
+        (repo) => repo.open_issues_count
+      ),
+      prs: createCountMetric(
+        withPageSuffix(repoEndpoint, '/pulls'),
+        PULL_REQUESTS,
+        (repo) => repo.open_pr_counter
+      ),
+      release: createReleaseMetric(releaseEndpoint, (release) => release.tag_name),
+      stars: createCountMetric(
+        withPageSuffix(repoEndpoint, '/stars'),
+        STARS,
+        (repo) => repo.stars_count
+      ),
+      updated: createRelativeDateMetric(
+        withPageSuffix(repoEndpoint, '/activity'),
+        { ...LAST_COMMIT, defaultLabel: 'last activity' },
+        (repo) => repo.updated_at
+      ),
     },
-    ownerMode: 'required',
-  };
+    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+  });
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------

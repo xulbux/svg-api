@@ -5,37 +5,33 @@
  * is read from the stable channel of the snap's default track, preferring the `amd64` build.
  */
 
-import { createLicenseTransform, createVersionTransform, LICENSE } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
+import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial channel map entry of a Snap Store info payload. */
-interface SnapChannelMapEntry {
-  /** Channel coordinates of this release. */
-  channel?: {
-    /** CPU architecture of the build (e.g., `'amd64'`). */
-    architecture?: string;
-    /** Channel risk level (`stable`, `candidate`, `beta`, `edge`). */
-    risk?: string;
-    /** Channel track (e.g., `'latest'`, `'esr'`). */
-    track?: string;
-  };
-  /** Released snap version. */
-  version?: string;
+/** Requested snap metadata fields of the Snap Store info API. */
+interface SnapMetadata {
+  /** SPDX license expression. */
+  license?: string;
 }
 
 /** Partial Snap Store info API payload (`api.snapcraft.io/v2/snaps/info/:snap`). */
 interface SnapInfoPayload {
-  /** Every released channel and architecture combination. */
-  'channel-map': SnapChannelMapEntry[];
+  /** Every released channel and architecture combination (`{ channel: { architecture, risk, track }, version }`). */
+  'channel-map': unknown[];
   /** Default track of the snap, or `null` for `latest`. */
   'default-track': string | null;
   /** Requested snap metadata fields. */
-  snap: {
-    /** SPDX license expression. */
-    license?: string;
-  };
+  snap: SnapMetadata | null;
+}
+
+/** Version and architecture of a stable channel map entry of the default track. */
+interface StableSnapRelease {
+  /** CPU architecture of the build (e.g., `'amd64'`). */
+  architecture: unknown;
+  /** Released snap version. */
+  version: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -50,13 +46,29 @@ const DEFAULT_SNAP_TRACK = 'latest';
 const PREFERRED_SNAP_ARCHITECTURE = 'amd64';
 
 /** Snap Store info endpoint with snapcraft.io store page redirect. */
-const SNAP_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, snap: string): string =>
-    `https://api.snapcraft.io/v2/snaps/info/${encodeURIComponent(snap)}?fields=license,version`,
-  buildRedirectUrl: (_owner: string, snap: string): string => `https://snapcraft.io/${snap}`,
-};
+const SNAP_ENDPOINT = createEndpoint({
+  api: 'https://api.snapcraft.io/v2/snaps/info/{target}?fields=license,version',
+  page: 'https://snapcraft.io/{target}',
+  project: pickFields<SnapInfoPayload>(['channel-map', 'default-track', 'snap']),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Build the required Snap Store request headers. */
+function buildSnapHeaders(): Readonly<Record<string, string>> {
+  return SNAP_HEADERS;
+}
+
+/** Read the version of a channel map entry released to the stable channel of `track` (malformed entries are skipped). */
+function readStableRelease(entry: unknown, track: string): StableSnapRelease | undefined {
+  const channel = isJsonObject(entry) ? entry.channel : undefined;
+  if (!isJsonObject(entry) || !isJsonObject(channel) || typeof entry.version !== 'string') {
+    return undefined;
+  }
+  return channel.track === track && channel.risk === 'stable'
+    ? { architecture: channel.architecture, version: entry.version }
+    : undefined;
+}
 
 /** Read the stable default-track version, preferring the `amd64` build over other architectures. */
 function readStableSnapVersion(payload: Partial<SnapInfoPayload>): string | undefined {
@@ -65,43 +77,33 @@ function readStableSnapVersion(payload: Partial<SnapInfoPayload>): string | unde
     return undefined;
   }
   const track = payload['default-track'] ?? DEFAULT_SNAP_TRACK;
-  let fallback: SnapChannelMapEntry | undefined = undefined;
+  let fallbackVersion: string | undefined = undefined;
   for (const entry of entries) {
-    const isStableRelease = entry.channel?.track === track && entry.channel.risk === 'stable';
-    if (isStableRelease && entry.channel?.architecture === PREFERRED_SNAP_ARCHITECTURE) {
-      return entry.version;
+    const release = readStableRelease(entry, track);
+    if (release?.architecture === PREFERRED_SNAP_ARCHITECTURE) {
+      return release.version;
     }
-    if (isStableRelease) {
-      fallback ??= entry;
-    }
+    fallbackVersion ??= release?.version;
   }
-  return fallback?.version;
+  return fallbackVersion;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Snapcraft service preset (`snap`). */
-export const SNAP_SERVICE: ServiceDefinition = {
-  buildHeaders: () => SNAP_HEADERS,
+export const SNAP_SERVICE = defineService({
+  buildHeaders: buildSnapHeaders,
   docs: {
     description: 'Latest stable version (default track, amd64 preferred) and license.',
-    targetName: ':snap',
     title: 'Snapcraft',
   },
-  metricAliases: { l: 'license' },
   metrics: {
-    license: {
-      ...SNAP_ENDPOINT,
-      ...LICENSE,
-      transform: createLicenseTransform<SnapInfoPayload>((payload) => payload.snap?.license),
-    },
-    v: {
-      ...SNAP_ENDPOINT,
-      defaultColor: 'teal',
-      defaultIcon: 'snapcraft',
-      defaultLabel: 'snapcraft',
-      transform: createVersionTransform<SnapInfoPayload>(readStableSnapVersion),
-    },
+    license: createLicenseMetric(SNAP_ENDPOINT, (info) => info.snap?.license),
+    v: createVersionMetric(
+      SNAP_ENDPOINT,
+      { defaultColor: 'teal', defaultIcon: 'snapcraft', defaultLabel: 'snapcraft' },
+      readStableSnapVersion
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':snap' } },
+});

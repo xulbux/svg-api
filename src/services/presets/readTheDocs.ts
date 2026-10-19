@@ -1,27 +1,29 @@
 /**
- * Read the Docs service preset – Status of the most recent documentation build (`/badge/rtd/:project/:metric`).
+ * Read the Docs service preset – Status of the most recent build of the `latest` documentation version (`/badge/rtd/:project/:metric`).
  */
 
-import { createFirstEntryTransform } from '@/services/metrics';
-import type { MetricEndpoint, MetricResult, ServiceDefinition } from '@/types';
+import {
+  createEndpoint,
+  createMetric,
+  defineService,
+  projectFirstEntry,
+} from '@/services/endpoint';
+import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial build entry of a Read the Docs builds payload. */
-interface ReadTheDocsBuild {
-  /** Build state. */
-  state?: {
-    /** Build state code (`triggered`, `building`, `finished`, …). */
-    code?: string;
-  };
-  /** Whether the finished build succeeded. */
-  success?: boolean | null;
+/** State of a Read the Docs build. */
+interface ReadTheDocsBuildState {
+  /** Build state code (`triggered`, `cloning`, `installing`, `building`, `uploading`, `finished`, `cancelled`). */
+  code?: string;
 }
 
-/** Partial Read the Docs builds API payload (`readthedocs.org/api/v3/projects/:project/builds/`). */
-interface ReadTheDocsBuildsPayload {
-  /** Builds, newest first. */
-  results: ReadTheDocsBuild[];
+/** Partial build entry of a Read the Docs builds payload (`readthedocs.org/api/v3/projects/:project/versions/latest/builds/`). */
+interface ReadTheDocsBuild {
+  /** Build state. */
+  state: ReadTheDocsBuildState | null;
+  /** Whether the finished build succeeded. */
+  success: boolean | null;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -36,54 +38,71 @@ const PASSING_BUILD: Partial<MetricResult> = {
 /** Badge properties of a failed build. */
 const FAILING_BUILD: Partial<MetricResult> = { color: 'rose', icon: 'circle-x', value: 'failing' };
 
-/** Badge properties of a build that has not finished yet. */
+/** Badge properties of a build that is still in progress. */
 const RUNNING_BUILD: Partial<MetricResult> = { color: 'amber', icon: 'loader', value: 'building' };
 
-/** Read the Docs latest build endpoint with hosted documentation redirect. */
-const READ_THE_DOCS_ENDPOINT: MetricEndpoint = {
-  buildApiUrl: (_owner: string, project: string): string =>
-    `https://readthedocs.org/api/v3/projects/${project}/builds/?limit=1`,
-  buildRedirectUrl: (_owner: string, project: string): string =>
-    `https://${project}.readthedocs.io/`,
+/** Badge properties of a cancelled build. */
+const CANCELLED_BUILD: Partial<MetricResult> = {
+  color: 'slate',
+  icon: 'circle-slash',
+  value: 'cancelled',
 };
+
+/** Badge properties of a build in an unknown state. */
+const UNKNOWN_BUILD: Partial<MetricResult> = {
+  color: 'slate',
+  icon: 'circle-help',
+  value: 'unknown',
+};
+
+/** Build state codes of builds that are still in progress. */
+const IN_PROGRESS_STATES: ReadonlySet<string> = new Set([
+  'building',
+  'cloning',
+  'installing',
+  'triggered',
+  'uploading',
+]);
+
+/** Read the Docs latest-version build endpoint (newest build only) with hosted documentation redirect. */
+const READ_THE_DOCS_ENDPOINT = createEndpoint({
+  api: 'https://readthedocs.org/api/v3/projects/{target}/versions/latest/builds/?limit=1',
+  page: ({ target }) => `https://${encodeURIComponent(target)}.readthedocs.io/`,
+  project: projectFirstEntry<ReadTheDocsBuild>('results', ['state', 'success']),
+});
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Read the build list of a Read the Docs builds payload. */
-function readReadTheDocsBuilds(payload: Partial<ReadTheDocsBuildsPayload>): unknown {
-  return payload.results;
-}
-
-/** Transform the most recent build into a `passing`, `failing`, or `building` status. */
-function transformReadTheDocsBuild(data: unknown): Partial<MetricResult> {
-  const build = data as ReadTheDocsBuild;
-  if (build.state?.code !== 'finished') {
-    return RUNNING_BUILD;
+/** Transform the most recent build into a `passing`, `failing`, `building`, or `cancelled` status. */
+function transformReadTheDocsBuild(build: Partial<ReadTheDocsBuild>): Partial<MetricResult> {
+  const stateCode = build.state?.code;
+  if (stateCode === 'finished') {
+    return build.success === true ? PASSING_BUILD : FAILING_BUILD;
   }
-  return build.success === true ? PASSING_BUILD : FAILING_BUILD;
+  if (stateCode === 'cancelled') {
+    return CANCELLED_BUILD;
+  }
+  return typeof stateCode === 'string' && IN_PROGRESS_STATES.has(stateCode)
+    ? RUNNING_BUILD
+    : UNKNOWN_BUILD;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Read the Docs service preset (`rtd`). */
-export const READ_THE_DOCS_SERVICE: ServiceDefinition = {
+export const READ_THE_DOCS_SERVICE = defineService({
   docs: {
-    description: 'Status of the most recent documentation build (passing, failing, or building).',
-    targetName: ':project',
+    description:
+      'Status of the latest documentation build (passing, failing, building, or cancelled).',
     title: 'Read the Docs',
   },
   metricAliases: { status: 'build' },
   metrics: {
-    build: {
-      ...READ_THE_DOCS_ENDPOINT,
-      defaultColor: 'emerald',
-      defaultIcon: 'readthedocs',
-      defaultLabel: 'docs',
-      transform: createFirstEntryTransform<ReadTheDocsBuildsPayload>(
-        readReadTheDocsBuilds,
-        transformReadTheDocsBuild
-      ),
-    },
+    build: createMetric(
+      READ_THE_DOCS_ENDPOINT,
+      { defaultColor: 'emerald', defaultIcon: 'readthedocs', defaultLabel: 'docs' },
+      transformReadTheDocsBuild
+    ),
   },
-  ownerMode: 'none',
-};
+  route: { target: { placeholder: ':project' } },
+});

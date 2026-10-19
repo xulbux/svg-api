@@ -1,5 +1,5 @@
 /**
- * Theme types – Theme color tokens, shared visual variants, size presets, highlight band stops, and palette shapes.
+ * Theme types – Theme color tokens, shared visual variants, size presets, highlight band stops and sweep timings, foreground paints, and palette shapes.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -43,6 +43,24 @@ export type DotState = ThemeColorName;
 
 /** Single white highlight gradient stop (`[offset in percent, stop-opacity]`) of a sheen or shimmer band. */
 export type BandStop = readonly [offsetPercent: number, opacity: string];
+
+/** Timing of a periodic highlight sweep (sheens and shimmers): A spline-eased sweep followed by a pause. */
+export interface SweepTiming {
+  /** SMIL `dur` of one full cycle including the pause (e.g., `'4s'`). */
+  duration: string;
+  /** Cubic Bezier `keySplines` control points of the sweep segment (e.g., `'0.42 0 0.25 1'`). */
+  easing: string;
+  /** Fraction of the cycle (`0`–`1`) at which the sweep ends and the pause begins. */
+  sweepEnd: number;
+}
+
+/** Color and optional opacity of a foreground element (icon, arrow, gauge, sparkline, or secondary text). */
+export interface ForegroundPaint {
+  /** Opaque paint color. */
+  color: string;
+  /** Element opacity (`0`–`1`; `undefined` when fully opaque). */
+  opacity: number | undefined;
+}
 
 /** Base neutral dark carbon surface tokens. */
 export interface BaseDarkPalette {

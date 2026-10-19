@@ -10,16 +10,17 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "pnpm run fmt:check && pnpm run lint:check && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
+    "check": "pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint --fix",
     "lint:check": "oxlint",
+    "lint:md": "pnpm dlx markdownlint-cli2@0.23.3 \"**/*.md\" \"#node_modules\" \"#.wrangler\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json"
+    "type-check": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.client.json"
   },
   "packageManager": "pnpm@11.24.0",
   "dependencies": {
@@ -34,7 +35,6 @@
     "@types/node": "^26.6.5",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.88.0",
-    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.4",
     "wrangler": "^4.151.0"
