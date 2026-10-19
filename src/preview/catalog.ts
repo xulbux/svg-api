@@ -1,5 +1,5 @@
 /**
- * Documentation catalog – Showcase examples, Markdown snippets, and parameter tables for every `svg.xul.is` documentation section.
+ * Documentation catalog – Showcase examples, Markdown snippets, and parameter tables for the Getting Started overview and every `svg.xul.is` documentation section.
  *
  * Every preview is rendered from its documented path by the live route dispatcher, and every numeric
  * range, count, color list, status preset, icon alias, animation token, and service route is read from
@@ -9,7 +9,7 @@
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 import * as lucideIcons from 'lucide-static';
-import { SERVICES_CONFIG, STATUS_PRESET_MAP } from '@/config/services';
+import { listPublicServices, STATUS_PRESET_MAP } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
@@ -19,8 +19,16 @@ import {
   renderSectionHeader,
   renderSectionSubhead,
   renderShowcaseCard,
-} from '@/preview/layout';
+  renderUiIcon,
+} from '@/preview/components';
+import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/preview/navigation';
 import { ICON_MOTION_TOKENS } from '@/routes/params';
+import {
+  SERVICE_ERROR_TTL_SECONDS,
+  SERVICE_TTL_SECONDS,
+  STATIC_TTL_SECONDS,
+  STATUS_TTL_SECONDS,
+} from '@/routes/svg';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
@@ -36,7 +44,7 @@ import {
   MAX_SPARKLINE_POINTS,
   MAX_STRIP_TICKS,
 } from '@/svg/renderer';
-import { getOwnValue } from '@/svg/shared';
+import { escapeXml, getOwnValue } from '@/svg/shared';
 import {
   GROUP_GAP_RATIO,
   parseStackGroups,
@@ -67,7 +75,26 @@ interface VariantDescriptor {
   title: string;
 }
 
+/** Highlighted part of the URL anatomy example on the Getting Started page. */
+interface UrlAnatomyPart {
+  /** Syntax highlighting class (`hl-*`). */
+  className: string;
+  /** Legend label. */
+  label: string;
+  /** Literal URL text. */
+  text: string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
+
+/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`). */
+export const ENDPOINT_ROUTES: readonly string[] = [
+  '/badge/*',
+  '/button/*',
+  '/icon/*',
+  '/stack/*',
+  '/quote/*',
+];
 
 /** Showcase definitions for the 3 badge hierarchy variants (`1`, `2`, `3`). */
 const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
@@ -679,6 +706,98 @@ const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
 ];
 
 /** Memoized icon set counts (`undefined` until first computed). */
+/** Highlighted parts of the URL anatomy example on the Getting Started page. */
+const URL_ANATOMY_PARTS: readonly UrlAnatomyPart[] = [
+  { className: 'hl-p', label: 'Origin', text: SITE_ORIGIN },
+  { className: 'hl-url', label: 'Endpoint', text: '/badge' },
+  { className: 'hl-alt', label: 'Path segments', text: '/build+status/passing' },
+  { className: 'hl-key', label: 'Query parameters', text: '?icon=circle-check&color=emerald' },
+];
+
+/** Path segment encoding rules (every example is a working, documented path). */
+const SEGMENT_ENCODING_ROWS: readonly ParamTableRow[] = [
+  {
+    defaultVal: '/badge/build+status/passing',
+    description: 'Both forms decode to a space inside a path segment.',
+    name: 'Space',
+    values: '+ / %20',
+  },
+  {
+    defaultVal: '/badge/language/C%2B%2B',
+    description: 'A raw + would decode to a space.',
+    name: '+',
+    values: '%2B',
+  },
+  {
+    defaultVal: '/badge/coverage/99%25',
+    description: 'Percent signs start escape sequences, so they must be escaped themselves.',
+    name: '%',
+    values: '%25',
+  },
+  {
+    defaultVal: '/badge/requests/2.4M%2Fd',
+    description: 'A raw / would start a new path segment.',
+    name: '/',
+    values: '%2F',
+  },
+  {
+    defaultVal: '/badge/question/why%3F',
+    description:
+      'Raw ? and # end the path; A raw & inside a query value starts the next parameter.',
+    name: '? / # / &',
+    values: '%3F / %23 / %26',
+  },
+  {
+    defaultVal: '/badge//100%25?icon=zap',
+    description:
+      'An empty segment omits the label (icon + value only) or the value (single-part tag).',
+    name: 'Empty segment',
+    values: '//',
+  },
+];
+
+/** Column labels of the path segment encoding table. */
+const SEGMENT_ENCODING_COLUMNS: ParamTableRow = {
+  defaultVal: 'Example',
+  description: 'Notes',
+  name: 'Character',
+  values: 'Write as',
+};
+
+/** Column labels of the shared query parameter table. */
+const SHARED_PARAM_COLUMNS: ParamTableRow = {
+  defaultVal: 'Endpoints',
+  description: 'Description',
+  name: 'Parameter',
+  values: 'Values',
+};
+
+/** Column labels of the edge caching table. */
+const CACHING_COLUMNS: ParamTableRow = {
+  defaultVal: 'On errors',
+  description: 'Notes',
+  name: 'Routes',
+  values: 'Edge TTL',
+};
+
+/** Showcase cards of the embedding section on the Getting Started page. */
+const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
+  {
+    items: [
+      { alt: 'Build Status', path: '/badge/build+status/passing?icon=circle-check&color=emerald' },
+    ],
+    subtitle:
+      'Paste the Markdown image snippet into any README; GitHub proxies and caches the SVG through its image CDN.',
+    title: 'Static Badge (Markdown Image)',
+  },
+  {
+    items: [{ alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' }],
+    subtitle:
+      'Live service badges are wrapped in a link to their upstream page; Opening the badge URL itself also redirects there (302).',
+    title: 'Live Service Badge (Linked Image)',
+  },
+];
+
 let iconSetCountsCache: IconSetCounts | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -913,17 +1032,6 @@ function buildServiceRoutePattern(key: string, service: ServiceDefinition): stri
   return `/badge/${key}/${ownerPart}${targetName}/:metric`;
 }
 
-/** Collect the public (non-owner-restricted) service presets as `[key, definition]` pairs. */
-function collectPublicServices(): [key: string, service: ServiceDefinition][] {
-  const services: [key: string, service: ServiceDefinition][] = [];
-  for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
-    if (!service.allowedOwners) {
-      services.push([key, service]);
-    }
-  }
-  return services;
-}
-
 /** Format a service's metrics with their aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
 function formatServiceMetricValues(service: ServiceDefinition): string {
   const aliasesByMetric = new Map<string, string[]>();
@@ -959,7 +1067,7 @@ function formatServiceDefaultValue(service: ServiceDefinition): string {
 /** Build the route and metric reference rows for `/docs/services` from `SERVICES_CONFIG`. */
 function buildServiceParamRows(): ParamTableRow[] {
   const rows: ParamTableRow[] = [];
-  for (const [key, service] of collectPublicServices()) {
+  for (const [key, service] of listPublicServices()) {
     rows.push({
       defaultVal: formatServiceDefaultValue(service),
       description: `${service.docs.title}: ${service.docs.description}`,
@@ -1197,6 +1305,85 @@ function countFullProfileIcons(): number {
   return iconCount;
 }
 
+/** Format a TTL in seconds as a compact duration (`3600` -> `'1 h'`, `300` -> `'5 min'`, `45` -> `'45 s'`). */
+function formatDuration(seconds: number): string {
+  if (seconds % 3600 === 0) {
+    return `${seconds / 3600} h`;
+  }
+  return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`;
+}
+
+/** Render the highlighted URL anatomy example with its legend. */
+function renderUrlAnatomyHtml(): string {
+  let urlHtml = '';
+  let legendHtml = '';
+  for (const part of URL_ANATOMY_PARTS) {
+    urlHtml += `<span class="${part.className}">${escapeXml(part.text)}</span>`;
+    legendHtml += `<li class="anatomy-legend-item"><span class="anatomy-swatch ${part.className}" aria-hidden="true"></span>${escapeXml(part.label)}</li>`;
+  }
+  return `<figure class="anatomy">
+      <code class="anatomy-url">${urlHtml}</code>
+      <figcaption><ul class="anatomy-legend" role="list">${legendHtml}</ul></figcaption>
+    </figure>`;
+}
+
+/** Build the shared query parameter rows (values read from the parser and theme). */
+function buildSharedParamRows(): ParamTableRow[] {
+  return [
+    {
+      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
+      name: '?color=',
+      values: `indigo | emerald | rose | ... (${THEME_COLOR_NAMES.length} colors)`,
+    },
+    {
+      defaultVal: '/badge | /button | /stack | /quote',
+      description:
+        'Visual hierarchy tier: 1 = Primary gradient, 2 = Secondary tinted, 3 = Tertiary neutral.',
+      name: '?variant=',
+      values: '1 | 2 | 3',
+    },
+    {
+      defaultVal: '/badge | /button',
+      description:
+        'Leading icon, a left,right pair, or a right-only icon (none,right); Any Lucide, Simple Icons, or Devicon slug.',
+      name: '?icon=',
+      values: 'rocket | book-open,arrow-right | none,external-link',
+    },
+    {
+      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      description:
+        'Surface sheen and icon motions (stacks and quote cards support sheen only); none also stops widget and dot animations.',
+      name: '?anim=',
+      values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')}`,
+    },
+  ];
+}
+
+/** Build the edge caching rows (TTLs read from the route dispatcher). */
+function buildCachingRows(): ParamTableRow[] {
+  return [
+    {
+      defaultVal: '~—',
+      description: 'Deterministic SVGs; Identical URLs always render identical output.',
+      name: '/badge/:label/:value, /button, /icon, /stack, /quote',
+      values: formatDuration(STATIC_TTL_SECONDS),
+    },
+    {
+      defaultVal: '~—',
+      description: 'Status presets refresh faster so state changes propagate quickly.',
+      name: '/badge/status/:state/:text',
+      values: formatDuration(STATUS_TTL_SECONDS),
+    },
+    {
+      defaultVal: formatDuration(SERVICE_ERROR_TTL_SECONDS),
+      description: 'Upstream JSON is cached separately; Failed or pending lookups retry sooner.',
+      name: '/badge/:service/...',
+      values: formatDuration(SERVICE_TTL_SECONDS),
+    },
+  ];
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -1276,7 +1463,7 @@ export function renderButtonsSectionHtml(): string {
  * @returns HTML string for the `/docs/services` documentation and live preview section.
  */
 export function renderServicesSectionHtml(): string {
-  const publicServices = collectPublicServices();
+  const publicServices = listPublicServices();
   const routePatterns: string[] = [];
   for (const [key, service] of publicServices) {
     routePatterns.push(buildServiceRoutePattern(key, service));
@@ -1391,5 +1578,37 @@ export function renderColorsSectionHtml(): string {
         title: 'Secondary Tinted Swatches (?variant=2)',
       })}
     </div>
+  </section>`;
+}
+
+/**
+ * Render the Getting Started (`/docs`) overview section HTML.
+ * @returns HTML string for the `/docs` overview section.
+ */
+export function renderOverviewSectionHtml(): string {
+  const builderIcon = renderUiIcon('wand-sparkles', 16);
+  const bookIcon = renderUiIcon('book-open', 16);
+  const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
+  return `<section class="doc-section" id="overview">
+    ${renderSectionHeader({
+      description:
+        'Every element is a plain `GET` URL that returns an SVG image. Compose one by hand with the rules below, or click any preview in the docs to open it in the **Builder**.',
+      routes: ENDPOINT_ROUTES,
+      title: 'Getting Started',
+    })}
+    <div class="hero-cta-row">
+      <a href="${buildBuilderPath(DEFAULT_BUILDER_KIND)}" class="btn-primary">${builderIcon}<span class="btn-label">Open the Builder</span>${rightArrow}</a>
+      <a href="${buildDocsPath('badges')}" class="btn-secondary">${bookIcon}<span class="btn-label">Badge Reference</span></a>
+    </div>
+    ${renderSectionSubhead('link', 'URL Anatomy')}
+    ${renderUrlAnatomyHtml()}
+    ${renderSectionSubhead('binary', 'Encoding Path Segments')}
+    ${renderParamTable(SEGMENT_ENCODING_ROWS, 'Path segment encoding rules', SEGMENT_ENCODING_COLUMNS)}
+    ${renderSectionSubhead('sliders-horizontal', 'Shared Query Parameters')}
+    ${renderParamTable(buildSharedParamRows(), 'Query parameters shared across endpoints', SHARED_PARAM_COLUMNS)}
+    ${renderSectionSubhead('code', 'Embedding in READMEs & Docs')}
+    <div class="card-grid">${renderCardsHtml(EMBEDDING_CARDS)}</div>
+    ${renderSectionSubhead('timer', 'Edge Caching')}
+    ${renderParamTable(buildCachingRows(), 'Edge cache lifetimes', CACHING_COLUMNS)}
   </section>`;
 }

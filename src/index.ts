@@ -1,18 +1,21 @@
 /**
- * Worker entrypoint – Hono router for `svg.xul.is`: documentation pages, SVG routes (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), smart document redirects, and Tier-2 SVG edge caching.
+ * Worker entrypoint – Hono router for `svg.xul.is`: documentation and builder pages, versioned static assets, SVG routes (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), smart document redirects, and Tier-2 SVG edge caching.
  */
 
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { DEFAULT_ENV, FALLBACK_REDIRECT_URL } from '@/config/site';
+import { getSiteAsset } from '@/preview/assets';
+import { renderBuilderHtml } from '@/preview/builder';
 import { renderFaviconSvg } from '@/preview/layout';
+import { buildBuilderPath, DEFAULT_BUILDER_KIND, isBuilderKind } from '@/preview/navigation';
+import { isDocsSectionSlug, renderDocsHtml, renderHomeHtml } from '@/preview/page';
 import {
-  DEFAULT_DOCS_SECTION,
-  isDocsSectionSlug,
-  renderDocsHtml,
-  renderHomeHtml,
-} from '@/preview/page';
-import { renderServiceBadge, resolveSvgRoute } from '@/routes/svg';
+  renderServiceBadge,
+  resolveSvgRoute,
+  SERVICE_ERROR_TTL_SECONDS,
+  SERVICE_TTL_SECONDS,
+} from '@/routes/svg';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
 import { resolveServiceMetric, resolveServiceRedirectUrl } from '@/services/fetcher';
 import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
@@ -38,6 +41,9 @@ const SVG_ROUTE_PREFIXES: readonly string[] = ['badge', 'btn', 'button', 'icon',
 /** `Cache-Control` header for the deterministic, memoized documentation HTML pages. */
 const HTML_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
 
+/** `Cache-Control` header for static assets requested with their current content version (`?v=`). */
+const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
 /** Security headers attached to every HTML documentation response. */
 const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -50,12 +56,6 @@ const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * animations keep working.
  */
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'";
-
-/** Shared edge cache TTL in seconds for successfully resolved service preset badges. */
-const SERVICE_TTL_SECONDS = 600;
-
-/** Shared edge cache TTL in seconds for failed, pending, or invalid service preset badges. */
-const SERVICE_ERROR_TTL_SECONDS = 60;
 
 /** Shared edge cache TTL in seconds for the favicon. */
 const FAVICON_TTL_SECONDS = 86_400;
@@ -265,35 +265,85 @@ function handleRootRoute(context: AppContext): Response {
   return buildHtmlResponse(context, 'home', renderHomeHtml);
 }
 
-/** Handle `/docs` and `/preview` by redirecting to the first documentation section. */
+/** Handle `/docs`: The Getting Started overview page. */
 function handleDocsIndexRoute(context: AppContext): Response {
   if (isPreviewDisabled(context)) {
     return context.redirect(FALLBACK_REDIRECT_URL, 302);
   }
-  return context.redirect(`/docs/${DEFAULT_DOCS_SECTION}`, 302);
+  return buildHtmlResponse(context, 'docs', () => renderDocsHtml('overview'));
 }
 
-/** Handle the `/docs/:section` documentation subpage route. */
+/** Handle the legacy `/preview` route by redirecting to the documentation overview. */
+function handlePreviewRoute(context: AppContext): Response {
+  return context.redirect(isPreviewDisabled(context) ? FALLBACK_REDIRECT_URL : '/docs', 302);
+}
+
+/** Handle the `/docs/:section` documentation subpage route (unknown sections redirect to `/docs`). */
 function handleDocsSectionRoute(context: AppContext): Response {
   if (isPreviewDisabled(context)) {
     return context.redirect(FALLBACK_REDIRECT_URL, 302);
   }
   const section = (context.req.param('section') ?? '').trim().toLowerCase();
   if (!isDocsSectionSlug(section)) {
-    return context.redirect(`/docs/${DEFAULT_DOCS_SECTION}`, 302);
+    return context.redirect('/docs', 302);
   }
   return buildHtmlResponse(context, `docs/${section}`, () => renderDocsHtml(section));
 }
 
+/** Handle `/builder` and unknown `/builder/:kind` slugs by redirecting to the default builder. */
+function handleBuilderIndexRoute(context: AppContext): Response {
+  if (isPreviewDisabled(context)) {
+    return context.redirect(FALLBACK_REDIRECT_URL, 302);
+  }
+  return context.redirect(buildBuilderPath(DEFAULT_BUILDER_KIND), 302);
+}
+
+/** Handle the `/builder/:kind` URL builder pages. */
+function handleBuilderRoute(context: AppContext): Response {
+  const kind = (context.req.param('kind') ?? '').trim().toLowerCase();
+  if (isPreviewDisabled(context) || !isBuilderKind(kind)) {
+    return handleBuilderIndexRoute(context);
+  }
+  return buildHtmlResponse(context, `builder/${kind}`, () => renderBuilderHtml(kind));
+}
+
+/** Handle the versioned `/assets/:name` stylesheet, scripts, and icon picker data (immutable when `?v=` matches the deployed version). */
+function handleAssetRoute(context: AppContext): Response | Promise<Response> {
+  if (isPreviewDisabled(context)) {
+    return context.notFound();
+  }
+  const name = context.req.param('name') ?? '';
+  const asset = getSiteAsset(name);
+  if (!asset) {
+    return context.notFound();
+  }
+  // The version is a content hash, so it doubles as a weak entity tag (scoped to this URL).
+  const etag = `W/"${asset.version}"`;
+  const headers = {
+    'Cache-Control':
+      context.req.query('v') === asset.version ? IMMUTABLE_ASSET_CACHE_CONTROL : HTML_CACHE_CONTROL,
+    'Content-Type': asset.contentType,
+    ETag: etag,
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (isEtagMatch(context.req.header('If-None-Match'), etag)) {
+    return new Response(undefined, { headers, status: 304 });
+  }
+  return new Response(asset.body, { headers, status: 200 });
+}
+
 const app = new Hono<{ Bindings: Env }>({ getPath: getRawPathname });
 
-// 1. Homepage, documentation pages & favicon.
+// 1. Homepage, documentation & builder pages, static assets & favicon.
 app.get('/', handleRootRoute);
 app.get('/favicon.svg', handleFaviconRoute);
 app.get('/favicon.ico', handleFaviconRoute);
 app.get('/docs', handleDocsIndexRoute);
 app.get('/docs/:section', handleDocsSectionRoute);
-app.get('/preview', handleDocsIndexRoute);
+app.get('/preview', handlePreviewRoute);
+app.get('/builder', handleBuilderIndexRoute);
+app.get('/builder/:kind', handleBuilderRoute);
+app.get('/assets/:name', handleAssetRoute);
 
 // 2. SVG routes (badges, service presets, buttons, icons, stacks & quotes).
 for (const prefix of SVG_ROUTE_PREFIXES) {

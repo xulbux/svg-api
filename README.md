@@ -2,7 +2,7 @@
 
 Dynamic SVG badge, CTA button, service preset, icon, tech stack grid, and quote card engine running on Cloudflare Workers at **[svg.xul.is](https://svg.xul.is)**.
 
-For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) and the token-free public service presets (PyPI, npm, JSR, jsDelivr, Bundlephobia, Open VSX, Firefox Add-ons, crates.io, Go modules, Docker Hub, RubyGems, Packagist, NuGet, Hex.pm, pub.dev, CRAN, CocoaPods, Clojars, Hackage, Elm packages, Puppet Forge, Ansible Galaxy, Homebrew formulae & casks, Flathub, Snapcraft, F-Droid, AUR, Hugging Face models & datasets, Modrinth, WordPress plugins & themes, GitLab, Codeberg, Gitea, OpenSSF Scorecard, Codecov, Coveralls, Read the Docs, Open Collective, Liberapay, Discord, and Bluesky), see the live interactive documentation on **[svg.xul.is](https://svg.xul.is)**.
+For public endpoints (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) and the token-free public service presets (PyPI, npm, JSR, jsDelivr, Bundlephobia, Open VSX, Firefox Add-ons, crates.io, Go modules, Docker Hub, RubyGems, Packagist, NuGet, Hex.pm, pub.dev, CRAN, CocoaPods, Clojars, Hackage, Elm packages, Puppet Forge, Ansible Galaxy, Homebrew formulae & casks, Flathub, Snapcraft, F-Droid, AUR, Hugging Face models & datasets, Modrinth, WordPress plugins & themes, GitLab, Codeberg, Gitea, OpenSSF Scorecard, Codecov, Coveralls, Read the Docs, Open Collective, Liberapay, Discord, and Bluesky), see the live interactive documentation on **[svg.xul.is/docs](https://svg.xul.is/docs)**, or compose any element visually in the **[Builder](https://svg.xul.is/builder)** (every documented preview opens there prefilled).
 
 ## Local Development
 
@@ -18,18 +18,20 @@ pnpm run dev
 
 | Path | Purpose |
 | :--- | :--- |
-| `src/index.ts` | Hono router: docs pages, SVG routes, document redirects, and Tier-2 SVG edge caching. |
-| `src/routes/` | Path segment & query DSL parsing (`params.ts`) and the SVG route dispatcher (`svg.ts`) shared by the Worker and the docs previews. |
+| `src/index.ts` | Hono router: docs and builder pages, versioned static assets (`/assets/*`), SVG routes, document redirects, and Tier-2 SVG edge caching. |
+| `src/routes/` | Path segment & query DSL parsing (`params.ts`), the SVG route dispatcher (`svg.ts`) shared by the Worker and the docs previews, and the URL builder schemas (`schema.ts`) generated from the parser constants. |
 | `src/svg/` | SSOT renderers (badges, buttons, icons, stacks, quotes), text outlines, icon resolution, and shared primitives (incl. the count- and size-bounded LRU caches). |
 | `src/services/` | Upstream fetcher (validation, coalescing, size-budgeted memory cache + edge caching), metric helpers, and one preset module per service in `presets/`. |
-| `src/config/` | Theme palettes, the service registry (`services.ts`), and status presets. |
-| `src/preview/` | Homepage and `/docs/*` pages; Every preview is rendered from its documented path. |
+| `src/config/` | The fixed color palette (`palette.ts`: Isolux grays, UI neutrals and syntax colors, brand indigo, strip stages), Tailwind v4 theme palettes (`theme.ts`), the service registry (`services.ts`), and status presets. |
+| `src/preview/` | Homepage (`page.ts`), Getting Started and `/docs/:section` pages (`catalog.ts`), `/builder/:kind` pages (`builder.ts`), navigation and sidebars (`navigation.ts`), the document shell (`layout.ts`), shared components (`components.ts`), and versioned assets (`assets.ts`); Every preview is rendered from its documented path. |
+| `src/preview/styles/` | Website stylesheets (plain `.css`, bundled as text; design tokens are generated in `styles.ts`). |
+| `src/preview/scripts/` | Browser scripts (`*.client.js`, type-checked with JSDoc via `tsconfig.client.json`): the site script and the builder (form, snippets, icon picker). |
 
 ### Adding a Service Preset
 
 1.  Create `src/services/presets/<service>.ts` exporting a `ServiceDefinition` (endpoints, metric presentations, transforms built with the factories in `src/services/metrics.ts`, `ownerMode`, and `docs` metadata).
 2.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, and the `/docs/services` reference table pick it up automatically.
-3.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`.
+3.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`. The service badge builder lists every public preset automatically.
 
 Owner and target segments may contain word characters, `.`, `-`, `@`, and `+` (dot-only segments are rejected). A literal `+` in a badge path decodes to a space, so names like `gtk+3` must be written as `gtk%2B3`. Always `encodeURIComponent()` targets that end up in an upstream query string. Targets spanning several path segments (e.g., Go module paths like `/badge/go/github.com/spf13/cobra/v`) set `maxTargetSegments` on the `ServiceDefinition`; Every segment is validated individually.
 
@@ -50,7 +52,7 @@ ALLOW_PREVIEW_IN_PROD=true
     ```
 
 -   **`DEFAULT_GH_OWNER`**: Owner allowlist for `/badge/gh/*` endpoints (configured in `wrangler.jsonc` as `xulbux`).
--   **`ALLOW_PREVIEW_IN_PROD`**: Controls whether `/` and `/docs/*` render the interactive documentation website in production (`"true"`) or redirect to `https://xul.is` (`"false"`).
+-   **`ALLOW_PREVIEW_IN_PROD`**: Controls whether `/`, `/docs/*`, and `/builder/*` render the interactive documentation website and builder in production (`"true"`) or redirect to `https://xul.is` (`"false"`; `/assets/*` then returns `404`).
 
 ## Restricted GitHub Service Badges (`/badge/gh/*`)
 

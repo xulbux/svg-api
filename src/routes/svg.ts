@@ -66,10 +66,16 @@ interface RoutePathParts {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Shared edge cache TTL in seconds for static SVG routes. */
-const STATIC_TTL_SECONDS = 3600;
+export const STATIC_TTL_SECONDS = 3600;
 
 /** Shared edge cache TTL in seconds for status preset badges. */
-const STATUS_TTL_SECONDS = 300;
+export const STATUS_TTL_SECONDS = 300;
+
+/** Shared edge cache TTL in seconds for successfully resolved service preset badges. */
+export const SERVICE_TTL_SECONDS = 600;
+
+/** Shared edge cache TTL in seconds for failed, pending, or invalid service preset badges. */
+export const SERVICE_ERROR_TTL_SECONDS = 60;
 
 // -------------------------------------- INTERNALS --------------------------------------
 

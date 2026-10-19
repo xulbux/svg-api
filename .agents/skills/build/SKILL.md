@@ -17,13 +17,13 @@ pnpm run check
 
 ## 2. Local Preview & Documentation Server (`localhost:8787`)
 
-In accordance with `AGENTS.md` Section 4, keep `src/preview/` (`catalog.ts`, `page.ts`, `layout.ts`) synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview all routes (`/` homepage, `/docs`, `/docs/:section`, `/preview`, `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) exactly as hosted on `svg.xul.is`:
+In accordance with `AGENTS.md` Section 4, keep `src/preview/` and the builder schemas synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview all routes (`/` homepage, `/docs`, `/docs/:section`, `/builder`, `/builder/:kind`, `/assets/*`, `/preview`, `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) exactly as hosted on `svg.xul.is`:
 
 ```bash
 pnpm run dev
 ```
 
-Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch) and on every preview stage background (header picker: Match page, Inverted, Checker).
+Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch), on every preview stage background (header picker: Match page, Inverted, Checker), and on narrow screens (sidebar drawer). On `/builder/:kind`, edit fields, open the icon picker, and click a docs preview to verify it opens prefilled in its builder.
 
 ## 3. Verify Worker Bundle (Dry Run)
 

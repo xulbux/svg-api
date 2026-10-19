@@ -11,7 +11,7 @@ In accordance with the validation policy in `AGENTS.md` Section 4, use this skil
 
 ## 1. Architecture
 
-Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderButton`, `renderIcon`, `renderStack`, `renderQuote`, `resolveColor`, `formatCompactNumber`, the `src/routes/` parsers, the `src/preview/` page renderers) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account. Upstream APIs are never called: Mock `fetch` with `vi.spyOn(globalThis, 'fetch')`, and call `resetUpstreamCaches()` (`src/services/fetcher.ts`) in `afterEach` so the in-isolate memory cache never leaks between tests.
+Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (`measureTextWidth`, `resolveIcon`, `renderBadge`, `renderButton`, `renderIcon`, `renderStack`, `renderQuote`, `resolveColor`, `formatCompactNumber`, the `src/routes/` parsers, the `src/preview/` page renderers, the builder schemas in `src/routes/schema.ts`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account. Upstream APIs are never called: Mock `fetch` with `vi.spyOn(globalThis, 'fetch')`, and call `resetUpstreamCaches()` (`src/services/fetcher.ts`) in `afterEach` so the in-isolate memory cache never leaks between tests.
 
 ### Key Files
 
@@ -22,7 +22,8 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 | `test/renderer.test.ts` | SSOT SVG rendering across badge/button variants, standalone icons, stacks, quotes, widgets, size/DoS bounds, and docs drift guards |
 | `test/routes.test.ts`   | Hono routes and the `src/routes/` dispatcher (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), query DSL, docs pages & route regressions |
 | `test/services.test.ts` | Every service preset transform, request validation, upstream error and rate-limit badges, coalescing, the memory cache size budget, caching & redirects (`src/services/`) |
-| `test/preview.test.ts`  | Documentation website HTML validity, accessibility, head metadata, client script guards (theme, preview background picker), and docs drift guards (`src/preview/`) |
+| `test/preview.test.ts`  | Documentation website HTML validity, accessibility, head metadata, header tabs, grouped sidebars, pager order, versioned assets, client script guards (theme, preview background picker), and docs drift guards (`src/preview/`) |
+| `test/builder.test.ts`  | Builder schema drift guards, the builder client core (evaluated from `builder.client.js` without a DOM) round-tripped through the route parser, icon picker index/assets and slug resolution parity with `resolveIcon`, and "Open in Builder" links that must render identical SVGs |
 | `vitest.config.mts`     | Vitest config with `@/` path alias                                               |
 
 ---

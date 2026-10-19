@@ -2,6 +2,7 @@
  * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles (`svg.xul.is/stack/:icons`).
  */
 
+import { WHITE } from '@/config/palette';
 import { THEMES } from '@/config/theme';
 import { formatSlugTitle, normalizeIconSlug, resolveIconWithFallback } from '@/svg/icons';
 import {
@@ -420,7 +421,7 @@ function renderSingleStackTile(
     width: tileSize,
   });
   const iconMarkup = renderIconGroup({
-    color: isPrimary ? '#FFFFFF' : THEMES[themeColor].iconColor,
+    color: isPrimary ? WHITE : THEMES[themeColor].iconColor,
     innerSvg: `<use href="#${icon.bodyId}" />`,
     opacity: isPrimary ? STACK_PRIMARY_ICON_OPACITY : undefined,
     strokeWidth: STACK_ICON_STROKE_WIDTH,

@@ -29,8 +29,20 @@ interface ParsedPercentage {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Set of valid badge, button, stack, and quote variant identifiers (`'1'`, `'2'`, `'3'`). */
-const VALID_VARIANTS: ReadonlySet<string> = new Set<BadgeVariant>(['1', '2', '3']);
+/** Valid badge, button, stack, and quote variant identifiers in hierarchy order (also listed by the docs and the builder). */
+export const VARIANT_TOKENS: readonly BadgeVariant[] = ['1', '2', '3'];
+
+/** Set of valid variant identifiers (derived from `VARIANT_TOKENS`). */
+const VALID_VARIANTS: ReadonlySet<string> = new Set<string>(VARIANT_TOKENS);
+
+/** Inline data widget kinds accepted by `?special=<kind>:<payload>` in display order (also listed by the builder). */
+export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialElement['type'][] = [
+  'sparkline',
+  'bar',
+  'ring',
+  'strip',
+  'delta',
+];
 
 /** Set of valid named size presets for buttons and quote cards. */
 const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set(['lg', 'md', 'sm', 'xl']);

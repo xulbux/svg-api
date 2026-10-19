@@ -79,3 +79,11 @@ export interface ThemePalette {
   /** Low-opacity fill color for secondary variants (`variant=2`). */
   tintBg: string;
 }
+
+/** Dark and light variant of a scheme-dependent palette color (`src/config/palette.ts`). */
+export interface SchemeColor {
+  /** Value in the dark color scheme. */
+  dark: string;
+  /** Value in the light color scheme. */
+  light: string;
+}

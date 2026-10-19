@@ -1,4 +1,5 @@
 export * from './badge';
+export * from './builder';
 export * from './cache';
 export * from './icon';
 export * from './preview';

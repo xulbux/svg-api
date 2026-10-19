@@ -16,6 +16,6 @@
     "target": "ES2023",
     "types": ["@cloudflare/workers-types", "node"]
   },
-  "exclude": ["node_modules", "dist", ".wrangler"],
+  "exclude": ["node_modules", "dist", ".wrangler", "src/preview/scripts"],
   "include": ["src/**/*.ts", "test/**/*.ts", "*.config.*"]
 }

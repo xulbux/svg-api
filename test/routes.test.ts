@@ -17,6 +17,13 @@ import type { Env } from '@/types';
 /** Test Worker environment bindings. */
 const TEST_ENV: Env = { ALLOW_PREVIEW_IN_PROD: 'true', DEFAULT_GH_OWNER: 'xulbux' };
 
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Request every path concurrently against the Worker app. */
+function requestAll(paths: readonly string[], env: Env): Promise<Response[]> {
+  return Promise.all(paths.map((path) => app.request(path, {}, env)));
+}
+
 // ----------------------------------------- MAIN ----------------------------------------
 
 afterEach(() => {
@@ -131,12 +138,12 @@ describe('Hono routes on svg.xul.is', () => {
     expect(response.headers.get('Content-Type')).toContain('text/html');
     const body = await response.text();
     expect(body).toContain('One Cohesive <span class="hero-gradient-text">Edge SVG Engine</span>');
-    expect(body).toContain('href="/docs/badges"');
-    expect(body).toContain('href="/docs/buttons"');
-    expect(body).toContain('href="/docs/services"');
+    expect(body).toContain('href="/docs"');
+    expect(body).toContain('href="/builder"');
+    expect(body).toContain('href="/builder/badge"');
     expect(body).toContain('<details class="code-drawer">');
     expect(body).toContain('class="ui-icon');
-    expect(body).toContain('@view-transition');
+    expect(body).toMatch(/<link rel="stylesheet" href="\/assets\/site\.css\?v=[\da-z]+" \/>/);
     expect(body).toContain('class="feature-card"');
 
     const disabledRes = await app.request(
@@ -148,14 +155,15 @@ describe('Hono routes on svg.xul.is', () => {
     expect(disabledRes.headers.get('Location')).toBe('https://xul.is');
   });
 
-  it('redirects /docs and /preview to /docs/badges and renders /docs/:section pages with syntax-highlighted Markdown code drawers', async () => {
-    const docsRedirect = await app.request('/docs', {}, TEST_ENV);
-    expect(docsRedirect.status).toBe(302);
-    expect(docsRedirect.headers.get('Location')).toBe('/docs/badges');
+  it('renders the /docs overview, redirects /preview and unknown sections to /docs, and renders /docs/:section pages with syntax-highlighted Markdown code drawers', async () => {
+    const docsRes = await app.request('/docs', {}, TEST_ENV);
+    expect(docsRes.status).toBe(200);
+    expect(docsRes.headers.get('Content-Type')).toContain('text/html');
+    expect(await docsRes.text()).toContain('Encoding Path Segments');
 
     const previewRedirect = await app.request('/preview', {}, TEST_ENV);
     expect(previewRedirect.status).toBe(302);
-    expect(previewRedirect.headers.get('Location')).toBe('/docs/badges');
+    expect(previewRedirect.headers.get('Location')).toBe('/docs');
 
     const badgesRes = await app.request('/docs/badges', {}, TEST_ENV);
     expect(badgesRes.status).toBe(200);
@@ -182,9 +190,73 @@ describe('Hono routes on svg.xul.is', () => {
     expect(sectionRes.status).toBe(200);
     expect(await sectionRes.text()).toContain('Grouped Tech Stack Icon Grids');
 
-    const unknownSectionRes = await app.request('/docs/unknown-page', {}, TEST_ENV);
-    expect(unknownSectionRes.status).toBe(302);
-    expect(unknownSectionRes.headers.get('Location')).toBe('/docs/badges');
+    const unknownPaths = ['/docs/unknown-page', '/docs/overview'];
+    const unknownResponses = await requestAll(unknownPaths, TEST_ENV);
+    for (let i = 0; i < unknownPaths.length; i += 1) {
+      expect(unknownResponses[i].status, unknownPaths[i]).toBe(302);
+      expect(unknownResponses[i].headers.get('Location'), unknownPaths[i]).toBe('/docs');
+    }
+  });
+
+  it('redirects /builder and unknown kinds to /builder/badge and renders every builder page', async () => {
+    const redirectPaths = ['/builder', '/builder/unknown'];
+    const redirectResponses = await requestAll(redirectPaths, TEST_ENV);
+    for (let i = 0; i < redirectPaths.length; i += 1) {
+      expect(redirectResponses[i].status, redirectPaths[i]).toBe(302);
+      expect(redirectResponses[i].headers.get('Location'), redirectPaths[i]).toBe('/builder/badge');
+    }
+    const builderPaths = ['badge', 'service', 'button', 'icon', 'stack', 'quote'].map(
+      (kind) => `/builder/${kind}`
+    );
+    const builderResponses = await requestAll(builderPaths, TEST_ENV);
+    for (let i = 0; i < builderPaths.length; i += 1) {
+      expect(builderResponses[i].status, builderPaths[i]).toBe(200);
+      expect(builderResponses[i].headers.get('Content-Type'), builderPaths[i]).toContain(
+        'text/html'
+      );
+    }
+  });
+
+  it('disables the docs, builder, and asset routes when ALLOW_PREVIEW_IN_PROD is false', async () => {
+    const disabledEnv: Env = { ALLOW_PREVIEW_IN_PROD: 'false', DEFAULT_GH_OWNER: 'xulbux' };
+    const disabledPaths = ['/docs', '/docs/badges', '/preview', '/builder', '/builder/icon'];
+    const disabledResponses = await requestAll(disabledPaths, disabledEnv);
+    for (let i = 0; i < disabledPaths.length; i += 1) {
+      expect(disabledResponses[i].status, disabledPaths[i]).toBe(302);
+      expect(disabledResponses[i].headers.get('Location'), disabledPaths[i]).toBe('https://xul.is');
+    }
+    const assetRes = await app.request('/assets/site.css', {}, disabledEnv);
+    expect(assetRes.status).toBe(404);
+  });
+
+  it('serves versioned static assets immutably and unknown assets as 404', async () => {
+    const homeRes = await app.request('/', {}, TEST_ENV);
+    const homeBody = await homeRes.text();
+    const assetUrls = homeBody.match(/\/assets\/site\.(?:css|js)\?v=[\da-z]+/g) ?? [];
+    expect(assetUrls).toHaveLength(2);
+    const versionedResponses = await requestAll(assetUrls, TEST_ENV);
+    const staleResponses = await requestAll(
+      assetUrls.map((assetUrl) => assetUrl.replace(/\?v=.*/, '?v=stale')),
+      TEST_ENV
+    );
+    for (let i = 0; i < assetUrls.length; i += 1) {
+      expect(versionedResponses[i].status, assetUrls[i]).toBe(200);
+      expect(versionedResponses[i].headers.get('Cache-Control'), assetUrls[i]).toContain(
+        'immutable'
+      );
+      expect(versionedResponses[i].headers.get('ETag'), assetUrls[i]).toBeTruthy();
+      expect(staleResponses[i].status, assetUrls[i]).toBe(200);
+      expect(staleResponses[i].headers.get('Cache-Control'), assetUrls[i]).not.toContain(
+        'immutable'
+      );
+    }
+    const [cssRes, unknownRes, prototypeRes] = await requestAll(
+      ['/assets/site.css', '/assets/unknown.js', '/assets/constructor'],
+      TEST_ENV
+    );
+    expect(cssRes.headers.get('Content-Type')).toContain('text/css');
+    expect(unknownRes.status).toBe(404);
+    expect(prototypeRes.status).toBe(404);
   });
 
   it('renders 2-segment static badge under /badge/:label/:value with canonical query params and ignores ?label= on static badges', async () => {

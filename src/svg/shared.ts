@@ -2,6 +2,7 @@
  * Shared SVG primitives – XML escaping, display text normalization and truncation, numeric clamping, prototype-safe record lookups, bounded LRU caches, content hashing, Kumo 3D top-edge crescent geometry, surface layers, gradient defs, icon groups, specular sheen overlays, and the root `<svg>` document template.
  */
 
+import { WHITE } from '@/config/palette';
 import { BASE_DARK, THEMES } from '@/config/theme';
 import type {
   AnimationMode,
@@ -297,6 +298,20 @@ export function escapeXml(unsafe: string): string {
 }
 
 /**
+ * Hash text into a short, deterministic base-36 token (polynomial rolling hash modulo a 31-bit prime).
+ * Used for per-card SVG ID scopes and static asset versions; Not a cryptographic hash.
+ * @param text   Text to hash.
+ * @returns Base-36 hash token (e.g., `'1x2k9f'`).
+ */
+export function hashText(text: string): string {
+  let hash = 7;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + (text.codePointAt(i) ?? 0)) % 2_147_483_647;
+  }
+  return hash.toString(36);
+}
+
+/**
  * Return the first `end` UTF-16 code units of `text`, backing off by one unit so a surrogate pair is never split.
  * @param text   Source string.
  * @param end    Desired exclusive end index in UTF-16 code units.
@@ -419,7 +434,7 @@ export function resolveSurfaceTextColor(
   isOnPrimary = variant === '1'
 ): string {
   if (isOnPrimary) {
-    return '#FFFFFF';
+    return WHITE;
   }
   return variant === '3' ? BASE_DARK.textMuted : BASE_DARK.textPrimary;
 }
@@ -465,7 +480,7 @@ export function renderThemeGradientDef(color: ThemeColorName): string {
 export function renderWhiteBandStops(stops: readonly BandStop[]): string {
   let markup = '';
   for (const [offsetPercent, opacity] of stops) {
-    markup += `<stop offset="${offsetPercent}%" stop-color="#FFFFFF" stop-opacity="${opacity}" />`;
+    markup += `<stop offset="${offsetPercent}%" stop-color="${WHITE}" stop-opacity="${opacity}" />`;
   }
   return markup;
 }
@@ -609,7 +624,7 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
-  const topCrescent = `<path d="${crescentD}" fill="#FFFFFF" fill-opacity="0.045" />`;
+  const topCrescent = `<path d="${crescentD}" fill="${WHITE}" fill-opacity="0.045" />`;
   const splitDivider =
     splitLineX === undefined
       ? ''

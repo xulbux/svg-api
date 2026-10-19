@@ -16,21 +16,97 @@ export type DocsSectionSlug =
   | 'services'
   | 'stack';
 
-/** Valid navigation tab identifiers across the `svg.xul.is` web interface. */
-export type NavPageId = DocsSectionSlug | 'home';
+/** Documentation page slugs (`'overview'` is the `/docs` landing page). */
+export type DocsPageSlug = DocsSectionSlug | 'overview';
 
-/** Navigation, pager, `<title>`, and meta description metadata of a documentation section. */
+/** Element kinds with a dedicated URL builder page on `/builder/:kind`. */
+export type BuilderKind = 'badge' | 'button' | 'icon' | 'quote' | 'service' | 'stack';
+
+/** Sidebar group identifiers shared by the documentation and builder sidebars. */
+export type SidebarGroupId = 'badges' | 'elements' | 'reference' | 'start';
+
+/** Top navigation tab identifiers across the `svg.xul.is` web interface. */
+export type NavPageId = 'builder' | 'docs' | 'home';
+
+/** Public file names of the static website assets served at `/assets/:name` (icon picker pages are resolved dynamically). */
+export type SiteAssetName = 'builder.js' | 'icons.json' | 'site.css' | 'site.js';
+
+/** Built static website asset. */
+export interface SiteAsset {
+  /** Asset body (CSS, JavaScript, or JSON source). */
+  body: string;
+  /** `Content-Type` header value. */
+  contentType: string;
+  /** Content hash appended to asset URLs (`?v=`). */
+  version: string;
+}
+
+/** Navigation, pager, sidebar, `<title>`, and meta description metadata of a documentation page. */
 export interface DocsSectionMeta {
   /** Unique meta description for search engines and link previews. */
   description: string;
-  /** Short label in the top navigation bar. */
+  /** Sidebar group the page is listed in. */
+  group: SidebarGroupId;
+  /** Short label in the sidebar. */
   navLabel: string;
   /** Descriptive label in the previous/next pager. */
   pagerLabel: string;
-  /** Section slug (`/docs/:section`). */
-  slug: DocsSectionSlug;
+  /** Page slug (`/docs` for `'overview'`, otherwise `/docs/:section`). */
+  slug: DocsPageSlug;
   /** Document `<title>` prefix. */
   title: string;
+}
+
+/** Sidebar, `<title>`, and meta description metadata of a builder page. */
+export interface BuilderPageMeta {
+  /** Unique meta description for search engines and link previews. */
+  description: string;
+  /** Sidebar group the page is listed in. */
+  group: SidebarGroupId;
+  /** Element kind (`/builder/:kind`). */
+  kind: BuilderKind;
+  /** Short label in the sidebar. */
+  navLabel: string;
+  /** Page heading and document `<title>` prefix. */
+  title: string;
+}
+
+/** Display metadata of a sidebar group. */
+export interface SidebarGroupMeta {
+  /** Lucide icon slug shown next to the group title. */
+  icon: string;
+  /** Group identifier. */
+  id: SidebarGroupId;
+  /** Visible group title. */
+  title: string;
+}
+
+/** Single sidebar link. */
+export interface SidebarLink {
+  /** Link target path. */
+  href: string;
+  /** Visible link label. */
+  label: string;
+}
+
+/** Sidebar group with its links in display order. */
+export interface SidebarGroup {
+  /** Lucide icon slug shown next to the group title. */
+  icon: string;
+  /** Links in display order. */
+  links: readonly SidebarLink[];
+  /** Visible group title. */
+  title: string;
+}
+
+/** Left sidebar of a documentation or builder page. */
+export interface PageSidebar {
+  /** Path of the active page (highlighted with `aria-current="page"`). */
+  activeHref: string;
+  /** Groups in display order. */
+  groups: readonly SidebarGroup[];
+  /** Accessible navigation label (e.g., `'Documentation pages'`). */
+  label: string;
 }
 
 /** Distinct icon counts of the bundled icon sets (computed lazily for the docs; never hard-coded). */
@@ -98,14 +174,18 @@ export interface SectionHeaderOptions {
 
 /** Options for rendering the full HTML document shell. */
 export interface PageLayoutOptions {
-  /** Active navigation tab identifier. */
-  activePage: NavPageId;
+  /** Active top navigation tab. */
+  activeNav: NavPageId;
   /** Inner `<main>` HTML content. */
   bodyHtml: string;
   /** Canonical path of the page on `https://svg.xul.is` (e.g., `'/docs/badges'`). */
   canonicalPath: string;
   /** Meta description for search engines and link previews. */
   description: string;
+  /** Additional HTML appended after the site script (e.g., the builder schema and script). */
+  extraBodyHtml?: string;
+  /** Optional left sidebar (documentation and builder pages). */
+  sidebar?: PageSidebar;
   /** Document `<title>` text. */
   title: string;
 }

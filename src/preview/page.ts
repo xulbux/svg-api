@@ -1,32 +1,37 @@
 /**
- * Documentation pages – Renders the `svg.xul.is` homepage (`/`) and dedicated element documentation pages (`/docs/:section`).
+ * Documentation pages – Renders the `svg.xul.is` homepage (`/`), the Getting Started overview (`/docs`), and the dedicated element documentation pages (`/docs/:section`).
  *
- * Both are deterministic, so each page is rendered once per Worker isolate and then served from memory.
+ * Every page is deterministic, so each one is rendered once per Worker isolate and then served from memory.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
+  ENDPOINT_ROUTES,
   formatCountLowerBound,
   getIconSetCounts,
   renderBadgesSectionHtml,
   renderButtonsSectionHtml,
   renderColorsSectionHtml,
   renderIconsSectionHtml,
+  renderOverviewSectionHtml,
   renderQuotesSectionHtml,
   renderServicesSectionHtml,
   renderStackSectionHtml,
 } from '@/preview/catalog';
+import { renderCardsHtml, renderSectionHeader, renderUiIcon } from '@/preview/components';
+import { renderPageLayout } from '@/preview/layout';
 import {
-  DOCS_SECTIONS,
-  renderCardsHtml,
-  renderPageLayout,
-  renderSectionHeader,
-  renderUiIcon,
-} from '@/preview/layout';
+  buildBuilderPath,
+  buildDocsPath,
+  buildDocsSidebar,
+  DEFAULT_BUILDER_KIND,
+  DOCS_PAGES,
+  getDocsPageMeta,
+} from '@/preview/navigation';
 import { escapeXml } from '@/svg/shared';
-import type { DocsSectionMeta, DocsSectionSlug, ShowcaseCardConfig } from '@/types';
+import type { DocsPageSlug, DocsSectionMeta, DocsSectionSlug, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -50,28 +55,17 @@ interface PagerLink {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Section rendered for `/docs` and for unknown `/docs/:section` slugs. */
-export const DEFAULT_DOCS_SECTION: DocsSectionSlug = 'badges';
-
-/** Section HTML renderers keyed by documentation section slug. */
-const SECTION_RENDERERS: Readonly<Record<DocsSectionSlug, () => string>> = {
+/** Section HTML renderers keyed by documentation page slug. */
+const PAGE_RENDERERS: Readonly<Record<DocsPageSlug, () => string>> = {
   badges: renderBadgesSectionHtml,
   buttons: renderButtonsSectionHtml,
   colors: renderColorsSectionHtml,
   icons: renderIconsSectionHtml,
+  overview: renderOverviewSectionHtml,
   quotes: renderQuotesSectionHtml,
   services: renderServicesSectionHtml,
   stack: renderStackSectionHtml,
 };
-
-/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`). */
-const ENDPOINT_ROUTES: readonly string[] = [
-  '/badge/*',
-  '/button/*',
-  '/icon/*',
-  '/stack/*',
-  '/quote/*',
-];
 
 /** English number words for small headline counts (index = count). */
 const COUNT_WORDS: readonly string[] = [
@@ -88,7 +82,7 @@ const COUNT_WORDS: readonly string[] = [
   'Ten',
 ];
 
-/** Pager target used before the first and after the last documentation section. */
+/** Pager target used before the first and after the last documentation page. */
 const HOME_PAGER_LINK: PagerLink = { href: '/', label: 'Home' };
 
 /** Quickstart overview cards displayed on the `/` homepage. */
@@ -150,8 +144,8 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   },
 ];
 
-/** Memoized documentation section pages keyed by slug. */
-const DOCS_HTML_CACHE = new Map<DocsSectionSlug, string>();
+/** Memoized documentation pages keyed by slug. */
+const DOCS_HTML_CACHE = new Map<DocsPageSlug, string>();
 
 /** Memoized homepage HTML (`undefined` until first rendered). */
 let homeHtmlCache: string | undefined = undefined;
@@ -163,14 +157,14 @@ function formatCountWord(count: number): string {
   return COUNT_WORDS[count] ?? String(count);
 }
 
-/** Find the index of a documentation section in navigation order (`-1` when unknown). */
-function findDocsSectionIndex(slug: DocsSectionSlug): number {
-  return DOCS_SECTIONS.findIndex((meta) => meta.slug === slug);
+/** Find the index of a documentation page in sidebar order (`-1` when unknown). */
+function findDocsPageIndex(slug: DocsPageSlug): number {
+  return DOCS_PAGES.findIndex((meta) => meta.slug === slug);
 }
 
-/** Convert an optional documentation section into a pager link (falls back to the homepage). */
-function toPagerLink(section: DocsSectionMeta | undefined): PagerLink {
-  return section ? { href: `/docs/${section.slug}`, label: section.pagerLabel } : HOME_PAGER_LINK;
+/** Convert an optional documentation page into a pager link (falls back to the homepage). */
+function toPagerLink(page: DocsSectionMeta | undefined): PagerLink {
+  return page ? { href: buildDocsPath(page.slug), label: page.pagerLabel } : HOME_PAGER_LINK;
 }
 
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
@@ -220,13 +214,13 @@ function renderHomeFeaturesHtml(): string {
   return `<div class="feature-grid">${cardsHtml}</div>`;
 }
 
-/** Render the bottom navigation links between documentation subpages. */
-function renderDocsPager(section: DocsSectionSlug): string {
+/** Render the bottom navigation links between documentation pages (in sidebar order). */
+function renderDocsPager(slug: DocsPageSlug): string {
   const leftArrow = renderUiIcon('arrow-left', 16, 'btn-icon-left');
   const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
-  const sectionIndex = findDocsSectionIndex(section);
-  const prev = toPagerLink(DOCS_SECTIONS[sectionIndex - 1]);
-  const next = toPagerLink(DOCS_SECTIONS[sectionIndex + 1]);
+  const pageIndex = findDocsPageIndex(slug);
+  const prev = toPagerLink(DOCS_PAGES[pageIndex - 1]);
+  const next = toPagerLink(DOCS_PAGES[pageIndex + 1]);
 
   return `<nav class="pager-row" aria-label="Documentation pages">
     <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev">${leftArrow}<span class="btn-label">${escapeXml(prev.label)}</span></a>
@@ -237,12 +231,12 @@ function renderDocsPager(section: DocsSectionSlug): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Check whether a raw slug is a valid documentation section.
+ * Check whether a raw slug is a valid documentation section (`/docs/:section`; The overview lives at `/docs`).
  * @param slug   Raw, lowercased `/docs/:section` slug.
  * @returns `true` when `slug` is a known `DocsSectionSlug`.
  */
 export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
-  return Object.hasOwn(SECTION_RENDERERS, slug);
+  return slug !== 'overview' && Object.hasOwn(PAGE_RENDERERS, slug);
 }
 
 /**
@@ -256,7 +250,8 @@ export function renderHomeHtml(): string {
 
   const bookIcon = renderUiIcon('book-open', 16);
   const rightArrow = renderUiIcon('arrow-right', 16, 'btn-icon-right');
-  const activityIcon = renderUiIcon('activity', 16);
+  const builderIcon = renderUiIcon('wand-sparkles', 16);
+  const docsPath = buildDocsPath('overview');
 
   const bodyHtml = `<section class="hero">
     <h1 class="hero-title">One Cohesive <span class="hero-gradient-text">Edge SVG Engine</span> for READMEs &amp; Docs</h1>
@@ -264,8 +259,8 @@ export function renderHomeHtml(): string {
       Dynamic badges, CTA buttons, icons, tech stacks, and quote cards rendered at the edge in a unified 3D Kumo and Tailwind v4 OKLCH design system.
     </p>
     <div class="hero-cta-row">
-      <a href="/docs/${DEFAULT_DOCS_SECTION}" class="btn-primary">${bookIcon}<span class="btn-label">Explore Docs &amp; Previews</span>${rightArrow}</a>
-      <a href="/docs/services" class="btn-secondary">${activityIcon}<span class="btn-label">Live Service Badges</span></a>
+      <a href="${docsPath}" class="btn-primary">${bookIcon}<span class="btn-label">Explore Docs &amp; Previews</span>${rightArrow}</a>
+      <a href="${buildBuilderPath(DEFAULT_BUILDER_KIND)}" class="btn-secondary">${builderIcon}<span class="btn-label">Open Builder</span></a>
     </div>
   </section>
 
@@ -273,19 +268,20 @@ export function renderHomeHtml(): string {
 
   <section class="doc-section" id="endpoints">
     ${renderSectionHeader({
-      description: 'Expand **View Markdown** on any card to inspect and copy its live snippet.',
+      description:
+        'Expand **View Markdown** on any card to inspect and copy its live snippet, or click a preview to customize it in the Builder.',
       headingLevel: 2,
       routes: ENDPOINT_ROUTES,
       title: `${formatCountWord(ENDPOINT_ROUTES.length)} Unified Endpoints`,
     })}
     <div class="card-grid">${renderCardsHtml(HOME_OVERVIEW_CARDS)}</div>
     <div class="pager-row is-end">
-      <a href="/docs/${DEFAULT_DOCS_SECTION}" class="btn-primary">${bookIcon}<span class="btn-label">Browse Documentation</span>${rightArrow}</a>
+      <a href="${docsPath}" class="btn-primary">${bookIcon}<span class="btn-label">Browse Documentation</span>${rightArrow}</a>
     </div>
   </section>`;
 
   homeHtmlCache = renderPageLayout({
-    activePage: 'home',
+    activeNav: 'home',
     bodyHtml,
     canonicalPath: '/',
     description:
@@ -296,24 +292,25 @@ export function renderHomeHtml(): string {
 }
 
 /**
- * Render (once per isolate) the documentation and live preview page for a dedicated element section.
- * @param section   Target section slug (`'badges'`, `'buttons'`, `'services'`, `'icons'`, `'stack'`, `'quotes'`, `'colors'`).
+ * Render (once per isolate) a documentation page: The Getting Started overview or a dedicated element section.
+ * @param slug   Target page slug (`'overview'`, `'badges'`, `'buttons'`, `'services'`, `'icons'`, `'stack'`, `'quotes'`, `'colors'`).
  * @returns Complete HTML document string.
  */
-export function renderDocsHtml(section: DocsSectionSlug = DEFAULT_DOCS_SECTION): string {
-  const cached = DOCS_HTML_CACHE.get(section);
+export function renderDocsHtml(slug: DocsPageSlug = 'overview'): string {
+  const cached = DOCS_HTML_CACHE.get(slug);
   if (cached !== undefined) {
     return cached;
   }
 
-  const meta = DOCS_SECTIONS[findDocsSectionIndex(section)];
+  const meta = getDocsPageMeta(slug);
   const html = renderPageLayout({
-    activePage: section,
-    bodyHtml: `${SECTION_RENDERERS[section]()}${renderDocsPager(section)}`,
-    canonicalPath: `/docs/${section}`,
-    description: meta?.description ?? DOCS_SECTIONS[0].description,
-    title: `${meta?.title ?? section} · svg.xul.is Documentation`,
+    activeNav: 'docs',
+    bodyHtml: `${PAGE_RENDERERS[slug]()}${renderDocsPager(slug)}`,
+    canonicalPath: buildDocsPath(slug),
+    description: meta.description,
+    sidebar: buildDocsSidebar(slug),
+    title: `${meta.title} · svg.xul.is Documentation`,
   });
-  DOCS_HTML_CACHE.set(section, html);
+  DOCS_HTML_CACHE.set(slug, html);
   return html;
 }

@@ -10,6 +10,7 @@ This project uses **pnpm** as its package manager. Always use `pnpm` (e.g., `pnp
 
 Everything must be meticulously and strictly type-hinted. Do not ever use `any` unless it is fundamentally impossible to type otherwise; Use `unknown` and narrow it instead. All code must be fully statically analyzable.
 
+-   **Browser Scripts:** Website scripts are plain `src/preview/scripts/*.client.js` files typed with JSDoc and type-checked by `tsconfig.client.json` (part of `pnpm run type-check`); They follow the same rules as TypeScript modules.
 -   **No `@ts-ignore` Comments:** `@ts-ignore` comments are forbidden. You must instead use `@ts-expect-error` with a descriptive reason comment (e.g., `// @ts-expect-error: Upstream response shape is untyped`). The ONLY exception is when `@ts-expect-error` itself fails because the error only occurs conditionally, and rewriting the code to bypass the error would decrease performance or reduce readability.
 
 ## 3. Performance & Lightweight Design
@@ -37,7 +38,7 @@ pnpm run type-check; pnpm run lint; pnpm run fmt; pnpm run test; pnpm exec wrang
 
 Fix all problems and warnings until they are completely resolved (zero errors, zero warnings, and zero lint issues). Use the `test` skill for testing guidelines and commands, and the `build` skill for local development server previewing, Wrangler verification, and deployment.
 
--   **Keep Homepage, Docs, Previews & README Synchronized:** Whenever routes, query parameters, variants, service presets, icons, or visual behaviors are added or modified, you **must** update the homepage (`/`), dedicated documentation pages (`/docs/badges`, `/docs/buttons`, `/docs/services`, `/docs/icons`, `/docs/stack`, `/docs/quotes`, `/docs/colors`), parameter tables, live preview cards, and expandable Markdown snippets in `src/preview/` (`src/preview/catalog.ts`, `src/preview/page.ts`, `src/preview/layout.ts` incl. the shared header with its preview background picker), as well as `README.md` for local development instructions, the public service list, and owner-restricted `/badge/gh/*` badges.
+-   **Keep Homepage, Docs, Previews & README Synchronized:** Whenever routes, query parameters, variants, service presets, icons, or visual behaviors are added or modified, you **must** update the homepage (`/`), the Getting Started overview (`/docs`), dedicated documentation pages (`/docs/badges`, `/docs/buttons`, `/docs/services`, `/docs/icons`, `/docs/stack`, `/docs/quotes`, `/docs/colors`), parameter tables, live preview cards, and expandable Markdown snippets in `src/preview/` (`catalog.ts`, `page.ts`, `navigation.ts` for the header tabs and grouped sidebars, `layout.ts` incl. the shared header with its preview background picker, `components.ts`, and the stylesheets in `src/preview/styles/`), the URL builder (`/builder/:kind`: schemas in `src/routes/schema.ts`, read from the parser and renderer constants, and the browser script `src/preview/scripts/builder.client.js`), as well as `README.md` for local development instructions, the public service list, and owner-restricted `/badge/gh/*` badges.
 -   **Regression Tests for Bug Fixes:** Every bug fix **must** include a test that reproduces the original bug and verifies the fix before considering the fix complete. This prevents regressions and ensures the same problem never resurfaces.
 
 ## 5. Ask, Don't Assume

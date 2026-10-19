@@ -1,7 +1,8 @@
 /**
- * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers.
+ * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers (non-Tailwind colors come from `src/config/palette.ts`).
  */
 
+import { ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
 import type { BaseDarkPalette, DotState, ThemeColorName, ThemePalette } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -44,13 +45,13 @@ const CHROMA_SEARCH_STEPS = 24;
 /** Upper bound for OKLCH chroma search. */
 const MAX_SEARCH_CHROMA = 0.4;
 
-/** Base neutral dark carbon surface tokens (matching Isolux Pro Dark). */
+/** Base neutral dark carbon surface tokens (Isolux Pro Dark grays from `src/config/palette.ts`). */
 export const BASE_DARK: BaseDarkPalette = {
-  bgBottom: '#101010',
-  bgTop: '#1A1A1A',
-  borderNeutral: '#2C2C2C',
-  textMuted: '#A3A3A3',
-  textPrimary: '#F5F5F5',
+  bgBottom: ISOLUX_GRAY[900],
+  bgTop: ISOLUX_GRAY[800],
+  borderNeutral: ISOLUX_UI.border.dark,
+  textMuted: ISOLUX_UI.foregroundSecondary.dark,
+  textPrimary: ISOLUX_UI.foreground.dark,
 };
 
 /** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */

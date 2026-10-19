@@ -1,14 +1,18 @@
 /**
- * Documentation website tests – HTML validity, accessibility, head metadata, client behavior guards, and docs drift guards for the homepage and `/docs/:section` pages (`src/preview/`).
+ * Documentation website tests – HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards, and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/preview/`).
  */
 
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG, STATUS_PRESET_MAP } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
+import { getSiteAsset } from '@/preview/assets';
+import { renderBuilderHtml } from '@/preview/builder';
 import { formatCountLowerBound, getIconSetCounts } from '@/preview/catalog';
-import { DOCS_SECTIONS, renderParamTable } from '@/preview/layout';
+import { renderParamTable } from '@/preview/components';
+import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/preview/navigation';
 import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
+import { getSiteStylesheet } from '@/preview/styles';
 import { ICON_MOTION_TOKENS } from '@/routes/params';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
@@ -20,7 +24,7 @@ import { GROUP_GAP_RATIO } from '@/svg/stack';
 interface RenderedPage {
   /** Complete HTML document. */
   html: string;
-  /** Canonical path (`/` or `/docs/:section`). */
+  /** Canonical path (`/`, `/docs`, `/docs/:section`, or `/builder/:kind`). */
   path: string;
 }
 
@@ -47,13 +51,27 @@ const HEADING_TAG_RX = /<h(?<level>[1-6])[\s>]/g;
 /** Matches HTML tags. */
 const HTML_TAG_RX = /<[^>]+>/g;
 
-/** Render the homepage and every documentation section. */
+/** Matches every top navigation link (`href` and active state). */
+const NAV_LINK_RX = /<a href="(?<href>[^"]+)" class="nav-link(?<active> is-active)?"/g;
+
+/** Matches every sidebar link (`href` and active state). */
+const SIDEBAR_LINK_RX = /<a href="(?<href>[^"]+)" class="sidebar-link(?<active> is-active)?"/g;
+
+/** Render the homepage, every documentation page, and every builder page. */
 function renderAllPages(): RenderedPage[] {
   const pages: RenderedPage[] = [{ html: renderHomeHtml(), path: '/' }];
-  for (const section of DOCS_SECTIONS) {
-    pages.push({ html: renderDocsHtml(section.slug), path: `/docs/${section.slug}` });
+  for (const page of DOCS_PAGES) {
+    pages.push({ html: renderDocsHtml(page.slug), path: buildDocsPath(page.slug) });
+  }
+  for (const page of BUILDER_PAGES) {
+    pages.push({ html: renderBuilderHtml(page.kind), path: buildBuilderPath(page.kind) });
   }
   return pages;
+}
+
+/** Read the site script asset source. */
+function readSiteScript(): string {
+  return getSiteAsset('site.js')?.body ?? '';
 }
 
 /** Collect a named capture group of every match. */
@@ -162,7 +180,9 @@ describe('documentation pages – accessibility', () => {
   it('exposes the theme switch state via aria-checked and starts the body with a skip link', () => {
     for (const page of renderAllPages()) {
       expect(page.html, page.path).toMatch(/role="switch" aria-checked="(?:true|false)"/);
-      expect(page.html, page.path).toMatch(/<body>\s*<a class="skip-link" href="#main-content">/);
+      expect(page.html, page.path).toMatch(
+        /<body(?: class="has-sidebar")?>\s*<a class="skip-link" href="#main-content">/
+      );
       expect(page.html, page.path).toContain('id="main-content" tabindex="-1"');
     }
   });
@@ -198,20 +218,20 @@ describe('documentation pages – accessibility', () => {
   });
 
   it('raises --c-text-3 to WCAG AA contrast and keeps the footer text selectable', () => {
-    const html = renderHomeHtml();
-    expect(html).toContain('--c-text-3: rgba(0 0 0 / 0.55);');
-    expect(html).toContain('--c-text-3: rgba(255 255 255 / 0.5);');
-    expect(html).not.toMatch(/\.site-footer \{[^}]*user-select/);
-    expect(html).toMatch(/:where\(a, button, summary, \[tabindex\]\):focus-visible/);
+    const css = getSiteStylesheet();
+    expect(css).toContain('--c-text-3: #646464;');
+    expect(css).toContain('--c-text-3: #8A8A8A;');
+    expect(css).not.toMatch(/\.site-footer \{[^}]*user-select/);
+    expect(css).toMatch(/:where\(a, button, summary, \[tabindex\]\):focus-visible/);
   });
 
   it('stops all CSS motion and pauses SMIL previews under prefers-reduced-motion', () => {
-    const html = renderHomeHtml();
-    expect(html).toMatch(
-      /@media \(prefers-reduced-motion: reduce\) \{[^]*?\*, \*::before, \*::after \{\s*transition: none !important;\s*animation: none !important;/
+    expect(getSiteStylesheet()).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[^]*?\*,\s*\*::before,\s*\*::after \{\s*transition: none !important;\s*animation: none !important;/
     );
-    expect(html).toContain('previewSvg.pauseAnimations()');
-    expect(html).toContain("reducedMotionQuery.matches ? 'auto' : 'smooth'");
+    const script = readSiteScript();
+    expect(script).toContain('previewSvg.pauseAnimations()');
+    expect(script).toContain("reducedMotionQuery.matches ? 'auto' : 'smooth'");
   });
 });
 
@@ -235,16 +255,20 @@ describe('documentation pages – head metadata & client script', () => {
       expect(description, page.path).toBeTruthy();
       descriptions.add(description ?? '');
     }
-    expect(descriptions.size).toBe(DOCS_SECTIONS.length + 1);
+    expect(descriptions.size).toBe(DOCS_PAGES.length + BUILDER_PAGES.length + 1);
     expect(renderDocsHtml('badges')).not.toContain('Interactive SVG preview studio');
   });
 
   it('only applies whitelisted stored color schemes and preview backgrounds (regression: any localStorage value reached the meta tag)', () => {
     const html = renderHomeHtml();
+    const script = readSiteScript();
     expect(html).not.toContain('localStorage.getItem("color-scheme")??');
     expect(html).toContain("if(storedScheme==='dark'||storedScheme==='light')");
-    expect(html).toContain("return value === 'dark' || value === 'light' ? value : null;");
-    expect(html).not.toContain('event.newValue ||');
+    expect(script).toContain("return value === 'dark' || value === 'light' ? value : undefined;");
+    expect(script).toContain(
+      "typeof value === 'string' && SITE_CONFIG.previewBgValues.includes(value)"
+    );
+    expect(script).not.toContain('event.newValue ||');
     expect(html).not.toContain('<script blocking="render">');
   });
 
@@ -268,19 +292,102 @@ describe('documentation pages – head metadata & client script', () => {
   });
 
   it('inverts the preview stage relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
-    const html = renderHomeHtml();
-    expect(html).toContain('--c-preview-inverse-bg: light-dark(#0D1117, #FFFFFF);');
-    expect(html).toContain(':root[data-preview-bg="inverse"] .preview-stage');
-    expect(html).not.toContain('data-preview-bg="dark"');
-    expect(html).not.toContain('data-preview-bg="light"');
+    const css = getSiteStylesheet();
+    expect(css).toContain('--c-preview-inverse-bg: light-dark(#0D1117, #FFFFFF);');
+    expect(css).toMatch(/:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage/);
+    expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
+    expect(css).not.toMatch(/data-preview-bg=['"]light['"]/);
   });
-
   it('memoizes rendered pages per isolate', () => {
     expect(renderDocsHtml('stack')).toBe(renderDocsHtml('stack'));
     expect(renderHomeHtml()).toBe(renderHomeHtml());
   });
 });
 
+/********************************* Navigation & assets *********************************/
+
+describe('documentation pages – navigation & static assets', () => {
+  it('renders exactly three header tabs and marks the active one with aria-current', () => {
+    const expectedActive: Readonly<Record<string, string>> = {
+      '/': '/',
+      '/builder/badge': '/builder',
+      '/docs': '/docs',
+      '/docs/colors': '/docs',
+    };
+    for (const page of renderAllPages()) {
+      const headerHtml = page.html.slice(0, page.html.indexOf('</header>'));
+      const navHrefs = collectGroups(headerHtml, NAV_LINK_RX, 'href');
+      expect(navHrefs, page.path).toEqual(['/', '/docs', '/builder']);
+      const activeHrefs: string[] = [];
+      for (const match of headerHtml.matchAll(NAV_LINK_RX)) {
+        if (match.groups?.active) {
+          activeHrefs.push(match.groups.href ?? '');
+        }
+      }
+      expect(activeHrefs, page.path).toHaveLength(1);
+      const expected = expectedActive[page.path];
+      if (expected) {
+        expect(activeHrefs[0], page.path).toBe(expected);
+      }
+      expect(headerHtml, page.path).toContain('<a href="/docs" class="nav-link');
+    }
+  });
+
+  it('lists every docs page and builder page exactly once in its grouped sidebar with one active link', () => {
+    const docsHrefs = DOCS_PAGES.map((page) => buildDocsPath(page.slug));
+    const builderHrefs = BUILDER_PAGES.map((page) => buildBuilderPath(page.kind));
+    const [homePage, ...sidebarPages] = renderAllPages();
+    expect(collectGroups(homePage.html, SIDEBAR_LINK_RX, 'href')).toEqual([]);
+    expect(homePage.html).not.toContain('class="has-sidebar"');
+
+    for (const page of sidebarPages) {
+      const sidebarHrefs = collectGroups(page.html, SIDEBAR_LINK_RX, 'href');
+      const expectedHrefs = page.path.startsWith('/builder') ? builderHrefs : docsHrefs;
+      expect(sidebarHrefs.toSorted(), page.path).toEqual(expectedHrefs.toSorted());
+      const activeMatches = [...page.html.matchAll(SIDEBAR_LINK_RX)].filter(
+        (match) => match.groups?.active
+      );
+      expect(activeMatches, page.path).toHaveLength(1);
+      expect(activeMatches[0]?.groups?.href, page.path).toBe(page.path);
+      expect(page.html, page.path).toContain('<body class="has-sidebar">');
+      expect(page.html, page.path).toContain('popovertarget="sidebar-drawer"');
+    }
+  });
+
+  it('chains the docs pager in sidebar order from Home through every docs page back to Home', () => {
+    for (let i = 0; i < DOCS_PAGES.length; i += 1) {
+      const html = renderDocsHtml(DOCS_PAGES[i].slug);
+      const pagerHtml = html.slice(html.indexOf('<nav class="pager-row"'));
+      const previousHref = i === 0 ? '/' : buildDocsPath(DOCS_PAGES[i - 1].slug);
+      const nextHref = i === DOCS_PAGES.length - 1 ? '/' : buildDocsPath(DOCS_PAGES[i + 1].slug);
+      expect(pagerHtml, DOCS_PAGES[i].slug).toContain(
+        `<a href="${previousHref}" class="btn-secondary" rel="prev">`
+      );
+      expect(pagerHtml, DOCS_PAGES[i].slug).toContain(
+        `<a href="${nextHref}" class="btn-primary" rel="next">`
+      );
+    }
+  });
+
+  it('references the versioned stylesheet and site script and keeps template placeholders out of the assets', () => {
+    const css = getSiteAsset('site.css');
+    const script = getSiteAsset('site.js');
+    expect(css?.body).toBe(getSiteStylesheet());
+    for (const page of renderAllPages()) {
+      expect(page.html, page.path).toContain(
+        `<link rel="stylesheet" href="/assets/site.css?v=${css?.version}" />`
+      );
+      expect(page.html, page.path).toContain(
+        `<script src="/assets/site.js?v=${script?.version}" defer></script>`
+      );
+      expect(page.html, page.path).toContain('<script type="application/json" id="site-config">');
+      expect(page.html, page.path).not.toContain('<style>');
+    }
+    expect(css?.body).not.toContain('${');
+    expect(css?.body).toContain('--brand-gradient-start: #818CF8;');
+    expect(getSiteAsset('__proto__')).toBeUndefined();
+  });
+});
 /********************************* Docs drift guards *********************************/
 
 describe('documentation drift guards', () => {

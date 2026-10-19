@@ -19,7 +19,7 @@
     "lint:check": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json"
   },
   "packageManager": "pnpm@11.24.0",
   "dependencies": {

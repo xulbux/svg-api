@@ -6,7 +6,7 @@ import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 import * as lucideIcons from 'lucide-static';
 import { createLruCache, getOwnValue, readLruCache, writeLruCache } from '@/svg/shared';
-import type { ResolvedIcon } from '@/types';
+import type { IconBody, IconPickerIndex, IconPickerSetId, ResolvedIcon } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -151,6 +151,9 @@ const MAX_ICON_SLUG_LENGTH = 64;
  */
 const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
 
+/** Number of icons per icon picker body page (`/assets/icons-<set>-<page>.json`). */
+export const ICON_PICKER_PAGE_SIZE = 120;
+
 /** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
 const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
 
@@ -160,6 +163,9 @@ const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(MAX_RESOLVED_ICON_CACHE
 /** Lazily built fallback icons. */
 const LAZY_ICONS: LazyIconCache = {};
 
+/** Memoized icon picker index (`undefined` until first built). */
+let iconPickerIndexCache: IconPickerIndex | undefined = undefined;
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches hyphen or underscore word separators in icon slugs. */
@@ -167,6 +173,9 @@ const SLUG_SEPARATOR_RX = /[-_]/g;
 
 /** Matches hyphen, underscore, or dot characters in brand icon slugs. */
 const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+
+/** Matches the last character before a PascalCase word boundary (a lowercase letter or digit before an uppercase letter, or an uppercase letter before a capitalized word, e.g., `AArrow`). */
+const PASCAL_BOUNDARY_RX = /[\da-z](?=[A-Z])|[A-Z](?=[A-Z][a-z])/g;
 
 /** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="...">` controls color and sheen. */
 const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
@@ -639,8 +648,8 @@ function extractInnerSvg(rawSvg: string): string | undefined {
   return rawSvg.slice(openEnd + 1, closeStart).trim();
 }
 
-/** Look up a `128x128` icon in `@iconify-json/devicon-plain` and normalize it to `24x24`. */
-function lookupDeviconPlain(slug: string): ResolvedIcon | undefined {
+/** Read a `128x128` icon body from `@iconify-json/devicon-plain`, normalized to `24x24` (no ink bounds). */
+function getDeviconPlainBody(slug: string): IconBody | undefined {
   const entry =
     getOwnValue(deviconPlainSet.icons, slug) ??
     getOwnValue(deviconPlainSet.icons, slug.replace(BRAND_SLUG_CLEAN_RX, ''));
@@ -651,13 +660,12 @@ function lookupDeviconPlain(slug: string): ResolvedIcon | undefined {
   return {
     coordScale: DEVICON_SCALE,
     innerSvg: `<g transform="scale(${DEVICON_SCALE})">${cleanBody}</g>`,
-    ...measureIconXBounds(cleanBody, false, DEVICON_SCALE),
     type: 'simple',
   };
 }
 
-/** Look up a `24x24` icon in `@iconify-json/simple-icons` (including its alias table). */
-function lookupSimpleIcon(slug: string): ResolvedIcon | undefined {
+/** Read a `24x24` icon body from `@iconify-json/simple-icons`, including its alias table (no ink bounds). */
+function getSimpleIconBody(slug: string): IconBody | undefined {
   const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
   const aliases = simpleIconSet.aliases ?? {};
   const aliasParent =
@@ -669,41 +677,87 @@ function lookupSimpleIcon(slug: string): ResolvedIcon | undefined {
   if (!entry?.body) {
     return undefined;
   }
-  const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
   return {
     coordScale: 1,
-    innerSvg: cleanBody,
-    ...measureIconXBounds(cleanBody, false, 1),
+    innerSvg: entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim(),
     type: 'simple',
   };
 }
 
+/** Read a brand/tech icon body (Devicon Plain first for `DEVICON_PREFERRED_SLUGS`, otherwise Simple Icons first). */
+function getBrandIconBody(slug: string): IconBody | undefined {
+  if (DEVICON_PREFERRED_SLUGS.has(slug)) {
+    return getDeviconPlainBody(slug) ?? getSimpleIconBody(slug);
+  }
+  return getSimpleIconBody(slug) ?? getDeviconPlainBody(slug);
+}
+
+/** Read a UI stroke icon body from `lucide-static` (no ink bounds). */
+function getLucideIconBody(slug: string): IconBody | undefined {
+  const rawSvg = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
+  const innerContent = typeof rawSvg === 'string' ? extractInnerSvg(rawSvg) : undefined;
+  return innerContent ? { coordScale: 1, innerSvg: innerContent, type: 'lucide' } : undefined;
+}
+
+/** Add the exact horizontal ink bounds to an icon body. */
+function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
+  if (!body) {
+    return undefined;
+  }
+  // The Devicon scale wrapper carries no geometry, so the native coordinates are measured with coordScale.
+  return { ...body, ...measureIconXBounds(body.innerSvg, body.type === 'lucide', body.coordScale) };
+}
+
 /** Look up a brand/tech slug in `@iconify-json/devicon-plain` and `@iconify-json/simple-icons`. */
 function lookupBrandIcon(slug: string): ResolvedIcon | undefined {
-  if (DEVICON_PREFERRED_SLUGS.has(slug)) {
-    return lookupDeviconPlain(slug) ?? lookupSimpleIcon(slug);
-  }
-  return lookupSimpleIcon(slug) ?? lookupDeviconPlain(slug);
+  return measureIconBody(getBrandIconBody(slug));
 }
 
 /** Look up a UI stroke icon slug in `lucide-static`. */
 function lookupLucideIcon(slug: string): ResolvedIcon | undefined {
-  const rawSvg = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
-  if (typeof rawSvg !== 'string') {
-    return undefined;
-  }
-  const innerContent = extractInnerSvg(rawSvg);
-  if (!innerContent) {
-    return undefined;
-  }
-  return {
-    coordScale: 1,
-    innerSvg: innerContent,
-    ...measureIconXBounds(innerContent, true, 1),
-    type: 'lucide',
-  };
+  return measureIconBody(getLucideIconBody(slug));
 }
 
+/** Convert a PascalCase `lucide-static` export name into its kebab-case slug (e.g., `'ArrowDown01'` -> `'arrow-down01'`). */
+function toLucideSlug(exportName: string): string {
+  return exportName.replace(PASCAL_BOUNDARY_RX, '$&-').toLowerCase();
+}
+
+/** Build (once per isolate) the icon picker index: Distinct Lucide glyphs, brand slugs, and every alias. */
+function buildIconPickerIndex(): IconPickerIndex {
+  const primaryByGlyph = new Map<string, string>();
+  const lucideSlugs: string[] = [];
+  const lucideAliases: Record<string, string> = {};
+  for (const [exportName, glyph] of Object.entries(LUCIDE_ICON_MAP)) {
+    const slug = toLucideSlug(exportName);
+    if (typeof glyph === 'string' && capitalizeSlugParts(slug, '') === exportName) {
+      const primarySlug = primaryByGlyph.get(glyph);
+      if (primarySlug === undefined) {
+        primaryByGlyph.set(glyph, slug);
+        lucideSlugs.push(slug);
+      } else {
+        lucideAliases[slug] = primarySlug;
+      }
+    }
+  }
+
+  const brandSlugs = new Set<string>(Object.keys(simpleIconSet.icons));
+  for (const slug of Object.keys(deviconPlainSet.icons)) {
+    brandSlugs.add(slug);
+  }
+  const brandAliases: Record<string, string> = {};
+  for (const [alias, entry] of Object.entries(simpleIconSet.aliases ?? {})) {
+    brandAliases[alias] = entry.parent;
+  }
+
+  return {
+    aliases: { ...ICON_SLUG_ALIASES },
+    brandAliases,
+    lucideAliases,
+    pageSize: ICON_PICKER_PAGE_SIZE,
+    sets: { brands: [...brandSlugs].toSorted(), lucide: lucideSlugs },
+  };
+}
 /** Run `lookup` with the canonical slug, then with the raw (pre-alias) slug when it differs. */
 function lookupWithAlias(
   cleanSlug: string,
@@ -792,6 +846,40 @@ export function resolveIconWithFallback(
   isBrandFirst = false
 ): ResolvedIcon {
   return resolveIcon(slug, isBrandFirst) ?? resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
+}
+
+/**
+ * Build (once per isolate) the icon picker index served at `/assets/icons.json`.
+ * @returns Distinct Lucide glyph slugs, brand slugs (Simple Icons and Devicon Plain), Lucide name aliases, and slug aliases.
+ */
+export function getIconPickerIndex(): IconPickerIndex {
+  iconPickerIndexCache ??= buildIconPickerIndex();
+  return iconPickerIndexCache;
+}
+
+/**
+ * Collect one page of icon picker bodies (inner SVG markup in `24x24` space, without ink bounds).
+ * @param setId   Icon picker set (`'lucide'` or `'brands'`).
+ * @param page    Zero-based page index (`ICON_PICKER_PAGE_SIZE` icons per page).
+ * @returns Inner SVG markup keyed by slug, or `undefined` for pages out of range.
+ */
+export function getIconPickerPage(
+  setId: IconPickerSetId,
+  page: number
+): Record<string, string> | undefined {
+  const slugs = getIconPickerIndex().sets[setId];
+  const start = page * ICON_PICKER_PAGE_SIZE;
+  if (!Number.isInteger(page) || page < 0 || start >= slugs.length) {
+    return undefined;
+  }
+  const bodies: Record<string, string> = {};
+  for (const slug of slugs.slice(start, start + ICON_PICKER_PAGE_SIZE)) {
+    const body = setId === 'lucide' ? getLucideIconBody(slug) : getBrandIconBody(slug);
+    if (body) {
+      bodies[slug] = body.innerSvg;
+    }
+  }
+  return bodies;
 }
 
 /**

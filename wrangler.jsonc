@@ -10,6 +10,11 @@
       "type": "Data",
       "globs": ["**/*.ttf"],
       "fallthrough": true
+    },
+    {
+      "type": "Text",
+      "globs": ["**/*.css", "**/*.client.js"],
+      "fallthrough": true
     }
   ],
   "routes": [

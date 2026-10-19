@@ -115,3 +115,17 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   wp: WORDPRESS_PLUGIN_SERVICE,
   'wp-theme': WORDPRESS_THEME_SERVICE,
 };
+
+/**
+ * List the public (non-owner-restricted) service presets in registry order.
+ * @returns `[key, definition]` pairs of every service preset without an owner allowlist.
+ */
+export function listPublicServices(): [key: string, service: ServiceDefinition][] {
+  const services: [key: string, service: ServiceDefinition][] = [];
+  for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
+    if (!service.allowedOwners) {
+      services.push([key, service]);
+    }
+  }
+  return services;
+}

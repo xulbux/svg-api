@@ -1,0 +1,580 @@
+/* Sticky Header & VitePress-Style Text Navigation */
+
+.site-header {
+  view-transition-name: site-header;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 20;
+  background: var(--c-nav-bg);
+  border-block-end: 1px solid var(--c-divider);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.header-inner {
+  max-inline-size: var(--layout-max);
+  margin-inline: auto;
+  padding: 12px clamp(16px, 3.5vw, 32px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.brand-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  color: var(--c-text-1);
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.brand-mark {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--brand-gradient-start) 0%, var(--base-brand) 100%);
+  color: var(--c-btn-brand-text);
+}
+
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--c-text-1);
+  font-size: 0.875rem;
+  font-weight: 500;
+  padding: 4px 11px;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: color 0.25s ease;
+}
+
+.nav-link:focus-visible {
+  outline-offset: -2px;
+}
+
+.nav-link:hover {
+  color: var(--c-brand-1);
+}
+
+.nav-link.is-active {
+  color: var(--c-brand-1);
+}
+
+/* VitePress-Style Theme Switch & Social Link */
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.theme-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  inline-size: 40px;
+  block-size: 22px;
+  flex-shrink: 0;
+  border-radius: 11px;
+  border: 1px solid var(--c-divider);
+  background: var(--c-switch-bg);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    border-color 0.25s ease,
+    background-color 0.25s ease;
+}
+
+.theme-switch:hover {
+  border-color: var(--c-text-3);
+}
+
+/* The thumb position and sun/moon icon follow the active scheme tokens without requiring JS */
+
+.theme-switch-thumb {
+  position: absolute;
+  inset-block-start: 1px;
+  inset-inline-start: 1px;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 50%;
+  background: var(--c-switch-thumb-bg);
+  color: var(--c-text-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  translate: var(--c-switch-thumb-shift) 0;
+  transition:
+    translate 0.25s ease,
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+
+.theme-switch:hover .theme-switch-thumb {
+  color: var(--c-text-1);
+}
+
+.theme-label-light {
+  display: var(--c-theme-light-display);
+}
+
+.theme-label-dark {
+  display: var(--c-theme-dark-display);
+}
+
+.header-divider {
+  inline-size: 1px;
+  block-size: 24px;
+  background: var(--c-divider);
+  pointer-events: none;
+}
+
+.gh-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 6px;
+  color: var(--c-text-2);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.gh-link:hover {
+  color: var(--c-text-1);
+}
+
+/* Header Preview Background Picker (native popover, anchored below its trigger where supported) */
+
+.bg-picker {
+  position: relative;
+  display: inline-flex;
+}
+
+.bg-picker-trigger {
+  anchor-name: --bg-picker;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  block-size: 22px;
+  padding: 0 5px 0 3px;
+  border-radius: 11px;
+  border: 1px solid var(--c-divider);
+  background: var(--c-switch-bg);
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition:
+    border-color 0.25s ease,
+    color 0.25s ease;
+}
+
+.bg-picker-trigger:hover,
+.bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-trigger {
+  border-color: var(--c-text-3);
+  color: var(--c-text-1);
+}
+
+.bg-picker-chevron {
+  transition: rotate 0.2s ease;
+}
+
+.bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-chevron {
+  rotate: 180deg;
+}
+
+/* Swatches: Options show their own background; The trigger mirrors the active one */
+
+.bg-swatch {
+  inline-size: 14px;
+  block-size: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg);
+}
+
+.bg-swatch[data-bg='inverse'],
+:root[data-preview-bg='inverse'] .bg-swatch-current {
+  background: var(--c-preview-inverse-bg);
+  border-color: var(--c-preview-inverse-border);
+}
+
+.bg-swatch[data-bg='checker'],
+:root[data-preview-bg='checker'] .bg-swatch-current {
+  background:
+    repeating-conic-gradient(
+        color-mix(in srgb, var(--c-text-1) 24%, transparent) 0 25%,
+        transparent 0 50%
+      )
+      0 0 / 6px 6px,
+    var(--c-bg);
+}
+
+.bg-picker-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-inline-size: 176px;
+  padding: 6px;
+  border: 1px solid var(--c-divider);
+  border-radius: 10px;
+  background: var(--c-bg-soft);
+  color: var(--c-text-1);
+  box-shadow: 0 10px 30px rgba(0 0 0 / 0.18);
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bg-picker-menu:where(:popover-open, .is-open) {
+  display: flex;
+}
+
+.bg-picker-menu:not(:where(:popover-open, .is-open)) {
+  display: none;
+}
+
+/* Fallback without the Popover API: The menu stays in flow, so position it below the trigger */
+
+.bg-picker-menu.is-open {
+  position: absolute;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-end: 0;
+}
+
+@supports (position-area: block-end) {
+  .bg-picker-menu {
+    position-anchor: --bg-picker;
+    position-area: block-end span-inline-start;
+    position-try-fallbacks: flip-inline;
+    margin-block-start: 8px;
+  }
+}
+
+.bg-picker-title {
+  padding: 4px 8px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--c-text-3);
+}
+
+.bg-picker-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--c-text-2);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.bg-picker-option:hover {
+  background: color-mix(in srgb, var(--c-text-1) 6%, transparent);
+  color: var(--c-text-1);
+}
+
+.bg-picker-option:has(:checked) {
+  color: var(--c-brand-1);
+}
+
+.bg-picker-option:has(:focus-visible) {
+  outline: 2px solid var(--c-brand-1);
+  outline-offset: -2px;
+}
+
+.bg-picker-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bg-picker-label {
+  flex: 1;
+}
+
+.bg-picker-check {
+  visibility: hidden;
+}
+
+.bg-picker-option:has(:checked) .bg-picker-check {
+  visibility: visible;
+}
+
+@media (max-width: 640px) {
+  .site-nav {
+    order: 3;
+    inline-size: 100%;
+    margin-inline-start: 0;
+    padding-block-start: 8px;
+    border-block-start: 1px solid var(--c-border-subtle);
+  }
+
+  .header-actions > .header-divider:first-child {
+    display: none;
+  }
+}
+
+/* Page Shell: Full-width content (home) or sidebar + content (docs, builder) */
+
+.page-shell {
+  flex: 1;
+  inline-size: 100%;
+  max-inline-size: var(--layout-max);
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.has-sidebar .page-shell {
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+/* Main Content Container */
+
+.page-main {
+  min-inline-size: 0;
+  padding: clamp(32px, 5vw, 52px) clamp(16px, 3.5vw, 32px) 84px;
+}
+
+.has-sidebar .page-main {
+  padding-inline-start: clamp(20px, 3vw, 48px);
+}
+
+/* Sidebar: Sticky column on wide screens; The same element becomes a popover drawer on narrow screens */
+
+.sidebar {
+  view-transition-name: site-sidebar;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sidebar[popover] {
+  position: sticky;
+  inset: auto;
+  inset-block-start: var(--header-height);
+  display: block;
+  inline-size: auto;
+  block-size: calc(100dvh - var(--header-height));
+  margin: 0;
+  padding: 28px 20px 40px clamp(16px, 3.5vw, 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: none;
+  border-inline-end: 1px solid var(--c-divider);
+  background: transparent;
+  color: var(--c-text-1);
+  scrollbar-width: thin;
+}
+
+.sidebar-group + .sidebar-group {
+  margin-block-start: 22px;
+  padding-block-start: 18px;
+  border-block-start: 1px solid var(--c-border-subtle);
+}
+
+.sidebar-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--c-text-1);
+}
+
+.sidebar-group-title .ui-icon {
+  color: var(--c-brand-1);
+}
+
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 5px 0 5px 12px;
+  border-inline-start: 1px solid var(--c-border-subtle);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--c-text-2);
+  text-decoration: none;
+  transition:
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.sidebar-link:hover {
+  color: var(--c-text-1);
+}
+
+.sidebar-link.is-active {
+  color: var(--c-brand-1);
+  border-inline-start-color: var(--c-brand-1);
+}
+
+.sidebar-link:focus-visible {
+  outline-offset: -2px;
+}
+
+/* Narrow-Screen Local Navigation Bar (opens the sidebar drawer) */
+
+.local-nav {
+  display: none;
+}
+
+@media (max-width: 960px) {
+  .has-sidebar .page-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .has-sidebar .page-main {
+    padding-inline-start: clamp(16px, 3.5vw, 32px);
+  }
+
+  .local-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px clamp(16px, 3.5vw, 32px);
+    border-block-end: 1px solid var(--c-divider);
+    font-size: 0.82rem;
+    color: var(--c-text-2);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .local-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 10px;
+    border-radius: 7px;
+    border: 1px solid var(--c-border-subtle);
+    background: var(--c-bg-soft);
+    color: var(--c-text-1);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.18s ease;
+  }
+
+  .local-nav-toggle:hover {
+    border-color: var(--c-brand-border);
+  }
+
+  .local-nav-current {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sidebar[popover] {
+    position: fixed;
+    inset: 0 auto 0 0;
+    inline-size: min(300px, 86vw);
+    block-size: 100dvh;
+    padding: 24px 22px 40px;
+    background: var(--c-bg);
+    box-shadow: 0 10px 40px rgba(0 0 0 / 0.25);
+    translate: -100% 0;
+    transition:
+      translate 0.22s ease,
+      display 0.22s ease allow-discrete,
+      overlay 0.22s ease allow-discrete;
+  }
+
+  .sidebar[popover]:not(:where(:popover-open, .is-open)) {
+    display: none;
+  }
+
+  .sidebar[popover]:where(:popover-open, .is-open) {
+    translate: 0 0;
+
+    @starting-style {
+      translate: -100% 0;
+    }
+  }
+
+  .sidebar[popover]::backdrop {
+    background: rgba(0 0 0 / 0.4);
+  }
+}
+
+/* Site Footer */
+
+.site-footer {
+  border-block-start: 1px solid var(--c-divider);
+  background: var(--c-bg-soft);
+  padding: 24px clamp(16px, 3.5vw, 32px);
+  text-align: center;
+}
+
+.footer-inner {
+  max-inline-size: var(--layout-max);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-feedback {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--c-text-2);
+  line-height: 1.5;
+}
+
+.footer-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.footer-license,
+.footer-credit {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--c-text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.footer-sparkle {
+  color: var(--c-brand-1);
+}
