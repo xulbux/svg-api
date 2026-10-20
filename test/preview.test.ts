@@ -791,9 +791,12 @@ describe('site stylesheet', () => {
     expect(getSiteStylesheet().split('@media (prefers-reduced-motion: reduce)').length - 1).toBe(1);
   });
 
-  it('only applies hover transforms on devices that can hover', () => {
+  it('only applies hover transforms and sibling preview dimming on devices that can hover', () => {
     const css = getSiteStylesheet();
-    expect(css).toMatch(/@media \(hover: hover\) \{[^@]*\.preview-link:hover \{\s*translate:/);
+    expect(css).not.toMatch(/\.preview-link:hover\s*\{[^}]*translate:/);
+    expect(css).toMatch(
+      /@media \(hover: hover\) \{[^@]*\.preview-stage:has\(\.preview-link:hover\) \.preview-link:not\(:hover\) \{\s*opacity: 0\.45;/
+    );
     expect(css).toMatch(/@media \(hover: hover\) \{[^@]*\.swatch:hover \.swatch-dot \{\s*scale:/);
     expect(stripAtRuleBlocks(css, '@media (hover: hover)')).not.toMatch(HOVER_TRANSFORM_RULE_RX);
   });
