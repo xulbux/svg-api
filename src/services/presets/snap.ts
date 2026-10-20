@@ -5,25 +5,17 @@
  * is read from the stable channel of the snap's default track, preferring the `amd64` build.
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
-import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createLicenseMetric, createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Requested snap metadata fields of the Snap Store info API. */
-interface SnapMetadata {
+/** Projected Snap Store info metadata (`api.snapcraft.io/v2/snaps/info/:snap`). */
+interface SnapInfoProjection {
   /** SPDX license expression. */
   license?: string;
-}
-
-/** Partial Snap Store info API payload (`api.snapcraft.io/v2/snaps/info/:snap`). */
-interface SnapInfoPayload {
-  /** Every released channel and architecture combination (`{ channel: { architecture, risk, track }, version }`). */
-  'channel-map': unknown[];
-  /** Default track of the snap, or `null` for `latest`. */
-  'default-track': string | null;
-  /** Requested snap metadata fields. */
-  snap: SnapMetadata | null;
+  /** Stable default-track version (preferring `amd64`). */
+  version?: string;
 }
 
 /** Version and architecture of a stable channel map entry of the default track. */
@@ -45,13 +37,6 @@ const DEFAULT_SNAP_TRACK = 'latest';
 /** Architecture preferred when the stable channel has several builds. */
 const PREFERRED_SNAP_ARCHITECTURE = 'amd64';
 
-/** Snap Store info endpoint with snapcraft.io store page redirect. */
-const SNAP_ENDPOINT = createEndpoint({
-  api: 'https://api.snapcraft.io/v2/snaps/info/{target}?fields=license,version',
-  page: 'https://snapcraft.io/{target}',
-  project: pickFields<SnapInfoPayload>(['channel-map', 'default-track', 'snap']),
-});
-
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build the required Snap Store request headers. */
@@ -71,12 +56,11 @@ function readStableRelease(entry: unknown, track: string): StableSnapRelease | u
 }
 
 /** Read the stable default-track version, preferring the `amd64` build over other architectures. */
-function readStableSnapVersion(payload: Partial<SnapInfoPayload>): string | undefined {
-  const entries = payload['channel-map'];
+function readStableSnapVersion(entries: unknown, defaultTrack: unknown): string | undefined {
   if (!Array.isArray(entries)) {
     return undefined;
   }
-  const track = payload['default-track'] ?? DEFAULT_SNAP_TRACK;
+  const track = readText(defaultTrack) ?? DEFAULT_SNAP_TRACK;
   let fallbackVersion: string | undefined = undefined;
   for (const entry of entries) {
     const release = readStableRelease(entry, track);
@@ -88,6 +72,25 @@ function readStableSnapVersion(payload: Partial<SnapInfoPayload>): string | unde
   return fallbackVersion;
 }
 
+/** Project a Snap Store info payload to its license and resolved stable version. */
+function projectSnapInfo(data: unknown): SnapInfoProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const snap = isJsonObject(data.snap) ? data.snap : undefined;
+  return {
+    license: readText(snap?.license),
+    version: readStableSnapVersion(data['channel-map'], data['default-track']),
+  };
+}
+
+/** Snap Store info endpoint with snapcraft.io store page redirect. */
+const SNAP_ENDPOINT = createEndpoint({
+  api: 'https://api.snapcraft.io/v2/snaps/info/{target}?fields=license,version',
+  page: 'https://snapcraft.io/{target}',
+  project: projectSnapInfo,
+});
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Snapcraft service preset (`snap`). */
@@ -98,11 +101,11 @@ export const SNAP_SERVICE = defineService({
     title: 'Snapcraft',
   },
   metrics: {
-    license: createLicenseMetric(SNAP_ENDPOINT, (info) => info.snap?.license),
+    license: createLicenseMetric(SNAP_ENDPOINT, (info) => info.license),
     v: createVersionMetric(
       SNAP_ENDPOINT,
       { defaultColor: 'teal', defaultIcon: 'snapcraft', defaultLabel: 'snapcraft' },
-      readStableSnapVersion
+      (info) => info.version
     ),
   },
   route: { target: { placeholder: ':snap' } },

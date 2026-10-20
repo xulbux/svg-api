@@ -6,7 +6,7 @@ import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 // oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; The whole namespace is the slug lookup table.
 import * as lucideIcons from 'lucide-static';
-import { createLruCache, getOwnValue, readLruCache, writeLruCache } from '@/svg/shared';
+import { createLruCache, getOwnValue, readLruCache, roundCoord, writeLruCache } from '@/svg/shared';
 import type {
   IconBody,
   IconLookup,
@@ -203,6 +203,9 @@ const PASCAL_BOUNDARY_RX = /[\da-z](?=[A-Z])|[A-Z](?=[A-Z][a-z])/g;
 /** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="...">` controls color and sheen. */
 const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
 
+/** Matches basic non-path SVG shape tags (`<circle>`, `<ellipse>`, `<rect>`, `<line>`, `<polyline>`, `<polygon>`). */
+const SHAPE_TAG_RX = /<(?:circle|ellipse|rect|line|polyline|polygon)\b/;
+
 /** Matches `<circle ...>` elements in SVG markup. */
 const CIRCLE_TAG_RX = /<circle\b[^>]*>/g;
 
@@ -271,6 +274,9 @@ function updateBounds(bounds: IconXBounds, rawX: number, scale: number): void {
 
 /** Record horizontal bounds for basic SVG geometric primitives (`circle`, `ellipse`, `rect`, `line`, `polyline`, `polygon`). */
 function recordShapeBounds(svgStr: string, scale: number, bounds: IconXBounds): void {
+  if (!SHAPE_TAG_RX.test(svgStr)) {
+    return;
+  }
   for (const match of svgStr.matchAll(CIRCLE_TAG_RX)) {
     const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
     const radius = extractNumericAttr(match[0], R_ATTR_RX);
@@ -294,9 +300,12 @@ function recordShapeBounds(svgStr: string, scale: number, bounds: IconXBounds): 
     updateBounds(bounds, extractNumericAttr(match[0], X2_ATTR_RX), scale);
   }
   for (const match of svgStr.matchAll(POLY_POINTS_RX)) {
-    const points = (match.groups?.points ?? '').trim().split(COORD_SPLIT_RX);
-    for (let i = 0; i < points.length; i += 2) {
-      updateBounds(bounds, Number(points[i]), scale);
+    const trimmedPoints = (match.groups?.points ?? '').trim();
+    if (trimmedPoints.length > 0) {
+      const points = trimmedPoints.split(COORD_SPLIT_RX);
+      for (let i = 0; i < points.length; i += 2) {
+        updateBounds(bounds, Number(points[i]), scale);
+      }
     }
   }
 }
@@ -651,8 +660,8 @@ function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): 
   }
   const strokePad = isStroke ? STROKE_BOUNDS_PAD : 0;
   return {
-    maxX: Number(Math.min(24, bounds.maxX + strokePad).toFixed(2)),
-    minX: Number(Math.max(0, bounds.minX - strokePad).toFixed(2)),
+    maxX: roundCoord(Math.min(24, bounds.maxX + strokePad)),
+    minX: roundCoord(Math.max(0, bounds.minX - strokePad)),
   };
 }
 

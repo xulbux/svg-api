@@ -24,6 +24,9 @@ import {
   renderSurfaceGradientDefs,
   renderSvgDocument,
   resolveForegroundPaint,
+  roundCoord,
+  roundScale,
+  roundTenths,
   truncateText,
 } from '@/svg/shared';
 import type {
@@ -188,6 +191,7 @@ const STACK_ICON_META: Readonly<Record<string, StackIconMeta>> = {
   adobephotoshop: { color: 'sky', title: 'Adobe Photoshop' },
   adobepremierepro: { color: 'purple', title: 'Adobe Premiere Pro' },
   amazonwebservices: { color: 'amber', title: 'AWS' },
+  apachemaven: { color: 'orange', title: 'Apache Maven' },
   archlinux: { color: 'cyan', title: 'Arch Linux' },
   arduino: { color: 'teal', title: 'Arduino' },
   blender: { color: 'orange', title: 'Blender' },
@@ -216,12 +220,14 @@ const STACK_ICON_META: Readonly<Record<string, StackIconMeta>> = {
   html5: { color: 'orange', title: 'HTML5' },
   java: { color: 'orange', title: 'Java' },
   javascript: { color: 'yellow', title: 'JavaScript' },
+  jetbrains: { color: 'rose', title: 'JetBrains' },
   kotlin: { color: 'violet', title: 'Kotlin' },
   laravel: { color: 'red', title: 'Laravel' },
   latex: { color: 'teal', title: 'LaTeX' },
   linux: { color: 'amber', title: 'Linux' },
   lua: { color: 'indigo', title: 'Lua' },
   markdown: { color: 'slate', title: 'Markdown' },
+  maven: { color: 'orange', title: 'Apache Maven' },
   microsoftazure: { color: 'sky', title: 'Microsoft Azure' },
   mysql: { color: 'sky', title: 'MySQL' },
   netlify: { color: 'teal', title: 'Netlify' },
@@ -438,8 +444,8 @@ function renderSingleStackTile(
   const icon = resolveStackTileIcon(tile, context);
   // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile.
   const visualCenterX = ((icon.data.minX + icon.data.maxX) / 2) * iconScale;
-  const iconX = Number((tileX + tileSize / 2 - visualCenterX).toFixed(2));
-  const iconY = Number((tileY + (tileSize - iconSize) / 2).toFixed(2));
+  const iconX = roundCoord(tileX + tileSize / 2 - visualCenterX);
+  const iconY = roundCoord(tileY + (tileSize - iconSize) / 2);
   const surfaceMarkup = renderKumoBoxSurface({
     boxX: tileX,
     boxY: tileY,
@@ -571,7 +577,7 @@ export function renderStack(options: StackRenderOptions): string {
     iconBodyIds: new Set<string>(),
     iconBodyLength: 0,
     iconDefs: '',
-    iconScale: Number((iconSize / 24).toFixed(4)),
+    iconScale: roundScale(iconSize / 24),
     iconSize,
     radius,
     tileSize,
@@ -584,25 +590,21 @@ export function renderStack(options: StackRenderOptions): string {
   let bandOriginY = 0;
 
   for (const band of bands) {
-    const bandOffsetX = Number(((totalWidth - band.width) / 2).toFixed(1));
+    const bandOffsetX = roundTenths((totalWidth - band.width) / 2);
     let groupOriginX = bandOffsetX;
 
     for (const group of band.groups) {
-      const groupOriginY = bandOriginY + Number(((band.height - group.height) / 2).toFixed(1));
+      const groupOriginY = bandOriginY + roundTenths((band.height - group.height) / 2);
 
       for (const [i, tile] of group.tiles.entries()) {
         const rowIndex = Math.floor(i / group.perLine);
         const columnIndex = i % group.perLine;
         const rowCount = Math.min(group.perLine, group.tiles.length - rowIndex * group.perLine);
         const rowOffsetX =
-          group.rows > 1
-            ? Number((((group.cols - rowCount) * (tileSize + gap)) / 2).toFixed(1))
-            : 0;
+          group.rows > 1 ? roundTenths(((group.cols - rowCount) * (tileSize + gap)) / 2) : 0;
 
-        const tileX = Number(
-          (groupOriginX + rowOffsetX + columnIndex * (tileSize + gap)).toFixed(1)
-        );
-        const tileY = Number((groupOriginY + rowIndex * (tileSize + gap)).toFixed(1));
+        const tileX = roundTenths(groupOriginX + rowOffsetX + columnIndex * (tileSize + gap));
+        const tileY = roundTenths(groupOriginY + rowIndex * (tileSize + gap));
 
         tilesMarkup += renderSingleStackTile(tile, tileX, tileY, tileContext);
 
@@ -611,10 +613,10 @@ export function renderStack(options: StackRenderOptions): string {
         }
       }
 
-      groupOriginX = Number((groupOriginX + group.width + groupGap).toFixed(1));
+      groupOriginX = roundTenths(groupOriginX + group.width + groupGap);
     }
 
-    bandOriginY = Number((bandOriginY + band.height + groupGap).toFixed(1));
+    bandOriginY = roundTenths(bandOriginY + band.height + groupGap);
   }
 
   const gradientDefs = renderSurfaceGradientDefs(variant !== '1', tileContext.usedPrimaryColors);

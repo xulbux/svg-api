@@ -411,6 +411,16 @@ export function isThemeColorName(key: string): key is ThemeColorName {
 }
 
 /**
+ * Resolve an optional raw color query parameter to a valid `ThemeColorName`, or `undefined` when missing or unknown.
+ * @param input   Raw `?color=` query parameter.
+ * @returns The resolved `ThemeColorName`, or `undefined`.
+ */
+export function resolveOptionalColor(input?: string | null): ThemeColorName | undefined {
+  const key = (input ?? '').trim().toLowerCase();
+  return isThemeColorName(key) ? key : undefined;
+}
+
+/**
  * Resolve a raw color query parameter to a valid `ThemeColorName`.
  * @param input      Raw `?color=` query parameter.
  * @param fallback   Fallback color token when `input` is missing or unknown.
@@ -420,6 +430,5 @@ export function resolveColor(
   input?: string | null,
   fallback: ThemeColorName = 'indigo'
 ): ThemeColorName {
-  const key = (input ?? '').trim().toLowerCase();
-  return isThemeColorName(key) ? key : fallback;
+  return resolveOptionalColor(input) ?? fallback;
 }

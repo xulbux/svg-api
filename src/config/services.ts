@@ -38,10 +38,12 @@ import {
   HUGGING_FACE_DATASET_SERVICE,
   HUGGING_FACE_MODEL_SERVICE,
 } from '@/services/presets/huggingface';
+import { JETBRAINS_SERVICE } from '@/services/presets/jetbrains';
 import { JSDELIVR_SERVICE } from '@/services/presets/jsDelivr';
 import { JSR_SERVICE } from '@/services/presets/jsr';
 import { LIBERAPAY_SERVICE } from '@/services/presets/liberapay';
 import { MACPORTS_SERVICE } from '@/services/presets/macports';
+import { MAVEN_SERVICE } from '@/services/presets/maven';
 import { HANGAR_SERVICE, SPIGOT_SERVICE } from '@/services/presets/minecraftPlugins';
 import { MODRINTH_SERVICE } from '@/services/presets/modrinth';
 import { NPM_SERVICE } from '@/services/presets/npm';
@@ -127,10 +129,12 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   hf: HUGGING_FACE_MODEL_SERVICE,
   'hf-dataset': HUGGING_FACE_DATASET_SERVICE,
   hn: HACKER_NEWS_SERVICE,
+  jetbrains: JETBRAINS_SERVICE,
   jsdelivr: JSDELIVR_SERVICE,
   jsr: JSR_SERVICE,
   liberapay: LIBERAPAY_SERVICE,
   macports: MACPORTS_SERVICE,
+  maven: MAVEN_SERVICE,
   modrinth: MODRINTH_SERVICE,
   npm: NPM_SERVICE,
   nuget: NUGET_SERVICE,

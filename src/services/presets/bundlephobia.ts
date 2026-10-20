@@ -1,14 +1,22 @@
 /**
- * Bundlephobia service preset – Minified and gzipped bundle size of the latest version of an unscoped or scoped npm package (`/badge/bundlephobia/[:scope/]:pkg/:metric`).
+ * Bundlephobia service preset – Minified size, gzipped size, and dependency count of the latest version of an unscoped or scoped npm package (`/badge/bundlephobia/[:scope/]:pkg/:metric`).
  */
 
-import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createBytesMetric, encodeNpmPackageName, resolveNpmPackageName } from '@/services/metrics';
+import {
+  CACHE_TTL,
+  NPM_PACKAGE_ROUTE,
+  createEndpoint,
+  defineService,
+  pickFields,
+} from '@/services/endpoint';
+import { createBytesMetric, createCountMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Partial Bundlephobia size payload (`bundlephobia.com/api/size?package=:pkg`). */
 interface BundlephobiaSizePayload {
+  /** Direct dependency count. */
+  dependencyCount: number;
   /** Gzipped size in bytes. */
   gzip: number;
   /** Minified size in bytes. */
@@ -19,11 +27,9 @@ interface BundlephobiaSizePayload {
 
 /** Bundlephobia size endpoint (URL-encoded package name; Sizes only change with new releases). */
 const BUNDLEPHOBIA_ENDPOINT = createEndpoint({
-  api: ({ owner, target }) =>
-    `https://bundlephobia.com/api/size?package=${encodeURIComponent(resolveNpmPackageName(owner, target))}`,
-  page: ({ owner, target }) =>
-    `https://bundlephobia.com/package/${encodeNpmPackageName(owner, target)}`,
-  project: pickFields<BundlephobiaSizePayload>(['gzip', 'size']),
+  api: 'https://bundlephobia.com/api/size?package={npm-id}',
+  page: 'https://bundlephobia.com/package/{npm}',
+  project: pickFields<BundlephobiaSizePayload>(['dependencyCount', 'gzip', 'size']),
   ttl: CACHE_TTL.daily,
 });
 
@@ -32,11 +38,17 @@ const BUNDLEPHOBIA_ENDPOINT = createEndpoint({
 /** Bundlephobia service preset (`bundlephobia`). */
 export const BUNDLEPHOBIA_SERVICE = defineService({
   docs: {
-    description: 'Minified and gzipped bundle size of the latest version of any npm package.',
+    description:
+      'Minified size, gzipped size, and dependency count of the latest version of any npm package.',
     title: 'Bundlephobia',
   },
-  metricAliases: { minzip: 'gzip', size: 'min' },
+  metricAliases: { dependencies: 'deps', minzip: 'gzip', size: 'min' },
   metrics: {
+    deps: createCountMetric(
+      BUNDLEPHOBIA_ENDPOINT,
+      { defaultColor: 'indigo', defaultIcon: 'package', defaultLabel: 'dependencies' },
+      (sizes) => sizes.dependencyCount
+    ),
     gzip: createBytesMetric(
       BUNDLEPHOBIA_ENDPOINT,
       { defaultColor: 'emerald', defaultIcon: 'weight', defaultLabel: 'minzipped' },
@@ -48,5 +60,5 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
       (sizes) => sizes.size
     ),
   },
-  route: { owner: { isRequired: false, placeholder: ':scope' }, target: { placeholder: ':pkg' } },
+  route: NPM_PACKAGE_ROUTE,
 });

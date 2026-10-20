@@ -12,13 +12,14 @@ import {
   createMetric,
   defineService,
   isJsonObject,
+  pickFields,
 } from '@/services/endpoint';
 import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
 } from '@/services/metrics';
-import type { MetricResult, ServiceDefinition, ServiceRouteParams } from '@/types';
+import type { MetricResult, ServiceRouteParams } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -130,46 +131,45 @@ function buildClickPyPageUrl({ target }: ServiceRouteParams): string {
   return `https://clickpy.clickhouse.com/dashboard/${encodeURIComponent(normalizePyPiName(target))}`;
 }
 
-/** Create the PyPI service preset. */
-function createPyPiService(): ServiceDefinition {
-  const pypiEndpoint = createEndpoint({
-    api: 'https://pypi.org/pypi/{target}/json',
-    leadingKey: 'info',
-    page: 'https://pypi.org/project/{target}/',
-    project: projectPyPiInfo,
-  });
-  // ClickPy aggregates daily download rows, so the statistics only change once a day.
-  const clickPyEndpoint = createEndpoint<Partial<ClickPyDownloadsPayload>>({
-    api: buildClickPyApiUrl,
-    page: buildClickPyPageUrl,
-    ttl: CACHE_TTL.daily,
-  });
-  return defineService({
-    docs: {
-      description:
-        'PyPI version, ClickPy total/30-day downloads (dt/dl), required Python, and license.',
-      title: 'PyPI',
-    },
-    metrics: {
-      dl: createDownloadsMetric(clickPyEndpoint, 'dl', (stats) => stats.row_1?.last_month),
-      dt: createDownloadsMetric(clickPyEndpoint, 'dt', (stats) => stats.row_1?.total),
-      license: createLicenseMetric(pypiEndpoint, (info) => info.license),
-      py: createMetric(
-        pypiEndpoint,
-        { defaultColor: 'amber', defaultIcon: 'python', defaultLabel: 'python' },
-        transformPyPiPythonVersion
-      ),
-      v: createVersionMetric(
-        pypiEndpoint,
-        { defaultColor: 'sky', defaultIcon: 'pypi', defaultLabel: 'pypi' },
-        (info) => info.version
-      ),
-    },
-    route: { target: { placeholder: ':pkg' } },
-  });
-}
+/** PyPI package metadata endpoint (`info` prefix only). */
+const PYPI_ENDPOINT = createEndpoint({
+  api: 'https://pypi.org/pypi/{target}/json',
+  leadingKey: 'info',
+  page: 'https://pypi.org/project/{target}/',
+  project: projectPyPiInfo,
+});
+
+/** ClickPy daily download statistics endpoint. */
+const CLICKPY_ENDPOINT = createEndpoint<Partial<ClickPyDownloadsPayload>>({
+  api: buildClickPyApiUrl,
+  page: buildClickPyPageUrl,
+  project: pickFields<ClickPyDownloadsPayload>(['row_1']),
+  ttl: CACHE_TTL.daily,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** PyPI and ClickPy service preset (`pypi`). */
-export const PYPI_SERVICE: ServiceDefinition = createPyPiService();
+export const PYPI_SERVICE = defineService({
+  docs: {
+    description:
+      'PyPI version, ClickPy total/30-day downloads (dt/dl), required Python, and license.',
+    title: 'PyPI',
+  },
+  metrics: {
+    dl: createDownloadsMetric(CLICKPY_ENDPOINT, 'dl', (stats) => stats.row_1?.last_month),
+    dt: createDownloadsMetric(CLICKPY_ENDPOINT, 'dt', (stats) => stats.row_1?.total),
+    license: createLicenseMetric(PYPI_ENDPOINT, (info) => info.license),
+    py: createMetric(
+      PYPI_ENDPOINT,
+      { defaultColor: 'amber', defaultIcon: 'python', defaultLabel: 'python' },
+      transformPyPiPythonVersion
+    ),
+    v: createVersionMetric(
+      PYPI_ENDPOINT,
+      { defaultColor: 'sky', defaultIcon: 'pypi', defaultLabel: 'pypi' },
+      (info) => info.version
+    ),
+  },
+  route: { target: { placeholder: ':pkg' } },
+});

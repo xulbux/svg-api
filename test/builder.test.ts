@@ -427,10 +427,13 @@ describe('builder client core', () => {
     const path = '/badge/build/passing?color=Emerald&variant=2&dot=ONLINE&anim=Sheen';
     expect(core.parsePath(badge, path)).toMatchObject({ color: 'emerald', dot: 'online' });
     expect(core.parsePath(badge, '/badge/a/b?color=notacolor')?.color).toBe('');
+    expect(core.parsePath(getBuilderSchema('button'), '/button/Go?size=bogus')?.size).toBe('');
+    expect(core.parsePath(getBuilderSchema('icon'), '/icon/rocket?size=bogus')?.size).toBe('');
     for (const [kind, prefillPath] of [
       ['badge', path],
       ['badge', '/badge/a/b?color=notacolor&variant=9'],
       ['button', '/button/Go?size=LG&color=Rose'],
+      ['button', '/button/Go?size=bogus'],
       ['quote', '/quote/Hi?size=XL&layout=Vertical'],
     ] as const) {
       const [original, rebuilt] = renderPrefillRoundTrip(kind, prefillPath);
@@ -837,12 +840,14 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(linkCount).toBeGreaterThan(100);
   });
 
-  it('resolves builder targets per route family and skips owner-restricted services', () => {
+  it('resolves builder targets per route family and skips owner-restricted or invalid paths', () => {
     expect(resolveBuilderTarget('/badge/build/passing')?.kind).toBe('badge');
     expect(resolveBuilderTarget('/badge/status/online/up')?.kind).toBe('badge');
     expect(resolveBuilderTarget('/badge/pypi/xulbux/v')?.kind).toBe('service');
     expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
     expect(resolveBuilderTarget('/badge/gh/svg-api/stars')).toBeUndefined();
+    expect(resolveBuilderTarget('/icon/a/b')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/a/b/c/d')).toBeUndefined();
     expect(resolveBuilderTarget('/favicon.svg')).toBeUndefined();
     expect(resolveBuilderTarget('/quote/Hi?layout=vertical')?.href).toBe(
       `/builder/quote?path=${encodeURIComponent('/quote/Hi?layout=vertical')}`

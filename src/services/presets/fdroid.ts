@@ -2,17 +2,39 @@
  * F-Droid service preset – Suggested app version from the F-Droid repository (`/badge/fdroid/:appId/:metric`).
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
-import { createVersionMetric } from '@/services/metrics';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial F-Droid package API payload (`f-droid.org/api/v1/packages/:appId`). */
-interface FdroidPackagePayload {
-  /** Published builds (`{ versionCode, versionName }`), newest first. */
-  packages: unknown[];
-  /** Version code of the build F-Droid suggests installing. */
-  suggestedVersionCode: number;
+/** Projected F-Droid package metadata (`f-droid.org/api/v1/packages/:appId`). */
+interface FdroidPackageProjection {
+  /** Suggested build version name (falling back to the newest published build). */
+  version?: string;
+}
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project an F-Droid package payload to its suggested build's version name (falling back to the newest published build). */
+function projectFdroidPackage(data: unknown): FdroidPackageProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const builds = data.packages;
+  if (!Array.isArray(builds)) {
+    return { version: undefined };
+  }
+  let newestVersion: string | undefined = undefined;
+  for (const build of builds) {
+    if (isJsonObject(build)) {
+      const versionName = readText(build.versionName);
+      if (build.versionCode === data.suggestedVersionCode && versionName) {
+        return { version: versionName };
+      }
+      newestVersion ??= versionName;
+    }
+  }
+  return { version: newestVersion };
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -21,34 +43,8 @@ interface FdroidPackagePayload {
 const FDROID_ENDPOINT = createEndpoint({
   api: 'https://f-droid.org/api/v1/packages/{target}',
   page: 'https://f-droid.org/packages/{target}/',
-  project: pickFields<FdroidPackagePayload>(['packages', 'suggestedVersionCode']),
+  project: projectFdroidPackage,
 });
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Read the version name of a build entry (malformed entries such as `null` are skipped). */
-function readBuildVersionName(build: unknown): string | undefined {
-  return isJsonObject(build) && typeof build.versionName === 'string'
-    ? build.versionName
-    : undefined;
-}
-
-/** Read the suggested build's version name, falling back to the newest published build. */
-function readSuggestedFdroidVersion(payload: Partial<FdroidPackagePayload>): string | undefined {
-  const builds = payload.packages;
-  if (!Array.isArray(builds)) {
-    return undefined;
-  }
-  let newestVersion: string | undefined = undefined;
-  for (const build of builds) {
-    const versionName = readBuildVersionName(build);
-    if (isJsonObject(build) && build.versionCode === payload.suggestedVersionCode && versionName) {
-      return versionName;
-    }
-    newestVersion ??= versionName;
-  }
-  return newestVersion;
-}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -62,7 +58,7 @@ export const FDROID_SERVICE = defineService({
     v: createVersionMetric(
       FDROID_ENDPOINT,
       { defaultColor: 'blue', defaultIcon: 'fdroid', defaultLabel: 'f-droid' },
-      readSuggestedFdroidVersion
+      (pkg) => pkg.version
     ),
   },
   route: { target: { placeholder: ':appId' } },

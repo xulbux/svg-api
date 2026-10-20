@@ -118,6 +118,9 @@ describe('resolveIcon', () => {
       'regex',
       'snake',
       'box-isometric-tape',
+      'apachemaven',
+      'jetbrains',
+      'maven',
     ];
 
     for (const slug of stackSlugs) {
@@ -253,5 +256,13 @@ describe('computeIconXBounds', () => {
       minX: 2.88,
     });
     expect(computeIconXBounds('<g />', false)).toEqual({ maxX: 22, minX: 2 });
+    expect(computeIconXBounds('<polygon points="" /><polyline points="   " />', false)).toEqual({
+      maxX: 22,
+      minX: 2,
+    });
+    expect(computeIconXBounds('<polygon points="" /><polyline points="   " />', false)).toEqual({
+      maxX: 22,
+      minX: 2,
+    });
   });
 });

@@ -6,13 +6,14 @@
  * `exclude_fields` (`~300 KB`), so only its two counters are kept in the caches.
  */
 
-import { createEndpoint, defineService, pickFields, projectFirstEntry } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
+  SCORE,
   createDownloadsMetric,
   createLicenseMetric,
   createPercentScoreMetric,
   createVersionMetric,
-  SCORE,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -25,18 +26,25 @@ interface PuppetModulePayload {
   feedback_score: number | null;
 }
 
-/** Release `metadata.json` contents of a Puppet Forge release. */
-interface PuppetReleaseMetadata {
-  /** SPDX license identifier. */
+/** Projected Puppet Forge newest release metadata (`forgeapi.puppet.com/v3/releases?module=:owner-:module`). */
+interface PuppetReleaseProjection {
+  /** SPDX license identifier from `metadata.license`. */
   license?: string;
+  /** Release version. */
+  version?: string;
 }
 
-/** Single release entry of a Puppet Forge releases API response (`forgeapi.puppet.com/v3/releases?module=:owner-:module`). */
-interface PuppetReleaseEntry {
-  /** Release `metadata.json` contents. */
-  metadata: PuppetReleaseMetadata | null;
-  /** Release version. */
-  version: string;
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project the first entry of a Puppet Forge releases response to its version and license. */
+function projectPuppetRelease(data: unknown): PuppetReleaseProjection | undefined {
+  const results = isJsonObject(data) ? data.results : undefined;
+  const firstEntry: unknown = Array.isArray(results) ? results[0] : undefined;
+  if (!isJsonObject(firstEntry)) {
+    return undefined;
+  }
+  const metadata = isJsonObject(firstEntry.metadata) ? firstEntry.metadata : undefined;
+  return { license: readText(metadata?.license), version: readText(firstEntry.version) };
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -54,7 +62,7 @@ const RELEASE_ENDPOINT = createEndpoint({
   api: ({ owner, target }) =>
     `https://forgeapi.puppet.com/v3/releases?module=${encodeURIComponent(`${owner}-${target}`)}&limit=1&sort_by=release_date&exclude_fields=readme,changelog,license,reference,tasks,plans`,
   page: 'https://forge.puppet.com/modules/{owner}/{target}',
-  project: projectFirstEntry<PuppetReleaseEntry>('results', ['metadata', 'version']),
+  project: projectPuppetRelease,
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -68,7 +76,7 @@ export const PUPPET_SERVICE = defineService({
   metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(MODULE_ENDPOINT, 'dt', (module) => module.downloads),
-    license: createLicenseMetric(RELEASE_ENDPOINT, (release) => release.metadata?.license),
+    license: createLicenseMetric(RELEASE_ENDPOINT, (release) => release.license),
     score: createPercentScoreMetric(
       MODULE_ENDPOINT,
       { ...SCORE, defaultLabel: 'puppet score' },

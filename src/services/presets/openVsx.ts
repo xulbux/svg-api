@@ -1,9 +1,14 @@
 /**
- * Open VSX service preset – Extension version, total downloads, and average rating (`/badge/ovsx/:namespace/:ext/:metric`).
+ * Open VSX service preset – Extension version, total downloads, average rating, and license (`/badge/ovsx/:namespace/:ext/:metric`).
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createDownloadsMetric, createRatingMetric, createVersionMetric } from '@/services/metrics';
+import {
+  createDownloadsMetric,
+  createLicenseMetric,
+  createRatingMetric,
+  createVersionMetric,
+} from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -13,6 +18,8 @@ interface OpenVsxExtensionPayload {
   averageRating: number;
   /** Total all-time extension downloads. */
   downloadCount: number;
+  /** SPDX license identifier. */
+  license: string | null;
   /** Latest published extension version. */
   version: string;
 }
@@ -23,7 +30,12 @@ interface OpenVsxExtensionPayload {
 const OPEN_VSX_ENDPOINT = createEndpoint({
   api: 'https://open-vsx.org/api/{owner}/{target}',
   page: 'https://open-vsx.org/extension/{owner}/{target}',
-  project: pickFields<OpenVsxExtensionPayload>(['averageRating', 'downloadCount', 'version']),
+  project: pickFields<OpenVsxExtensionPayload>([
+    'averageRating',
+    'downloadCount',
+    'license',
+    'version',
+  ]),
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -31,7 +43,7 @@ const OPEN_VSX_ENDPOINT = createEndpoint({
 /** Open VSX Registry service preset (`ovsx`). */
 export const OPEN_VSX_SERVICE = defineService({
   docs: {
-    description: 'Extension version, total downloads, and average star rating.',
+    description: 'Extension version, total downloads, average star rating, and license.',
     title: 'Open VSX',
   },
   metricAliases: { dl: 'dt' },
@@ -39,6 +51,7 @@ export const OPEN_VSX_SERVICE = defineService({
     dt: createDownloadsMetric(OPEN_VSX_ENDPOINT, 'dt', (extension) => extension.downloadCount, {
       defaultColor: 'violet',
     }),
+    license: createLicenseMetric(OPEN_VSX_ENDPOINT, (extension) => extension.license),
     rating: createRatingMetric(OPEN_VSX_ENDPOINT, (extension) => [extension.averageRating, 5]),
     v: createVersionMetric(
       OPEN_VSX_ENDPOINT,

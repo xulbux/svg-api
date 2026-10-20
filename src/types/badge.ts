@@ -46,6 +46,14 @@ export interface BarSpecialElement {
   value: number;
 }
 
+/** Inline vertical mini-bar histogram special element (`bars:<n1,n2,...>`). */
+export interface BarsSpecialElement {
+  /** Special element discriminant (`'bars'`). */
+  type: 'bars';
+  /** Numeric bar heights (at least 2 values). */
+  values: number[];
+}
+
 /** Inline trend delta arrow and readout special element. */
 export interface DeltaSpecialElement {
   /** Special element discriminant (`'delta'`). */
@@ -72,6 +80,16 @@ export interface SparklineSpecialElement {
   values: number[];
 }
 
+/** Segmented discrete progress steps special element (`steps:<done>/<total>`). */
+export interface StepsSpecialElement {
+  /** Completed step count (`0`–`total`). */
+  done: number;
+  /** Total step count (`1`–`10`). */
+  total: number;
+  /** Special element discriminant (`'steps'`). */
+  type: 'steps';
+}
+
 /** Segmented uptime/health history strip special element. */
 export interface StripSpecialElement {
   /** Up to 10 vertical status ticks from `'0'` to `'9'`. */
@@ -83,9 +101,11 @@ export interface StripSpecialElement {
 /** Unified right-compartment special data visualization element. */
 export type BadgeSpecialElement =
   | BarSpecialElement
+  | BarsSpecialElement
   | DeltaSpecialElement
   | RingSpecialElement
   | SparklineSpecialElement
+  | StepsSpecialElement
   | StripSpecialElement;
 
 /** Options for rendering a `22px` badge SVG via `renderBadge`. */
@@ -100,7 +120,7 @@ export interface BadgeRenderOptions {
   icon?: string;
   /** Left-hand label text, or single-part badge text (truncated with an ellipsis beyond `128` characters). */
   label: string;
-  /** Optional right-hand special data visualization element (`bar`, `ring`, `strip`, `delta`, or `sparkline`). */
+  /** Optional right-hand special data visualization element (`bar`, `bars`, `ring`, `steps`, `strip`, `delta`, or `sparkline`). */
   special?: BadgeSpecialElement;
   /** Right-hand value text, omitted on 1-segment badges (truncated with an ellipsis beyond `128` characters). */
   value?: string;

@@ -5,48 +5,29 @@
  * deliberately avoided.
  */
 
-import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   createCommunityMetric,
   createDownloadsMetric,
   createLicenseMetric,
-  formatVersion,
+  createTextMetric,
+  readFiniteNumber,
+  readLicenseName,
 } from '@/services/metrics';
-import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** License metadata of a Modrinth project. */
-interface ModrinthLicense {
-  /** SPDX license identifier (e.g., `'MIT'`, `'LicenseRef-Polyform-Shield-1.0.0'`). */
-  id?: string;
-}
-
-/** Partial Modrinth project API payload (`api.modrinth.com/v2/project/:project`). */
-interface ModrinthProjectPayload {
+/** Projected Modrinth project metadata (`api.modrinth.com/v2/project/:project`). */
+interface ModrinthProjectProjection {
   /** All-time downloads. */
-  downloads: number;
+  downloads?: number;
   /** Number of followers. */
-  followers: number;
-  /** Supported game versions in ascending order (including snapshots and pre-releases). */
-  game_versions: unknown[];
-  /** License metadata. */
-  license: ModrinthLicense | null;
+  followers?: number;
+  /** Newest supported stable game release (falling back to the newest version). */
+  gameVersion?: string;
+  /** SPDX license identifier (e.g., `'MIT'`, `'LicenseRef-Polyform-Shield-1.0.0'`). */
+  license?: string;
 }
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Modrinth project endpoint with project page redirect (`/project/` redirects to the typed page). */
-const MODRINTH_ENDPOINT = createEndpoint({
-  api: 'https://api.modrinth.com/v2/project/{target}',
-  page: 'https://modrinth.com/project/{target}',
-  project: pickFields<ModrinthProjectPayload>([
-    'downloads',
-    'followers',
-    'game_versions',
-    'license',
-  ]),
-});
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -55,23 +36,45 @@ const RELEASE_GAME_VERSION_RX = /^\d+(?:\.\d+)+$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Transform a Modrinth project into its newest supported stable game release (falling back to the newest version). */
-function transformModrinthGameVersion(
-  project: Partial<ModrinthProjectPayload>
-): Partial<MetricResult> {
-  const versions = Array.isArray(project.game_versions) ? project.game_versions : [];
+/** Read the newest supported stable Minecraft game release from `game_versions` (falling back to the newest version). */
+function readNewestModrinthGameVersion(rawVersions: unknown): string | undefined {
+  if (!Array.isArray(rawVersions)) {
+    return undefined;
+  }
   let newestVersion: string | undefined = undefined;
-  for (let i = versions.length - 1; i >= 0; i -= 1) {
-    const version: unknown = versions[i];
+  for (let i = rawVersions.length - 1; i >= 0; i -= 1) {
+    const version: unknown = rawVersions[i];
     if (typeof version === 'string') {
       if (RELEASE_GAME_VERSION_RX.test(version)) {
-        return { value: version };
+        return version;
       }
       newestVersion ??= version;
     }
   }
-  return { value: newestVersion ?? formatVersion(undefined) };
+  return newestVersion;
 }
+
+/** Project a Modrinth project payload to its download/follower counts, game version, and license. */
+function projectModrinthProject(data: unknown): ModrinthProjectProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  return {
+    downloads: readFiniteNumber(data.downloads),
+    followers: readFiniteNumber(data.followers),
+    gameVersion: readNewestModrinthGameVersion(data.game_versions),
+    license: readLicenseName(data.license),
+  };
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Modrinth project endpoint with project page redirect (`/project/` redirects to the typed page). */
+const MODRINTH_ENDPOINT = createEndpoint({
+  api: 'https://api.modrinth.com/v2/project/{target}',
+  page: 'https://modrinth.com/project/{target}',
+  project: projectModrinthProject,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -92,12 +95,12 @@ export const MODRINTH_SERVICE = defineService({
       'modrinth',
       (project) => project.followers
     ),
-    game: createMetric(
+    game: createTextMetric(
       MODRINTH_ENDPOINT,
       { defaultColor: 'emerald', defaultIcon: 'modrinth', defaultLabel: 'minecraft' },
-      transformModrinthGameVersion
+      (project) => project.gameVersion
     ),
-    license: createLicenseMetric(MODRINTH_ENDPOINT, (project) => project.license?.id),
+    license: createLicenseMetric(MODRINTH_ENDPOINT, (project) => project.license),
   },
   route: { target: { placeholder: ':project' } },
 });

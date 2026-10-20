@@ -112,7 +112,7 @@ export interface PageSidebar {
   label: string;
 }
 
-/** Distinct icon counts of the bundled icon sets (computed lazily for the docs; never hard-coded). */
+/** Distinct icon counts of the bundled icon sets (computed lazily for the docs; Never hard-coded). */
 export interface IconSetCounts {
   /** Distinct Simple Icons and Devicon Plain brand/technology slugs. */
   brand: number;
@@ -167,7 +167,7 @@ export interface ParamTableRow {
 export interface SectionHeaderOptions {
   /** Section lead paragraph. */
   description: string;
-  /** Heading level of the title (`1` for docs pages, `2` for homepage sections; defaults to `1`). */
+  /** Heading level of the title (`1` for docs pages, `2` for homepage sections; Defaults to `1`). */
   headingLevel?: 1 | 2;
   /** Route patterns rendered as `GET` pills below the description. */
   routes?: readonly string[];

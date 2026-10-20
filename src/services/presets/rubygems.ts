@@ -1,12 +1,15 @@
 /**
- * RubyGems service preset – Ruby gem version, total downloads, and license (`/badge/gem/:gem/:metric`).
+ * RubyGems service preset – Ruby gem version, total downloads, license, and last-updated age (`/badge/gem/:gem/:metric`).
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
+  UPDATED,
   createDownloadsMetric,
   createLicenseMetric,
+  createRelativeDateMetric,
   createVersionMetric,
+  readLicenseName,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -19,6 +22,8 @@ interface RubyGemPayload {
   licenses: string[] | null;
   /** Latest version. */
   version: string;
+  /** ISO 8601 publication timestamp of the latest version. */
+  version_created_at: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -27,7 +32,7 @@ interface RubyGemPayload {
 const RUBYGEMS_ENDPOINT = createEndpoint({
   api: 'https://rubygems.org/api/v1/gems/{target}.json',
   page: 'https://rubygems.org/gems/{target}',
-  project: pickFields<RubyGemPayload>(['downloads', 'licenses', 'version']),
+  project: pickFields<RubyGemPayload>(['downloads', 'licenses', 'version', 'version_created_at']),
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -35,15 +40,15 @@ const RUBYGEMS_ENDPOINT = createEndpoint({
 /** RubyGems service preset (`gem`). */
 export const RUBYGEMS_SERVICE = defineService({
   docs: {
-    description: 'Latest version, all-time downloads, and license of any Ruby gem.',
+    description:
+      'Latest version, all-time downloads, license, and last-updated age of any Ruby gem.',
     title: 'RubyGems',
   },
   metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(RUBYGEMS_ENDPOINT, 'dt', (gem) => gem.downloads),
-    license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) =>
-      Array.isArray(gem.licenses) ? gem.licenses[0] : undefined
-    ),
+    license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) => readLicenseName(gem.licenses)),
+    updated: createRelativeDateMetric(RUBYGEMS_ENDPOINT, UPDATED, (gem) => gem.version_created_at),
     v: createVersionMetric(
       RUBYGEMS_ENDPOINT,
       { defaultColor: 'red', defaultIcon: 'rubygems', defaultLabel: 'gem' },

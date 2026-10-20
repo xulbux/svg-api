@@ -18,7 +18,13 @@ import {
 } from '@/svg/renderer';
 import { escapeXml, prepareDisplayText, sliceAtCodePoint } from '@/svg/shared';
 import { STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
-import type { BadgeSpecialElement, BadgeVariant, SizePreset, StripTickState } from '@/types';
+import type {
+  AnimationMode,
+  BadgeSpecialElement,
+  BadgeVariant,
+  SizePreset,
+  StripTickState,
+} from '@/types';
 import { extractAriaLabel } from './helpers';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -956,21 +962,25 @@ describe('rendering regressions', () => {
     expect(svgs[2]).toContain('width="32" height="6"');
   });
 
-  it('treats ?anim=none,none like none (regression: dots, strips, and bars kept animating)', () => {
+  it('treats ?anim=none,none and ?anim=sheen,none,none as disabled for dots, strips, and bars (regression: dots, strips, and bars kept animating)', () => {
     const specials: BadgeSpecialElement[] = [
       { states: ['9', '8'], type: 'strip' },
       { type: 'bar', value: 50 },
     ];
-    for (const special of specials) {
-      const staticSvg = renderBadge({
-        anim: 'none,none',
-        color: 'emerald',
-        dot: 'green',
-        label: 'status',
-        special,
-        variant: '2',
-      });
-      expect(staticSvg, special.type).not.toContain('<animate');
+    for (const anim of ['none,none', 'sheen,none,none'] satisfies readonly AnimationMode[]) {
+      for (const special of specials) {
+        const staticSvg = renderBadge({
+          anim,
+          color: 'emerald',
+          dot: 'green',
+          label: 'status',
+          special,
+          variant: '2',
+        });
+        expect(staticSvg, `${anim} ${special.type}`).not.toContain('attributeName="r"');
+        expect(staticSvg, `${anim} ${special.type}`).not.toContain('attributeName="opacity"');
+        expect(staticSvg, `${anim} ${special.type}`).not.toContain('bar-shimmer');
+      }
     }
   });
 
@@ -1032,8 +1042,69 @@ describe('rendering regressions', () => {
     expect(readMetricBadgeLabel({ type: 'sparkline', values: [1, 3, 2] }, '44/8w')).toBe(
       'metric: trend 44/8w'
     );
-    // Sparklines with fewer than 2 points render nothing, so they are not announced either.
+    expect(readMetricBadgeLabel({ type: 'bars', values: [2, 5, 8, 6] }, '44/8w')).toBe(
+      'metric: histogram 44/8w'
+    );
+    expect(readMetricBadgeLabel({ done: 4, total: 5, type: 'steps' }, '4/5')).toBe('metric: 4/5');
+    expect(readMetricBadgeLabel({ done: 4, total: 5, type: 'steps' }, 'v2 rollout')).toBe(
+      'metric: 4/5 v2 rollout'
+    );
+    // Sparklines and histograms with fewer than 2 points render nothing, so they are not announced either.
     expect(readMetricBadgeLabel({ type: 'sparkline', values: [1] })).toBe('metric');
+    expect(readMetricBadgeLabel({ type: 'bars', values: [1] })).toBe('metric');
+    expect(readMetricBadgeLabel({ done: 1, total: 0, type: 'steps' })).toBe('metric');
+  });
+
+  it('renders bars and steps inline widgets and clamps invalid or out-of-range inputs', () => {
+    const barsSvg = renderBadge({
+      color: 'cyan',
+      label: 'commits',
+      special: { type: 'bars', values: [2, 5, 8, 6, 9, 12] },
+      value: '42/wk',
+      variant: '2',
+    });
+    expect(barsSvg).toContain('aria-label="commits: histogram 42/wk"');
+    expect(barsSvg).not.toContain('NaN');
+
+    const flatBarsSvg = renderBadge({
+      color: 'cyan',
+      label: 'commits',
+      special: { type: 'bars', values: [5, 5, 5] },
+      variant: '1',
+    });
+    expect(flatBarsSvg).toContain('height="11"');
+
+    const stepsSvg = renderBadge({
+      color: 'emerald',
+      label: 'phase',
+      special: { done: 3, total: 5, type: 'steps' },
+      value: '3/5',
+      variant: '2',
+    });
+    expect(stepsSvg).toContain('aria-label="phase: 3/5"');
+    expect(stepsSvg).toContain(`fill="${THEMES.emerald.accentText}"`);
+    expect(stepsSvg).toContain('fill-opacity="0.22"');
+
+    const clampedStepsSvg = renderBadge({
+      color: 'emerald',
+      label: 'phase',
+      special: { done: 99, total: 5, type: 'steps' },
+      variant: '1',
+    });
+    expect(clampedStepsSvg).toContain('aria-label="phase: 5/5"');
+  });
+
+  it('wraps default quote text on narrow cards and avoids double ellipses when truncating (regressions)', () => {
+    const narrowDefaultQuote = renderQuote({ color: 'indigo', text: '', width: 220 });
+    expect(measureMaxTextInkX(narrowDefaultQuote)).toBeLessThanOrEqual(220);
+
+    const trailingEllipsisQuote = renderQuote({
+      color: 'indigo',
+      size: 'xl',
+      text: `${'Long philosophical reflection on simplicity '.repeat(8)}and clarity…`,
+      width: 240,
+    });
+    expect(extractAriaLabel(trailingEllipsisQuote)).not.toContain('……');
   });
 
   it('omits gauge percentages when the value already states one (regression: "coverage: 69% 69.4%")', () => {

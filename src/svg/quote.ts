@@ -19,6 +19,8 @@ import {
   renderSvgDocument,
   resolveForegroundColor,
   resolveSurfaceTextColor,
+  roundCoord,
+  roundTenths,
   sliceAtCodePoint,
 } from '@/svg/shared';
 import type {
@@ -213,9 +215,6 @@ const OPENING_QUOTE_MARK = '“';
 /** Closing quote mark appended to the last line of horizontal quote cards. */
 const CLOSING_QUOTE_MARK = '”';
 
-/** Theme color list for cards without a vivid theme gradient. */
-const NO_THEME_COLORS: readonly ThemeColorName[] = [];
-
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches one or more whitespace characters for word splitting. */
@@ -238,14 +237,14 @@ function resolveQuoteMetrics(
 
   const scale = fontSize / 15;
   return {
-    authorFontSize: Number((fontSize * 0.84).toFixed(1)),
+    authorFontSize: roundTenths(fontSize * 0.84),
     authorSpace: Math.round(28 * scale),
-    barWidth: Number(Math.max(3, 3.5 * scale).toFixed(1)),
+    barWidth: roundTenths(Math.max(3, 3.5 * scale)),
     fontSize,
     lineHeight: Math.round(fontSize * 1.56),
     padX: Math.round(36 * scale),
     padY: Math.round((layout === 'vertical' ? 30 : 21) * scale),
-    quoteIconScale: Number((1.05 * scale).toFixed(2)),
+    quoteIconScale: roundCoord(1.05 * scale),
     radius: Math.max(10, Math.round(11 * scale)),
   };
 }
@@ -321,12 +320,12 @@ function measureQuoteLine(
  * moving its last word onto a new line when possible and truncating it otherwise.
  */
 function finalizeLastLine(lines: string[], isTruncated: boolean, context: QuoteWrapContext): void {
-  const ellipsis = isTruncated ? ELLIPSIS : '';
   let lastIndex = lines.length - 1;
   let lastLine = lines[lastIndex];
   if (lastLine === undefined) {
     return;
   }
+  const ellipsis = isTruncated && !lastLine.endsWith(ELLIPSIS) ? ELLIPSIS : '';
   while (
     measureQuoteLine(`${lastLine}${ellipsis}`, lastIndex === 0, true, context) > context.maxWidth
   ) {
@@ -367,12 +366,13 @@ function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
   const spaceAdvance = measureTextAdvance(' ', fontSize, isBold);
   const prefixAdvance = measureTextAdvance(context.prefix, fontSize, isBold);
   const tolerance = fontSize * WRAP_TOLERANCE_RATIO;
+  const sourceText = rawText.trim() || DEFAULT_QUOTE_TEXT;
   const lines: string[] = [];
   let currentLine = '';
   let currentAdvance = 0;
   let isTruncated = false;
 
-  for (const rawWord of rawText.trim().split(WORD_SPLIT_RX)) {
+  for (const rawWord of sourceText.split(WORD_SPLIT_RX)) {
     if (rawWord.length > 0) {
       if (lines.length === MAX_QUOTE_LINES) {
         isTruncated = true;
@@ -412,9 +412,6 @@ function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
   if (currentLine.length > 0) {
     lines.push(currentLine);
   }
-  if (lines.length === 0) {
-    lines.push(DEFAULT_QUOTE_TEXT);
-  }
   finalizeLastLine(lines, isTruncated, context);
   return lines;
 }
@@ -431,7 +428,7 @@ function resolveQuoteStyleTokens(
   const hasThemeGradient = isOnPrimary || (!isVertical && variant === '2');
   return {
     authorColor: resolveForegroundColor(isOnPrimary, palette.accentText),
-    gradDefs: renderSurfaceGradientDefs(!isOnPrimary, hasThemeGradient ? [color] : NO_THEME_COLORS),
+    gradDefs: renderSurfaceGradientDefs(!isOnPrimary, hasThemeGradient ? [color] : undefined),
     isBoldText: isVertical || isOnPrimary,
     textColor: resolveSurfaceTextColor(variant),
   };
@@ -451,7 +448,7 @@ function renderQuoteSurface(context: QuoteCardContext): string {
   }
 
   const barY = Math.max(14, metrics.padY - 2);
-  const barGeometry = `x="${QUOTE_EDGE_INSET}" y="${barY}" width="${metrics.barWidth}" height="${Math.max(16, height - barY * 2)}" rx="${Number((metrics.barWidth / 2).toFixed(2))}"`;
+  const barGeometry = `x="${QUOTE_EDGE_INSET}" y="${barY}" width="${metrics.barWidth}" height="${Math.max(16, height - barY * 2)}" rx="${roundCoord(metrics.barWidth / 2)}"`;
   let barPaint = `fill="${palette.iconColor}" fill-opacity="0.55"`;
   if (variant === '1') {
     barPaint = `fill="${WHITE}" fill-opacity="${PRIMARY_FOREGROUND_OPACITY}"`;
@@ -465,8 +462,8 @@ function renderQuoteSurface(context: QuoteCardContext): string {
 function renderVerticalQuoteContent(context: QuoteCardContext): string {
   const { authorLine, iconBoxSize, lines, metrics, variant, width } = context;
   const { authorFontSize, fontSize, lineHeight, padY, quoteIconScale } = metrics;
-  const centerX = Number((width / 2).toFixed(1));
-  const quoteIconX = Number((centerX - iconBoxSize / 2).toFixed(1));
+  const centerX = roundTenths(width / 2);
+  const quoteIconX = roundTenths(centerX - iconBoxSize / 2);
   const quoteFillColor = variant === '1' ? WHITE : context.palette.iconColor;
   const quotePaint = `fill="${quoteFillColor}" fill-opacity="${VERTICAL_QUOTE_OPACITY_BY_VARIANT[variant]}"`;
 

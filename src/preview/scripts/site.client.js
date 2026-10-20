@@ -309,8 +309,8 @@
   /**
    * Announce copy success or failure in a button's `[data-copy-label]` element (a polite live region),
    * resetting after `COPY_FEEDBACK_MS`; `data-copied-label` / `data-failed-label` override the texts.
-   * @param {Element} button      Copy button.
-   * @param {boolean} isCopied    Whether the copy succeeded.
+   * @param {Element} button     Copy button.
+   * @param {boolean} isCopied   Whether the copy succeeded.
    */
   function showCopyFeedback(button, isCopied) {
     const labelElement = button.querySelector('[data-copy-label]');
@@ -335,8 +335,8 @@
 
   /**
    * Copy text with the async Clipboard API (falling back to a selection copy) and show feedback on a button.
-   * @param {string} text         Text to copy.
-   * @param {Element} button      Button receiving the feedback.
+   * @param {string} text      Text to copy.
+   * @param {Element} button   Button receiving the feedback.
    */
   function copyText(text, button) {
     if (navigator.clipboard && globalThis.isSecureContext) {

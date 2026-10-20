@@ -2,6 +2,8 @@
  * OpenType module declarations – Ambient TypeScript declarations for `opentype.js` (`v2.0.0`) and bundled `.ttf` binary modules.
  */
 
+// ---------------------------------------- TYPES ----------------------------------------
+
 declare module '*.ttf' {
   /** Raw font binary (Wrangler `Data` module rule; Mirrored by the `ttf-arraybuffer` plugin in `vitest.config.mts`). */
   const fontBuffer: ArrayBuffer;
@@ -13,10 +15,10 @@ declare module 'opentype.js' {
   export interface BoundingBox {
     /** Leftmost visible X coordinate. */
     x1: number;
-    /** Topmost visible Y coordinate. */
-    y1: number;
     /** Rightmost visible X coordinate. */
     x2: number;
+    /** Topmost visible Y coordinate. */
+    y1: number;
     /** Bottommost visible Y coordinate. */
     y2: number;
   }
@@ -66,10 +68,6 @@ declare module 'opentype.js' {
     ascender: number;
     /** Typographic descender in font design units. */
     descender: number;
-    /** Font design units per `em` (typically `1000` or `2048`). */
-    unitsPerEm: number;
-    /** Parsed OpenType tables (`os2`, `head`, etc.). */
-    tables: FontTables;
     /** Compute total horizontal advance width of `text` at `fontSize`. */
     getAdvanceWidth: (text: string, fontSize?: number, options?: RenderOptions) => number;
     /** Build a vector `Path` for `text` positioned at `(originX, baselineY)` at `fontSize`. */
@@ -80,6 +78,10 @@ declare module 'opentype.js' {
       fontSize?: number,
       options?: RenderOptions
     ) => Path;
+    /** Parsed OpenType tables (`os2`, `head`, etc.). */
+    tables: FontTables;
+    /** Font design units per `em` (typically `1000` or `2048`). */
+    unitsPerEm: number;
   }
 
   /** Parse an `ArrayBuffer` containing a `.ttf`/`.otf`/`.woff` binary into a `Font`. */

@@ -24,7 +24,7 @@ export type BuilderControl =
   | 'text'
   | 'textarea';
 
-/** Motion controls offered by an `anim` field (`pair`: sheen + left/right motions; `single`: sheen + one motion; `sheen`: sheen only). */
+/** Motion controls offered by an `anim` field (`pair`: Sheen + left/right motions; `single`: Sheen + one motion; `sheen`: Sheen only). */
 export type BuilderAnimScope = 'pair' | 'sheen' | 'single';
 
 /** Selectable option of a builder field (an empty `value` means "omit the parameter"). */

@@ -654,7 +654,7 @@
   inline-size: min(384px, calc(100vw - 16px));
   block-size: min(452px, 72vh);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 40px rgba(0 0 0 / 0.22);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 0.22);
 }
 
 @supports (position-area: block-end) {

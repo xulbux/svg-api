@@ -3,6 +3,7 @@
  */
 
 import {
+  NPM_PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -13,10 +14,10 @@ import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
-  encodeNpmPackageName,
   readLicenseName,
+  readText,
 } from '@/services/metrics';
-import type { MetricEndpoint, ServiceDefinition } from '@/types';
+import type { MetricEndpoint } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -100,71 +101,64 @@ function projectNpmLatest(data: unknown): NpmLatestProjection | undefined {
     hasTypes:
       hasTopLevelTypes || hasTypesCondition(data.exports, 0, { remainingKeys: MAX_EXPORTS_KEYS }),
     license: readLicenseName(data.license),
-    version: typeof data.version === 'string' ? data.version : undefined,
+    version: readText(data.version),
   };
 }
 
 /** Create an npm Downloads API endpoint for a period (`last-week`, `last-month`, `last-year`). */
 function createNpmDownloadsEndpoint(period: string): MetricEndpoint<Partial<NpmDownloadsPayload>> {
   return createEndpoint({
-    api: ({ owner, target }) =>
-      `https://api.npmjs.org/downloads/point/${period}/${encodeNpmPackageName(owner, target)}`,
-    page: ({ owner, target }) =>
-      `https://www.npmjs.com/package/${encodeNpmPackageName(owner, target)}`,
+    api: `https://api.npmjs.org/downloads/point/${period}/{npm}`,
+    page: 'https://www.npmjs.com/package/{npm}',
     project: DOWNLOADS_PROJECTION,
   });
 }
 
-/** Create the npm service preset. */
-function createNpmService(): ServiceDefinition {
-  const latestEndpoint = createEndpoint({
-    api: ({ owner, target }) =>
-      `https://registry.npmjs.org/${encodeNpmPackageName(owner, target)}/latest`,
-    page: ({ owner, target }) =>
-      `https://www.npmjs.com/package/${encodeNpmPackageName(owner, target)}`,
-    project: projectNpmLatest,
-  });
-  return defineService({
-    docs: {
-      description:
-        'Version, weekly/monthly/yearly downloads (dw/dl/dy), license, and bundled TS types.',
-      title: 'npm',
-    },
-    // `dt` reported the last-year downloads before the download keys were normalized.
-    metricAliases: { dt: 'dy' },
-    metrics: {
-      dl: createDownloadsMetric(
-        createNpmDownloadsEndpoint('last-month'),
-        'dl',
-        (stats) => stats.downloads
-      ),
-      dw: createDownloadsMetric(
-        createNpmDownloadsEndpoint('last-week'),
-        'dw',
-        (stats) => stats.downloads
-      ),
-      dy: createDownloadsMetric(
-        createNpmDownloadsEndpoint('last-year'),
-        'dy',
-        (stats) => stats.downloads
-      ),
-      license: createLicenseMetric(latestEndpoint, (latest) => latest.license),
-      types: createMetric(
-        latestEndpoint,
-        { defaultColor: 'blue', defaultIcon: 'ts', defaultLabel: 'types' },
-        (latest) => ({ value: latest.hasTypes ? 'included' : 'none' })
-      ),
-      v: createVersionMetric(
-        latestEndpoint,
-        { defaultColor: 'rose', defaultIcon: 'npm', defaultLabel: 'npm' },
-        (latest) => latest.version
-      ),
-    },
-    route: { owner: { isRequired: false, placeholder: ':scope' }, target: { placeholder: ':pkg' } },
-  });
-}
+/** npm Registry latest version metadata endpoint. */
+const NPM_LATEST_ENDPOINT = createEndpoint({
+  api: 'https://registry.npmjs.org/{npm}/latest',
+  page: 'https://www.npmjs.com/package/{npm}',
+  project: projectNpmLatest,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** npm Registry service preset (`npm`). */
-export const NPM_SERVICE: ServiceDefinition = createNpmService();
+export const NPM_SERVICE = defineService({
+  docs: {
+    description:
+      'Version, weekly/monthly/yearly downloads (dw/dl/dy), license, and bundled TS types.',
+    title: 'npm',
+  },
+  // `dt` reported the last-year downloads before the download keys were normalized.
+  metricAliases: { dt: 'dy' },
+  metrics: {
+    dl: createDownloadsMetric(
+      createNpmDownloadsEndpoint('last-month'),
+      'dl',
+      (stats) => stats.downloads
+    ),
+    dw: createDownloadsMetric(
+      createNpmDownloadsEndpoint('last-week'),
+      'dw',
+      (stats) => stats.downloads
+    ),
+    dy: createDownloadsMetric(
+      createNpmDownloadsEndpoint('last-year'),
+      'dy',
+      (stats) => stats.downloads
+    ),
+    license: createLicenseMetric(NPM_LATEST_ENDPOINT, (latest) => latest.license),
+    types: createMetric(
+      NPM_LATEST_ENDPOINT,
+      { defaultColor: 'blue', defaultIcon: 'ts', defaultLabel: 'types' },
+      (latest) => ({ value: latest.hasTypes ? 'included' : 'none' })
+    ),
+    v: createVersionMetric(
+      NPM_LATEST_ENDPOINT,
+      { defaultColor: 'rose', defaultIcon: 'npm', defaultLabel: 'npm' },
+      (latest) => latest.version
+    ),
+  },
+  route: NPM_PACKAGE_ROUTE,
+});

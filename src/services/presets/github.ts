@@ -14,15 +14,16 @@ import {
   withPageSuffix,
 } from '@/services/endpoint';
 import {
-  createCountMetric,
-  createRelativeDateMetric,
-  createReleaseMetric,
-  formatCompactNumber,
   FORKS,
   ISSUES,
   LAST_COMMIT,
   LICENSE,
   STARS,
+  createCountMetric,
+  createRelativeDateMetric,
+  createReleaseMetric,
+  formatCompactNumber,
+  formatLicense,
 } from '@/services/metrics';
 import type { Env, MetricResult } from '@/types';
 
@@ -112,7 +113,7 @@ function transformGitHubLicense(payload: Partial<GitHubRepoPayload>): Partial<Me
     return { value: 'none' };
   }
   const spdxId = license.spdx_id;
-  return { value: spdxId && spdxId !== 'NOASSERTION' ? spdxId : 'custom' };
+  return { value: spdxId && spdxId !== 'NOASSERTION' ? formatLicense(spdxId) : 'custom' };
 }
 
 /** Transform GitHub commit participation into an 8-week total and sparkline (non-numeric weeks count as `0`). */

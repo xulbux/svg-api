@@ -19,9 +19,11 @@ export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
   bar: { example: '92', label: 'Progress bar', modifiers: ['static'] },
+  bars: { example: '3,6,4,8,5,9,7', label: 'Mini bars', modifiers: [] },
   delta: { example: '+24%', label: 'Delta pill', modifiers: [] },
   ring: { example: '84', label: 'Donut ring', modifiers: ['pulse'] },
   sparkline: { example: '22,19,21,17,15,16,14', label: 'Sparkline', modifiers: [] },
+  steps: { example: '4/5', label: 'Step pills', modifiers: [] },
   strip: { example: '9987998999', label: 'Uptime strip', modifiers: [] },
 };
 

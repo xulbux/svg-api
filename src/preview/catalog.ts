@@ -47,7 +47,9 @@ import {
   BUTTON_SIZE_PRESETS,
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
+  MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
 } from '@/svg/renderer';
 import { escapeXml, getOwnValue } from '@/svg/shared';
@@ -301,8 +303,9 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Open VSX Version', path: '/badge/ovsx/xulbux/color-tracr/v', sample: 'v1.2.3' },
       { alt: 'Open VSX Downloads', path: '/badge/ovsx/xulbux/color-tracr/dt', sample: '2.5k' },
       { alt: 'Open VSX Rating', path: '/badge/ovsx/xulbux/color-tracr/rating', sample: '5.0/5' },
+      { alt: 'Open VSX License', path: '/badge/ovsx/xulbux/color-tracr/license', sample: 'MIT' },
     ],
-    subtitle: 'Version, total downloads, and average star rating for any Open VSX extension.',
+    subtitle: 'Version, total downloads, star rating, and license for any Open VSX extension.',
     title: 'Open VSX Registry (/badge/ovsx/:namespace/:ext/:metric)',
   },
   {
@@ -310,16 +313,21 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Crates.io Version', path: '/badge/crates/serde/v', sample: 'v1.0.219' },
       { alt: 'Crates.io Total Downloads', path: '/badge/crates/serde/dt', sample: '490M' },
       { alt: 'Crates.io 90-Day Downloads', path: '/badge/crates/serde/dq', sample: '68.4M/90d' },
+      { alt: 'Crates.io MSRV', path: '/badge/crates/serde/msrv', sample: 'v1.56' },
+      { alt: 'Crates.io Size', path: '/badge/crates/serde/size', sample: '78.9 kB' },
       { alt: 'Docker Pulls', path: '/badge/docker/alpine/pulls', sample: '1B' },
       { alt: 'Docker Stars', path: '/badge/docker/postgres/stars', sample: '14.2k' },
+      { alt: 'Docker Last Updated', path: '/badge/docker/alpine/updated', sample: '2d ago' },
     ],
-    subtitle: 'Rust crates.io package metrics and Docker Hub container pull/star counters.',
+    subtitle:
+      'Rust crates.io package metrics (incl. MSRV and crate size) and Docker Hub container pull, star, and update counters.',
     title: 'Crates.io & Docker Hub (/badge/crates/*, /badge/docker/*)',
   },
   {
     items: [
       { alt: 'RubyGems Version', path: '/badge/gem/rails/v', sample: 'v8.1.4' },
       { alt: 'RubyGems Downloads', path: '/badge/gem/rails/dt', sample: '802.6M' },
+      { alt: 'RubyGems Updated', path: '/badge/gem/rails/updated', sample: '4d ago' },
       {
         alt: 'Packagist Version',
         path: '/badge/packagist/laravel/framework/v',
@@ -335,6 +343,21 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle: 'Ruby gems, PHP Composer packages, and .NET NuGet packages.',
     title: 'RubyGems, Packagist & NuGet (/badge/gem/*, /badge/packagist/*, /badge/nuget/*)',
+  },
+  {
+    items: [
+      {
+        alt: 'Maven Central Version',
+        path: '/badge/maven/com.google.guava/guava/v',
+        sample: 'v33.5.0-jre',
+      },
+      { alt: 'JetBrains Plugin Version', path: '/badge/jetbrains/8182/v', sample: 'v243.26053.17' },
+      { alt: 'JetBrains Plugin Downloads', path: '/badge/jetbrains/8182/dl', sample: '5.8M' },
+      { alt: 'JetBrains Plugin Rating', path: '/badge/jetbrains/8182/rating', sample: '4.6/5' },
+    ],
+    subtitle:
+      'Maven Central artifact versions by group and artifact ID, plus JetBrains Marketplace plugin versions, downloads, and star ratings.',
+    title: 'Maven Central & JetBrains Marketplace (/badge/maven/*, /badge/jetbrains/*)',
   },
   {
     items: [
@@ -560,9 +583,10 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/badge/bundlephobia/@hono/node-server/gzip',
         sample: '8 kB',
       },
+      { alt: 'Bundle Dependencies', path: '/badge/bundlephobia/react/deps', sample: '2' },
     ],
     subtitle:
-      'Discord server presence via a permanent invite code, and Bundlephobia sizes for unscoped or scoped npm packages.',
+      'Discord server presence via a permanent invite code, and Bundlephobia sizes and dependency counts for unscoped or scoped npm packages.',
     title: 'Discord & Bundlephobia (/badge/discord/:invite/*, /badge/bundlephobia/*)',
   },
   {
@@ -571,10 +595,14 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'WordPress Plugin Version', path: '/badge/wp/akismet/v', sample: 'v5.7.2' },
       { alt: 'WordPress Active Installs', path: '/badge/wp/akismet/installs', sample: '5M+' },
       { alt: 'WordPress Plugin Rating', path: '/badge/wp/akismet/rating', sample: '4.7/5' },
+      { alt: 'WordPress Required PHP', path: '/badge/wp/akismet/php', sample: '>=7.2' },
+      { alt: 'WordPress Required WP', path: '/badge/wp/akismet/wp', sample: '>=5.8' },
       { alt: 'WordPress Theme Version', path: '/badge/wp-theme/astra/v', sample: 'v4.14.1' },
+      { alt: 'WordPress Theme Required PHP', path: '/badge/wp-theme/astra/php', sample: '>=5.3' },
+      { alt: 'WordPress Theme Required WP', path: '/badge/wp-theme/astra/wp', sample: '>=5.3' },
     ],
     subtitle:
-      'Go module versions (the full module path spans several segments) and WordPress plugin/theme metrics.',
+      'Go module versions (the full module path spans several segments) and WordPress plugin/theme metrics (incl. required PHP and WordPress versions).',
     title: 'Go Modules & WordPress (/badge/go/:module/v, /badge/wp/*, /badge/wp-theme/*)',
   },
   {
@@ -713,12 +741,14 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'MetaCPAN Version', path: '/badge/cpan/Moose/v', sample: 'v2.4001' },
       { alt: 'MetaCPAN License', path: '/badge/cpan/Moose/license', sample: 'Perl 5' },
       { alt: 'MetaCPAN Last Release', path: '/badge/cpan/libwww-perl/updated', sample: '5mo ago' },
+      { alt: 'Zenodo Version', path: '/badge/zenodo/3835582/v', sample: 'v1.0.0' },
       { alt: 'Zenodo Downloads', path: '/badge/zenodo/3835582/dt', sample: '76k' },
       { alt: 'Zenodo Views', path: '/badge/zenodo/3835582/views', sample: '1.4k' },
+      { alt: 'Zenodo License', path: '/badge/zenodo/3835582/license', sample: 'cc-by-4.0' },
       { alt: 'Zenodo DOI', path: '/badge/zenodo/3835582/doi', sample: '10.5281/zenodo.3835582' },
     ],
     subtitle:
-      'Perl distribution versions, licenses, and release age from MetaCPAN, plus Zenodo record statistics (all versions) and DOIs.',
+      'Perl distribution versions, licenses, and release age from MetaCPAN, plus Zenodo record versions, statistics, licenses, and DOIs.',
     title: 'MetaCPAN & Zenodo (/badge/cpan/:dist/*, /badge/zenodo/:record/*)',
   },
   {
@@ -1014,8 +1044,16 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
           path: '/badge/latency/14ms?icon=activity&special=sparkline:22,19,21,17,15,16,14',
         },
         {
+          alt: 'Bars Widget',
+          path: '/badge/requests/1.8k%2Fs?icon=layers&color=indigo&special=bars:3,6,5,8,7,9,6',
+        },
+        {
           alt: 'Progress Bar Widget',
           path: '/badge/coverage/92%25?icon=shield-check&color=emerald&special=bar:92',
+        },
+        {
+          alt: 'Steps Widget',
+          path: '/badge/onboarding/4%2F5?icon=circle-check&color=teal&special=steps:4/5',
         },
         {
           alt: 'Donut Ring Widget',
@@ -1031,7 +1069,7 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
       ],
       subtitle:
-        'Embed sparklines, progress bars, donut rings, 10-stage strips, and delta pills via ?special=.',
+        'Embed sparklines, bar histograms, progress bars, step pills, donut rings, 10-stage strips, and delta pills via ?special=.',
       title: 'Inline Data Visualizations (?special=)',
     },
     {
@@ -1099,7 +1137,7 @@ function buildBadgeParamRows(): ParamTableRow[] {
     buildDotParamRow('Pulsing radar status dot.'),
     {
       defaultVal: 'none',
-      description: `Inline data widget on the right side: sparkline (2 to ${MAX_SPARKLINE_POINTS} comma- or space-separated numbers), bar or ring percentage (bars shimmer unless :static; rings pulse only with :pulse), strip (up to ${MAX_STRIP_TICKS} ticks from 0 to 9, as digits or comma/space-separated), or a delta pill.`,
+      description: `Inline data widget on the right side: sparkline (2 to ${MAX_SPARKLINE_POINTS} comma- or space-separated numbers), bars (2 to ${MAX_BARS_POINTS} numbers as vertical histogram bars), bar or ring percentage (bars shimmer unless :static; rings pulse only with :pulse), steps (done/total up to ${MAX_STEPS_COUNT} discrete pills), strip (up to ${MAX_STRIP_TICKS} ticks from 0 to 9, as digits or comma/space-separated), or a delta pill.`,
       name: '?special=',
       values: formatSpecialExamples(),
     },

@@ -14,20 +14,16 @@ import {
 import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from '@/svg/measure';
 import {
   BADGE_FONT_SIZE,
-  BG_DARK_ID,
   PRIMARY_FOREGROUND_OPACITY,
   SHEEN_SWEEP_TIMING,
   buildIconBodyId,
-  buildLeftCapsulePath,
-  buildRightCapsulePath,
-  buildThemeGradientId,
-  buildTopCrescentPath,
   clampInt,
   clampNumber,
   getOwnValue,
   hasOwnKey,
   isAnimationDisabled,
   isSheenMode,
+  isStripTickState,
   prepareDisplayText,
   renderIconGroup,
   renderIconPaintAttrs,
@@ -42,6 +38,9 @@ import {
   resolveForegroundPaint,
   resolveIconMotionTokens,
   resolveSurfaceTextColor,
+  roundCoord,
+  roundScale,
+  roundTenths,
   truncateText,
 } from '@/svg/shared';
 import type {
@@ -214,6 +213,18 @@ interface BarWidgetGeometry {
   width: number;
 }
 
+/** Geometry of the `bars:` vertical bar histogram widget. */
+interface BarsWidgetGeometry {
+  /** Horizontal gap between adjacent bars in pixels. */
+  barGap: number;
+  /** Bar width in pixels (the corner radius is half of it). */
+  barWidth: number;
+  /** Maximum bar height in pixels. */
+  maxHeight: number;
+  /** Minimum bar height in pixels. */
+  minHeight: number;
+}
+
 /** Geometry of the `ring:` gauge widget. */
 interface RingWidgetGeometry {
   /** Ring radius in pixels. */
@@ -222,6 +233,16 @@ interface RingWidgetGeometry {
   size: number;
   /** Track and arc stroke width in pixels. */
   strokeWidth: number;
+}
+
+/** Geometry of the `steps:` discrete step progress pills widget. */
+interface StepsWidgetGeometry {
+  /** Horizontal gap between adjacent step pills in pixels. */
+  pillGap: number;
+  /** Pill height in pixels (the corner radius is half of it). */
+  pillHeight: number;
+  /** Pill width in pixels. */
+  pillWidth: number;
 }
 
 /** Geometry of the `strip:` history widget. */
@@ -260,12 +281,16 @@ interface SparklineWidgetGeometry {
 interface SpecialWidgetGeometry {
   /** `bar:` progress widget. */
   bar: BarWidgetGeometry;
+  /** `bars:` vertical bar histogram widget. */
+  bars: BarsWidgetGeometry;
   /** `delta:` trend widget. */
   delta: DeltaWidgetGeometry;
   /** `ring:` gauge widget. */
   ring: RingWidgetGeometry;
   /** `sparkline:` trend widget. */
   sparkline: SparklineWidgetGeometry;
+  /** `steps:` discrete step progress pills widget. */
+  steps: StepsWidgetGeometry;
   /** `strip:` history widget. */
   strip: StripWidgetGeometry;
 }
@@ -361,6 +386,12 @@ export const BUTTON_HEIGHT_RANGE: NumericRange = { default: 30, max: 48, min: 22
 /** Maximum badge/button label, value, and delta length in UTF-16 code units before ellipsis truncation. */
 export const MAX_LABEL_LENGTH = 128;
 
+/** Maximum number of bars in a `bars:` special element. */
+export const MAX_BARS_POINTS = 10;
+
+/** Maximum number of discrete step pills in a `steps:` special element. */
+export const MAX_STEPS_COUNT = 10;
+
 /** Maximum number of ticks in a `strip:` special element. */
 export const MAX_STRIP_TICKS = 10;
 
@@ -369,6 +400,9 @@ export const MAX_SPARKLINE_POINTS = 64;
 
 /** Bounds of `bar:` and `ring:` gauge percentages. */
 const PERCENT_RANGE: NumericRange = { default: 0, max: 100, min: 0 };
+
+/** Bounds of `steps:` total step count. */
+const STEPS_TOTAL_RANGE: NumericRange = { default: 1, max: MAX_STEPS_COUNT, min: 1 };
 
 /**
  * Largest absolute sparkline value; Keeps `max - min` finite (`1e308 - -1e308` overflows to `Infinity`
@@ -396,9 +430,11 @@ const BADGE_METRICS: VariantMetrics = {
 /** Geometry of every right-compartment special widget (single source for measurement and rendering). */
 const SPECIAL_WIDGET_GEOMETRY: Readonly<SpecialWidgetGeometry> = {
   bar: { height: 6, minFillWidth: 4, width: 32 },
+  bars: { barGap: 1.5, barWidth: 2.5, maxHeight: 11, minHeight: 2 },
   delta: { arrowSize: 10, arrowStrokeWidth: 1.6, fontSizeReduction: 0.5, textOffset: 13 },
   ring: { radius: 4.5, size: 12, strokeWidth: 2 },
   sparkline: { height: 11, strokeWidth: 1.5, width: 36 },
+  steps: { pillGap: 2, pillHeight: 6, pillWidth: 5 },
   strip: { tickGap: 2, tickHeight: 10, tickWidth: 2.5 },
 };
 
@@ -428,9 +464,6 @@ const EMPTY_ICON_SLOT: Readonly<IconSlot> = { data: undefined, key: '', slug: ''
 
 /** Rendered special element without definitions or markup. */
 const EMPTY_SPECIAL_ELEMENT: Readonly<SpecialElementMarkup> = { defs: '', markup: '' };
-
-/** Theme color list for surfaces without a vivid theme gradient. */
-const NO_THEME_COLORS: readonly ThemeColorName[] = [];
 
 /** Static (non-animated) icon motion pair. */
 const STATIC_ICON_MOTIONS: Readonly<IconAnimationPair> = {
@@ -585,8 +618,18 @@ function measureSpecialElementWidth(
     case 'sparkline': {
       return special.values.length >= 2 ? SPECIAL_WIDGET_GEOMETRY.sparkline.width : 0;
     }
+    case 'bars': {
+      const { barGap, barWidth } = SPECIAL_WIDGET_GEOMETRY.bars;
+      const barCount = special.values.length;
+      return barCount < 2 ? 0 : Math.ceil(barCount * barWidth + (barCount - 1) * barGap);
+    }
     case 'bar': {
       return SPECIAL_WIDGET_GEOMETRY.bar.width;
+    }
+    case 'steps': {
+      const { pillGap, pillWidth } = SPECIAL_WIDGET_GEOMETRY.steps;
+      const totalCount = special.total;
+      return totalCount === 0 ? 0 : Math.ceil(totalCount * pillWidth + (totalCount - 1) * pillGap);
     }
     case 'ring': {
       return SPECIAL_WIDGET_GEOMETRY.ring.size;
@@ -606,20 +649,15 @@ function measureSpecialElementWidth(
   }
 }
 
-/** Keep the finite sparkline values (at most `MAX_SPARKLINE_POINTS`), clamped to `±MAX_SPARKLINE_MAGNITUDE`. */
-function sanitizeSparklineValues(values: readonly number[]): number[] {
+/** Keep the finite series values (at most `maxPoints`), clamped to `±MAX_SPARKLINE_MAGNITUDE`. */
+function sanitizeSeriesValues(values: readonly number[], maxPoints: number): number[] {
   const sanitized: number[] = [];
   for (const value of values) {
-    if (Number.isFinite(value) && sanitized.length < MAX_SPARKLINE_POINTS) {
+    if (Number.isFinite(value) && sanitized.length < maxPoints) {
       sanitized.push(Math.min(MAX_SPARKLINE_MAGNITUDE, Math.max(-MAX_SPARKLINE_MAGNITUDE, value)));
     }
   }
   return sanitized;
-}
-
-/** Check whether an untrusted strip state is a valid 10-stage tick (`'0'`–`'9'`, an own key of the strip palette). */
-function isStripTickState(state: string): state is StripTickState {
-  return hasOwnKey(STRIP_DARK_COLORS, state);
 }
 
 /** Keep the valid strip tick states (`'0'`–`'9'`), at most `MAX_STRIP_TICKS`. */
@@ -638,20 +676,35 @@ function sanitizeStripStates(states: readonly string[]): StripTickState[] {
 
 /**
  * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON): Sparkline
- * values become finite and bounded, gauge percentages are clamped to `0`–`100` (`NaN` becomes `0`),
- * strips keep at most `MAX_STRIP_TICKS` valid ticks, and delta text is normalized, trimmed, and capped
- * (an empty delta renders no special element).
+ * and mini-bar values become finite and bounded, gauge percentages are clamped to `0`–`100` (`NaN`
+ * becomes `0`), step pills clamp `total` to `1`–`MAX_STEPS_COUNT` and `done` to `0`–`total`, strips
+ * keep at most `MAX_STRIP_TICKS` valid ticks, and delta text is normalized, trimmed, and capped (an
+ * empty delta renders no special element).
  */
 function sanitizeSpecialElement(
   special: BadgeSpecialElement | undefined
 ): BadgeSpecialElement | undefined {
   switch (special?.type) {
     case 'sparkline': {
-      return { type: 'sparkline', values: sanitizeSparklineValues(special.values) };
+      return {
+        type: 'sparkline',
+        values: sanitizeSeriesValues(special.values, MAX_SPARKLINE_POINTS),
+      };
+    }
+    case 'bars': {
+      return { type: 'bars', values: sanitizeSeriesValues(special.values, MAX_BARS_POINTS) };
     }
     case 'bar':
     case 'ring': {
       return { ...special, value: clampNumber(special.value, PERCENT_RANGE) };
+    }
+    case 'steps': {
+      if (!Number.isFinite(special.total) || Math.round(special.total) < 1) {
+        return undefined;
+      }
+      const total = clampInt(special.total, STEPS_TOTAL_RANGE);
+      const done = clampInt(special.done, { default: 0, max: total, min: 0 }, 0);
+      return { done, total, type: 'steps' };
     }
     case 'strip': {
       return { states: sanitizeStripStates(special.states), type: 'strip' };
@@ -668,17 +721,23 @@ function sanitizeSpecialElement(
 
 /**
  * Describe a rendered (sanitized, non-empty) special element in a few words for the `aria-label`
- * (e.g., `'85%'`, `'+14%'`, `'5 checks'`, `'trend'`); Bar and ring gauges are omitted (`''`) when
- * the value already states a percentage (e.g., a rounded `69%` ring next to `69.4%`).
+ * (e.g., `'85%'`, `'+14%'`, `'4/5'`, `'5 checks'`, `'histogram'`, `'trend'`); Bar/ring gauges and
+ * step pills are omitted (`''`) when the value already states the percentage or fraction.
  */
 function describeSpecialElement(special: BadgeSpecialElement, valueText: string): string {
   switch (special.type) {
     case 'sparkline': {
       return 'trend';
     }
+    case 'bars': {
+      return 'histogram';
+    }
     case 'bar':
     case 'ring': {
       return valueText.includes('%') ? '' : `${Math.round(special.value)}%`;
+    }
+    case 'steps': {
+      return valueText.includes('/') ? '' : `${special.done}/${special.total}`;
     }
     case 'strip': {
       return `${special.states.length} ${special.states.length === 1 ? 'check' : 'checks'}`;
@@ -868,7 +927,7 @@ function measureIconVisualWidth(iconData: ResolvedIcon | undefined, iconSize: nu
   if (!iconData) {
     return 0;
   }
-  return Number(((iconData.maxX - iconData.minX) * (iconSize / 24)).toFixed(2));
+  return roundCoord((iconData.maxX - iconData.minX) * (iconSize / 24));
 }
 
 /** Render the SVG `<g>` markup for a resolved icon slot, aligned so its leftmost visible pixel starts at `visualStartX`. */
@@ -878,8 +937,8 @@ function renderIconMarkup(options: IconMarkupOptions): string {
     return '';
   }
   const scaleNum = options.iconSize / 24;
-  const scale = Number(scaleNum.toFixed(4));
-  const translateX = Number((options.visualStartX - iconData.minX * scaleNum).toFixed(2));
+  const scale = roundScale(scaleNum);
+  const translateX = roundCoord(options.visualStartX - iconData.minX * scaleNum);
   return renderIconGroup({
     color: options.paint.color,
     innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),
@@ -1044,7 +1103,7 @@ function renderBarWidget(
   const fillWidth =
     percentValue <= 0
       ? 0
-      : Math.max(minFillWidth, Number(((percentValue / 100) * specialWidth).toFixed(1)));
+      : Math.max(minFillWidth, roundTenths((percentValue / 100) * specialWidth));
   if (fillWidth <= 0) {
     return { defs: '', markup: trackRect };
   }
@@ -1061,6 +1120,74 @@ function renderBarWidget(
   };
 }
 
+/** Render a mini vertical bar histogram (sanitized to at most `MAX_BARS_POINTS` finite values), bottom-aligned in the `11px` box. */
+function renderBarsWidgetMarkup(values: number[], context: SpecialElementContext): string {
+  const { barGap, barWidth, maxHeight, minHeight } = SPECIAL_WIDGET_GEOMETRY.bars;
+  let minValue = Number.POSITIVE_INFINITY;
+  let maxValue = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    minValue = Math.min(minValue, value);
+    maxValue = Math.max(maxValue, value);
+  }
+  const range = maxValue - minValue;
+  const bottomY = (context.height + maxHeight) / 2;
+  const barRadius = barWidth / 2;
+  const activeColor = resolveForegroundColor(context.isOnPrimary, context.palette.accentText);
+  const isAnimated = !isAnimationDisabled(context.animMode);
+  let barsMarkup = '';
+
+  for (const [i, value] of values.entries()) {
+    let normalized = 0.5;
+    if (minValue >= 0) {
+      normalized = maxValue > 0 ? value / maxValue : 0;
+    } else if (range > 0) {
+      normalized = (value - minValue) / range;
+    }
+    const barHeight = roundTenths(minHeight + normalized * (maxHeight - minHeight));
+    const barX = (context.specialX + i * (barWidth + barGap)).toFixed(1);
+    const barY = roundTenths(bottomY - barHeight);
+    const isLastBar = i === values.length - 1;
+    const opacityAttr = isLastBar ? '' : ' fill-opacity="0.72"';
+    const barGeometry = `x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barRadius}" fill="${activeColor}"${opacityAttr}`;
+    barsMarkup +=
+      isAnimated && isLastBar
+        ? `<rect ${barGeometry}><animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" /></rect>`
+        : `<rect ${barGeometry} />`;
+  }
+
+  return barsMarkup;
+}
+
+/** Render discrete step progress pills (`done` filled pills out of `total`). */
+function renderStepsWidgetMarkup(
+  done: number,
+  total: number,
+  context: SpecialElementContext
+): string {
+  const { pillGap, pillHeight, pillWidth } = SPECIAL_WIDGET_GEOMETRY.steps;
+  const pillY = (context.height - pillHeight) / 2;
+  const pillRadius = pillHeight / 2;
+  const paint = resolveGaugePaint('fill', '0.22', context);
+  const isAnimated = !isAnimationDisabled(context.animMode) && done > 0 && done < total;
+  let pillsMarkup = '';
+
+  for (let i = 0; i < total; i += 1) {
+    const pillX = (context.specialX + i * (pillWidth + pillGap)).toFixed(1);
+    const isFilled = i < done;
+    const pillGeometry = `x="${pillX}" y="${pillY}" width="${pillWidth}" height="${pillHeight}" rx="${pillRadius}"`;
+    if (isFilled) {
+      pillsMarkup +=
+        isAnimated && i === done - 1
+          ? `<rect ${pillGeometry} fill="${paint.activeColor}"><animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" /></rect>`
+          : `<rect ${pillGeometry} fill="${paint.activeColor}" />`;
+    } else {
+      pillsMarkup += `<rect ${pillGeometry} ${paint.trackAttrs} />`;
+    }
+  }
+
+  return pillsMarkup;
+}
+
 /** Render an inline `12x12px` circular ring/donut gauge (sanitized `0`–`100` percentage) with a dark translucent accent track and optional pulse. */
 function renderRingWidgetMarkup(
   percentValue: number,
@@ -1070,8 +1197,8 @@ function renderRingWidgetMarkup(
   const { radius, size, strokeWidth } = SPECIAL_WIDGET_GEOMETRY.ring;
   const ringCx = context.specialX + size / 2;
   const ringCy = context.height / 2;
-  const circumference = Number((2 * Math.PI * radius).toFixed(2));
-  const arcLength = Number(((percentValue / 100) * circumference).toFixed(2));
+  const circumference = roundCoord(2 * Math.PI * radius);
+  const arcLength = roundCoord((percentValue / 100) * circumference);
   const paint = resolveGaugePaint('stroke', '0.24', context);
   const circleGeometry = `cx="${ringCx}" cy="${ringCy}" r="${radius}"`;
   const trackCircle = `<circle ${circleGeometry} ${paint.trackAttrs} stroke-width="${strokeWidth}" />`;
@@ -1140,7 +1267,7 @@ function renderDeltaWidgetMarkup(deltaText: string, context: SpecialElementConte
   const textWidth = context.specialWidth - textOffset;
   const deltaFontSize = context.fontSize - fontSizeReduction;
   const deltaTextMarkup = renderTextPathMarkup(deltaText, {
-    anchorX: Number((specialX + textOffset + textWidth / 2).toFixed(2)),
+    anchorX: roundCoord(specialX + textOffset + textWidth / 2),
     baselineY: computeCenteredBaselineY(height, deltaFontSize),
     fill: isFlat ? resolveForegroundColor(isOnPrimary, trendColor) : trendColor,
     fontSize: deltaFontSize,
@@ -1196,7 +1323,7 @@ function renderSparklineWidget(
   };
 }
 
-/** Render the active right-compartment special element (`sparkline`, `bar`, `ring`, `strip`, or `delta`) and its `<defs>`. */
+/** Render the active right-compartment special element (`sparkline`, `bars`, `bar`, `steps`, `ring`, `strip`, or `delta`) and its `<defs>`. */
 function renderSpecialElement(
   special: BadgeSpecialElement | undefined,
   context: SpecialElementContext
@@ -1208,9 +1335,15 @@ function renderSpecialElement(
     case 'sparkline': {
       return renderSparklineWidget(special.values, context);
     }
+    case 'bars': {
+      return { defs: '', markup: renderBarsWidgetMarkup(special.values, context) };
+    }
     case 'bar': {
       const hasBarShimmer = !isAnimationDisabled(context.animMode) && special.hasPulse !== false;
       return renderBarWidget(special.value, hasBarShimmer, context);
+    }
+    case 'steps': {
+      return { defs: '', markup: renderStepsWidgetMarkup(special.done, special.total, context) };
     }
     case 'ring': {
       const hasRingPulse = !isAnimationDisabled(context.animMode) && Boolean(special.hasPulse);
@@ -1232,41 +1365,6 @@ function renderSpecialElement(
 function renderBadgeSurface(options: BadgeSurfaceOptions): string {
   const { color, height, layout, radius, variant } = options;
   const { isSplit, leftWidth, totalWidth } = layout;
-
-  // Split Primary badge (v=1): neutral dark left compartment + 3D Kumo colored right capsule.
-  if (variant === '1' && isSplit) {
-    const palette = THEMES[color];
-    const innerRadius = radius - 0.5;
-    const leftFillPath = buildLeftCapsulePath(0, leftWidth, height, radius);
-    const leftBorderPath = buildLeftCapsulePath(
-      0.5,
-      leftWidth,
-      height - 1,
-      innerRadius,
-      0.5,
-      false
-    );
-    const rightFillPath = buildRightCapsulePath(leftWidth, totalWidth, height, radius);
-    const rightCrescentPath = buildTopCrescentPath(leftWidth, totalWidth, radius, false);
-    const rightRingPath = buildRightCapsulePath(
-      leftWidth + 0.5,
-      totalWidth - 0.5,
-      height - 1,
-      innerRadius,
-      0.5
-    );
-
-    return (
-      `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
-      `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
-      `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(color)})" />` +
-      `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
-      `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
-    );
-  }
-
-  // Single-part Primary and all Secondary/Tertiary badges share the Kumo surface; Split v2 badges tint
-  // and 3D-highlight only the right capsule (split v3 dividers stop short of the edges, so v3 keeps its full crescent).
   const splitX = isSplit ? leftWidth : undefined;
   return renderKumoBoxSurface({
     color,
@@ -1287,7 +1385,7 @@ function resolveButtonMetrics(sizeOption: SizePreset | number | undefined): Vari
   if (typeof sizeOption === 'number' && Number.isFinite(sizeOption)) {
     const height = clampInt(sizeOption, BUTTON_HEIGHT_RANGE);
     return {
-      fontSize: Number((height * 0.415).toFixed(1)),
+      fontSize: roundTenths(height * 0.415),
       height,
       iconSize: Math.round(height * 0.5),
       padX: Math.round(height * 0.47),
@@ -1326,7 +1424,7 @@ function packCompartment(
   let cursor = activeCount === 0 ? leftPad : leftPad + (width - paddedWidth) / 2;
   const offsets: number[] = [];
   for (const [i, itemWidth] of itemWidths.entries()) {
-    offsets.push(Number(cursor.toFixed(2)));
+    offsets.push(roundCoord(cursor));
     if (itemWidth > 0) {
       cursor += itemWidth + gap + (i === 0 ? extraFirstGap : 0);
     }
@@ -1367,18 +1465,16 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
   const leftWidth = leftPack.width > 0 ? leftPack.width : input.minLeftWidth;
   const rightWidth = rightPack.width;
   return {
-    dotCx: Number((dotX + DOT_SLOT_WIDTH / 2).toFixed(2)),
+    dotCx: roundCoord(dotX + DOT_SLOT_WIDTH / 2),
     isSplit: leftWidth > 0 && rightWidth > 0,
-    labelCenterX: Number((labelX + labelWidth / 2).toFixed(2)),
+    labelCenterX: roundCoord(labelX + labelWidth / 2),
     leftIconX,
     leftWidth,
-    rightIconX: hasRightCompartment
-      ? Number((leftWidth + rightIconOffsetX).toFixed(2))
-      : trailingIconX,
+    rightIconX: hasRightCompartment ? roundCoord(leftWidth + rightIconOffsetX) : trailingIconX,
     rightWidth,
-    specialX: Number((leftWidth + specialOffsetX).toFixed(2)),
+    specialX: roundCoord(leftWidth + specialOffsetX),
     totalWidth: leftWidth + rightWidth || padX * 2,
-    valueCenterX: Number((leftWidth + valueOffsetX + valueWidth / 2).toFixed(2)),
+    valueCenterX: roundCoord(leftWidth + valueOffsetX + valueWidth / 2),
   };
 }
 
@@ -1387,7 +1483,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
   const { animMode, icons, layout, metrics, palette } = options;
   const { fontSize, height, iconSize } = metrics;
   const textY = computeCenteredBaselineY(height, fontSize);
-  const iconY = Number(((height - iconSize) / 2).toFixed(2));
+  const iconY = roundCoord((height - iconSize) / 2);
   const { leftMotion, rightMotion } = resolveIconAnimationPair(animMode, icons);
 
   const dotMarkup = renderDotMarkup(options.dot, layout.dotCx, height / 2, animMode);
@@ -1548,7 +1644,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const sheen = renderSheenOverlay({ animMode, height, radius, width: layout.totalWidth });
   const surfaceDefs = renderSurfaceGradientDefs(
     !isOnPrimary || layout.isSplit,
-    isOnPrimary ? [color] : NO_THEME_COLORS
+    isOnPrimary ? [color] : undefined
   );
 
   return renderSvgDocument({
@@ -1626,7 +1722,7 @@ export function renderButton(options: ButtonRenderOptions): string {
     width: layout.totalWidth,
   });
   const sheen = renderSheenOverlay({ animMode, height, radius, width: layout.totalWidth });
-  const surfaceDefs = renderSurfaceGradientDefs(!isPrimary, isPrimary ? [color] : NO_THEME_COLORS);
+  const surfaceDefs = renderSurfaceGradientDefs(!isPrimary, isPrimary ? [color] : undefined);
 
   return renderSvgDocument({
     ariaLabel: buildAriaLabel({

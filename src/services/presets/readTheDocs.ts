@@ -67,9 +67,14 @@ const IN_PROGRESS_STATES: ReadonlySet<string> = new Set([
 /** Read the Docs latest-version build endpoint (newest build only) with hosted documentation redirect. */
 const READ_THE_DOCS_ENDPOINT = createEndpoint({
   api: 'https://readthedocs.org/api/v3/projects/{target}/versions/latest/builds/?limit=1',
-  page: ({ target }) => `https://${encodeURIComponent(target)}.readthedocs.io/`,
+  page: 'https://{target}.readthedocs.io/',
   project: projectFirstEntry<ReadTheDocsBuild>('results', ['state', 'success']),
 });
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches a valid Read the Docs project slug (DNS subdomain label: Alphanumeric, hyphens allowed after the first character). */
+const READ_THE_DOCS_PROJECT_RX = /^[a-z\d][a-z\d-]*$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -104,5 +109,5 @@ export const READ_THE_DOCS_SERVICE = defineService({
       transformReadTheDocsBuild
     ),
   },
-  route: { target: { placeholder: ':project' } },
+  route: { target: { pattern: READ_THE_DOCS_PROJECT_RX, placeholder: ':project' } },
 });

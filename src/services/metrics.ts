@@ -63,6 +63,7 @@ const COMPACT_UNITS: readonly (readonly [threshold: number, suffix: string])[] =
 
 /** Binary byte size units in descending order (`[threshold, suffix]`), matching Bundlephobia. */
 const BYTE_UNITS: readonly (readonly [threshold: number, suffix: string])[] = [
+  [1_073_741_824, 'GB'],
   [1_048_576, 'MB'],
   [1024, 'kB'],
 ];
@@ -228,14 +229,27 @@ function resolveThresholdColor(
   return undefined;
 }
 
-/** Read a finite number from an unknown JSON value. */
+/** Format an out-of-N score with at most 1 decimal (`'8.3/10'`). */
+function formatScoreOutOf(achieved: number, maximum: number): string {
+  return `${Number(achieved.toFixed(1))}/${maximum}`;
+}
+
+/**
+ * Read a finite number from an unknown JSON value.
+ * @param raw   Raw JSON value.
+ * @returns Finite number, or `undefined` for non-numeric or non-finite values.
+ */
 function readFiniteNumber(raw: unknown): number | undefined {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined;
 }
 
-/** Format an out-of-N score with at most 1 decimal (`'8.3/10'`). */
-function formatScoreOutOf(achieved: number, maximum: number): string {
-  return `${Number(achieved.toFixed(1))}/${maximum}`;
+/**
+ * Read a string from an unknown JSON value.
+ * @param raw   Raw JSON value.
+ * @returns String value, or `undefined` for non-string values.
+ */
+function readText(raw: unknown): string | undefined {
+  return typeof raw === 'string' ? raw : undefined;
 }
 
 /** Build score badge properties (value plus ring gauge, optionally threshold-colored). */
@@ -247,10 +261,10 @@ function buildScoreResult(
 ): Partial<MetricResult> {
   const achieved = readFiniteNumber(rawAchieved);
   const maximum = readFiniteNumber(rawMaximum);
-  if (achieved === undefined || maximum === undefined || maximum <= 0) {
+  if (achieved === undefined || achieved < 0 || maximum === undefined || maximum <= 0) {
     return { value: MISSING_VALUE };
   }
-  const percent = Math.round((achieved / maximum) * 100);
+  const percent = Math.min(MAX_PERCENT, Math.round((achieved / maximum) * 100));
   return {
     color: thresholds ? resolveThresholdColor(percent, thresholds) : undefined,
     special: { type: 'ring', value: percent },
@@ -260,18 +274,11 @@ function buildScoreResult(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Default presentation for license metrics (`license`). */
-export const LICENSE: MetricPresentation = {
-  defaultColor: 'slate',
-  defaultIcon: 'scale',
-  defaultLabel: 'license',
-};
-
-/** Default presentation for repository star metrics (`stars`). */
-export const STARS: MetricPresentation = {
-  defaultColor: 'amber',
-  defaultIcon: 'star',
-  defaultLabel: 'stars',
+/** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
+export const COVERAGE: MetricPresentation = {
+  defaultColor: 'emerald',
+  defaultIcon: 'shield-check',
+  defaultLabel: 'coverage',
 };
 
 /** Default presentation for repository fork metrics (`forks`). */
@@ -281,18 +288,14 @@ export const FORKS: MetricPresentation = {
   defaultLabel: 'forks',
 };
 
+/** Presentation override for download metrics labeled `installs` (`createDownloadsMetric(..., INSTALLS_LABEL)`). */
+export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'installs' };
+
 /** Default presentation for open issue metrics (`issues`). */
 export const ISSUES: MetricPresentation = {
   defaultColor: 'rose',
   defaultIcon: 'circle-dot',
   defaultLabel: 'issues',
-};
-
-/** Default presentation for open pull request metrics (`prs`). */
-export const PULL_REQUESTS: MetricPresentation = {
-  defaultColor: 'violet',
-  defaultIcon: 'git-pull-request',
-  defaultLabel: 'pull requests',
 };
 
 /** Default presentation for last commit / activity metrics (`commit`). */
@@ -302,11 +305,18 @@ export const LAST_COMMIT: MetricPresentation = {
   defaultLabel: 'last commit',
 };
 
-/** Default presentation for latest release tag metrics (`release`). */
-export const RELEASE: MetricPresentation = {
-  defaultColor: 'indigo',
-  defaultIcon: 'tag',
-  defaultLabel: 'release',
+/** Default presentation for license metrics (`license`). */
+export const LICENSE: MetricPresentation = {
+  defaultColor: 'slate',
+  defaultIcon: 'scale',
+  defaultLabel: 'license',
+};
+
+/** Default presentation for open pull request metrics (`prs`). */
+export const PULL_REQUESTS: MetricPresentation = {
+  defaultColor: 'violet',
+  defaultIcon: 'git-pull-request',
+  defaultLabel: 'pull requests',
 };
 
 /** Default presentation for average star rating metrics (`rating`). */
@@ -316,6 +326,13 @@ export const RATING: MetricPresentation = {
   defaultLabel: 'rating',
 };
 
+/** Default presentation for latest release tag metrics (`release`). */
+export const RELEASE: MetricPresentation = {
+  defaultColor: 'indigo',
+  defaultIcon: 'tag',
+  defaultLabel: 'release',
+};
+
 /** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
 export const SCORE: MetricPresentation = {
   defaultColor: 'emerald',
@@ -323,12 +340,21 @@ export const SCORE: MetricPresentation = {
   defaultLabel: 'score',
 };
 
-/** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
-export const COVERAGE: MetricPresentation = {
-  defaultColor: 'emerald',
-  defaultIcon: 'shield-check',
-  defaultLabel: 'coverage',
+/** Default presentation for repository star metrics (`stars`). */
+export const STARS: MetricPresentation = {
+  defaultColor: 'amber',
+  defaultIcon: 'star',
+  defaultLabel: 'stars',
 };
+
+/** Default presentation for package / image last-updated timestamp metrics (`updated`). */
+export const UPDATED: MetricPresentation = {
+  defaultColor: 'indigo',
+  defaultIcon: 'clock',
+  defaultLabel: 'updated',
+};
+
+export { readFiniteNumber, readText };
 
 /**
  * Convert a numeric or numeric-string upstream value into a finite number.
@@ -376,7 +402,7 @@ export function formatCount(raw: RawCount, suffix = ''): string {
  */
 export function formatBytes(raw: RawCount): string {
   const bytes = toFiniteNumber(raw);
-  if (bytes === undefined) {
+  if (bytes === undefined || bytes < 0) {
     return MISSING_VALUE;
   }
   return formatWithUnits(bytes, BYTE_UNITS, ' ') ?? `${Math.round(bytes)} B`;
@@ -517,17 +543,29 @@ export function formatLicense(rawLicense: string | null | undefined): string {
 }
 
 /**
- * Read a license name from an SPDX string or a legacy `{ type }` license object (npm, CocoaPods).
- * @param rawLicense   Upstream `license` field.
+ * Read a license name from an SPDX string, a string array, or a `{ type }` / `{ id }` license object (npm, CocoaPods, Zenodo).
+ * @param rawLicense   Upstream `license` or `licenses` field.
  * @returns License name, or `undefined` when missing.
  */
 export function readLicenseName(rawLicense: unknown): string | undefined {
   if (typeof rawLicense === 'string') {
     return rawLicense;
   }
-  return isJsonObject(rawLicense) && typeof rawLicense.type === 'string'
-    ? rawLicense.type
-    : undefined;
+  if (Array.isArray(rawLicense)) {
+    for (const item of rawLicense) {
+      if (typeof item === 'string' && item.trim() !== '') {
+        return item;
+      }
+    }
+    return undefined;
+  }
+  if (!isJsonObject(rawLicense)) {
+    return undefined;
+  }
+  if (typeof rawLicense.type === 'string') {
+    return rawLicense.type;
+  }
+  return typeof rawLicense.id === 'string' ? rawLicense.id : undefined;
 }
 
 /**
@@ -708,6 +746,27 @@ export function createLicenseMetric<P>(
   return createMetric(endpoint, LICENSE, (payload) => ({
     value: formatLicense(readLicense(payload)),
   }));
+}
+
+/**
+ * Create a metric that renders a trimmed string value (or `fallback` when missing/blank).
+ * @param endpoint       Upstream endpoint.
+ * @param presentation   Default color, icon, and label.
+ * @param readValue      Reads the raw string from the projected payload.
+ * @param fallback       Fallback value when the string is missing or blank (defaults to `'n/a'`).
+ * @returns Metric rendering the trimmed text, or `fallback` when missing.
+ */
+export function createTextMetric<P>(
+  endpoint: MetricEndpoint<P>,
+  presentation: MetricPresentation,
+  readValue: (payload: P) => string | null | undefined,
+  fallback = MISSING_VALUE
+): ServiceMetricConfig {
+  return createMetric(endpoint, presentation, (payload) => {
+    const raw = readValue(payload);
+    const trimmed = typeof raw === 'string' ? raw.trim() : '';
+    return { value: trimmed || fallback };
+  });
 }
 
 /**

@@ -12,6 +12,7 @@ import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/preview/glossary';
 import { ICON_MOTION_TOKENS, SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
+import { resolveSvgRoute } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
@@ -26,8 +27,10 @@ import {
   BUTTON_SIZE_PRESETS,
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
+  MAX_BARS_POINTS,
   MAX_LABEL_LENGTH,
   MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
 } from '@/svg/renderer';
 import {
@@ -171,7 +174,7 @@ function buildSpecialField(): BuilderField {
   }
   return {
     control: 'special',
-    description: `Sparklines take 2 to ${MAX_SPARKLINE_POINTS} numbers, strips up to ${MAX_STRIP_TICKS} ticks from 0 to 9, bars and rings a percentage.`,
+    description: `Sparklines take 2 to ${MAX_SPARKLINE_POINTS} numbers, bars 2 to ${MAX_BARS_POINTS} numbers, steps done/total up to ${MAX_STEPS_COUNT}, strips up to ${MAX_STRIP_TICKS} ticks from 0 to 9, and bar/ring a percentage.`,
     id: 'special',
     label: 'Data widget',
     options,
@@ -278,7 +281,7 @@ function fillRedirectTemplate(template: string, probe: RedirectProbe): string {
     .replaceAll(REDIRECT_TARGET_PLACEHOLDER, probe.target);
 }
 
-/** Collect the probes a derived redirect template must reproduce (explicit, default, and missing owners; single- and multi-segment targets). */
+/** Collect the probes a derived redirect template must reproduce (explicit, default, and missing owners; Single- and multi-segment targets). */
 function collectRedirectProbes(
   service: ServiceDefinition,
   defaultOwner: string | undefined
@@ -680,33 +683,40 @@ export function getBuilderSchema(kind: BuilderKind): BuilderSchema {
  * @returns Builder kind and prefilled builder URL, or `undefined` for paths no builder can edit (e.g., owner-restricted services).
  */
 export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
-  const pathname = path.split('?', 1)[0] ?? '';
-  const [, prefix = '', first = '', ...rest] = pathname.split('/');
+  if (!URL.canParse(path, SITE_ORIGIN)) {
+    return undefined;
+  }
+  const url = new URL(path, SITE_ORIGIN);
+  const match = resolveSvgRoute(url);
+  if (!match) {
+    return undefined;
+  }
   let kind: BuilderKind | undefined = undefined;
-  switch (prefix) {
-    case 'badge': {
-      const firstLower = first.toLowerCase();
-      const isServicePath = rest.length >= 2 && firstLower !== 'status';
-      if (!isServicePath) {
+  if (match.kind === 'service') {
+    if (getPublicServiceKeys().has(match.request.service)) {
+      kind = 'service';
+    }
+  } else {
+    const prefix = url.pathname.split('/', 2)[1] ?? '';
+    switch (prefix) {
+      case 'badge': {
         kind = 'badge';
-      } else if (getPublicServiceKeys().has(firstLower)) {
-        kind = 'service';
+        break;
       }
-      break;
-    }
-    case 'btn':
-    case 'button': {
-      kind = 'button';
-      break;
-    }
-    case 'icon':
-    case 'quote':
-    case 'stack': {
-      kind = prefix;
-      break;
-    }
-    default: {
-      break;
+      case 'btn':
+      case 'button': {
+        kind = 'button';
+        break;
+      }
+      case 'icon':
+      case 'quote':
+      case 'stack': {
+        kind = prefix;
+        break;
+      }
+      default: {
+        break;
+      }
     }
   }
   return kind ? { href: `/builder/${kind}?path=${encodeURIComponent(path)}`, kind } : undefined;

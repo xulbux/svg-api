@@ -4,7 +4,7 @@
  * Every page is deterministic, so each one is rendered once per Worker isolate and then served from memory.
  */
 
-import { SERVICES_CONFIG } from '@/config/services';
+import { listPublicServices } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
@@ -173,10 +173,8 @@ function toPagerLink(page: DocsSectionMeta | undefined): PagerLink {
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
 function buildHomeFeatures(): FeatureCardItem[] {
   const publicServiceTitles: string[] = [];
-  for (const service of Object.values(SERVICES_CONFIG)) {
-    if (!service.allowedOwners) {
-      publicServiceTitles.push(service.docs.title);
-    }
+  for (const [, service] of listPublicServices()) {
+    publicServiceTitles.push(service.docs.title);
   }
   const iconCounts = getIconSetCounts();
   return [

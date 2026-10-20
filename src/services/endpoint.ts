@@ -6,6 +6,8 @@
  * - `{owner}` / `{target}`: Owner and target (multi-segment targets are encoded per segment and keep their `/` separators).
  * - `{path}`: `[owner/]target`, encoded per segment (e.g., Clojars `[:group/]:artifact`).
  * - `{id}`: `[owner/]target` encoded as one component (`/` -> `%2F`, e.g., GitLab project IDs).
+ * - `{npm}`: `[@scope/]target` with scope and package encoded individually (e.g., `@hono/node-server` or `hono`).
+ * - `{npm-id}`: `[@scope/]target` encoded as one component (`@hono/node-server` -> `%40hono%2Fnode-server`).
  */
 
 import type {
@@ -15,13 +17,14 @@ import type {
   PayloadProjection,
   ServiceDefinition,
   ServiceMetricConfig,
+  ServiceRoute,
   ServiceRouteParams,
   ServiceUrlBuilder,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** URL template with `{owner}` / `{target}` / `{path}` / `{id}` placeholders, or a custom URL builder. */
+/** URL template with `{owner}` / `{target}` / `{path}` / `{id}` / `{npm}` / `{npm-id}` placeholders, or a custom URL builder. */
 type UrlSource = string | ServiceUrlBuilder;
 
 /** Options of `createEndpoint`. */
@@ -43,7 +46,7 @@ interface EndpointOptions<P> {
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a URL template placeholder (captured, so `split` keeps the placeholder names). */
-const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|target|path|id)\}/;
+const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|target|path|id|npm-id|npm)\}/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -63,6 +66,22 @@ function joinRoutePath({ owner, target }: ServiceRouteParams): string {
   return owner ? `${owner}/${target}` : target;
 }
 
+/** Join an optional npm scope (`owner`) and package (`target`) into `[@scope/]pkg`. */
+function joinNpmPackage({ owner, target }: ServiceRouteParams): string {
+  if (!owner) {
+    return target;
+  }
+  return owner.startsWith('@') ? `${owner}/${target}` : `@${owner}/${target}`;
+}
+
+/** Encode an npm `[@scope/]pkg` path, keeping the leading `@` and `/` unencoded. */
+function encodeNpmPath({ owner, target }: ServiceRouteParams): string {
+  const scope = owner.startsWith('@') ? owner.slice(1) : owner;
+  return scope
+    ? `@${encodeURIComponent(scope)}/${encodeURIComponent(target)}`
+    : encodeURIComponent(target);
+}
+
 /** Resolve the encoded value of a URL template placeholder. */
 function resolvePlaceholder(name: string, params: ServiceRouteParams): string {
   switch (name) {
@@ -74,6 +93,12 @@ function resolvePlaceholder(name: string, params: ServiceRouteParams): string {
     }
     case 'id': {
       return encodeURIComponent(joinRoutePath(params));
+    }
+    case 'npm': {
+      return encodeNpmPath(params);
+    }
+    case 'npm-id': {
+      return encodeURIComponent(joinNpmPackage(params));
     }
     default: {
       return encodePathSegments(params.target);
@@ -88,7 +113,8 @@ function compileUrlTemplate(template: string): ServiceUrlBuilder {
     // Split once on first use; Odd indices hold placeholder names, even indices literal text.
     parts ??= template.split(URL_PLACEHOLDER_RX);
     let url = '';
-    for (const [i, part] of parts.entries()) {
+    for (let i = 0; i < parts.length; i += 1) {
+      const part = parts[i] ?? '';
       url += i % 2 === 0 ? part : resolvePlaceholder(part, params);
     }
     return url;
@@ -109,6 +135,12 @@ function toUrlBuilder(source: UrlSource): ServiceUrlBuilder {
 export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const satisfies Readonly<
   Record<string, number>
 >;
+
+/** Shared route schema for npm-style `[:scope/]:pkg` package services (`npm`, `jsdelivr`, `bundlephobia`). */
+export const NPM_PACKAGE_ROUTE: ServiceRoute = {
+  owner: { isRequired: false, placeholder: ':scope' },
+  target: { placeholder: ':pkg' },
+};
 
 /**
  * Check whether a JSON value is a plain (non-array) object.

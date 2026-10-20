@@ -9,7 +9,7 @@
 
 import { SERVICES_CONFIG, STATUS_PRESET_MAP, UNKNOWN_STATUS_PRESET } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
-import { isThemeColorName, resolveColor } from '@/config/theme';
+import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
   decodeSegment,
   parseOptionalNumber,
@@ -286,11 +286,10 @@ function resolveStackRoute(segments: readonly string[], query: URLSearchParams):
     const rawGroups =
       segments[0] || query.get('groups') || query.get('icons') || query.get('i') || '';
     const perLineList = parsePerLineList(query.get('perline'));
-    const colorKey = (query.get('color') ?? '').trim().toLowerCase();
     return renderStack({
       anim: resolveAnimationMode(query.get('anim')),
       // Invalid colors keep the per-icon brand palettes instead of forcing the indigo fallback.
-      color: isThemeColorName(colorKey) ? colorKey : undefined,
+      color: resolveOptionalColor(query.get('color')),
       gap: parseOptionalNumber(query.get('gap')),
       groupGap: parseOptionalNumber(query.get('groupgap') || query.get('ggap')),
       groups: parseStackGroups(rawGroups, perLineList),

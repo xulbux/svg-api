@@ -357,17 +357,22 @@ function readMemoryCache(apiUrl: string, now: number): UpstreamOutcome | undefin
   return outcome;
 }
 
-/** Check whether a response signals an exhausted rate limit (`429`, or GitHub's `403` with no remaining quota). */
+/** Check whether a response signals an exhausted rate limit (`429`, or `403` with `x-ratelimit-remaining: 0` / `ratelimit-remaining: 0`). */
 function isRateLimited(response: Response): boolean {
-  return (
-    response.status === RATE_LIMITED_STATUS ||
-    (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0')
-  );
+  if (response.status === RATE_LIMITED_STATUS) {
+    return true;
+  }
+  if (response.status !== 403) {
+    return false;
+  }
+  const remaining =
+    response.headers.get('x-ratelimit-remaining') ?? response.headers.get('ratelimit-remaining');
+  return remaining === '0';
 }
 
 /**
  * Read the seconds until a rate limit resets from `Retry-After` (seconds or HTTP date) or
- * `x-ratelimit-reset` (epoch seconds like GitHub, or delta seconds; Values below
+ * `x-ratelimit-reset` / `ratelimit-reset` (epoch seconds like GitHub, or delta seconds; Values below
  * `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas); `now` is a timestamp in milliseconds.
  */
 function readRetryAfter(response: Response, now: number): number | undefined {
@@ -379,7 +384,9 @@ function readRetryAfter(response: Response, now: number): number | undefined {
     const retryAt = Date.parse(retryAfter);
     return Number.isFinite(retryAt) ? (retryAt - now) / 1000 : undefined;
   }
-  const resetHeader = response.headers.get('x-ratelimit-reset')?.trim();
+  const resetHeader = (
+    response.headers.get('x-ratelimit-reset') ?? response.headers.get('ratelimit-reset')
+  )?.trim();
   if (!resetHeader || !DIGITS_RX.test(resetHeader)) {
     return undefined;
   }
@@ -445,6 +452,8 @@ function skipJsonWhitespace(text: string, index: number): number {
 /**
  * Locate the start of the value of `key` when it is the first key of the top-level JSON object
  * (`{"key": {…}` or `{"key": […]`); `key` must not contain quotes or backslashes.
+ * @param buffer   Decoded response prefix buffer.
+ * @param key      Expected leading JSON object key.
  * @returns Value start index, `LEADING_VALUE_PENDING`, or `LEADING_VALUE_MISMATCH`.
  */
 function locateLeadingValue(buffer: string, key: string): number {
@@ -481,6 +490,8 @@ function locateLeadingValue(buffer: string, key: string): number {
 /**
  * Continue scanning the leading object/array value (single pass, no backtracking): Tracks string,
  * escape, and nesting state across chunks.
+ * @param buffer   Decoded response prefix buffer.
+ * @param scan     Mutable scan state across stream chunks.
  * @returns Exclusive end index of the value, or `-1` when it is not complete yet.
  */
 function scanLeadingValueEnd(buffer: string, scan: LeadingValueScan): number {
@@ -704,9 +715,11 @@ async function loadThroughEdgeCache(
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
   const edgeCache = getEdgeCache();
-  const cacheKey = new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(apiUrl)}`);
+  const cacheKey = edgeCache
+    ? new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(apiUrl)}`)
+    : undefined;
 
-  if (edgeCache) {
+  if (edgeCache && cacheKey) {
     let cached: Response | undefined = undefined;
     try {
       cached = await edgeCache.match(cacheKey);
@@ -722,7 +735,7 @@ async function loadThroughEdgeCache(
 
   const fetched = await fetchUpstreamBody(apiUrl, headers, endpoint);
   const [outcome, edgeBody] = buildFetchedOutcome(fetched, endpoint);
-  if (edgeCache) {
+  if (edgeCache && cacheKey) {
     await writeEdgeCacheEntry(edgeCache, cacheKey, outcome, edgeBody, executionCtx);
   }
   return outcome;
@@ -882,12 +895,21 @@ export function resolveServicePreview(
   if (typeof sample === 'string') {
     return buildMetricResult(metric, { value: sample }, redirectUrl);
   }
-  const projected = metric.endpoint.project ? metric.endpoint.project(sample) : sample;
+  let projected: unknown = undefined;
+  try {
+    projected = metric.endpoint.project ? metric.endpoint.project(sample) : sample;
+  } catch {
+    return buildMetricResult(metric, { color: 'rose', value: 'invalid data' }, redirectUrl);
+  }
   const transformed = projected === undefined ? undefined : runTransform(metric, projected, params);
   if (transformed === 'invalid') {
-    return buildMetricResult(metric, { value: 'invalid data' }, redirectUrl);
+    return buildMetricResult(metric, { color: 'rose', value: 'invalid data' }, redirectUrl);
   }
-  return buildMetricResult(metric, transformed ?? { value: 'not found' }, redirectUrl);
+  return buildMetricResult(
+    metric,
+    transformed ?? { color: 'rose', value: 'not found' },
+    redirectUrl
+  );
 }
 
 /**

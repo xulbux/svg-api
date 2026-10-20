@@ -17,7 +17,7 @@
   --radius-pill: calc(infinity * 1px);
 
   /* Elevation */
-  --shadow-popover: 0 10px 30px rgba(0 0 0 / 0.18);
+  --shadow-popover: 0 10px 30px rgb(0 0 0 / 0.18);
 
   /* Motion */
   --duration-fast: 0.15s;

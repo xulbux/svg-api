@@ -2,27 +2,22 @@
  * pub.dev service preset – Dart/Flutter package version, likes, pub points, and 30-day downloads (`/badge/pub/:pkg/:metric`).
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
+  SCORE,
   createCommunityMetric,
   createDownloadsMetric,
   createScoreMetric,
   createVersionMetric,
-  SCORE,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Stable release of a pub.dev package. */
-interface PubRelease {
+/** Projected pub.dev package metadata (`pub.dev/api/packages/:pkg`). */
+interface PubPackageProjection {
   /** Latest stable version. */
   version?: string;
-}
-
-/** Partial pub.dev package API payload (`pub.dev/api/packages/:pkg`). */
-interface PubPackagePayload {
-  /** Latest stable release. */
-  latest: PubRelease | null;
 }
 
 /** Partial pub.dev package score API payload (`pub.dev/api/packages/:pkg/score`). */
@@ -37,13 +32,29 @@ interface PubScorePayload {
   maxPoints: number;
 }
 
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project a pub.dev package payload to its latest stable version string (dropping `pubspec`). */
+function projectPubPackage(data: unknown): PubPackageProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const latest = isJsonObject(data.latest) ? data.latest : undefined;
+  return { version: readText(latest?.version) };
+}
+
+/** Format granted and maximum pub points (`'150/160'`). */
+function formatPubPoints(achieved: number, maximum: number): string {
+  return `${achieved}/${maximum}`;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** pub.dev package endpoint with package page redirect (only the latest release is cached). */
+/** pub.dev package endpoint with package page redirect (only the latest version is cached). */
 const PUB_PACKAGE_ENDPOINT = createEndpoint({
   api: 'https://pub.dev/api/packages/{target}',
   page: 'https://pub.dev/packages/{target}',
-  project: pickFields<PubPackagePayload>(['latest']),
+  project: projectPubPackage,
 });
 
 /** pub.dev package score endpoint with score page redirect. */
@@ -57,13 +68,6 @@ const PUB_SCORE_ENDPOINT = createEndpoint({
     'maxPoints',
   ]),
 });
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Format granted and maximum pub points (`'150/160'`). */
-function formatPubPoints(achieved: number, maximum: number): string {
-  return `${achieved}/${maximum}`;
-}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -85,7 +89,7 @@ export const PUB_SERVICE = defineService({
     v: createVersionMetric(
       PUB_PACKAGE_ENDPOINT,
       { defaultColor: 'sky', defaultIcon: 'dart', defaultLabel: 'pub' },
-      (pkg) => pkg.latest?.version
+      (pkg) => pkg.version
     ),
   },
   route: { target: { placeholder: ':pkg' } },

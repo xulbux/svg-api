@@ -4,15 +4,16 @@
 
 import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
+  STARS,
   createCommunityMetric,
   createCountMetric,
   createDownloadsMetric,
   createLicenseMetric,
   createRatingMetric,
   createVersionMetric,
-  STARS,
+  readFiniteNumber,
+  readText,
 } from '@/services/metrics';
-import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -73,20 +74,13 @@ const RESOURCE_ID_RX = /^\d{1,10}$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Read a finite number from a JSON object field. */
-function readCount(source: Record<string, unknown> | undefined, key: string): number | undefined {
-  const value = source?.[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
 /** Read the Hangar license name, falling back to its type (`GPL`, `MIT`, …). */
 function readHangarLicense(settings: unknown): string | undefined {
   const license = isJsonObject(settings) ? settings.license : undefined;
   if (!isJsonObject(license)) {
     return undefined;
   }
-  const name = typeof license.name === 'string' && license.name ? license.name : undefined;
-  return name ?? (typeof license.type === 'string' && license.type ? license.type : undefined);
+  return (readText(license.name) || undefined) ?? (readText(license.type) || undefined);
 }
 
 /** Project a Hangar project into its counters and license (links and platform lists are dropped). */
@@ -96,36 +90,19 @@ function projectHangarProject(data: unknown): HangarProjectProjection | undefine
   }
   const stats = isJsonObject(data.stats) ? data.stats : undefined;
   return {
-    downloads: readCount(stats, 'downloads'),
+    downloads: readFiniteNumber(stats?.downloads),
     license: readHangarLicense(data.settings),
-    stars: readCount(stats, 'stars'),
-    watchers: readCount(stats, 'watchers'),
+    stars: readFiniteNumber(stats?.stars),
+    watchers: readFiniteNumber(stats?.watchers),
   };
 }
 
-/** Create the Hangar service preset. */
-function createHangarService(): ServiceDefinition {
-  const projectEndpoint = createEndpoint({
-    api: 'https://hangar.papermc.io/api/v1/projects/{owner}/{target}',
-    page: 'https://hangar.papermc.io/{owner}/{target}',
-    project: projectHangarProject,
-  });
-  return defineService({
-    docs: { description: 'Paper plugin downloads, stars, watchers, and license.', title: 'Hangar' },
-    metricAliases: { dl: 'dt' },
-    metrics: {
-      dt: createDownloadsMetric(projectEndpoint, 'dt', (project) => project.downloads),
-      license: createLicenseMetric(projectEndpoint, (project) => project.license),
-      stars: createCountMetric(projectEndpoint, STARS, (project) => project.stars),
-      watchers: createCountMetric(
-        projectEndpoint,
-        { defaultColor: 'sky', defaultIcon: 'eye', defaultLabel: 'watchers' },
-        (project) => project.watchers
-      ),
-    },
-    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':slug' } },
-  });
-}
+/** Hangar project endpoint with Hangar project page redirect. */
+const HANGAR_PROJECT_ENDPOINT = createEndpoint({
+  api: 'https://hangar.papermc.io/api/v1/projects/{owner}/{target}',
+  page: 'https://hangar.papermc.io/{owner}/{target}',
+  project: projectHangarProject,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -158,4 +135,18 @@ export const SPIGOT_SERVICE = defineService({
 });
 
 /** Hangar (PaperMC) service preset (`hangar`). */
-export const HANGAR_SERVICE: ServiceDefinition = createHangarService();
+export const HANGAR_SERVICE = defineService({
+  docs: { description: 'Paper plugin downloads, stars, watchers, and license.', title: 'Hangar' },
+  metricAliases: { dl: 'dt' },
+  metrics: {
+    dt: createDownloadsMetric(HANGAR_PROJECT_ENDPOINT, 'dt', (project) => project.downloads),
+    license: createLicenseMetric(HANGAR_PROJECT_ENDPOINT, (project) => project.license),
+    stars: createCountMetric(HANGAR_PROJECT_ENDPOINT, STARS, (project) => project.stars),
+    watchers: createCountMetric(
+      HANGAR_PROJECT_ENDPOINT,
+      { defaultColor: 'sky', defaultIcon: 'eye', defaultLabel: 'watchers' },
+      (project) => project.watchers
+    ),
+  },
+  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':slug' } },
+});

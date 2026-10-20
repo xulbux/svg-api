@@ -1,5 +1,5 @@
 /**
- * WordPress service presets – Plugin and theme version, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
+ * WordPress service presets – Plugin and theme version, PHP/WordPress requirements, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
@@ -8,6 +8,7 @@ import {
   createDownloadsMetric,
   createRatingMetric,
   createVersionMetric,
+  readText,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
 
@@ -19,8 +20,12 @@ interface WordPressInfoPayload {
   active_installs: number;
   /** All-time downloads. */
   downloaded: number;
-  /** Average rating in percent (`0`–`100`; stars = `rating / 20`). */
+  /** Average rating in percent (`0`–`100`; Stars = `rating / 20`). */
   rating: number;
+  /** Minimum required WordPress version (`false` when unspecified). */
+  requires: string | boolean;
+  /** Minimum required PHP version (`false` when unspecified). */
+  requires_php: string | boolean;
   /** Latest version. */
   version: string;
 }
@@ -70,6 +75,8 @@ const INFO_PROJECTION = pickFields<WordPressInfoPayload>([
   'active_installs',
   'downloaded',
   'rating',
+  'requires',
+  'requires_php',
   'version',
 ]);
 
@@ -102,11 +109,21 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
         (info) => info.active_installs,
         '+'
       ),
+      php: createVersionMetric(
+        endpoint,
+        { defaultColor: 'indigo', defaultIcon: 'php', defaultLabel: 'php' },
+        (info) => readText(info.requires_php)
+      ),
       rating: createRatingMetric(endpoint, (info) => [info.rating, MAX_WORDPRESS_RATING]),
       v: createVersionMetric(
         endpoint,
         { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: directory.label },
         (info) => info.version
+      ),
+      wp: createVersionMetric(
+        endpoint,
+        { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: 'wordpress' },
+        (info) => readText(info.requires)
       ),
     },
     route: { target: { placeholder: directory.targetPlaceholder } },
@@ -118,7 +135,8 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
 /** WordPress plugin service preset (`wp`). */
 export const WORDPRESS_PLUGIN_SERVICE: ServiceDefinition = createWordPressService({
   action: 'plugin_information',
-  description: 'Plugin version, active installs, all-time downloads, and rating.',
+  description:
+    'Plugin version, required PHP/WordPress versions, active installs, all-time downloads, and rating.',
   label: 'wordpress',
   path: 'plugins',
   targetPlaceholder: ':plugin',
@@ -129,7 +147,8 @@ export const WORDPRESS_PLUGIN_SERVICE: ServiceDefinition = createWordPressServic
 /** WordPress theme service preset (`wp-theme`). */
 export const WORDPRESS_THEME_SERVICE: ServiceDefinition = createWordPressService({
   action: 'theme_information',
-  description: 'Theme version, active installs, all-time downloads, and rating.',
+  description:
+    'Theme version, required PHP/WordPress versions, active installs, all-time downloads, and rating.',
   label: 'wordpress theme',
   path: 'themes',
   targetPlaceholder: ':theme',

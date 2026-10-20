@@ -1,14 +1,16 @@
 /**
- * Docker Hub service preset – Image pull and star counts for official and namespaced images (`/badge/docker/[:owner/]:repo/:metric`).
+ * Docker Hub service preset – Image pull, star, and last-updated badges for official and namespaced images (`/badge/docker/[:owner/]:repo/:metric`).
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createCountMetric, STARS } from '@/services/metrics';
+import { STARS, UPDATED, createCountMetric, createRelativeDateMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Partial Docker Hub repository API payload (`hub.docker.com/v2/repositories/:owner/:repo/`). */
 interface DockerHubRepoPayload {
+  /** ISO 8601 timestamp when the repository was last updated. */
+  last_updated: string | null;
   /** Total image pulls. */
   pull_count: number;
   /** Total repository stars. */
@@ -27,7 +29,7 @@ const DOCKER_HUB_ENDPOINT = createEndpoint({
     owner === OFFICIAL_NAMESPACE
       ? `https://hub.docker.com/_/${encodeURIComponent(target)}`
       : `https://hub.docker.com/r/${encodeURIComponent(owner)}/${encodeURIComponent(target)}`,
-  project: pickFields<DockerHubRepoPayload>(['pull_count', 'star_count']),
+  project: pickFields<DockerHubRepoPayload>(['last_updated', 'pull_count', 'star_count']),
 });
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -42,7 +44,8 @@ function resolveDefaultDockerOwner(): string {
 /** Docker Hub service preset (`docker`). */
 export const DOCKER_SERVICE = defineService({
   docs: {
-    description: 'Image pulls and stars (omit :owner for official library images).',
+    description:
+      'Image pulls, stars, and last-updated age (omit :owner for official library images).',
     title: 'Docker Hub',
   },
   metricAliases: { dl: 'pulls', dt: 'pulls' },
@@ -57,6 +60,7 @@ export const DOCKER_SERVICE = defineService({
       { ...STARS, defaultLabel: 'docker stars' },
       (repo) => repo.star_count
     ),
+    updated: createRelativeDateMetric(DOCKER_HUB_ENDPOINT, UPDATED, (repo) => repo.last_updated),
   },
   route: {
     owner: { isRequired: false, placeholder: ':owner', resolveDefault: resolveDefaultDockerOwner },

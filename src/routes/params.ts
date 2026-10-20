@@ -2,11 +2,15 @@
  * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, ...) into typed render options.
  */
 
-import { STRIP_DARK_COLORS } from '@/config/palette';
 import { STATUS_PRESET_MAP } from '@/config/services';
 import { isThemeColorName } from '@/config/theme';
-import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
-import { ICON_MOTION_TOKENS, getOwnValue } from '@/svg/shared';
+import {
+  MAX_BARS_POINTS,
+  MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
+  MAX_STRIP_TICKS,
+} from '@/svg/renderer';
+import { getOwnValue, isIconMotionMode, isStripTickState } from '@/svg/shared';
 import type {
   AnimationMode,
   BadgeSpecialElement,
@@ -38,7 +42,9 @@ const VALID_VARIANTS: ReadonlySet<string> = new Set<string>(VARIANT_TOKENS);
 /** Inline data widget kinds accepted by `?special=<kind>:<payload>` in display order (also listed by the builder). */
 export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialElement['type'][] = [
   'sparkline',
+  'bars',
   'bar',
+  'steps',
   'ring',
   'strip',
   'delta',
@@ -52,12 +58,6 @@ const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
 
 /** Valid per-icon motion tokens for `?anim=`, sorted alphabetically (also listed by the docs; Defined once in `src/svg/shared.ts`). */
 export { ICON_MOTION_TOKENS } from '@/svg/shared';
-
-/** Set of valid per-icon motion tokens for `?anim=` (derived from `ICON_MOTION_TOKENS`). */
-const VALID_ICON_MOTIONS: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
-
-/** Set of valid 10-stage (`'0'`–`'9'`) strip tick characters (derived from the `STRIP_DARK_COLORS` stages). */
-const VALID_STRIP_STAGES: ReadonlySet<string> = new Set<string>(Object.keys(STRIP_DARK_COLORS));
 
 /** Maximum number of comma/whitespace-separated `?anim=` tokens (`sheen,<left>,<right>`). */
 const MAX_ANIMATION_TOKENS = 3;
@@ -92,31 +92,55 @@ function normalizeQueryToken(raw: string | null | undefined): string {
   return (raw ?? '').trim().toLowerCase();
 }
 
-/** Check whether a single character is a valid 10-stage strip tick (`'0'`–`'9'`). */
-function isStripTickState(char: string): char is StripTickState {
-  return VALID_STRIP_STAGES.has(char);
-}
-
 /** Check whether an optional `?anim=` token is a valid per-icon motion token. */
 function isIconMotionToken(token: string | undefined): token is string {
-  return token !== undefined && VALID_ICON_MOTIONS.has(token);
+  return token !== undefined && isIconMotionMode(token);
 }
 
-/** Parse a trimmed, comma-separated list of numbers for a sparkline (at least 2, at most `MAX_SPARKLINE_POINTS`). */
-function parseSparklineNumbers(rawPayload: string): number[] | undefined {
+/** Parse a trimmed, comma-separated list of numbers (at least `minPoints`, at most `maxPoints`). */
+function parseSeriesNumbers(
+  rawPayload: string,
+  minPoints: number,
+  maxPoints: number
+): number[] | undefined {
   const values: number[] = [];
   for (const part of rawPayload.split(LIST_SEPARATOR_RX)) {
     if (part.length > 0) {
       const value = Number(part);
       if (Number.isFinite(value)) {
         values.push(value);
-        if (values.length >= MAX_SPARKLINE_POINTS) {
+        if (values.length >= maxPoints) {
           break;
         }
       }
     }
   }
-  return values.length >= 2 ? values : undefined;
+  return values.length >= minPoints ? values : undefined;
+}
+
+/** Parse a `<done>/<total>` step progress payload (e.g., `'4/5'`, `'3/8'`). */
+function parseStepsPayload(rawPayload: string): { done: number; total: number } | undefined {
+  const slashIndex = rawPayload.indexOf('/');
+  if (slashIndex <= 0) {
+    return undefined;
+  }
+  const doneRaw = rawPayload.slice(0, slashIndex).trim();
+  const totalRaw = rawPayload.slice(slashIndex + 1).trim();
+  if (!doneRaw || !totalRaw) {
+    return undefined;
+  }
+  const parsedDone = Number(doneRaw);
+  const parsedTotal = Number(totalRaw);
+  if (!Number.isFinite(parsedDone) || !Number.isFinite(parsedTotal)) {
+    return undefined;
+  }
+  const roundedTotal = Math.round(parsedTotal);
+  if (roundedTotal < 1) {
+    return undefined;
+  }
+  const total = Math.min(MAX_STEPS_COUNT, roundedTotal);
+  const done = Math.min(total, Math.max(0, Math.round(parsedDone)));
+  return { done, total };
 }
 
 /**
@@ -186,13 +210,21 @@ function parseSpecialKindAndPayload(
 ): BadgeSpecialElement | undefined {
   switch (kind) {
     case 'sparkline': {
-      const values = parseSparklineNumbers(payload);
+      const values = parseSeriesNumbers(payload, 2, MAX_SPARKLINE_POINTS);
       return values ? { type: 'sparkline', values } : undefined;
+    }
+    case 'bars': {
+      const values = parseSeriesNumbers(payload, 2, MAX_BARS_POINTS);
+      return values ? { type: 'bars', values } : undefined;
     }
     case 'bar':
     case 'ring': {
       const parsed = parsePercentageAndPulse(payload);
       return parsed ? { hasPulse: parsed.hasPulse, type: kind, value: parsed.value } : undefined;
+    }
+    case 'steps': {
+      const parsed = parseStepsPayload(payload);
+      return parsed ? { done: parsed.done, total: parsed.total, type: 'steps' } : undefined;
     }
     case 'strip': {
       const states = parseStripStates(payload);
@@ -297,6 +329,9 @@ export function resolveAnimationMode(
         return fallback;
       }
       if (token === 'sheen') {
+        if (hasSheen) {
+          return fallback;
+        }
         hasSheen = true;
       } else {
         motionTokens.push(token);

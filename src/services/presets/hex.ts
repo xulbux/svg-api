@@ -2,41 +2,48 @@
  * Hex.pm service preset – Elixir/Erlang package version, all-time/90-day/weekly downloads, and license (`/badge/hex/:pkg/:metric`).
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readFiniteNumber,
+  readLicenseName,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Download counters of a Hex.pm package. */
-interface HexDownloads {
+/** Projected Hex.pm package metadata (`hex.pm/api/packages/:pkg`). */
+interface HexPackageProjection {
   /** All-time downloads. */
   all?: number;
+  /** First SPDX license identifier from `meta.licenses`. */
+  license?: string;
   /** Downloads in the last 90 days. */
   recent?: number;
+  /** Latest stable version (falling back to the latest version). */
+  version?: string;
   /** Downloads in the last 7 days. */
   week?: number;
 }
 
-/** Metadata of a Hex.pm package. */
-interface HexPackageMeta {
-  /** SPDX license identifiers. */
-  licenses?: string[];
-}
+// -------------------------------------- INTERNALS --------------------------------------
 
-/** Partial Hex.pm package API payload (`hex.pm/api/packages/:pkg`). */
-interface HexPackagePayload {
-  /** Download counters. */
-  downloads: HexDownloads | null;
-  /** Latest stable version, or `null` when only pre-releases exist. */
-  latest_stable_version: string | null;
-  /** Latest version including pre-releases. */
-  latest_version: string;
-  /** Package metadata. */
-  meta: HexPackageMeta | null;
+/** Project a Hex.pm package payload to its download counters, version, and license. */
+function projectHexPackage(data: unknown): HexPackageProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const downloads = isJsonObject(data.downloads) ? data.downloads : undefined;
+  const meta = isJsonObject(data.meta) ? data.meta : undefined;
+  return {
+    all: readFiniteNumber(downloads?.all),
+    license: readLicenseName(meta?.licenses),
+    recent: readFiniteNumber(downloads?.recent),
+    version: readText(data.latest_stable_version) ?? readText(data.latest_version),
+    week: readFiniteNumber(downloads?.week),
+  };
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -45,12 +52,7 @@ interface HexPackagePayload {
 const HEX_ENDPOINT = createEndpoint({
   api: 'https://hex.pm/api/packages/{target}',
   page: 'https://hex.pm/packages/{target}',
-  project: pickFields<HexPackagePayload>([
-    'downloads',
-    'latest_stable_version',
-    'latest_version',
-    'meta',
-  ]),
+  project: projectHexPackage,
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -64,17 +66,14 @@ export const HEX_SERVICE = defineService({
   // `dl` reported the 90-day downloads before the download keys were normalized.
   metricAliases: { dl: 'dq' },
   metrics: {
-    dq: createDownloadsMetric(HEX_ENDPOINT, 'dq', (pkg) => pkg.downloads?.recent),
-    dt: createDownloadsMetric(HEX_ENDPOINT, 'dt', (pkg) => pkg.downloads?.all),
-    dw: createDownloadsMetric(HEX_ENDPOINT, 'dw', (pkg) => pkg.downloads?.week),
-    license: createLicenseMetric(HEX_ENDPOINT, (pkg) => {
-      const licenses = pkg.meta?.licenses;
-      return Array.isArray(licenses) ? licenses[0] : undefined;
-    }),
+    dq: createDownloadsMetric(HEX_ENDPOINT, 'dq', (pkg) => pkg.recent),
+    dt: createDownloadsMetric(HEX_ENDPOINT, 'dt', (pkg) => pkg.all),
+    dw: createDownloadsMetric(HEX_ENDPOINT, 'dw', (pkg) => pkg.week),
+    license: createLicenseMetric(HEX_ENDPOINT, (pkg) => pkg.license),
     v: createVersionMetric(
       HEX_ENDPOINT,
       { defaultColor: 'violet', defaultIcon: 'elixir', defaultLabel: 'hex' },
-      (pkg) => pkg.latest_stable_version ?? pkg.latest_version
+      (pkg) => pkg.version
     ),
   },
   route: { target: { placeholder: ':pkg' } },

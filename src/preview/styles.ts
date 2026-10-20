@@ -158,11 +158,11 @@ function getThemeTokens(): readonly ThemeToken[] {
   return themeTokensCache;
 }
 
-/** Render the `--c-*` bindings of one color scheme (`includeShared` also emits scheme-independent tokens). */
-function renderThemeTokenBindings(scheme: 'dark' | 'light', includeShared: boolean): string {
+/** Render the `--c-*` bindings of one color scheme (`hasShared` also emits scheme-independent tokens). */
+function renderThemeTokenBindings(scheme: 'dark' | 'light', hasShared: boolean): string {
   let css = '';
   for (const token of getThemeTokens()) {
-    if (includeShared || token.light !== token.dark) {
+    if (hasShared || token.light !== token.dark) {
       css += `  --c-${token.name}: ${token[scheme]};\n`;
     }
   }

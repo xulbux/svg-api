@@ -302,9 +302,12 @@
     if (!clean) {
       return { custom: '', preset: '' };
     }
-    return findOption(options, clean)
-      ? { custom: '', preset: clean }
-      : { custom: clean, preset: 'custom' };
+    if (findOption(options, clean)) {
+      return { custom: '', preset: clean };
+    }
+    return Number.isFinite(Number(clean))
+      ? { custom: clean, preset: 'custom' }
+      : { custom: '', preset: '' };
   }
 
   /**
@@ -465,7 +468,7 @@
 
   /**
    * Build the preview URL of a path: Reduced motion previews append `anim=none` (an `<img>` keeps playing SMIL).
-   * @param {string} path                Root-relative SVG path with an optional query string.
+   * @param {string} path               Root-relative SVG path with an optional query string.
    * @param {boolean} isReducedMotion   Whether the user prefers reduced motion.
    * @returns {string}
    */
@@ -521,8 +524,15 @@
    * @returns {string}
    */
   function normalizeOptionValue(field, raw) {
+    if (field.control === 'number') {
+      const clean = raw.trim();
+      return clean && Number.isFinite(Number(clean)) ? clean : '';
+    }
     if (field.control === 'size') {
-      return raw.trim().toLowerCase();
+      const clean = raw.trim().toLowerCase();
+      return clean && (findOption(field.options, clean) || Number.isFinite(Number(clean)))
+        ? clean
+        : '';
     }
     if (field.control !== 'select' && field.control !== 'color') {
       return raw;
@@ -854,6 +864,11 @@
     };
   }
 
+  /** Cached compiled regex for `BuilderSchema.redirectValuePattern` (`undefined` until first used). */
+  /** @type {RegExp | undefined} */
+  let cachedRedirectPatternRx = undefined;
+  let cachedRedirectPatternSource = '';
+
   /**
    * Build the upstream page URL of a service badge from its metric's redirect template, or `''` when the metric
    * has no template or a value is outside the verified character set.
@@ -867,7 +882,11 @@
     if (!service || !template || !schema.redirectValuePattern) {
       return '';
     }
-    const valuePattern = new RegExp(schema.redirectValuePattern);
+    if (!cachedRedirectPatternRx || schema.redirectValuePattern !== cachedRedirectPatternSource) {
+      cachedRedirectPatternSource = schema.redirectValuePattern;
+      cachedRedirectPatternRx = new RegExp(schema.redirectValuePattern);
+    }
+    const valuePattern = cachedRedirectPatternRx;
     const explicitOwner = service.ownerMode === 'none' ? '' : readState(state, 'owner');
     const owner = explicitOwner || service.defaultOwner || '';
     const target = readState(state, 'target');
@@ -928,10 +947,10 @@
   /**
    * Compute the tile index a grid navigation key moves the roving focus to (arrows by cell or row, `Home` / `End`
    * to the first / last match, including matches that are not rendered yet).
-   * @param {string} key        `KeyboardEvent.key`.
-   * @param {number} index      Current tile index.
-   * @param {number} columns    Number of grid columns.
-   * @param {number} total      Number of matches.
+   * @param {string} key       `KeyboardEvent.key`.
+   * @param {number} index     Current tile index.
+   * @param {number} columns   Number of grid columns.
+   * @param {number} total     Number of matches.
    * @returns {number | undefined} Target index, or `undefined` for other keys.
    */
   function computeGridFocusIndex(key, index, columns, total) {
@@ -1377,7 +1396,16 @@
   function setSelectOptions(select, options, selectedValue) {
     select.replaceChildren();
     for (const option of options) {
-      select.add(new Option(option.label, option.value, false, option.value === selectedValue));
+      const optionElement = new Option(
+        option.label,
+        option.value,
+        false,
+        option.value === selectedValue
+      );
+      if (option.swatch) {
+        optionElement.dataset.swatch = option.swatch;
+      }
+      select.add(optionElement);
     }
     const wrapper = select.closest('[data-select]');
     if (wrapper) {
@@ -1532,7 +1560,7 @@
    */
   function readFieldValue(field, fieldElement) {
     /** @param {string} part @returns {string} */
-    function partValue(part) {
+    function readPartValue(part) {
       return getPart(fieldElement, part)?.value ?? '';
     }
     switch (field.control) {
@@ -1540,8 +1568,8 @@
         const sheen = getPart(fieldElement, 'sheen');
         return composeAnim(
           sheen instanceof HTMLInputElement && sheen.checked,
-          partValue('left'),
-          partValue('right')
+          readPartValue('left'),
+          readPartValue('right')
         );
       }
       case 'color': {
@@ -1549,17 +1577,21 @@
         return checked instanceof HTMLInputElement ? checked.value : '';
       }
       case 'icon': {
-        return partValue('main').trim();
+        return readPartValue('main').trim();
       }
       case 'iconPair': {
-        return composeIconPair(partValue('left'), partValue('right'), hasPresetIcon);
+        return composeIconPair(readPartValue('left'), readPartValue('right'), hasPresetIcon);
       }
       case 'size': {
-        const preset = partValue('preset');
-        return preset === 'custom' ? partValue('custom').trim() : preset;
+        const preset = readPartValue('preset');
+        return preset === 'custom' ? readPartValue('custom').trim() : preset;
       }
       case 'special': {
-        return composeSpecial(partValue('kind'), partValue('payload'), partValue('modifier'));
+        return composeSpecial(
+          readPartValue('kind'),
+          readPartValue('payload'),
+          readPartValue('modifier')
+        );
       }
       default: {
         return getControl(field.id)?.value ?? '';
@@ -2408,6 +2440,9 @@
 
     previewImage?.addEventListener('load', () => {
       previewImage.classList.remove('is-loading');
+      if (buildPath(schema, state).missing.length === 0) {
+        setStatus('');
+      }
     });
     previewImage?.addEventListener('error', () => {
       previewImage.classList.remove('is-loading');

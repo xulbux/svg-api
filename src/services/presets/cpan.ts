@@ -11,6 +11,7 @@ import {
   createRelativeDateMetric,
   createVersionMetric,
 } from '@/services/metrics';
+import { getOwnValue } from '@/svg/shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -60,7 +61,7 @@ const CPAN_LICENSE_NAMES: Readonly<Record<string, string>> = {
 const SEARCH_HIT_SOURCE_KEY = '_source';
 
 /** Projects the `_source` fields of a release search hit. */
-const pickReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
+const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
 
 /** MetaCPAN latest release search (3 source fields of 1 hit; No hits is not found) with distribution page redirect. */
 const CPAN_ENDPOINT = createEndpoint({
@@ -69,7 +70,9 @@ const CPAN_ENDPOINT = createEndpoint({
   project: (data) => {
     const hits = isJsonObject(data) && isJsonObject(data.hits) ? data.hits.hits : undefined;
     const firstHit: unknown = Array.isArray(hits) ? hits[0] : undefined;
-    return pickReleaseFields(isJsonObject(firstHit) ? firstHit[SEARCH_HIT_SOURCE_KEY] : undefined);
+    return projectReleaseFields(
+      isJsonObject(firstHit) ? firstHit[SEARCH_HIT_SOURCE_KEY] : undefined
+    );
   },
 });
 
@@ -89,7 +92,7 @@ function readCpanLicense(release: Partial<CpanRelease>): string | undefined {
   if (typeof key !== 'string' || key === 'unknown') {
     return undefined;
   }
-  return Object.hasOwn(CPAN_LICENSE_NAMES, key) ? CPAN_LICENSE_NAMES[key] : key;
+  return getOwnValue(CPAN_LICENSE_NAMES, key) ?? key;
 }
 
 /** Read the release timestamp as UTC (MetaCPAN omits the timezone designator). */

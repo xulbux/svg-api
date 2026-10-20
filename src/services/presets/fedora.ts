@@ -1,7 +1,7 @@
 /**
  * Fedora service preset – Package version of a Fedora branch from mdapi (`/badge/fedora/[:branch/]:pkg/v`).
  *
- * The optional branch segment defaults to `rawhide` (e.g., `f43`, `epel10`); mdapi answers unknown
+ * The optional branch segment defaults to `rawhide` (e.g., `f43`, `epel10`); Mdapi answers unknown
  * packages and branches with `400`, which is reported as not found.
  */
 

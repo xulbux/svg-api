@@ -10,11 +10,12 @@ import {
   pickFields,
 } from '@/services/endpoint';
 import {
+  INSTALLS_LABEL,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readText,
 } from '@/services/metrics';
-import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -36,10 +37,29 @@ interface FlathubStatsPayload {
   installs_total: number;
 }
 
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project an AppStream document into its license and newest release version (release notes are dropped). */
+function projectAppStream(data: unknown): FlathubAppStreamProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const releases = Array.isArray(data.releases) ? data.releases : [];
+  const newestRelease: unknown = releases[0];
+  return {
+    license: readText(data.project_license),
+    version: isJsonObject(newestRelease) ? readText(newestRelease.version) : undefined,
+  };
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Presentation override of the install metrics. */
-const INSTALLS_LABEL = { defaultLabel: 'installs' } as const;
+/** Flathub AppStream metadata endpoint. */
+const APPSTREAM_ENDPOINT = createEndpoint({
+  api: 'https://flathub.org/api/v2/appstream/{target}',
+  page: 'https://flathub.org/apps/{target}',
+  project: projectAppStream,
+});
 
 /** Flathub install statistics endpoint (refreshed daily). */
 const STATS_ENDPOINT = createEndpoint({
@@ -53,67 +73,39 @@ const STATS_ENDPOINT = createEndpoint({
   ttl: CACHE_TTL.daily,
 });
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Project an AppStream document into its license and newest release version (release notes are dropped). */
-function projectAppStream(data: unknown): FlathubAppStreamProjection | undefined {
-  if (!isJsonObject(data)) {
-    return undefined;
-  }
-  const releases = Array.isArray(data.releases) ? data.releases : [];
-  const newestRelease: unknown = releases[0];
-  return {
-    license: typeof data.project_license === 'string' ? data.project_license : undefined,
-    version:
-      isJsonObject(newestRelease) && typeof newestRelease.version === 'string'
-        ? newestRelease.version
-        : undefined,
-  };
-}
-
-/** Create the Flathub service preset. */
-function createFlathubService(): ServiceDefinition {
-  const appStreamEndpoint = createEndpoint({
-    api: 'https://flathub.org/api/v2/appstream/{target}',
-    page: 'https://flathub.org/apps/{target}',
-    project: projectAppStream,
-  });
-  return defineService({
-    docs: {
-      description: 'App version, license, and total/monthly/weekly installs (dt/dl/dw).',
-      title: 'Flathub',
-    },
-    metrics: {
-      dl: createDownloadsMetric(
-        STATS_ENDPOINT,
-        'dl',
-        (stats) => stats.installs_last_month,
-        INSTALLS_LABEL
-      ),
-      dt: createDownloadsMetric(
-        STATS_ENDPOINT,
-        'dt',
-        (stats) => stats.installs_total,
-        INSTALLS_LABEL
-      ),
-      dw: createDownloadsMetric(
-        STATS_ENDPOINT,
-        'dw',
-        (stats) => stats.installs_last_7_days,
-        INSTALLS_LABEL
-      ),
-      license: createLicenseMetric(appStreamEndpoint, (app) => app.license),
-      v: createVersionMetric(
-        appStreamEndpoint,
-        { defaultColor: 'sky', defaultIcon: 'flathub', defaultLabel: 'flathub' },
-        (app) => app.version
-      ),
-    },
-    route: { target: { placeholder: ':app' } },
-  });
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Flathub service preset (`flathub`). */
-export const FLATHUB_SERVICE: ServiceDefinition = createFlathubService();
+export const FLATHUB_SERVICE = defineService({
+  docs: {
+    description: 'App version, license, and total/monthly/weekly installs (dt/dl/dw).',
+    title: 'Flathub',
+  },
+  metrics: {
+    dl: createDownloadsMetric(
+      STATS_ENDPOINT,
+      'dl',
+      (stats) => stats.installs_last_month,
+      INSTALLS_LABEL
+    ),
+    dt: createDownloadsMetric(
+      STATS_ENDPOINT,
+      'dt',
+      (stats) => stats.installs_total,
+      INSTALLS_LABEL
+    ),
+    dw: createDownloadsMetric(
+      STATS_ENDPOINT,
+      'dw',
+      (stats) => stats.installs_last_7_days,
+      INSTALLS_LABEL
+    ),
+    license: createLicenseMetric(APPSTREAM_ENDPOINT, (app) => app.license),
+    v: createVersionMetric(
+      APPSTREAM_ENDPOINT,
+      { defaultColor: 'sky', defaultIcon: 'flathub', defaultLabel: 'flathub' },
+      (app) => app.version
+    ),
+  },
+  route: { target: { placeholder: ':app' } },
+});

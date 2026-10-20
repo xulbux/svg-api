@@ -2,7 +2,7 @@
  * Shared SVG primitives – XML escaping, display text normalization and truncation, numeric clamping, prototype-safe record lookups, bounded LRU caches, content hashing, foreground paints, Kumo 3D top-edge crescent geometry, surface layers, gradient defs, sweep animations, icon groups, specular sheen overlays, and the root `<svg>` document template.
  */
 
-import { WHITE } from '@/config/palette';
+import { STRIP_DARK_COLORS, WHITE } from '@/config/palette';
 import { BASE_DARK, THEMES } from '@/config/theme';
 import type {
   AnimationMode,
@@ -14,6 +14,7 @@ import type {
   LruCache,
   NumericRange,
   ResolvedIcon,
+  StripTickState,
   SweepTiming,
   ThemeColorName,
 } from '@/types';
@@ -172,6 +173,9 @@ const XML_REPLACEMENT_MAP: Readonly<Record<string, string>> = {
 /** Set of valid per-icon motion tokens (derived from `ICON_MOTION_TOKENS`). */
 const ICON_MOTION_MODES: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
 
+/** Default empty theme color list for surfaces without a vivid theme gradient. */
+const NO_THEME_COLORS: readonly ThemeColorName[] = [];
+
 /** White highlight stops of the diagonal surface sheen band. */
 const SHEEN_BAND_STOPS: readonly BandStop[] = [
   [0, '0'],
@@ -214,11 +218,6 @@ function replaceXmlChar(char: string): string {
   return XML_REPLACEMENT_MAP[char] ?? '';
 }
 
-/** Check whether an `AnimationMode` token is a per-icon motion token (anything except `'sheen'` and empty tokens). */
-function isIconMotionMode(token: string): token is IconMotionMode {
-  return ICON_MOTION_MODES.has(token);
-}
-
 /** Render a `1px` vertical divider `<line>` at `lineX` from `topY` to `bottomY`. */
 function renderDividerLine(lineX: number, topY: number, bottomY: number, stroke: string): string {
   return `<line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="${stroke}" stroke-width="1" />`;
@@ -251,6 +250,24 @@ export function hasOwnKey<K extends string>(
 }
 
 /**
+ * Check whether an optional token is a valid per-icon motion token (anything in `ICON_MOTION_TOKENS`).
+ * @param token   Candidate animation token.
+ * @returns `true` when `token` is an `IconMotionMode`.
+ */
+export function isIconMotionMode(token: string | undefined): token is IconMotionMode {
+  return token !== undefined && ICON_MOTION_MODES.has(token);
+}
+
+/**
+ * Check whether an untrusted string is a valid 10-stage strip tick (`'0'`–`'9'`, an own key of `STRIP_DARK_COLORS`).
+ * @param state   Candidate tick character or token.
+ * @returns `true` when `state` is a `StripTickState`.
+ */
+export function isStripTickState(state: string): state is StripTickState {
+  return hasOwnKey(STRIP_DARK_COLORS, state);
+}
+
+/**
  * Check whether an animation mode enables the diagonal specular sheen sweep (`'sheen'` or `'sheen,<mode>'`).
  * @param animMode   Active animation mode.
  * @returns `true` when the sheen overlay should be rendered.
@@ -260,13 +277,13 @@ export function isSheenMode(animMode: AnimationMode): boolean {
 }
 
 /**
- * Check whether an animation mode disables every animation, including status dots and data widgets
- * (`'none'`, or the per-icon pair `'none,none'`).
+ * Check whether an animation mode disables status dot and data widget animations (`'none'`, `'none,none'`,
+ * or `'sheen,none,none'`).
  * @param animMode   Active animation mode.
- * @returns `true` when the SVG must be completely static.
+ * @returns `true` when status dots and data widgets must be static.
  */
 export function isAnimationDisabled(animMode: AnimationMode): boolean {
-  return animMode === 'none' || animMode === 'none,none';
+  return animMode === 'none' || animMode === 'none,none' || animMode === 'sheen,none,none';
 }
 
 /**
@@ -282,6 +299,33 @@ export function resolveIconMotionTokens(animMode: AnimationMode): IconMotionMode
     }
   }
   return tokens;
+}
+
+/**
+ * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest tenth.
+ */
+export function roundTenths(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest hundredth.
+ */
+export function roundCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest ten-thousandth.
+ */
+export function roundScale(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
 }
 
 /**
@@ -577,13 +621,13 @@ export function renderThemeGradientDef(color: ThemeColorName): string {
 /**
  * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme
  * gradient per primary color (shared by badges, buttons, stacks, and quote cards).
- * @param hasDarkBg      Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
- * @param themeColors    Theme colors whose `grad-<color>` gradient is referenced.
+ * @param hasDarkBg     Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
+ * @param themeColors   Theme colors whose `grad-<color>` gradient is referenced (defaults to none).
  * @returns Concatenated `<linearGradient>` SVG strings.
  */
 export function renderSurfaceGradientDefs(
   hasDarkBg: boolean,
-  themeColors: Iterable<ThemeColorName>
+  themeColors: Iterable<ThemeColorName> = NO_THEME_COLORS
 ): string {
   let defs = hasDarkBg ? renderDarkBgGradientDef() : '';
   for (const color of themeColors) {
@@ -652,7 +696,7 @@ export function buildTopCrescentPath(
   const cornerEndY = outerTopY + innerRadius;
 
   if (!hasRoundedLeftCorner) {
-    const leftEdgeX = startX + 1;
+    const leftEdgeX = startX + 0.5;
     return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
   }
 
@@ -757,7 +801,50 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
   const crescentPath = buildTopCrescentPath(boxX, boxX + width, radius, true, boxY);
   const bottomY = boxY + height;
 
+  const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
+  const rightEdgeX = boxX + width;
+
   if (variant === '1') {
+    if (isRightCapsuleOnly) {
+      const innerRadius = radius - 0.5;
+      const leftFillPath = buildLeftCapsulePath(boxX, rightCapsuleStartX, height, radius, boxY);
+      const leftBorderPath = buildLeftCapsulePath(
+        boxX + 0.5,
+        rightCapsuleStartX,
+        height - 1,
+        innerRadius,
+        boxY + 0.5,
+        false
+      );
+      const rightFillPath = buildRightCapsulePath(
+        rightCapsuleStartX,
+        rightEdgeX,
+        height,
+        radius,
+        boxY
+      );
+      const rightCrescentPath = buildTopCrescentPath(
+        rightCapsuleStartX,
+        rightEdgeX,
+        radius,
+        false,
+        boxY
+      );
+      const rightRingPath = buildRightCapsulePath(
+        rightCapsuleStartX + 0.5,
+        rightEdgeX - 0.5,
+        height - 1,
+        innerRadius,
+        boxY + 0.5
+      );
+      return (
+        `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
+        `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
+        `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(options.color)})" />` +
+        `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
+        `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
+      );
+    }
     const gradientBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${buildThemeGradientId(options.color)})" />`;
     const topCrescent = `<path d="${crescentPath}" fill="${palette.emphasisBg}" />`;
     const splitDivider =
@@ -771,18 +858,17 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
   const darkBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${BG_DARK_ID})" />`;
 
   if (variant === '2') {
-    const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
     const tintBody = isRightCapsuleOnly
-      ? `<path d="${buildRightCapsulePath(rightCapsuleStartX, boxX + width, height, radius, boxY)}" fill="${palette.tintBg}" />`
+      ? `<path d="${buildRightCapsulePath(rightCapsuleStartX, rightEdgeX, height, radius, boxY)}" fill="${palette.tintBg}" />`
       : `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="${palette.tintBg}" />`;
     const secondaryCrescentPath = isRightCapsuleOnly
-      ? buildTopCrescentPath(rightCapsuleStartX, boxX + width, radius, false, boxY)
+      ? buildTopCrescentPath(rightCapsuleStartX, rightEdgeX, radius, false, boxY)
       : crescentPath;
     const topCrescent = `<path d="${secondaryCrescentPath}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
     const splitDivider =
       splitLineX === undefined
         ? ''
-        : renderDividerLine(splitLineX, boxY, bottomY, palette.borderColor);
+        : renderDividerLine(splitLineX, boxY + 1, bottomY - 1, palette.borderColor);
     const outerRing = `<rect ${ringGeometry} stroke="${palette.borderColor}" stroke-width="1" />`;
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }

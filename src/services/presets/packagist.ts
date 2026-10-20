@@ -2,38 +2,22 @@
  * Packagist service preset – PHP Composer package version and total/monthly/daily downloads (`/badge/packagist/:vendor/:pkg/:metric`).
  */
 
-import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
-import { createDownloadsMetric, formatVersion } from '@/services/metrics';
-import type { MetricResult } from '@/types';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createDownloadsMetric, createVersionMetric, readFiniteNumber } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Download counters of a Packagist package. */
-interface PackagistDownloads {
+/** Projected Packagist package statistics (`packagist.org/packages/:vendor/:pkg/stats.json`). */
+interface PackagistStatsProjection {
   /** Downloads in the last 24 hours. */
   daily?: number;
   /** Downloads in the last 30 days. */
   monthly?: number;
   /** All-time downloads. */
   total?: number;
+  /** Latest stable version (falling back to the newest published version). */
+  version?: string;
 }
-
-/** Partial Packagist package statistics payload (`packagist.org/packages/:vendor/:pkg/stats.json`). */
-interface PackagistStatsPayload {
-  /** Download counters. */
-  downloads: PackagistDownloads | null;
-  /** Published version names, newest first (including `-dev` branches and pre-releases). */
-  versions: unknown[];
-}
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Packagist statistics endpoint with package page redirect. */
-const PACKAGIST_ENDPOINT = createEndpoint({
-  api: 'https://packagist.org/packages/{owner}/{target}/stats.json',
-  page: 'https://packagist.org/packages/{owner}/{target}',
-  project: pickFields<PackagistStatsPayload>(['downloads', 'versions']),
-});
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -46,20 +30,45 @@ const UNSTABLE_VERSION_RX = /^dev-|[._-]dev$|\d[._-]?(?:alpha|beta|rc|a|b)[\d.-]
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Transform Packagist statistics into the latest stable version (falling back to the newest version). */
-function transformPackagistVersion(stats: Partial<PackagistStatsPayload>): Partial<MetricResult> {
-  const versions = Array.isArray(stats.versions) ? stats.versions : [];
+/** Read the latest stable version from Packagist's `versions` list (falling back to the newest version). */
+function readStablePackagistVersion(rawVersions: unknown): string | undefined {
+  if (!Array.isArray(rawVersions)) {
+    return undefined;
+  }
   let newestVersion: string | undefined = undefined;
-  for (const version of versions) {
+  for (const version of rawVersions) {
     if (typeof version === 'string') {
       if (!UNSTABLE_VERSION_RX.test(version)) {
-        return { value: formatVersion(version) };
+        return version;
       }
       newestVersion ??= version;
     }
   }
-  return { value: formatVersion(newestVersion) };
+  return newestVersion;
 }
+
+/** Project Packagist statistics to its download counters and resolved version string. */
+function projectPackagistStats(data: unknown): PackagistStatsProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const downloads = isJsonObject(data.downloads) ? data.downloads : undefined;
+  return {
+    daily: readFiniteNumber(downloads?.daily),
+    monthly: readFiniteNumber(downloads?.monthly),
+    total: readFiniteNumber(downloads?.total),
+    version: readStablePackagistVersion(data.versions),
+  };
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Packagist statistics endpoint with package page redirect. */
+const PACKAGIST_ENDPOINT = createEndpoint({
+  api: 'https://packagist.org/packages/{owner}/{target}/stats.json',
+  page: 'https://packagist.org/packages/{owner}/{target}',
+  project: projectPackagistStats,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -70,13 +79,13 @@ export const PACKAGIST_SERVICE = defineService({
     title: 'Packagist',
   },
   metrics: {
-    dd: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dd', (stats) => stats.downloads?.daily),
-    dl: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dl', (stats) => stats.downloads?.monthly),
-    dt: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dt', (stats) => stats.downloads?.total),
-    v: createMetric(
+    dd: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dd', (stats) => stats.daily),
+    dl: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dl', (stats) => stats.monthly),
+    dt: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dt', (stats) => stats.total),
+    v: createVersionMetric(
       PACKAGIST_ENDPOINT,
       { defaultColor: 'orange', defaultIcon: 'packagist', defaultLabel: 'packagist' },
-      transformPackagistVersion
+      (stats) => stats.version
     ),
   },
   route: { owner: { isRequired: true, placeholder: ':vendor' }, target: { placeholder: ':pkg' } },

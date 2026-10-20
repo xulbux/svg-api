@@ -2,6 +2,7 @@
  * Shared test helpers – Worker environment bindings, SVG attribute extraction, and an in-memory edge cache stub shared by the test suites.
  */
 
+import { vi } from 'vitest';
 import type { Env } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -76,4 +77,14 @@ export function createEdgeCacheStub(): EdgeCacheStub {
   // @ts-expect-error: The Worker only calls `match` and `put`; The remaining `Cache` methods are intentionally absent.
   const stubCache: Cache = cache;
   return { cache: stubCache, matchedKeys, store, storedKeys };
+}
+
+/**
+ * Create and install an in-memory edge cache stub as `caches.default` (undo with `vi.unstubAllGlobals()`).
+ * @returns Installed edge cache stub with its backing store and call logs.
+ */
+export function installEdgeCacheStub(): EdgeCacheStub {
+  const stub = createEdgeCacheStub();
+  vi.stubGlobal('caches', { default: stub.cache });
+  return stub;
 }

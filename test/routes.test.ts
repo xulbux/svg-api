@@ -28,9 +28,14 @@ import {
 } from '@/routes/params';
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
-import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
+import {
+  MAX_BARS_POINTS,
+  MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
+  MAX_STRIP_TICKS,
+} from '@/svg/renderer';
 import type { Env, ThemeColorName } from '@/types';
-import { createEdgeCacheStub, extractAriaLabel, requireDefined, TEST_ENV } from './helpers';
+import { extractAriaLabel, installEdgeCacheStub, requireDefined, TEST_ENV } from './helpers';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -48,13 +53,6 @@ const MISSING_PARAM = new URLSearchParams().get('missing');
 /** Request every path concurrently against the Worker app. */
 function requestAll(paths: readonly string[], env: Env): Promise<Response[]> {
   return Promise.all(paths.map((path) => app.request(path, {}, env)));
-}
-
-/** Install an in-memory `caches.default` stub for the current test. */
-function installEdgeCacheStub(): ReturnType<typeof createEdgeCacheStub> {
-  const stub = createEdgeCacheStub();
-  vi.stubGlobal('caches', { default: stub.cache });
-  return stub;
 }
 
 /** Silence and capture `console.error` output of the `app.onError` handler. */
@@ -242,14 +240,20 @@ describe('route parameter parsers', () => {
     expect(resolveDotState('bogus')).toBeUndefined();
   });
 
-  it('rejects malformed special payloads and caps sparkline and strip lengths', () => {
+  it('rejects malformed special payloads and caps sparkline, bars, steps, and strip lengths', () => {
     for (const raw of [
       'bar:',
       'bar:abc',
       'bar:1e999',
+      'bars:',
+      'bars:4',
       'ring:%',
       'delta:',
       ':5',
+      'steps:',
+      'steps:3',
+      'steps:3/0',
+      'steps:a/5',
       'strip:',
       'strip:xyz',
     ]) {
@@ -267,6 +271,16 @@ describe('route parameter parsers', () => {
       type: 'sparkline',
       values: [1, 2, 3],
     });
+    expect(parseSpecialParam(`bars:${manyPoints.join(',')}`)).toEqual({
+      type: 'bars',
+      values: manyPoints.slice(0, MAX_BARS_POINTS),
+    });
+    expect(parseSpecialParam('steps:3/5')).toEqual({ done: 3, total: 5, type: 'steps' });
+    expect(parseSpecialParam('steps:99/50')).toEqual({
+      done: MAX_STEPS_COUNT,
+      total: MAX_STEPS_COUNT,
+      type: 'steps',
+    });
 
     const longStrip = parseSpecialParam(`strip:${'9'.repeat(MAX_STRIP_TICKS * 5)}`);
     expect(longStrip?.type === 'strip' ? longStrip.states : []).toHaveLength(MAX_STRIP_TICKS);
@@ -278,10 +292,12 @@ describe('route parameter parsers', () => {
     expect(parseSpecialParam('strip:9a8')).toEqual({ states: ['9', '8'], type: 'strip' });
   });
 
-  it('rejects animation inputs with more than 3 tokens or excessive length early', () => {
+  it('rejects animation inputs with duplicate sheen, more than 3 tokens, or excessive length early', () => {
     expect(resolveAnimationMode('sheen,none')).toBe('sheen');
     expect(resolveAnimationMode(' Sheen , Auto ')).toBe('sheen,auto');
     expect(resolveAnimationMode('sheen,shake,nudge')).toBe('sheen,shake,nudge');
+    expect(resolveAnimationMode('sheen,sheen')).toBe('default');
+    expect(resolveAnimationMode('sheen,sheen,auto')).toBe('default');
     expect(resolveAnimationMode('shake,nudge,spin')).toBe('default');
     expect(resolveAnimationMode('sheen,shake,nudge,spin')).toBe('default');
     expect(resolveAnimationMode('sheen,sheen,sheen,sheen')).toBe('default');

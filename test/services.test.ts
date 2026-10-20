@@ -20,10 +20,12 @@ import {
   listServiceMetricAliases,
   resetUpstreamCaches,
   resolveServiceMetric,
+  resolveServicePreview,
   resolveServiceRedirectUrl,
 } from '@/services/fetcher';
 import {
   buildPackageVersion,
+  createScoreMetric,
   createVersionMetric,
   formatBytes,
   formatCompactNumber,
@@ -44,7 +46,7 @@ import type {
   ServiceMetricConfig,
   ServiceRequest,
 } from '@/types';
-import { createEdgeCacheStub, extractAriaLabel, TEST_ENV } from './helpers';
+import { createEdgeCacheStub, extractAriaLabel, installEdgeCacheStub, TEST_ENV } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -215,13 +217,6 @@ function getServiceMetric(service: string, metric: string): ServiceMetricConfig 
 /** Build the upstream API URL of a registered service metric. */
 function buildMetricApiUrl(service: string, metric: string, owner: string, target: string): string {
   return getServiceMetric(service, metric).endpoint.buildApiUrl({ owner, target });
-}
-
-/** Install an in-memory edge cache stub as `caches.default`. */
-function installEdgeCache(): ReturnType<typeof createEdgeCacheStub> {
-  const stub = createEdgeCacheStub();
-  vi.stubGlobal('caches', { default: stub.cache });
-  return stub;
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -494,13 +489,22 @@ describe('existing service presets', () => {
       'crates.io/api/v1/crates/serde?include=default_version,downloads': {
         crate: { default_version: '1.0.215', max_stable_version: null },
       },
-      'hub.docker.com/v2/repositories/library/nginx/': { pull_count: 1_200_000_000 },
-      'open-vsx.org/api/xulbux/color-tracr': { downloadCount: 2486, version: '1.2.3' },
+      'hub.docker.com/v2/repositories/library/nginx/': {
+        last_updated: new Date().toISOString(),
+        pull_count: 1_200_000_000,
+      },
+      'open-vsx.org/api/xulbux/color-tracr': {
+        downloadCount: 2486,
+        license: 'MIT',
+        version: '1.2.3',
+      },
     });
     expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/v')).toBe('open vsx: v1.2.3');
     expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/rating')).toBe('rating: unrated');
+    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/license')).toBe('license: MIT');
     expect(await requestAriaLabel('/badge/crates/serde/v')).toBe('crates.io: v1.0.215');
     expect(await requestAriaLabel('/badge/docker/nginx/dl')).toBe('docker pulls: 1.2B');
+    expect(await requestAriaLabel('/badge/docker/nginx/updated')).toBe('updated: today');
     expect(requestedUrls).toHaveLength(3);
   });
 
@@ -510,7 +514,7 @@ describe('existing service presets', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('reads the crates.io default version and its license from the compact include document (regression: 441 KB payload)', async () => {
+  it('reads the crates.io default version, license, MSRV, and crate size from the compact include document (regression: 441 KB payload)', async () => {
     const requestedUrls = mockUpstream({
       'crates.io/api/v1/crates/serde?include=default_version,downloads': {
         crate: {
@@ -520,11 +524,21 @@ describe('existing service presets', () => {
           max_version: '0.0.0',
           recent_downloads: 367_688_696,
         },
-        versions: [{ license: 'MIT OR Apache-2.0', num: '1.0.229' }],
+        versions: [
+          {
+            crate_size: 80_896,
+            license: 'MIT OR Apache-2.0',
+            num: '1.0.229',
+            rust_version: '1.56',
+          },
+        ],
       },
     });
     expect(await describeMetric('/badge/crates/serde/v')).toBe('crates.io: v1.0.229');
     expect(await describeMetric('/badge/crates/serde/license')).toBe('license: MIT OR Apache-2.0');
+    expect(await describeMetric('/badge/crates/serde/msrv')).toBe('msrv: v1.56');
+    expect(await describeMetric('/badge/crates/serde/rust')).toBe('msrv: v1.56');
+    expect(await describeMetric('/badge/crates/serde/size')).toBe('crate size: 79 kB');
     expect(await describeMetric('/badge/crates/serde/dq')).toBe('downloads: 367.7M/90d');
     expect(await describeMetric('/badge/crates/serde/dl')).toBe('downloads: 367.7M/90d');
     expect(await describeMetric('/badge/crates/serde/dt')).toBe('downloads: 1.6B');
@@ -645,6 +659,7 @@ describe('new service presets', () => {
         downloads: 802_607_897,
         licenses: ['MIT'],
         version: '8.1.4',
+        version_created_at: new Date().toISOString(),
       },
     });
     expect(await requestAriaLabel('/badge/hex/phoenix/v')).toBe('hex: v1.8.15');
@@ -657,6 +672,7 @@ describe('new service presets', () => {
     expect(pointsBadge.svg).toContain('stroke-dasharray="26.57 28.27"');
     expect(await requestAriaLabel('/badge/gem/rails/v')).toBe('gem: v8.1.4');
     expect(await requestAriaLabel('/badge/gem/rails/dt')).toBe('downloads: 802.6M');
+    expect(await requestAriaLabel('/badge/gem/rails/updated')).toBe('updated: today');
     expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/v')).toBe('nuget: v13.0.4');
     expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/dt')).toBe('downloads: 9.3B');
     expect(await requestAriaLabel('/badge/nuget/Missing/v')).toBe('nuget: not found');
@@ -776,11 +792,34 @@ describe('upstream error handling', () => {
           new Response('', { headers: { 'x-ratelimit-remaining': '0' }, status: 403 })
         );
       }
+      if (url.includes('crates.io')) {
+        return Promise.resolve(
+          new Response('', { headers: { 'ratelimit-remaining': '0' }, status: 403 })
+        );
+      }
       return Promise.resolve(new Response('', { status: 403 }));
     });
     expect(await requestAriaLabel('/badge/npm/throttled/v')).toBe('npm: rate limited');
     expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('stars: rate limited');
+    expect(await requestAriaLabel('/badge/crates/serde/v')).toBe('crates.io: rate limited');
     expect(await requestAriaLabel('/badge/npm/forbidden/v')).toBe('npm: api error');
+  });
+
+  it('guards resolveServicePreview against invalid routes, missing samples, and throwing transforms', () => {
+    expect(
+      resolveServicePreview({ metric: 'v', service: 'nope', target: 'x' }, TEST_ENV, {}).color
+    ).toBe('rose');
+    expect(
+      resolveServicePreview({ metric: 'v', service: 'crates', target: 'x' }, TEST_ENV, [])
+    ).toMatchObject({ color: 'rose', value: 'not found' });
+    vi.spyOn(getServiceMetric('npm', 'v'), 'transform').mockImplementation(() => {
+      throw new TypeError('preview crash');
+    });
+    expect(
+      resolveServicePreview({ metric: 'v', service: 'npm', target: 'x' }, TEST_ENV, {
+        version: '1.0.0',
+      })
+    ).toMatchObject({ color: 'rose', value: 'invalid data' });
   });
 
   it('renders thrown transforms and projections as invalid data (regression: malformed payloads crashed the Worker)', async () => {
@@ -955,7 +994,7 @@ describe('upstream caching & redirects', () => {
   });
 
   it('stores only the projected payload at the edge and serves edge hits without fetching', async () => {
-    const stub = installEdgeCache();
+    const stub = installEdgeCacheStub();
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(() =>
@@ -972,7 +1011,7 @@ describe('upstream caching & redirects', () => {
     const [storedKey = ''] = stub.storedKeys;
     const stored = stub.store.get(storedKey);
     const storedBody = (await stored?.clone().json()) as Record<string, unknown>;
-    expect(Object.keys(storedBody).toSorted()).toEqual(['crate', 'versions']);
+    expect(Object.keys(storedBody).toSorted()).toEqual(['defaultVersion', 'license']);
 
     resetUpstreamCaches();
     expect(await describeMetric('/badge/crates/tiny/license')).toBe('license: MIT');
@@ -980,7 +1019,7 @@ describe('upstream caching & redirects', () => {
   });
 
   it('caches failures at the edge as small markers with status-specific TTLs', async () => {
-    const stub = installEdgeCache();
+    const stub = installEdgeCacheStub();
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
       if (url.includes('/slow-down/')) {
@@ -1026,12 +1065,17 @@ describe('upstream caching & redirects', () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(fetchCount);
   });
 
-  it('reads x-ratelimit-reset as delta seconds below 1e9 and as an epoch above (regression: delta resets clamped to 60s)', async () => {
-    const stub = installEdgeCache();
+  it('reads x-ratelimit-reset and ratelimit-reset as delta seconds below 1e9 and as an epoch above (regression: delta resets clamped to 60s)', async () => {
+    const stub = installEdgeCacheStub();
     vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
     const epochReset = Math.floor(REFERENCE_NOW / 1000) + 600;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
+      if (url.includes('/standard-reset/')) {
+        return Promise.resolve(
+          new Response('', { headers: { 'ratelimit-reset': '240' }, status: 429 })
+        );
+      }
       const resetHeader = url.includes('/delta-reset/') ? '300' : String(epochReset);
       return Promise.resolve(
         new Response('', { headers: { 'x-ratelimit-reset': resetHeader }, status: 429 })
@@ -1040,6 +1084,7 @@ describe('upstream caching & redirects', () => {
     const expectedMaxAges: readonly (readonly [name: string, maxAge: number])[] = [
       ['delta-reset', 300],
       ['epoch-reset', 600],
+      ['standard-reset', 240],
     ];
     await Promise.all(expectedMaxAges.map(([name]) => resolvePathMetric(`/badge/npm/${name}/v`)));
     for (const [name, maxAge] of expectedMaxAges) {
@@ -1051,7 +1096,7 @@ describe('upstream caching & redirects', () => {
   });
 
   it('keeps edge hits in memory only for their remaining TTL (regression: edge hits got a full fresh TTL)', async () => {
-    const stub = installEdgeCache();
+    const stub = installEdgeCacheStub();
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
     mockUpstream({ 'registry.npmjs.org/aging/latest': { version: '1.0.0' } });
     await describeMetric('/badge/npm/aging/v');
@@ -1147,9 +1192,26 @@ describe('metric formatting helpers', () => {
     expect(formatBytes(7994)).toBe('7.8 kB');
     expect(formatBytes(3053)).toBe('3 kB');
     expect(formatBytes(1_258_291)).toBe('1.2 MB');
+    expect(formatBytes(2_147_483_648)).toBe('2 GB');
+    expect(formatBytes(-1)).toBe('n/a');
     expect(formatBytes(undefined)).toBe('n/a');
     expect(formatPercent(96.43)).toBe('96.4%');
     expect(formatPercent(90)).toBe('90%');
+    const scoreMetric = createScoreMetric(
+      createEndpoint<readonly [number, number]>({
+        api: 'https://example.com/{target}',
+        page: 'https://example.com/{target}',
+      }),
+      { defaultColor: 'emerald', defaultIcon: 'gauge', defaultLabel: 'score' },
+      (pair) => pair,
+      (achieved, maximum) => `${achieved}/${maximum}`
+    );
+    const dummyParams = { owner: '', target: 'x' };
+    expect(scoreMetric.transform([-5, 100], dummyParams)?.value).toBe('n/a');
+    expect(scoreMetric.transform([120, 100], dummyParams)?.special).toEqual({
+      type: 'ring',
+      value: 100,
+    });
     expect(formatLicense('LicenseRef-Polyform-Shield-1.0.0')).toBe('Polyform-Shield-1.0.0');
     expect(formatLicense('LicenseRef-proprietary')).toBe('proprietary');
     expect(formatLicense('Some Very Long Custom License Name')).toBe('Some Very Long Custom ..');
@@ -1468,15 +1530,25 @@ describe('added service presets', () => {
     );
   });
 
-  it('resolves Bundlephobia sizes for unscoped and scoped packages', async () => {
+  it('resolves Bundlephobia sizes and dependency counts for unscoped and scoped packages', async () => {
     mockUpstream({
-      'package=%40hono%2Fnode-server': { gzip: 8185, size: 22_283 },
-      'package=react': { gzip: 3053, name: 'react', size: 7994, version: '19.3.1' },
+      'package=%40hono%2Fnode-server': { dependencyCount: 1, gzip: 8185, size: 22_283 },
+      'package=react': {
+        dependencyCount: 0,
+        gzip: 3053,
+        name: 'react',
+        size: 7994,
+        version: '19.3.1',
+      },
     });
     expect(await describeMetric('/badge/bundlephobia/react/min')).toBe('minified: 7.8 kB');
     expect(await describeMetric('/badge/bundlephobia/react/gzip')).toBe('minzipped: 3 kB');
+    expect(await describeMetric('/badge/bundlephobia/react/deps')).toBe('dependencies: 0');
     expect(await describeMetric('/badge/bundlephobia/@hono/node-server/minzip')).toBe(
       'minzipped: 8 kB'
+    );
+    expect(await describeMetric('/badge/bundlephobia/@hono/node-server/dependencies')).toBe(
+      'dependencies: 1'
     );
     expect(resolvePathRedirect('/badge/bundlephobia/@hono/node-server/min')).toBe(
       'https://bundlephobia.com/package/@hono/node-server'
@@ -1512,12 +1584,16 @@ describe('added service presets', () => {
         active_installs: 5_000_000,
         downloaded: 407_684_612,
         rating: 94,
+        requires: '5.8',
+        requires_php: '7.2',
         version: '5.7.2',
       },
       'themes/info/1.2/?action=theme_information&request%5Bslug%5D=astra': {
         active_installs: 1_000_000,
         downloaded: 27_051_895,
         rating: 98,
+        requires: '5.3',
+        requires_php: false,
         version: '4.14.1',
       },
     });
@@ -1525,8 +1601,12 @@ describe('added service presets', () => {
     expect(await describeMetric('/badge/wp/akismet/installs')).toBe('active installs: 5M+');
     expect(await describeMetric('/badge/wp/akismet/rating')).toBe('rating: 4.7/5');
     expect(await describeMetric('/badge/wp/akismet/dl')).toBe('downloads: 407.7M');
+    expect(await describeMetric('/badge/wp/akismet/php')).toBe('php: v7.2');
+    expect(await describeMetric('/badge/wp/akismet/wp')).toBe('wordpress: v5.8');
     expect(await describeMetric('/badge/wp-theme/astra/v')).toBe('wordpress theme: v4.14.1');
     expect(await describeMetric('/badge/wp-theme/astra/rating')).toBe('rating: 4.9/5');
+    expect(await describeMetric('/badge/wp-theme/astra/php')).toBe('php: n/a');
+    expect(await describeMetric('/badge/wp-theme/astra/wp')).toBe('wordpress: v5.3');
     expect(requestedUrls[0]).toContain('request%5Bfields%5D%5Bsections%5D=0');
     expect(resolvePathRedirect('/badge/wp-theme/astra/v')).toBe(
       'https://wordpress.org/themes/astra/'
@@ -2279,12 +2359,13 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     );
   });
 
-  it('resolves Zenodo record statistics and the DOI for numeric record ids only', async () => {
+  it('resolves Zenodo record statistics, version, license, and the DOI for numeric record ids only', async () => {
     const requestedUrls = mockUpstream({
       'zenodo.org/api/records/42': { doi: 5, stats: null },
       'zenodo.org/api/records/3835582': {
         doi: '10.5281/zenodo.3835582',
         files: [{ key: 'astropy.zip', size: 1024 }],
+        metadata: { license: { id: 'BSD-3-Clause' }, version: '4.0.1' },
         stats: { downloads: 76_001, unique_downloads: 34_081, unique_views: 1319, views: 1387 },
       },
     });
@@ -2293,14 +2374,67 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(await describeMetric('/badge/zenodo/3835582/unique')).toBe('unique downloads: 34.1k');
     expect(await describeMetric('/badge/zenodo/3835582/views')).toBe('views: 1.4k');
     expect(await describeMetric('/badge/zenodo/3835582/doi')).toBe('doi: 10.5281/zenodo.3835582');
+    expect(await describeMetric('/badge/zenodo/3835582/v')).toBe('zenodo: v4.0.1');
+    expect(await describeMetric('/badge/zenodo/3835582/license')).toBe('license: BSD-3-Clause');
     expect(await describeMetric('/badge/zenodo/42/dt')).toBe('downloads: n/a');
     expect(await describeMetric('/badge/zenodo/42/doi')).toBe('doi: n/a');
+    expect(await describeMetric('/badge/zenodo/42/v')).toBe('zenodo: n/a');
+    expect(await describeMetric('/badge/zenodo/42/license')).toBe('license: unknown');
     expect(await describeMetric('/badge/zenodo/7/views')).toBe('views: not found');
     const requestCount = requestedUrls.length;
     expect(await describeMetric('/badge/zenodo/astropy/dt')).toBe('zenodo: invalid name');
     expect(requestedUrls).toHaveLength(requestCount);
     expect(resolvePathRedirect('/badge/zenodo/3835582/dt')).toBe(
       'https://zenodo.org/records/3835582'
+    );
+  });
+
+  it('resolves Maven Central latest artifact versions and validates Solr coordinates', async () => {
+    const requestedUrls = mockUpstream({
+      'g:com.google.guava+AND+a:guava': {
+        response: { docs: [{ latestVersion: '33.5.0-jre' }], numFound: 1 },
+      },
+      'g:com.google.guava+AND+a:missing': { response: { docs: [], numFound: 0 } },
+    });
+    expect(await describeMetric('/badge/maven/com.google.guava/guava/v')).toBe(
+      'maven: v33.5.0-jre'
+    );
+    expect(await describeMetric('/badge/maven/com.google.guava/missing/v')).toBe(
+      'maven: not found'
+    );
+    expect(await describeMetric('/badge/maven/guava/v')).toBe('maven: missing owner');
+    const requestCount = requestedUrls.length;
+    expect(await describeMetric('/badge/maven/com.google.guava/gua+va/v')).toBe(
+      'maven: invalid name'
+    );
+    expect(await describeMetric('/badge/maven/com.google.guava/.bad/v')).toBe(
+      'maven: invalid name'
+    );
+    expect(requestedUrls).toHaveLength(requestCount);
+    expect(resolvePathRedirect('/badge/maven/com.google.guava/guava/v')).toBe(
+      'https://central.sonatype.com/artifact/com.google.guava/guava'
+    );
+  });
+
+  it('resolves JetBrains Marketplace plugin version, downloads, and Bayesian rating by numeric ID', async () => {
+    const requestedUrls = mockUpstream({
+      'plugins.jetbrains.com/api/plugins/8182': { downloads: 12_845_910, id: 8182 },
+      'plugins.jetbrains.com/api/plugins/8182/rating': { meanRating: 4.712, meanVotes: 382 },
+      'plugins.jetbrains.com/api/plugins/8182/updates?size=1': [{ version: '0.4.200.5421-243' }],
+      'plugins.jetbrains.com/api/plugins/9999/rating': { meanRating: 0, meanVotes: 0 },
+      'plugins.jetbrains.com/api/plugins/9999/updates?size=1': [],
+    });
+    expect(await describeMetric('/badge/jetbrains/8182/v')).toBe('jetbrains: v0.4.200.5421-243');
+    expect(await describeMetric('/badge/jetbrains/8182/dl')).toBe('downloads: 12.8M');
+    expect(await describeMetric('/badge/jetbrains/8182/dt')).toBe('downloads: 12.8M');
+    expect(await describeMetric('/badge/jetbrains/8182/rating')).toBe('rating: 4.7/5');
+    expect(await describeMetric('/badge/jetbrains/9999/v')).toBe('jetbrains: not found');
+    expect(await describeMetric('/badge/jetbrains/9999/rating')).toBe('rating: unrated');
+    const requestCount = requestedUrls.length;
+    expect(await describeMetric('/badge/jetbrains/rust/v')).toBe('jetbrains: invalid name');
+    expect(requestedUrls).toHaveLength(requestCount);
+    expect(resolvePathRedirect('/badge/jetbrains/8182/v')).toBe(
+      'https://plugins.jetbrains.com/plugin/8182'
     );
   });
 
