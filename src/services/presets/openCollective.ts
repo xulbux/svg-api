@@ -3,7 +3,7 @@
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
-import { createCommunityMetric, formatCurrency } from '@/services/metrics';
+import { createCommunityMetric, formatCurrency, readFiniteNumber } from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -36,10 +36,8 @@ const OPEN_COLLECTIVE_ENDPOINT = createEndpoint({
 function transformOpenCollectiveBudget(
   collective: Partial<OpenCollectivePayload>
 ): Partial<MetricResult> {
-  const income =
-    typeof collective.yearlyIncome === 'number'
-      ? collective.yearlyIncome / CENTS_PER_UNIT
-      : undefined;
+  const yearlyIncome = readFiniteNumber(collective.yearlyIncome);
+  const income = yearlyIncome === undefined ? undefined : yearlyIncome / CENTS_PER_UNIT;
   return { value: formatCurrency(income, collective.currency, '/yr') };
 }
 

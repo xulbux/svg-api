@@ -1092,7 +1092,7 @@ export function createRatingMetric<P>(
  * @param endpoint       Upstream endpoint.
  * @param presentation   Default color, icon, and label.
  * @param readScore      Reads `[achieved, maximum]` points from the projected payload.
- * @param format         Formats the achieved and maximum points into the badge value.
+ * @param format         Formats the achieved and maximum points into the badge value (defaults to `formatScoreOutOf`).
  * @param thresholds     Optional descending percentage thresholds that override the default color.
  * @returns Metric rendering the formatted score plus ring, or `'n/a'` when missing.
  */
@@ -1100,7 +1100,7 @@ export function createScoreMetric<P>(
   endpoint: MetricEndpoint<P>,
   presentation: MetricPresentation,
   readScore: (payload: P) => readonly [achieved: unknown, maximum: unknown],
-  format: (achieved: number, maximum: number) => string,
+  format: (achieved: number, maximum: number) => string = formatScoreOutOf,
   thresholds?: readonly ScoreColorThreshold[]
 ): ServiceMetricConfig {
   return createMetric(

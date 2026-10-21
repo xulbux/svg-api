@@ -149,13 +149,6 @@ function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefi
   };
 }
 
-/** Read the Docs latest-version builds endpoint (`limit=10`) with hosted documentation redirect. */
-const READ_THE_DOCS_ENDPOINT = createEndpoint({
-  api: 'https://readthedocs.org/api/v3/projects/{target}/versions/latest/builds/?limit=10',
-  page: 'https://{target}.readthedocs.io/',
-  project: projectReadTheDocsBuilds,
-});
-
 /** Transform the most recent build and history into status and automatic widgets. */
 function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<MetricResult> {
   const { durations, latest, passedCount, states, totalCount } = projection;
@@ -182,6 +175,13 @@ function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<M
   };
   return { ...base, specials };
 }
+
+/** Read the Docs latest-version builds endpoint (`limit=10`) with hosted documentation redirect. */
+const READ_THE_DOCS_ENDPOINT = createEndpoint({
+  api: 'https://readthedocs.org/api/v3/projects/{target}/versions/latest/builds/?limit=10',
+  page: 'https://{target}.readthedocs.io/',
+  project: projectReadTheDocsBuilds,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 

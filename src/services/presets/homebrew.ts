@@ -49,6 +49,9 @@ const HOMEBREW_VERSION: MetricPresentation = {
 /** Docs note on the install metric keys. */
 const INSTALLS_DOCS = '30/90/365-day installs (dl/dq/dy)';
 
+/** Top-level Homebrew JSON keys needed for version, license, and install analytics. */
+const HOMEBREW_EXTRACT_KEYS = ['analytics', 'license', 'version', 'versions'] as const;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Sum every install count of an analytics period (all option variants), or `undefined` when missing. */
@@ -83,9 +86,6 @@ function projectHomebrewPayload(data: unknown): HomebrewProjection | undefined {
     version: readText(versions?.stable) ?? readText(data.version),
   };
 }
-
-/** Top-level Homebrew JSON keys needed for version, license, and install analytics. */
-const HOMEBREW_EXTRACT_KEYS = ['analytics', 'license', 'version', 'versions'] as const;
 
 /** Homebrew formula endpoint (analytics refresh daily). */
 const FORMULA_ENDPOINT = createEndpoint({

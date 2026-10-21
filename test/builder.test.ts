@@ -41,7 +41,7 @@ import type {
   ServiceRequest,
 } from '@/types';
 
-/*************************************** Fixtures ***************************************/
+// ---------------------------------------- TYPES ----------------------------------------
 
 /** Builder state (field ID -> serialized value). */
 type BuilderState = Record<string, string>;
@@ -109,9 +109,9 @@ interface BuilderCore {
     index: IconPickerIndex,
     maxSlugLength: number
   ) => { resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined };
-  /** Decode a path segment (`_` to space, `__` to literal `_`). */
+  /** Decode a URL path segment (`+` to space, percent-encoding to UTF-8). */
   decodeSegment: (raw: string) => string;
-  /** Encode a path segment (space to `_`, `_` to `__`, keeping readable punctuation). */
+  /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */
   encodeSegment: (text: string) => string;
   /** Parse a relative SVG path and query string into a builder form state. */
   parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
@@ -126,14 +126,20 @@ interface BuilderCore {
   ) => { kind: string; modifier: string; payload: string };
 }
 
+// ---------------------------------------- CONSTS ---------------------------------------
+
 /** Every builder element kind. */
 const BUILDER_KINDS: readonly BuilderKind[] = BUILDER_PAGES.map((page) => page.kind);
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches every "Open in Builder" preview link (`href` with escaped `&`). */
 const PREVIEW_LINK_RX = /<a class="preview-link" href="(?<href>[^"]+)"/g;
 
 /** Matches SMIL animation elements in rendered SVGs. */
 const SMIL_ANIMATION_RX = /<animate/;
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Evaluate the builder client script without a DOM and return its exposed core. */
 function loadBuilderCore(): BuilderCore {
@@ -200,6 +206,8 @@ function renderPrefillRoundTrip(
   expect(parsed, path).toBeDefined();
   return [renderSvgPath(path), renderSvgPath(core.buildPath(schema, parsed ?? {}).path)];
 }
+
+// ----------------------------------------- MAIN ----------------------------------------
 
 /*************************************** Schemas ****************************************/
 

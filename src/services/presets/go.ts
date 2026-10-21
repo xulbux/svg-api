@@ -8,7 +8,7 @@
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import { createVersionMetric } from '@/services/metrics';
-import type { ServiceDefinition, ServiceRouteParams } from '@/types';
+import type { ServiceRouteParams } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -47,30 +47,27 @@ function buildGoProxyUrl({ target }: ServiceRouteParams): string {
   return `https://proxy.golang.org/${escapedPath}@latest`;
 }
 
-/** Create the Go modules service preset. */
-function createGoService(): ServiceDefinition {
-  const proxyEndpoint = createEndpoint({
-    api: buildGoProxyUrl,
-    page: 'https://pkg.go.dev/{target}',
-    project: pickFields<GoLatestPayload>(['Version']),
-  });
-  return defineService({
-    docs: {
-      description: 'Latest version of any Go module (the full module path spans several segments).',
-      title: 'Go Modules',
-    },
-    metrics: {
-      v: createVersionMetric(
-        proxyEndpoint,
-        { defaultColor: 'cyan', defaultIcon: 'go', defaultLabel: 'go' },
-        (latest) => latest.Version
-      ),
-    },
-    route: { target: { maxSegments: MAX_MODULE_PATH_SEGMENTS, placeholder: ':module' } },
-  });
-}
+/** Go module proxy `@latest` endpoint with pkg.go.dev module page redirect. */
+const PROXY_ENDPOINT = createEndpoint({
+  api: buildGoProxyUrl,
+  page: 'https://pkg.go.dev/{target}',
+  project: pickFields<GoLatestPayload>(['Version']),
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Go modules service preset (`go`). */
-export const GO_SERVICE: ServiceDefinition = createGoService();
+export const GO_SERVICE = defineService({
+  docs: {
+    description: 'Latest version of any Go module (the full module path spans several segments).',
+    title: 'Go Modules',
+  },
+  metrics: {
+    v: createVersionMetric(
+      PROXY_ENDPOINT,
+      { defaultColor: 'cyan', defaultIcon: 'go', defaultLabel: 'go' },
+      (latest) => latest.Version
+    ),
+  },
+  route: { target: { maxSegments: MAX_MODULE_PATH_SEGMENTS, placeholder: ':module' } },
+});

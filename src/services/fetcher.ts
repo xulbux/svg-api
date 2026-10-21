@@ -337,7 +337,10 @@ function resolveServiceContext(
     }
   }
 
-  const isOwnerValid = owner === '' || SAFE_SEGMENT_RX.test(owner);
+  const isOwnerValid =
+    owner === '' ||
+    (SAFE_SEGMENT_RX.test(owner) &&
+      (ownerSegment?.pattern === undefined || ownerSegment.pattern.test(owner)));
   if (!isOwnerValid || !isTargetValid(service, request.target)) {
     return buildErrorResult(serviceKey, 'invalid name', 400);
   }

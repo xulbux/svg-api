@@ -18,7 +18,6 @@ import {
   readScorecardCheckScores,
   readText,
 } from '@/services/metrics';
-import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -57,48 +56,45 @@ function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefi
   };
 }
 
-/** Create the deps.dev service preset. */
-function createDepsDevService(): ServiceDefinition {
-  const projectEndpoint = createEndpoint({
-    api: 'https://api.deps.dev/v3/projects/github.com%2F{id}',
-    page: 'https://deps.dev/project/github/{id}',
-    project: projectDepsDevProject,
-    ttl: CACHE_TTL.daily,
-  });
-  return defineService({
-    docs: {
-      description:
-        'Stars, forks, open issues & PRs, license, and OpenSSF Scorecard score of any public GitHub repository (refreshed about daily).',
-      title: 'deps.dev',
-    },
-    metrics: {
-      forks: createCountMetric(
-        projectEndpoint,
-        { ...FORKS, autoSpecials: RATIO_SPECIALS },
-        (project) => project.forks,
-        '',
-        (project) => buildRatioSpecials(project.forks, project.stars)
-      ),
-      issues: createCountMetric(
-        projectEndpoint,
-        { ...ISSUES, autoSpecials: RATIO_SPECIALS, defaultLabel: 'issues & PRs' },
-        (project) => project.issues,
-        '',
-        (project) => buildRatioSpecials(project.issues, project.stars)
-      ),
-      license: createLicenseMetric(projectEndpoint, (project) => project.license),
-      score: createScorecardMetric(
-        projectEndpoint,
-        (project) => project.score,
-        (project) => project.checks
-      ),
-      stars: createCountMetric(projectEndpoint, STARS, (project) => project.stars),
-    },
-    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
-  });
-}
+/** deps.dev GitHub project endpoint (refreshed daily). */
+const PROJECT_ENDPOINT = createEndpoint({
+  api: 'https://api.deps.dev/v3/projects/github.com%2F{id}',
+  page: 'https://deps.dev/project/github/{id}',
+  project: projectDepsDevProject,
+  ttl: CACHE_TTL.daily,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** deps.dev service preset (`depsdev`). */
-export const DEPS_DEV_SERVICE: ServiceDefinition = createDepsDevService();
+export const DEPS_DEV_SERVICE = defineService({
+  docs: {
+    description:
+      'Stars, forks, open issues & PRs, license, and OpenSSF Scorecard score of any public GitHub repository (refreshed about daily).',
+    title: 'deps.dev',
+  },
+  metrics: {
+    forks: createCountMetric(
+      PROJECT_ENDPOINT,
+      { ...FORKS, autoSpecials: RATIO_SPECIALS },
+      (project) => project.forks,
+      '',
+      (project) => buildRatioSpecials(project.forks, project.stars)
+    ),
+    issues: createCountMetric(
+      PROJECT_ENDPOINT,
+      { ...ISSUES, autoSpecials: RATIO_SPECIALS, defaultLabel: 'issues & PRs' },
+      (project) => project.issues,
+      '',
+      (project) => buildRatioSpecials(project.issues, project.stars)
+    ),
+    license: createLicenseMetric(PROJECT_ENDPOINT, (project) => project.license),
+    score: createScorecardMetric(
+      PROJECT_ENDPOINT,
+      (project) => project.score,
+      (project) => project.checks
+    ),
+    stars: createCountMetric(PROJECT_ENDPOINT, STARS, (project) => project.stars),
+  },
+  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+});

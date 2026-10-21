@@ -54,7 +54,7 @@ export const MAVEN_SERVICE = defineService({
     ),
   },
   route: {
-    owner: { isRequired: true, placeholder: ':group' },
+    owner: { isRequired: true, pattern: MAVEN_COORD_RX, placeholder: ':group' },
     target: { pattern: MAVEN_COORD_RX, placeholder: ':artifact' },
   },
 });

@@ -23,7 +23,7 @@ import { escapeXml } from '@/svg/shared';
 import { GROUP_GAP_RATIO } from '@/svg/stack';
 import { requireDefined } from './helpers';
 
-/*************************************** Fixtures ***************************************/
+// ---------------------------------------- TYPES ----------------------------------------
 
 /** Rendered documentation page with its canonical path. */
 interface RenderedPage {
@@ -40,6 +40,29 @@ interface ListedMetrics {
   /** Listed canonical metrics. */
   metrics: string[];
 }
+
+/** Fallback popover placement options of the site script. */
+interface PopoverPlacementOptions {
+  /** Horizontal alignment with the anchor. */
+  align?: 'end' | 'start';
+  /** Distance between anchor and popover in pixels. */
+  gap?: number;
+  /** Whether the popover is at least as wide as its anchor. */
+  isWidthMatched?: boolean;
+}
+
+/** Pure helpers exposed by the site script without a DOM (`svgSiteCore`). */
+interface SiteCore {
+  /** Compute viewport-clamped popover coordinates next to an anchor rectangle. */
+  computePopoverPlacement: (
+    anchorRect: Readonly<Record<'bottom' | 'left' | 'right' | 'top' | 'width', number>>,
+    popoverSize: Readonly<Record<'height' | 'width', number>>,
+    viewportSize: Readonly<Record<'height' | 'width', number>>,
+    options: PopoverPlacementOptions
+  ) => Readonly<Record<'left' | 'top', number> & Record<'minWidth', number | undefined>>;
+}
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches every `id="…"` attribute. */
 const ID_ATTRIBUTE_RX = /\sid="(?<id>[^"]+)"/g;
@@ -75,26 +98,13 @@ const SIDEBAR_TOGGLE_RX =
 const DEAD_CLASS_RX =
   /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text)[\s"]/;
 
-/** Fallback popover placement options of the site script. */
-interface PopoverPlacementOptions {
-  /** Horizontal alignment with the anchor. */
-  align?: 'end' | 'start';
-  /** Distance between anchor and popover in pixels. */
-  gap?: number;
-  /** Whether the popover is at least as wide as its anchor. */
-  isWidthMatched?: boolean;
-}
+/** Matches every `var(--c-…)` custom property reference. */
+const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
 
-/** Pure helpers exposed by the site script without a DOM (`svgSiteCore`). */
-interface SiteCore {
-  /** Compute viewport-clamped popover coordinates next to an anchor rectangle. */
-  computePopoverPlacement: (
-    anchorRect: Readonly<Record<'bottom' | 'left' | 'right' | 'top' | 'width', number>>,
-    popoverSize: Readonly<Record<'height' | 'width', number>>,
-    viewportSize: Readonly<Record<'height' | 'width', number>>,
-    options: PopoverPlacementOptions
-  ) => Readonly<Record<'left' | 'top', number> & Record<'minWidth', number | undefined>>;
-}
+/** Matches every `--c-…:` custom property definition. */
+const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
+
+// -------------------------------------- INTERNALS --------------------------------------
 
 /** Render the homepage, every documentation page, and every builder page. */
 function renderAllPages(): RenderedPage[] {
@@ -155,6 +165,8 @@ function collectListedMetrics(row: string): ListedMetrics {
   }
   return listed;
 }
+
+// ----------------------------------------- MAIN ----------------------------------------
 
 /************************************ HTML validity *************************************/
 
@@ -517,6 +529,7 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 });
+
 /********************************** Docs drift guards ***********************************/
 
 describe('documentation drift guards', () => {
@@ -752,12 +765,6 @@ describe('website client scripts & markup regressions', () => {
 });
 
 /*********************************** Site stylesheet ************************************/
-
-/** Matches every `var(--c-…)` custom property reference. */
-const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
-
-/** Matches every `--c-…:` custom property definition. */
-const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
 
 describe('site stylesheet', () => {
   it('only references defined --c-* tokens (regression: .brand-mark used the undefined --c-btn-brand-text)', () => {

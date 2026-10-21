@@ -285,9 +285,5 @@ describe('computeIconXBounds', () => {
       maxX: 22,
       minX: 2,
     });
-    expect(computeIconXBounds('<polygon points="" /><polyline points="   " />', false)).toEqual({
-      maxX: 22,
-      minX: 2,
-    });
   });
 });

@@ -179,6 +179,11 @@ export type ServiceOwnerMode = 'none' | 'optional' | 'required';
 export interface ServiceOwnerSegment {
   /** Whether the owner segment must be present. */
   isRequired: boolean;
+  /**
+   * Stricter pattern the owner segment must also match on top of the shared safe segment rule
+   * (e.g., Maven group coordinates); Mismatches are rejected as `invalid name` before any fetch.
+   */
+  pattern?: RegExp;
   /** Docs placeholder of the owner segment (e.g., `':scope'`, `':vendor'`). */
   placeholder: string;
   /**

@@ -80,7 +80,7 @@ function readHangarLicense(settings: unknown): string | undefined {
   if (!isJsonObject(license)) {
     return undefined;
   }
-  return (readText(license.name) || undefined) ?? (readText(license.type) || undefined);
+  return readText(license.name) ?? readText(license.type);
 }
 
 /** Project a Hangar project into its counters and license (links and platform lists are dropped). */

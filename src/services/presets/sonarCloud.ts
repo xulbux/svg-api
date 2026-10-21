@@ -21,7 +21,6 @@ import type {
   BadgeSpecialMap,
   MetricPresentation,
   MetricResult,
-  ServiceDefinition,
   ServiceMetricConfig,
   StripTickState,
   ThemeColorName,
@@ -222,159 +221,153 @@ function readMeasureDiff(
   return newValue !== undefined && overallValue !== undefined ? newValue - overallValue : undefined;
 }
 
-/** Create the shared SonarCloud service preset. */
-function createSonarCloudService(): ServiceDefinition {
-  const measuresEndpoint = createEndpoint({
-    api: `https://sonarcloud.io/api/measures/component?component={target}&metricKeys=${SONAR_MEASURE_KEYS.join(',')}`,
-    page: 'https://sonarcloud.io/project/overview?id={target}',
-    project: projectSonarMeasures,
-  });
+/** SonarCloud component measures endpoint with project overview page redirect. */
+const MEASURES_ENDPOINT = createEndpoint({
+  api: `https://sonarcloud.io/api/measures/component?component={target}&metricKeys=${SONAR_MEASURE_KEYS.join(',')}`,
+  page: 'https://sonarcloud.io/project/overview?id={target}',
+  project: projectSonarMeasures,
+});
 
-  /** Create an issue count metric that turns emerald at zero and derives `delta`, `bar`, and `ring` from new code. */
-  function createIssueCountMetric(
-    key: SonarMeasureKey,
-    newKey: SonarMeasureKey,
-    presentation: MetricPresentation
-  ): ServiceMetricConfig {
-    return createMetric(
-      measuresEndpoint,
-      { ...presentation, autoSpecials: ISSUE_SPECIALS },
-      (measures) => {
-        const count = toFiniteNumber(measures[key]);
-        const newCount = toFiniteNumber(measures[newKey]);
-        const specials: BadgeSpecialMap = {};
-        if (newCount !== undefined) {
-          specials.delta = {
-            type: 'delta',
-            value:
-              newCount === 0 ? '0' : `${newCount > 0 ? '+' : ''}${formatCompactNumber(newCount)}`,
-          };
-          const ratio = buildRatioSpecials(newCount, count && count > 0 ? count : undefined);
-          if (ratio) {
-            specials.bar = ratio.bar;
-            specials.ring = ratio.ring;
-          }
-        }
-        return {
-          color: count === 0 ? 'emerald' : undefined,
-          specials: Object.keys(specials).length > 0 ? specials : undefined,
-          value: formatCount(count),
+/** Create an issue count metric that turns emerald at zero and derives `delta`, `bar`, and `ring` from new code. */
+function createIssueCountMetric(
+  key: SonarMeasureKey,
+  newKey: SonarMeasureKey,
+  presentation: MetricPresentation
+): ServiceMetricConfig {
+  return createMetric(
+    MEASURES_ENDPOINT,
+    { ...presentation, autoSpecials: ISSUE_SPECIALS },
+    (measures) => {
+      const count = toFiniteNumber(measures[key]);
+      const newCount = toFiniteNumber(measures[newKey]);
+      const specials: BadgeSpecialMap = {};
+      if (newCount !== undefined) {
+        specials.delta = {
+          type: 'delta',
+          value:
+            newCount === 0 ? '0' : `${newCount > 0 ? '+' : ''}${formatCompactNumber(newCount)}`,
         };
-      }
-    );
-  }
-
-  /** Create a letter rating metric (`A`–`E`) with `steps`, `ring`, and `bar` widgets. */
-  function createGradeMetric(key: SonarMeasureKey, label: string): ServiceMetricConfig {
-    return createMetric(
-      measuresEndpoint,
-      { ...RATING_PRESENTATION, defaultLabel: label },
-      (measures) => {
-        const rating = toFiniteNumber(measures[key]);
-        const rounded = rating === undefined ? undefined : Math.round(rating);
-        const grade = rounded === undefined ? undefined : SONAR_GRADES[rounded - 1];
-        if (!grade || rounded === undefined) {
-          return { value: 'n/a' };
+        const ratio = buildRatioSpecials(newCount, count && count > 0 ? count : undefined);
+        if (ratio) {
+          specials.bar = ratio.bar;
+          specials.ring = ratio.ring;
         }
-        const done = Math.min(5, Math.max(1, 6 - rounded));
-        const percent = done * 20;
-        return {
-          color: grade.color,
-          specials: {
-            bar: { type: 'bar', value: percent },
-            ring: { type: 'ring', value: percent },
-            steps: { done, total: 5, type: 'steps' },
-          },
-          value: grade.letter,
-        };
       }
-    );
-  }
-
-  const coverageMetric = createCoverageMetric(
-    measuresEndpoint,
-    'sonarcloud',
-    (measures) => toFiniteNumber(measures.coverage),
-    (measures) => readMeasureDiff(measures, 'new_coverage', 'coverage')
+      return {
+        color: count === 0 ? 'emerald' : undefined,
+        specials: Object.keys(specials).length > 0 ? specials : undefined,
+        value: formatCount(count),
+      };
+    }
   );
+}
 
-  return defineService({
-    docs: {
-      description:
-        'Quality gate, coverage (ring gauge), bugs, vulnerabilities, code smells, duplication, and A–E ratings of a public project.',
-      title: 'SonarCloud',
-    },
-    metricAliases: {
-      code_smells: 'smells',
-      dup: 'duplication',
-      gate: 'quality',
-      quality_gate: 'quality',
-      sqale: 'maintainability',
-      vulns: 'vulnerabilities',
-    },
-    metrics: {
-      bugs: createIssueCountMetric('bugs', 'new_bugs', {
-        defaultColor: 'rose',
-        defaultIcon: 'bug',
-        defaultLabel: 'bugs',
-      }),
-      coverage: coverageMetric,
-      duplication: createMetric(
-        measuresEndpoint,
-        {
-          autoSpecials: DUPLICATION_SPECIALS,
-          defaultColor: 'sky',
-          defaultIcon: 'copy',
-          defaultLabel: 'duplicated lines',
+/** Create a letter rating metric (`A`–`E`) with `steps`, `ring`, and `bar` widgets. */
+function createGradeMetric(key: SonarMeasureKey, label: string): ServiceMetricConfig {
+  return createMetric(
+    MEASURES_ENDPOINT,
+    { ...RATING_PRESENTATION, defaultLabel: label },
+    (measures) => {
+      const rating = toFiniteNumber(measures[key]);
+      const rounded = rating === undefined ? undefined : Math.round(rating);
+      const grade = rounded === undefined ? undefined : SONAR_GRADES[rounded - 1];
+      if (!grade || rounded === undefined) {
+        return { value: 'n/a' };
+      }
+      const done = Math.min(5, Math.max(1, 6 - rounded));
+      const percent = done * 20;
+      return {
+        color: grade.color,
+        specials: {
+          bar: { type: 'bar', value: percent },
+          ring: { type: 'ring', value: percent },
+          steps: { done, total: 5, type: 'steps' },
         },
-        (measures) => {
-          const percent = toFiniteNumber(measures.duplicated_lines_density);
-          if (percent === undefined) {
-            return { value: 'n/a' };
-          }
-          const clamped = Math.min(100, Math.max(0, Math.round(percent)));
-          const delta = formatPointDelta(
-            readMeasureDiff(measures, 'new_duplicated_lines_density', 'duplicated_lines_density')
-          );
-          return {
-            specials: {
-              bar: { type: 'bar', value: clamped },
-              ...(delta ? { delta: { type: 'delta', value: delta } } : {}),
-              ring: { type: 'ring', value: clamped },
-            },
-            value: formatPercent(percent),
-          };
-        }
-      ),
-      maintainability: createGradeMetric('sqale_rating', 'maintainability'),
-      quality: createMetric(
-        measuresEndpoint,
-        {
-          autoSpecials: QUALITY_GATE_SPECIALS,
-          defaultColor: 'emerald',
-          defaultIcon: 'sonarcloud',
-          defaultLabel: 'quality gate',
-        },
-        transformQualityGate
-      ),
-      reliability: createGradeMetric('reliability_rating', 'reliability'),
-      security: createGradeMetric('security_rating', 'security'),
-      smells: createIssueCountMetric('code_smells', 'new_code_smells', {
-        defaultColor: 'amber',
-        defaultIcon: 'wind',
-        defaultLabel: 'code smells',
-      }),
-      vulnerabilities: createIssueCountMetric('vulnerabilities', 'new_vulnerabilities', {
-        defaultColor: 'orange',
-        defaultIcon: 'shield-alert',
-        defaultLabel: 'vulnerabilities',
-      }),
-    },
-    route: { target: { placeholder: ':component' } },
-  });
+        value: grade.letter,
+      };
+    }
+  );
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** SonarCloud service preset (`sonarcloud`). */
-export const SONARCLOUD_SERVICE: ServiceDefinition = createSonarCloudService();
+export const SONARCLOUD_SERVICE = defineService({
+  docs: {
+    description:
+      'Quality gate, coverage (ring gauge), bugs, vulnerabilities, code smells, duplication, and A–E ratings of a public project.',
+    title: 'SonarCloud',
+  },
+  metricAliases: {
+    code_smells: 'smells',
+    dup: 'duplication',
+    gate: 'quality',
+    quality_gate: 'quality',
+    sqale: 'maintainability',
+    vulns: 'vulnerabilities',
+  },
+  metrics: {
+    bugs: createIssueCountMetric('bugs', 'new_bugs', {
+      defaultColor: 'rose',
+      defaultIcon: 'bug',
+      defaultLabel: 'bugs',
+    }),
+    coverage: createCoverageMetric(
+      MEASURES_ENDPOINT,
+      'sonarcloud',
+      (measures) => toFiniteNumber(measures.coverage),
+      (measures) => readMeasureDiff(measures, 'new_coverage', 'coverage')
+    ),
+    duplication: createMetric(
+      MEASURES_ENDPOINT,
+      {
+        autoSpecials: DUPLICATION_SPECIALS,
+        defaultColor: 'sky',
+        defaultIcon: 'copy',
+        defaultLabel: 'duplicated lines',
+      },
+      (measures) => {
+        const percent = toFiniteNumber(measures.duplicated_lines_density);
+        if (percent === undefined) {
+          return { value: 'n/a' };
+        }
+        const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+        const delta = formatPointDelta(
+          readMeasureDiff(measures, 'new_duplicated_lines_density', 'duplicated_lines_density')
+        );
+        return {
+          specials: {
+            bar: { type: 'bar', value: clamped },
+            ...(delta ? { delta: { type: 'delta', value: delta } } : {}),
+            ring: { type: 'ring', value: clamped },
+          },
+          value: formatPercent(percent),
+        };
+      }
+    ),
+    maintainability: createGradeMetric('sqale_rating', 'maintainability'),
+    quality: createMetric(
+      MEASURES_ENDPOINT,
+      {
+        autoSpecials: QUALITY_GATE_SPECIALS,
+        defaultColor: 'emerald',
+        defaultIcon: 'sonarcloud',
+        defaultLabel: 'quality gate',
+      },
+      transformQualityGate
+    ),
+    reliability: createGradeMetric('reliability_rating', 'reliability'),
+    security: createGradeMetric('security_rating', 'security'),
+    smells: createIssueCountMetric('code_smells', 'new_code_smells', {
+      defaultColor: 'amber',
+      defaultIcon: 'wind',
+      defaultLabel: 'code smells',
+    }),
+    vulnerabilities: createIssueCountMetric('vulnerabilities', 'new_vulnerabilities', {
+      defaultColor: 'orange',
+      defaultIcon: 'shield-alert',
+      defaultLabel: 'vulnerabilities',
+    }),
+  },
+  route: { target: { placeholder: ':component' } },
+});

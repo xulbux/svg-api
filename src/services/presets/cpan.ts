@@ -60,6 +60,16 @@ const CPAN_LICENSE_NAMES: Readonly<Record<string, string>> = {
 /** Key of the stored document of an Elasticsearch search hit. */
 const SEARCH_HIT_SOURCE_KEY = '_source';
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches a CPAN distribution name (ASCII letters, digits, and inner hyphens; Safe inside a Lucene query). */
+const CPAN_DIST_RX = /^[A-Za-z\d][A-Za-z\d-]{0,127}$/;
+
+/** Matches a trailing ISO 8601 timezone designator (`Z` or `±hh:mm`). */
+const TIMEZONE_SUFFIX_RX = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+// -------------------------------------- INTERNALS --------------------------------------
+
 /** Projects the `_source` fields of a release search hit. */
 const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
 
@@ -75,16 +85,6 @@ const CPAN_ENDPOINT = createEndpoint({
     );
   },
 });
-
-// ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches a CPAN distribution name (ASCII letters, digits, and inner hyphens; Safe inside a Lucene query). */
-const CPAN_DIST_RX = /^[A-Za-z\d][A-Za-z\d-]{0,127}$/;
-
-/** Matches a trailing ISO 8601 timezone designator (`Z` or `±hh:mm`). */
-const TIMEZONE_SUFFIX_RX = /(?:Z|[+-]\d{2}:?\d{2})$/i;
-
-// -------------------------------------- INTERNALS --------------------------------------
 
 /** Read the display name of the first release license (`unknown` keys render as missing). */
 function readCpanLicense(release: Partial<CpanRelease>): string | undefined {

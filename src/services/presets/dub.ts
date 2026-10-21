@@ -49,11 +49,6 @@ const DUB_PAGE = 'https://code.dlang.org/packages/{target}';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Format a DUB package score on a 5-point scale (`'4.9/5'`). */
-function formatDubScore(achieved: number, maximum: number): string {
-  return `${Number(achieved.toFixed(1))}/${maximum}`;
-}
-
 /** Project a DUB `/latest/info` response into its version and license (dropping README fields). */
 function projectDubInfo(data: unknown): DubInfoProjection | undefined {
   if (!isJsonObject(data)) {
@@ -123,8 +118,7 @@ export const DUB_SERVICE = defineService({
     score: createScoreMetric(
       DUB_STATS_ENDPOINT,
       { ...SCORE, defaultLabel: 'dub score' },
-      (stats) => [stats.score, MAX_DUB_SCORE],
-      formatDubScore
+      (stats) => [stats.score, MAX_DUB_SCORE]
     ),
     v: createVersionMetric(
       DUB_INFO_ENDPOINT,

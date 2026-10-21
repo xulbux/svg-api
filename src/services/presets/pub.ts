@@ -86,11 +86,6 @@ function projectPubScore(data: unknown): PubScoreProjection | undefined {
   };
 }
 
-/** Format granted and maximum pub points (`'150/160'`). */
-function formatPubPoints(achieved: number, maximum: number): string {
-  return `${achieved}/${maximum}`;
-}
-
 /** pub.dev package endpoint with package page redirect (only the latest version is cached). */
 const PUB_PACKAGE_ENDPOINT = createEndpoint({
   api: 'https://pub.dev/api/packages/{target}',
@@ -132,8 +127,7 @@ export const PUB_SERVICE = defineService({
     points: createScoreMetric(
       PUB_SCORE_ENDPOINT,
       { ...SCORE, defaultLabel: 'pub points' },
-      (score) => [score.grantedPoints, score.maxPoints],
-      formatPubPoints
+      (score) => [score.grantedPoints, score.maxPoints]
     ),
     v: createVersionMetric(
       PUB_PACKAGE_ENDPOINT,

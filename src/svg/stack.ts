@@ -2,7 +2,7 @@
  * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles (`svg.xul.is/stack/:icons`).
  */
 
-import { resolveStackBrandColor } from '@/config/stack';
+import { resolveStackBrandColor, resolveStackIconTitle } from '@/config/stack';
 import { resolveOptionalColor, THEMES } from '@/config/theme';
 import {
   BRAND_SLUG_CLEAN_RX,
@@ -18,7 +18,6 @@ import {
   buildIconBodyId,
   clampInt,
   escapeXml,
-  getOwnValue,
   isSheenMode,
   renderIconGroup,
   renderKumoBoxSurface,
@@ -42,14 +41,6 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Curated semantic theme color and display title for a tech stack icon. */
-interface StackIconMeta {
-  /** Semantic Tailwind v4 theme color used when no uniform `?color=` override is given. */
-  color: ThemeColorName;
-  /** Human-readable display title for the tile `<title>` tooltip. */
-  title: string;
-}
 
 /** A single resolved stack tile. */
 interface StackTile {
@@ -201,90 +192,6 @@ const STACK_ICON_ID_PREFIX = 'stack-icon';
 /** Stroke width of Lucide icons on stack tiles in `24x24` icon units. */
 const STACK_ICON_STROKE_WIDTH = 2.1;
 
-/** Curated semantic Tailwind v4 theme colors and display titles for tech stack icons, keyed by canonical slug. */
-const STACK_ICON_META: Readonly<Record<string, StackIconMeta>> = {
-  adobeaftereffects: { color: 'violet', title: 'Adobe After Effects' },
-  adobeillustrator: { color: 'orange', title: 'Adobe Illustrator' },
-  adobephotoshop: { color: 'sky', title: 'Adobe Photoshop' },
-  adobepremierepro: { color: 'purple', title: 'Adobe Premiere Pro' },
-  amazonwebservices: { color: 'amber', title: 'AWS' },
-  apachemaven: { color: 'orange', title: 'Apache Maven' },
-  archlinux: { color: 'cyan', title: 'Arch Linux' },
-  arduino: { color: 'teal', title: 'Arduino' },
-  blender: { color: 'orange', title: 'Blender' },
-  c: { color: 'blue', title: 'C' },
-  cloudflare: { color: 'orange', title: 'Cloudflare' },
-  cmake: { color: 'red', title: 'CMake' },
-  codepen: { color: 'slate', title: 'CodePen' },
-  cplusplus: { color: 'blue', title: 'C++' },
-  csharp: { color: 'violet', title: 'C#' },
-  css3: { color: 'sky', title: 'CSS3' },
-  dart: { color: 'sky', title: 'Dart' },
-  deno: { color: 'slate', title: 'Deno' },
-  docker: { color: 'sky', title: 'Docker' },
-  dotnet: { color: 'purple', title: '.NET' },
-  elixir: { color: 'violet', title: 'Elixir' },
-  figma: { color: 'pink', title: 'Figma' },
-  firebase: { color: 'amber', title: 'Firebase' },
-  flutter: { color: 'sky', title: 'Flutter' },
-  git: { color: 'orange', title: 'Git' },
-  github: { color: 'slate', title: 'GitHub' },
-  githubactions: { color: 'blue', title: 'GitHub Actions' },
-  gitlab: { color: 'orange', title: 'GitLab' },
-  gnubash: { color: 'emerald', title: 'Bash' },
-  go: { color: 'cyan', title: 'Go' },
-  gtk: { color: 'emerald', title: 'GTK' },
-  html5: { color: 'orange', title: 'HTML5' },
-  java: { color: 'orange', title: 'Java' },
-  javascript: { color: 'yellow', title: 'JavaScript' },
-  jetbrains: { color: 'rose', title: 'JetBrains' },
-  kotlin: { color: 'violet', title: 'Kotlin' },
-  laravel: { color: 'red', title: 'Laravel' },
-  latex: { color: 'teal', title: 'LaTeX' },
-  linux: { color: 'amber', title: 'Linux' },
-  lua: { color: 'indigo', title: 'Lua' },
-  markdown: { color: 'slate', title: 'Markdown' },
-  maven: { color: 'orange', title: 'Apache Maven' },
-  microsoftazure: { color: 'sky', title: 'Microsoft Azure' },
-  mysql: { color: 'sky', title: 'MySQL' },
-  netlify: { color: 'teal', title: 'Netlify' },
-  nodedotjs: { color: 'green', title: 'Node.js' },
-  notion: { color: 'slate', title: 'Notion' },
-  npm: { color: 'red', title: 'npm' },
-  obsidian: { color: 'violet', title: 'Obsidian' },
-  php: { color: 'indigo', title: 'PHP' },
-  pinia: { color: 'yellow', title: 'Pinia' },
-  postgresql: { color: 'blue', title: 'PostgreSQL' },
-  powershell: { color: 'sky', title: 'PowerShell' },
-  pypi: { color: 'sky', title: 'PyPI' },
-  python: { color: 'amber', title: 'Python' },
-  raspberrypi: { color: 'rose', title: 'Raspberry Pi' },
-  react: { color: 'cyan', title: 'React' },
-  redis: { color: 'red', title: 'Redis' },
-  regex: { color: 'indigo', title: 'RegEx' },
-  ruby: { color: 'red', title: 'Ruby' },
-  rust: { color: 'orange', title: 'Rust' },
-  sass: { color: 'pink', title: 'Sass' },
-  sqlite: { color: 'sky', title: 'SQLite' },
-  svelte: { color: 'orange', title: 'Svelte' },
-  swift: { color: 'orange', title: 'Swift' },
-  symfony: { color: 'slate', title: 'Symfony' },
-  tailwindcss: { color: 'cyan', title: 'Tailwind CSS' },
-  tauri: { color: 'amber', title: 'Tauri' },
-  terraform: { color: 'violet', title: 'Terraform' },
-  threedotjs: { color: 'slate', title: 'Three.js' },
-  twig: { color: 'lime', title: 'Twig' },
-  typescript: { color: 'blue', title: 'TypeScript' },
-  unity: { color: 'slate', title: 'Unity' },
-  unrealengine: { color: 'slate', title: 'Unreal Engine' },
-  visualstudio: { color: 'purple', title: 'Visual Studio' },
-  visualstudiocode: { color: 'sky', title: 'VS Code' },
-  vite: { color: 'violet', title: 'Vite' },
-  vuedotjs: { color: 'emerald', title: 'Vue.js' },
-  windows: { color: 'sky', title: 'Windows' },
-  wordpress: { color: 'sky', title: 'WordPress' },
-};
-
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches comma or whitespace separators between icon slugs inside a group. */
@@ -355,10 +262,9 @@ function buildStackTile(rawToken: string): StackTile | undefined {
     return undefined;
   }
   const cleanKey = lookup.key.replace(BRAND_SLUG_CLEAN_RX, '');
-  const meta = getOwnValue(STACK_ICON_META, cleanKey);
-  const color = meta?.color ?? resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
+  const color = resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
   const title =
-    meta?.title ??
+    resolveStackIconTitle(cleanKey) ??
     truncateText(formatSlugTitle(slug.slice(0, MAX_ICON_SLUG_LENGTH)), MAX_TILE_TITLE_LENGTH);
   return { color, colorOverride, data: lookup.data, title };
 }
@@ -534,13 +440,7 @@ function renderSingleStackTile(
 export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
   const { colorOverride, slug: cleanSlug } = splitTileToken(slug);
   const cleanKey = normalizeIconSlug(cleanSlug).replace(BRAND_SLUG_CLEAN_RX, '');
-  return (
-    colorOverride ??
-    fallback ??
-    getOwnValue(STACK_ICON_META, cleanKey)?.color ??
-    resolveStackBrandColor(cleanKey) ??
-    DEFAULT_STACK_ICON_COLOR
-  );
+  return colorOverride ?? fallback ?? resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
 }
 
 /**

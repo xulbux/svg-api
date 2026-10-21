@@ -593,6 +593,18 @@ describe('renderStack', () => {
     expect(perTileSvg).toContain(`fill="${THEMES.amber.tintBg}"`);
     expect(perTileSvg).toContain(`fill="${THEMES.emerald.tintBg}"`);
     expect(perTileSvg).toContain(`fill="${THEMES.slate.tintBg}"`);
+
+    const catalogTitlesSvg = renderStack({
+      icons: ['unocss,nextdotjs,scikitlearn,n8n'],
+      variant: '2',
+    });
+    expect(catalogTitlesSvg).toContain('<title>UnoCSS</title>');
+    expect(catalogTitlesSvg).toContain('<title>Next.js</title>');
+    expect(catalogTitlesSvg).toContain('<title>scikit-learn</title>');
+    expect(catalogTitlesSvg).toContain('<title>n8n</title>');
+    expect(extractAriaLabel(catalogTitlesSvg)).toBe(
+      'tech stack: UnoCSS, Next.js, scikit-learn, n8n'
+    );
   });
 });
 

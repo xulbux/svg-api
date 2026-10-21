@@ -785,6 +785,7 @@ describe('service request validation', () => {
       'svg.xul.is: restricted'
     );
     expect(await requestAriaLabel('/badge/pypi/owner/pkg/v')).toBe('pypi: invalid route');
+    expect(await requestAriaLabel('/badge/maven/com@google/guava/v')).toBe('maven: invalid name');
     expect(await requestAriaLabel('/badge/npm/hono/nope')).toBe('npm: invalid metric');
     expect(await requestAriaLabel('/badge/npm/hono/constructor')).toBe('npm: invalid metric');
     expect(await requestAriaLabel('/badge/aur/yay/dm')).toBe('aur: invalid metric');

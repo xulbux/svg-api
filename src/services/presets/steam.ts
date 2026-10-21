@@ -6,14 +6,14 @@
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
-import { createCommunityMetric } from '@/services/metrics';
+import { createCommunityMetric, readFiniteNumber } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Projected Steam current players payload (`api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/`). */
 interface SteamPlayersPayload {
   /** Number of players currently in-game. */
-  playerCount: unknown;
+  playerCount?: number;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -27,7 +27,7 @@ const STEAM_PLAYERS_ENDPOINT = createEndpoint<SteamPlayersPayload>({
   page: 'https://store.steampowered.com/app/{target}/',
   project: (data) =>
     isJsonObject(data) && isJsonObject(data.response)
-      ? { playerCount: data.response.player_count }
+      ? { playerCount: readFiniteNumber(data.response.player_count) }
       : undefined,
   ttl: STEAM_PLAYERS_TTL,
 });
@@ -43,8 +43,11 @@ const STEAM_APP_ID_RX = /^\d{1,10}$/;
 export const STEAM_SERVICE = defineService({
   docs: { description: 'Current in-game players of a numeric Steam app id.', title: 'Steam' },
   metrics: {
-    players: createCommunityMetric(STEAM_PLAYERS_ENDPOINT, 'players', 'steam', (payload) =>
-      typeof payload.playerCount === 'number' ? payload.playerCount : undefined
+    players: createCommunityMetric(
+      STEAM_PLAYERS_ENDPOINT,
+      'players',
+      'steam',
+      (payload) => payload.playerCount
     ),
   },
   route: { target: { pattern: STEAM_APP_ID_RX, placeholder: ':appid' } },
