@@ -64,11 +64,9 @@ interface SiteClientHelpers {
   closePopover: (popover: HTMLElement) => void;
   /** Copy text (Clipboard API with a selection fallback) and announce the result on a button's `[data-copy-label]`. */
   copyText: (text: string, button: Element) => void;
-  /** Whether the browser supports CSS anchor positioning. */
-  hasAnchorPositioning: boolean;
   /** Check whether a popover element is open. */
   isPopoverOpen: (popover: Element) => boolean;
-  /** Position an open popover next to its anchor without CSS anchor positioning (no-op otherwise). */
+  /** Position an open popover next to its anchor, clamped to the viewport. */
   placePopover: (popover: HTMLElement, anchor: Element, options?: PopoverPlacementOptions) => void;
 }
 

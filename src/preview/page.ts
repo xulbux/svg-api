@@ -224,8 +224,8 @@ function renderDocsPager(slug: DocsPageSlug): string {
   const next = toPagerLink(DOCS_PAGES[pageIndex + 1]);
 
   return `<nav class="pager-row" aria-label="Documentation pages">
-    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev">${leftArrow}${escapeXml(prev.label)}</a>
-    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next">${escapeXml(next.label)}${rightArrow}</a>
+    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev" tabindex="0">${leftArrow}${escapeXml(prev.label)}</a>
+    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next" tabindex="0">${escapeXml(next.label)}${rightArrow}</a>
   </nav>`;
 }
 
@@ -258,8 +258,8 @@ export function renderHomeHtml(): string {
       Dynamic badges, CTA buttons, icons, tech stacks, and quote cards: Every element is a plain URL, composed visually in seconds and rendered at the edge (no signup, no tokens).
     </p>
     <div class="hero-cta-row">
-      <a href="${builderPath}" class="btn-primary">${builderIcon}Start Building${rightArrow}</a>
-      <a href="${docsPath}" class="btn-secondary">${bookIcon}Explore Docs &amp; Previews</a>
+      <a href="${builderPath}" class="btn-primary" tabindex="0">${builderIcon}Start Building${rightArrow}</a>
+      <a href="${docsPath}" class="btn-secondary" tabindex="0">${bookIcon}Explore Docs &amp; Previews</a>
     </div>
   </section>
 
@@ -275,8 +275,8 @@ export function renderHomeHtml(): string {
     })}
     <div class="card-grid">${renderCardsHtml(HOME_OVERVIEW_CARDS)}</div>
     <div class="pager-row is-end">
-      <a href="${docsPath}" class="btn-secondary">${bookIcon}Browse Documentation</a>
-      <a href="${builderPath}" class="btn-primary">${builderIcon}Start Building${rightArrow}</a>
+      <a href="${docsPath}" class="btn-secondary" tabindex="0">${bookIcon}Browse Documentation</a>
+      <a href="${builderPath}" class="btn-primary" tabindex="0">${builderIcon}Start Building${rightArrow}</a>
     </div>
   </section>`;
 

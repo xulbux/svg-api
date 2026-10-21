@@ -8,7 +8,6 @@
 
 import {
   BRAND_INDIGO,
-  GITHUB_CANVAS,
   ISOLUX_GRAY,
   ISOLUX_SYNTAX,
   ISOLUX_UI,
@@ -108,9 +107,8 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('bg-elv', ISOLUX_UI.raised),
     buildColorToken('bg-soft', SOFT_SURFACE),
     buildColorToken('divider', ISOLUX_UI.border),
-    // 3-tier border hierarchy: Outer divider > standard border > inner subtle border.
+    // 2-tier border hierarchy: Outer shell/card divider (--c-divider) > inner border (--c-border).
     buildDerivedToken('border', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 72%)'),
-    buildDerivedToken('border-subtle', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 42%)'),
     buildDerivedToken('code-bg', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 65%)'),
     buildColorToken('text-1', ISOLUX_UI.foreground),
     buildColorToken('text-2', ISOLUX_UI.foregroundSecondary),
@@ -139,9 +137,11 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('selected', ISOLUX_UI.selected),
     buildColorToken('switch-bg', ISOLUX_UI.bubble),
     buildColorToken('switch-thumb-bg', { dark: ISOLUX_GRAY[950], light: WHITE }),
-    // Inverted preview stage: GitHub's README canvas of the opposite color scheme.
-    buildColorToken('preview-inverse-bg', invertScheme(GITHUB_CANVAS.background)),
-    buildColorToken('preview-inverse-border', invertScheme(GITHUB_CANVAS.border)),
+    // Inverted preview stage: GitHub's README canvas and `Edit` chip of the opposite color scheme.
+    buildColorToken('preview-inverse-bg', { dark: LIGHT_BG, light: DARK_BG }),
+    buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
+    buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
+    buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),
     // Isolux Pro Markdown roles: punctuation, operators, alt text (label), URLs and link targets (string), query keys and values.
     buildColorToken('hl-p', ISOLUX_SYNTAX.punctuation),
     buildColorToken('hl-op', ISOLUX_SYNTAX.operator),

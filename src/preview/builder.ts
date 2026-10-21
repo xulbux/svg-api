@@ -138,7 +138,6 @@ function renderSelectHtml(
   part?: string
 ): string {
   const selected = options.find((option) => option.value === selectedValue) ?? options[0];
-  const anchorName = `--${selectId}`;
   const partAttr = part ? ` data-part="${part}"` : '';
   const swatchHtml = selected?.swatch
     ? `<span class="select-swatch" aria-hidden="true" style="--swatch: ${escapeXml(selected.swatch)}"></span>`
@@ -149,8 +148,8 @@ function renderSelectHtml(
       : '';
   return `<div class="select" data-select="${selectId}">
             <select class="select-native" id="${selectId}"${partAttr} tabindex="-1" aria-hidden="true">${renderOptionsHtml(options, selectedValue)}</select>
-            <button type="button" class="builder-input select-trigger" id="${selectId}-trigger" popovertarget="${selectId}-menu" aria-haspopup="listbox" aria-labelledby="${labelId} ${selectId}-value" style="anchor-name: ${anchorName}">${swatchHtml}<span class="select-value" id="${selectId}-value">${escapeXml(selected?.label ?? '')}</span>${renderUiIcon('chevron-down', 14, 'select-chevron')}</button>
-            <div class="popover-panel select-menu" id="${selectId}-menu" popover style="position-anchor: ${anchorName}">
+            <button type="button" class="builder-input select-trigger" id="${selectId}-trigger" popovertarget="${selectId}-menu" aria-haspopup="listbox" aria-labelledby="${labelId} ${selectId}-value">${swatchHtml}<span class="select-value" id="${selectId}-value">${escapeXml(selected?.label ?? '')}</span>${renderUiIcon('chevron-down', 14, 'select-chevron')}</button>
+            <div class="popover-panel select-menu" id="${selectId}-menu" popover>
               ${searchHtml}
               <div class="select-options" role="listbox" aria-labelledby="${labelId}"></div>
             </div>
@@ -253,7 +252,7 @@ function renderAnimControlHtml(field: BuilderField): string {
     motionsHtml = renderSubSelectHtml(field, 'left', 'Icon motion', motionOptions);
   }
   return `<div class="builder-composite">
-          <label class="builder-check" for="${sheenId}"><input type="checkbox" id="${sheenId}" data-part="sheen" /><span>Surface sheen</span></label>
+          <label class="builder-check" for="${sheenId}"><input class="check-input" type="checkbox" id="${sheenId}" data-part="sheen" /><span class="check-box" aria-hidden="true">${renderUiIcon('check', 12, 'check-icon')}</span><span>Surface sheen</span></label>
           ${motionsHtml ? `<div class="builder-inline">${motionsHtml}</div>` : ''}
         </div>`;
 }
@@ -390,7 +389,7 @@ function renderIconPickerHtml(): string {
       </div>
       <div class="icon-picker-row">
         <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">${tabsHtml}</div>
-        <button type="button" class="btn-secondary btn-small icon-picker-none" id="icon-picker-none" hidden>No icon</button>
+        <button type="button" class="icon-picker-none" id="icon-picker-none" hidden>No icon</button>
       </div>
     </div>
     <div class="icon-picker-grid" id="icon-picker-grid" role="listbox" aria-label="Icons" tabindex="-1"></div>
@@ -402,13 +401,12 @@ function renderIconPickerHtml(): string {
 }
 
 /** Render the preview, snippet, and action panel. */
-function renderOutputPanelHtml(kind: BuilderKind): string {
+function renderOutputPanelHtml(): string {
   let tabsHtml = '';
   for (const [i, format] of SNIPPET_FORMATS.entries()) {
     const isSelected = i === 0;
     tabsHtml += `<button type="button" class="builder-tab${isSelected ? ' is-active' : ''}" role="tab" id="builder-tab-${format.id}" data-format="${format.id}" aria-selected="${isSelected}" aria-controls="builder-code" tabindex="${isSelected ? 0 : -1}">${format.label}</button>`;
   }
-  const docsHref = buildDocsPath(BUILDER_DOCS_SLUGS[kind]);
   return `<aside class="builder-panel" aria-label="Preview and snippets">
       <div class="builder-panel-inner">
         <div class="preview-stage builder-stage is-centered">
@@ -419,15 +417,8 @@ function renderOutputPanelHtml(kind: BuilderKind): string {
         <div class="builder-output">
           <div class="builder-tabs" role="tablist" aria-label="Snippet format">${tabsHtml}</div>
           <div class="code-drawer-body builder-code-body">
-            <div class="code-drawer-toolbar">
-              <span class="code-drawer-label" id="builder-code-label">Snippet</span>
-              <div class="code-toolbar-actions">
-                ${renderCopyButton('id="builder-copy" data-copy-target="builder-code" aria-describedby="builder-code-label"')}
-              </div>
-            </div>
-            <div class="code-pre-wrap">
-              <pre class="code-pre builder-code" id="builder-code" tabindex="0" role="tabpanel" aria-labelledby="builder-tab-markdown"><code></code></pre>
-            </div>
+            ${renderCopyButton('id="builder-copy" data-copy-target="builder-code"')}
+            <pre class="code-pre builder-code" id="builder-code" tabindex="0" role="tabpanel" aria-labelledby="builder-tab-markdown"><code></code></pre>
           </div>
           <div class="builder-snippet-options">
             <div class="builder-subfield is-grow">
@@ -440,10 +431,9 @@ function renderOutputPanelHtml(kind: BuilderKind): string {
             </div>
           </div>
           <div class="builder-actions">
-            <a class="btn-secondary btn-small" id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true">${renderUiIcon('external-link', 14)}Open SVG</a>
+            <a class="btn-secondary btn-small" id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true" tabindex="-1">${renderUiIcon('external-link', 14)}Open SVG</a>
             <button type="button" class="btn-secondary btn-small" id="builder-share" data-copied-label="Link copied">${renderUiIcon('link', 14)}<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span></button>
             <button type="button" class="btn-secondary btn-small" id="builder-reset">${renderUiIcon('rotate-ccw', 14)}Reset</button>
-            <a class="btn-secondary btn-small" href="${docsHref}">${renderUiIcon('book-open', 14)}Reference</a>
           </div>
         </div>
       </div>
@@ -468,9 +458,12 @@ export function renderBuilderHtml(kind: BuilderKind): string {
   for (const field of schema.fields) {
     fieldsHtml += renderFieldHtml(field, schema);
   }
+  const docsHref = buildDocsPath(BUILDER_DOCS_SLUGS[kind]);
+  const referenceHtml = `<a class="section-action" href="${docsHref}" tabindex="0">${renderUiIcon('book-open', 14)}Reference</a>`;
 
   const bodyHtml = `<section class="doc-section builder" id="builder" data-builder-kind="${kind}">
     ${renderSectionHeader({
+      actionHtml: referenceHtml,
       description: `${meta.description} Click any preview in the docs to open it here.`,
       title: meta.title,
     })}
@@ -478,7 +471,7 @@ export function renderBuilderHtml(kind: BuilderKind): string {
       <form class="builder-form" id="builder-form" autocomplete="off" novalidate>
         ${fieldsHtml}
       </form>
-      ${renderOutputPanelHtml(kind)}
+      ${renderOutputPanelHtml()}
     </div>
   </section>
   ${renderIconPickerHtml()}`;

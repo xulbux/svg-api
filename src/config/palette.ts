@@ -80,14 +80,6 @@ export const ISOLUX_SYNTAX = {
 /** Website brand indigo (Tailwind `indigo-400` to `indigo-600`; Brand mark, favicon, links, and primary buttons). */
 export const BRAND_INDIGO = { 400: '#818CF8', 500: '#6366F1', 600: '#4F46E5' } as const;
 
-/** GitHub README canvases of both color schemes (the inverted preview stage shows the opposite one). */
-export const GITHUB_CANVAS = {
-  /** Canvas background. */
-  background: { dark: '#0D1117', light: WHITE },
-  /** Canvas border. */
-  border: { dark: '#30363D', light: '#D0D7DE' },
-} as const satisfies Readonly<Record<string, SchemeColor>>;
-
 /** Tailwind `rose-200` (negative tint on solid primary surfaces). */
 export const ROSE_200 = '#FECDD3';
 

@@ -1987,9 +1987,11 @@
     if (openLink) {
       if (isComplete) {
         openLink.href = result.path;
+        openLink.tabIndex = 0;
         openLink.removeAttribute('aria-disabled');
       } else {
         openLink.removeAttribute('href');
+        openLink.tabIndex = -1;
         openLink.setAttribute('aria-disabled', 'true');
       }
     }
@@ -2492,7 +2494,7 @@
   }
 
   /**
-   * Remember the picker target of a clicked picker button and anchor the popover to it.
+   * Remember the picker target and trigger of a clicked picker button.
    * @param {HTMLElement} button   `[data-icon-target]` button.
    */
   function targetPicker(button) {
@@ -2500,12 +2502,6 @@
     pickerTrigger = button;
     isPickerInsertMode = button.dataset.iconInsert === 'true';
     pickerNoneButton?.toggleAttribute('hidden', button.dataset.iconNone !== 'true');
-    for (const anchored of document.querySelectorAll('[data-icon-target]')) {
-      if (anchored instanceof HTMLElement) {
-        anchored.style.removeProperty('anchor-name');
-      }
-    }
-    button.style.setProperty('anchor-name', '--icon-picker');
   }
 
   /** Prepare the opened picker: Position it, reset the search, and render it (loading the index first if needed). */
@@ -2641,6 +2637,15 @@
     pickerElement.addEventListener('toggle', (event) => {
       if (/** @type {ToggleEvent} */ (event).newState === 'open') {
         openPicker();
+      }
+    });
+    pickerElement.addEventListener('focusout', (event) => {
+      if (
+        event.relatedTarget instanceof Node &&
+        !pickerElement.contains(event.relatedTarget) &&
+        (!pickerTrigger || !pickerTrigger.contains(event.relatedTarget))
+      ) {
+        site?.closePopover(pickerElement);
       }
     });
     pickerElement.addEventListener('change', (event) => {

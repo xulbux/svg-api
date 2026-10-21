@@ -103,6 +103,22 @@ code {
   outline-offset: 2px;
 }
 
+/* Strip native browser spinbuttons and search cancel buttons so all inputs use custom UI */
+
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button,
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .page-main:focus-visible {
   outline: none;
 }
@@ -159,6 +175,7 @@ code {
 
 .text-link,
 .text-btn {
+  border-radius: 4px;
   text-decoration: underline;
   text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
   text-decoration-thickness: 1px;
@@ -207,8 +224,10 @@ code {
   border: 1px solid var(--c-divider);
   border-radius: 10px;
   color: var(--c-text-1);
-  background: var(--c-bg-elv);
+  background: color-mix(in srgb, var(--c-bg-elv) 78%, transparent);
   box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .popover-panel:where(:popover-open, .is-open) {
@@ -219,10 +238,11 @@ code {
   display: none;
 }
 
-/* Shared Hidden Radio Overlays: The native input covers its custom-styled label for clicks and keyboard focus */
+/* Shared Hidden Input Overlays: The native input covers its custom-styled label for clicks and keyboard focus */
 
 .bg-picker-input,
 .swatch-input,
+.check-input,
 .icon-picker-tab input {
   position: absolute;
   inset: 0;
@@ -246,9 +266,10 @@ code {
     scroll-behavior: auto !important;
   }
 
-  /* `*` never matches the `::details-content` pseudo-element. */
+  /* `*` never matches the `::details-content` or `::backdrop` pseudo-elements. */
 
-  details.code-drawer::details-content {
+  details.code-drawer::details-content,
+  .sidebar::backdrop {
     transition: none !important;
   }
 }

@@ -152,20 +152,59 @@
 }
 
 .builder-check {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
   inline-size: fit-content;
   font-size: 0.84rem;
   color: var(--c-text-1);
+  user-select: none;
+  -webkit-user-select: none;
   cursor: pointer;
 }
 
-.builder-check input {
-  inline-size: 15px;
-  block-size: 15px;
-  margin: 0;
-  cursor: pointer;
+.check-box {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 16px;
+  block-size: 16px;
+  border: 1px solid var(--c-border);
+  border-radius: 5px;
+  color: var(--c-btn-text);
+  background: var(--c-bg);
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease;
+}
+
+.builder-check:hover .check-box {
+  border-color: var(--c-border-strong);
+}
+
+.check-input:checked + .check-box {
+  border-color: var(--c-btn-border);
+  background: var(--c-btn-bg);
+}
+
+.check-input:focus-visible + .check-box {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
+}
+
+.check-icon {
+  opacity: 0;
+  scale: 0.75;
+  transition:
+    opacity var(--duration-fast) ease,
+    scale var(--duration-fast) ease;
+}
+
+.check-input:checked + .check-box .check-icon {
+  opacity: 1;
+  scale: 1;
 }
 
 .builder-field-actions {
@@ -228,7 +267,7 @@
   background: var(--swatch);
 }
 
-/* Listbox Panel: Shared popover surface (`.popover-panel` in base.css) */
+/* Listbox Panel: Shared popover surface (`.popover-panel` in base.css, positioned by `placePopover`) */
 
 .select-menu {
   min-inline-size: 180px;
@@ -245,15 +284,6 @@
   z-index: var(--z-popover);
 }
 
-@supports (position-area: block-end) {
-  .select-menu {
-    position-area: block-end span-inline-end;
-    position-try-fallbacks: flip-block;
-    min-inline-size: max(180px, anchor-size(width));
-    margin-block: 4px;
-  }
-}
-
 /* Search Fields (dropdown listboxes and the icon picker) */
 
 .select-search,
@@ -264,12 +294,15 @@
   border: 1px solid var(--c-border);
   color: var(--c-text-3);
   background: var(--c-bg);
-  transition: border-color var(--duration-fast) ease;
+  transition:
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease;
 }
 
 .select-search:focus-within,
 .icon-picker-search:focus-within {
   border-color: var(--c-focus);
+  box-shadow: 0 0 0 3px var(--c-hover);
 }
 
 .select-search-input,
@@ -384,10 +417,8 @@
     var(--c-bg);
 }
 
-@media (hover: hover) {
-  .swatch:hover .swatch-dot {
-    scale: 1.1;
-  }
+.swatch:hover .swatch-dot {
+  scale: 1.1;
 }
 
 .swatch-input:checked + .swatch-dot {
@@ -396,9 +427,12 @@
     0 0 0 4px var(--c-text-1);
 }
 
-.swatch-input:focus-visible + .swatch-dot {
-  outline: 2px solid var(--c-focus);
-  outline-offset: 4px;
+/* Keyboard focus: Brighten the ring of all unselected swatches instead of adding a second ring to the selected one. */
+
+.swatch-grid:has(.swatch-input:focus-visible) .swatch-input:not(:checked) + .swatch-dot {
+  box-shadow:
+    0 0 0 2px var(--c-bg-soft),
+    0 0 0 3px var(--c-focus);
 }
 
 /* Icon Selectors: The trigger opens the icon picker; The slug lives in a hidden input */
@@ -560,7 +594,7 @@
   display: inline-flex;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: 9px;
   background: var(--c-bg);
 }
@@ -648,7 +682,7 @@
   margin-block-start: 14px;
 }
 
-/* Icon Picker Popover (shared popover surface in base.css, anchored below its trigger where supported) */
+/* Icon Picker Popover (shared popover surface in base.css, positioned and viewport-clamped by `placePopover`) */
 
 .icon-picker {
   inline-size: min(384px, calc(100vw - 16px));
@@ -657,24 +691,12 @@
   box-shadow: 0 16px 40px rgb(0 0 0 / 0.22);
 }
 
-@supports (position-area: block-end) {
-  .icon-picker {
-    position-anchor: --icon-picker;
-    position-area: block-end span-inline-end;
-    position-try-fallbacks:
-      flip-block,
-      flip-inline,
-      flip-block flip-inline;
-    margin-block: 6px;
-  }
-}
-
 .icon-picker-head {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  border-block-end: 1px solid var(--c-border-subtle);
+  border-block-end: 1px solid var(--c-border);
 }
 
 .icon-picker-search {
@@ -692,6 +714,23 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.icon-picker-none {
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--c-text-2);
+  background: transparent;
+  cursor: pointer;
+  transition: color var(--duration-fast) ease;
+}
+
+.icon-picker-none:hover {
+  color: var(--c-text-1);
 }
 
 .icon-picker-grid {
@@ -750,7 +789,7 @@
   inline-size: 18px;
   block-size: 18px;
   border-radius: 5px;
-  background: var(--c-border-subtle);
+  background: var(--c-border);
 }
 
 /* Empty search results (spans the whole grid, with a "Clear search" text button) */
@@ -772,7 +811,7 @@
   margin: 0;
   padding: 7px 12px;
   overflow: hidden;
-  border-block-start: 1px solid var(--c-border-subtle);
+  border-block-start: 1px solid var(--c-border);
   font-family: var(--font-mono);
   font-size: 0.74rem;
   text-overflow: ellipsis;

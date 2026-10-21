@@ -84,11 +84,11 @@
   /** Whether the browser supports the Popover API (otherwise popovers toggle an `.is-open` class). */
   const hasPopoverApi = 'popover' in HTMLElement.prototype;
 
-  /** Whether the browser supports CSS anchor positioning for popovers. */
-  const hasAnchorPositioning = CSS.supports('position-area', 'block-end');
-
   /** @type {WeakMap<Element, number>} */
   const copyResetTimers = new WeakMap();
+
+  /** @type {{ anchor: Element, options: PopoverPlacementOptions, popover: HTMLElement } | undefined} */
+  let activePopover = undefined;
 
   /**
    * Check whether a popover element is open (native `:popover-open` or the `.is-open` fallback class).
@@ -118,15 +118,13 @@
   }
 
   /**
-   * Position an open popover next to its anchor when CSS anchor positioning is unavailable (no-op otherwise).
+   * Position an open popover next to its anchor, clamped to the viewport.
    * @param {HTMLElement} popover                Open popover element (measured for its real size).
    * @param {Element} anchor                     Anchor element.
    * @param {PopoverPlacementOptions} [options]
    */
   function placePopover(popover, anchor, options = {}) {
-    if (hasAnchorPositioning) {
-      return;
-    }
+    activePopover = { anchor, options, popover };
     const popoverRect = popover.getBoundingClientRect();
     const placement = computePopoverPlacement(
       anchor.getBoundingClientRect(),
@@ -362,13 +360,7 @@
     return copyButton.closest('.code-drawer-body')?.querySelector('.code-pre') ?? undefined;
   }
 
-  globalThis.svgSite = {
-    closePopover,
-    copyText,
-    hasAnchorPositioning,
-    isPopoverOpen,
-    placePopover,
-  };
+  globalThis.svgSite = { closePopover, copyText, isPopoverOpen, placePopover };
 
   /** Keeps the scroll buttons of open code drawers in sync with their width. */
   const codeResizeObserver = new ResizeObserver((entries) => {
@@ -461,6 +453,32 @@
     bgPickerMenu.addEventListener('toggle', (event) => {
       if (/** @type {ToggleEvent} */ (event).newState === 'open') {
         placePopover(bgPickerMenu, bgPickerTrigger, { align: 'end' });
+        const checkedInput = bgPickerMenu.querySelector('input[name="preview-bg"]:checked');
+        if (checkedInput instanceof HTMLElement) {
+          checkedInput.focus();
+        }
+      }
+    });
+    bgPickerTrigger.addEventListener('keydown', (event) => {
+      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && bgPickerMenu.showPopover) {
+        event.preventDefault();
+        bgPickerMenu.showPopover();
+      }
+    });
+    bgPickerMenu.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        closePopover(bgPickerMenu);
+        bgPickerTrigger.focus();
+      }
+    });
+    bgPickerMenu.addEventListener('focusout', (event) => {
+      if (
+        event.relatedTarget instanceof Node &&
+        !bgPickerMenu.contains(event.relatedTarget) &&
+        !bgPickerTrigger.contains(event.relatedTarget)
+      ) {
+        closePopover(bgPickerMenu);
       }
     });
 
@@ -473,16 +491,66 @@
     });
   }
 
-  // Mobile sidebar drawer: Close it when one of its links is followed or the viewport leaves the drawer layout.
+  // Mobile sidebar drawer: Only a popover on narrow screens (a closed `[popover]` is inert for keyboard focus on wide screens).
   if (sidebarDrawer) {
-    sidebarDrawer.addEventListener('click', (event) => {
-      const { target } = event;
-      if (target instanceof Element && target.closest('a')) {
+    const sidebarBgElements = document.querySelectorAll(
+      '.skip-link, .site-header, .page-main, .site-footer'
+    );
+
+    /**
+     * Toggle `inert` on the page regions behind the mobile sidebar drawer so the background cannot be
+     * interacted with while the drawer is open.
+     * @param {boolean} isInert   Whether background regions should be inert.
+     */
+    function setSidebarBgInert(isInert) {
+      for (const element of sidebarBgElements) {
+        element.toggleAttribute('inert', isInert);
+      }
+    }
+
+    /**
+     * Give the sidebar the `popover` attribute only on narrow screens (`drawerQuery`), because a closed
+     * `[popover]` is inert for keyboard focus even when shown inline by CSS on wide screens.
+     */
+    function syncSidebarDrawer() {
+      if (!sidebarDrawer) {
+        return;
+      }
+      if (drawerQuery.matches) {
+        sidebarDrawer.setAttribute('popover', '');
+        setSidebarBgInert(isPopoverOpen(sidebarDrawer));
+      } else {
+        closePopover(sidebarDrawer);
+        sidebarDrawer.removeAttribute('popover');
+        setSidebarBgInert(false);
+      }
+    }
+    syncSidebarDrawer();
+    drawerQuery.addEventListener('change', syncSidebarDrawer);
+    sidebarDrawer.addEventListener('toggle', (event) => {
+      const isOpen = /** @type {ToggleEvent} */ (event).newState === 'open';
+      setSidebarBgInert(isOpen && drawerQuery.matches);
+      if (isOpen) {
+        const focusTarget = sidebarDrawer.querySelector(
+          '.sidebar-link.is-active, .sidebar-link, .sidebar-close'
+        );
+        if (focusTarget instanceof HTMLElement) {
+          focusTarget.focus();
+        }
+      }
+    });
+    sidebarDrawer.addEventListener('focusout', (event) => {
+      if (
+        drawerQuery.matches &&
+        event.relatedTarget instanceof Node &&
+        !sidebarDrawer.contains(event.relatedTarget)
+      ) {
         closePopover(sidebarDrawer);
       }
     });
-    drawerQuery.addEventListener('change', () => {
-      if (!drawerQuery.matches) {
+    sidebarDrawer.addEventListener('click', (event) => {
+      const { target } = event;
+      if (target instanceof Element && target.closest('a')) {
         closePopover(sidebarDrawer);
       }
     });
@@ -518,6 +586,12 @@
       const scrolledElement = event.target;
       if (scrolledElement instanceof Element && scrolledElement.classList.contains('code-pre')) {
         updateScrollButtons(scrolledElement.closest('.code-drawer-body'));
+      } else if (
+        activePopover &&
+        isPopoverOpen(activePopover.popover) &&
+        !(scrolledElement instanceof Node && activePopover.popover.contains(scrolledElement))
+      ) {
+        placePopover(activePopover.popover, activePopover.anchor, activePopover.options);
       }
     },
     true

@@ -29,6 +29,7 @@
   flex-shrink: 0;
   align-items: center;
   gap: 9px;
+  border-radius: var(--radius-sm);
   font-size: 1rem;
   font-weight: 700;
   text-decoration: none;
@@ -62,7 +63,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-inline-start: auto;
+  margin-inline: auto -11px;
 }
 
 /* Sidebar Drawer Toggle & Close Button: Only shown on narrow screens (the toggle sits left of the tabs, labeled with the current page title) */
@@ -201,16 +202,21 @@
 .header-divider {
   inline-size: 1px;
   block-size: 24px;
+  margin-inline: 4px;
   background: var(--c-divider);
   pointer-events: none;
+}
+
+.header-actions > .header-divider:first-child {
+  margin-inline-start: 0;
 }
 
 .gh-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 32px;
-  block-size: 32px;
+  inline-size: 20px;
+  block-size: 20px;
   border-radius: var(--radius-sm);
   text-decoration: none;
   color: var(--c-text-2);
@@ -221,7 +227,7 @@
   color: var(--c-text-1);
 }
 
-/* Header Preview Background Picker (native popover, anchored below its trigger where supported) */
+/* Header Preview Background Picker (native popover, positioned by `placePopover`) */
 
 .bg-picker {
   position: relative;
@@ -229,7 +235,6 @@
 }
 
 .bg-picker-trigger {
-  anchor-name: --bg-picker;
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -303,15 +308,6 @@
   inset-inline-end: 0;
 }
 
-@supports (position-area: block-end) {
-  .bg-picker-menu {
-    position-anchor: --bg-picker;
-    position-area: block-end span-inline-start;
-    position-try-fallbacks: flip-inline;
-    margin-block-start: 8px;
-  }
-}
-
 .bg-picker-title {
   padding: 4px 8px 6px;
   font-size: 0.7rem;
@@ -380,12 +376,11 @@
     inline-size: 100%;
     margin-inline-start: 0;
     padding-block-start: 8px;
-    border-block-start: 1px solid var(--c-border-subtle);
+    border-block-start: 1px solid var(--c-border);
   }
 
   .site-nav {
     flex-shrink: 0;
-    margin-inline-end: -11px;
   }
 
   .sidebar-toggle {
@@ -423,15 +418,9 @@
   padding-inline-start: clamp(20px, 3vw, 48px);
 }
 
-/* Sidebar: Sticky column on wide screens; The same element becomes a popover drawer on narrow screens */
+/* Sidebar: Sticky column on wide screens; The site script turns the same element into a popover drawer on narrow screens */
 
 .sidebar {
-  user-select: none;
-  -webkit-user-select: none;
-  view-transition-name: site-sidebar;
-}
-
-.sidebar[popover] {
   position: sticky;
   inset: auto;
   inset-block-start: var(--header-height);
@@ -446,13 +435,16 @@
   border-inline-end: 1px solid var(--c-divider);
   color: var(--c-text-1);
   background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
   scrollbar-width: thin;
+  view-transition-name: site-sidebar;
 }
 
 .sidebar-group + .sidebar-group {
   margin-block-start: 22px;
   padding-block-start: 18px;
-  border-block-start: 1px solid var(--c-border-subtle);
+  border-block-start: 1px solid var(--c-border);
 }
 
 .sidebar-group-title {
@@ -478,7 +470,7 @@
 .sidebar-link {
   display: block;
   padding: 5px 0 5px 12px;
-  border-inline-start: 1px solid var(--c-border-subtle);
+  border-inline-start: 1px solid var(--c-border);
   font-size: 0.86rem;
   font-weight: 500;
   line-height: 1.45;
@@ -499,12 +491,17 @@
 }
 
 .sidebar-link:focus-visible {
+  border-radius: var(--radius-sm);
   outline-offset: -2px;
 }
 
 /* Narrow Screens: The sidebar becomes a drawer opened by the header's sidebar toggle */
 
 @media (max-width: 960px) {
+  body:has(.sidebar:where(:popover-open, .is-open)) {
+    overflow: hidden;
+  }
+
   .has-sidebar .page-shell {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -513,14 +510,16 @@
     padding-inline-start: clamp(16px, 3.5vw, 32px);
   }
 
-  .sidebar[popover] {
+  .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     inline-size: min(300px, 86vw);
     block-size: 100dvh;
     padding: 24px 22px 40px;
-    background: var(--c-bg);
+    background: color-mix(in srgb, var(--c-bg) 82%, transparent);
     box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     translate: -100% 0;
     transition:
       translate 0.22s ease,
@@ -528,11 +527,11 @@
       overlay 0.22s ease allow-discrete;
   }
 
-  .sidebar[popover]:not(:where(:popover-open, .is-open)) {
+  .sidebar:not(:where(:popover-open, .is-open)) {
     display: none;
   }
 
-  .sidebar[popover]:where(:popover-open, .is-open) {
+  .sidebar:where(:popover-open, .is-open) {
     translate: 0 0;
 
     @starting-style {
@@ -540,8 +539,21 @@
     }
   }
 
-  .sidebar[popover]::backdrop {
+  .sidebar::backdrop {
     background: rgb(0 0 0 / 0.4);
+    opacity: 0;
+    transition:
+      opacity 0.22s ease,
+      display 0.22s ease allow-discrete,
+      overlay 0.22s ease allow-discrete;
+  }
+
+  .sidebar:popover-open::backdrop {
+    opacity: 1;
+
+    @starting-style {
+      opacity: 0;
+    }
   }
 
   /* The icon-only close button sits in the drawer's top-right corner. */

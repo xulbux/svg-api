@@ -788,17 +788,35 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(iconHtml).toContain('aria-labelledby="field-icon-label field-icon-main-value"');
   });
 
-  it('disables Open SVG and copying until the URL is complete and announces the share link copy (regressions)', () => {
+  it('disables Open SVG and copying until the URL is complete, renders a custom checkbox, and places the Reference link next to the page title (regressions)', () => {
     const html = renderBuilderHtml('badge');
     expect(html).toContain(
-      'id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true"'
+      'id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true" tabindex="-1"'
     );
+    expect(html).toContain(
+      '<input class="check-input" type="checkbox" id="field-anim-sheen" data-part="sheen" /><span class="check-box" aria-hidden="true">'
+    );
+    expect(html).toMatch(
+      /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><a class="section-action" href="\/docs\/badges" tabindex="0">/
+    );
+    expect(html).toContain(
+      '<button type="button" class="icon-picker-none" id="icon-picker-none" hidden>No icon</button>'
+    );
+    expect(html).not.toContain('code-drawer-toolbar');
+    expect(html).not.toContain('id="builder-code-label"');
+    const actionsHtml = html.slice(
+      html.indexOf('<div class="builder-actions">'),
+      html.indexOf('</aside>')
+    );
+    expect(actionsHtml).not.toContain('Reference');
     expect(html).not.toContain('href="#"');
     expect(html).toContain('id="builder-copy" data-copy-target="builder-code"');
     expect(html).toContain(
       '<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span>'
     );
     expect(builderScript).toContain("openLink.removeAttribute('href')");
+    expect(builderScript).toContain('openLink.tabIndex = 0');
+    expect(builderScript).toContain('openLink.tabIndex = -1');
     expect(builderScript).toContain('copyButton.disabled = !isComplete');
     expect(builderScript).toContain('site?.copyText(');
     expect(builderScript).not.toContain('navigator.clipboard');

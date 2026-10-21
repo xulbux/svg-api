@@ -48,7 +48,6 @@
   flex-direction: column;
   gap: 8px;
   padding: 20px 22px;
-  border-color: var(--c-border);
 }
 
 .feature-icon {

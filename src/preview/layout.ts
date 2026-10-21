@@ -97,7 +97,7 @@ function renderNavLink(href: string, label: string, isActive: boolean): string {
   const activeAttrs = isActive
     ? ' class="nav-link is-active" aria-current="page"'
     : ' class="nav-link"';
-  return `<a href="${escapeXml(href)}"${activeAttrs}>${escapeXml(label)}</a>`;
+  return `<a href="${escapeXml(href)}"${activeAttrs} tabindex="0">${escapeXml(label)}</a>`;
 }
 
 /**
@@ -172,7 +172,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
 
   const headerHtml = `<header class="site-header">
     <div class="header-inner">
-      <a href="/" class="brand-link">
+      <a href="/" class="brand-link" tabindex="0">
         <span class="brand-mark" aria-hidden="true">${brandIcon}</span>
         svg.xul.is
       </a>
@@ -190,7 +190,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
           </span>
         </button>
         <span class="header-divider" aria-hidden="true"></span>
-        <a href="https://github.com/xulbux" class="gh-link" target="_blank" rel="noopener noreferrer" aria-label="XulbuX on GitHub" title="XulbuX on GitHub">
+        <a href="https://github.com/xulbux" class="gh-link" target="_blank" rel="noopener noreferrer" aria-label="XulbuX on GitHub" title="XulbuX on GitHub" tabindex="0">
           ${githubIcon}
         </a>
       </div>
@@ -214,7 +214,7 @@ function renderSidebar(sidebar: PageSidebar): string {
         link.href === sidebar.activeHref
           ? ' class="sidebar-link is-active" aria-current="page"'
           : ' class="sidebar-link"';
-      linksHtml += `<li><a href="${escapeXml(link.href)}"${activeAttrs}>${escapeXml(link.label)}</a></li>`;
+      linksHtml += `<li><a href="${escapeXml(link.href)}"${activeAttrs} tabindex="0">${escapeXml(link.label)}</a></li>`;
     }
     groupsHtml += `<section class="sidebar-group">
           <p class="sidebar-group-title" id="${titleId}">${renderUiIcon(group.icon, 14)}${escapeXml(group.title)}</p>
@@ -222,7 +222,7 @@ function renderSidebar(sidebar: PageSidebar): string {
         </section>`;
   }
   const closeLabel = escapeXml(`Close ${sidebar.label}`);
-  return `<aside class="sidebar" id="sidebar-drawer" popover>
+  return `<aside class="sidebar" id="sidebar-drawer">
       <button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-label="${closeLabel}" title="${closeLabel}">${renderUiIcon('x', 16)}</button>
       <nav aria-label="${escapeXml(sidebar.label)}">
         ${groupsHtml}
@@ -237,13 +237,13 @@ function renderFooter(): string {
     footerHtmlCache = `<footer class="site-footer">
     <div class="footer-inner">
       <p class="footer-feedback">
-        Missing a public API service, vector icon, or even a whole new SVG element? Feel free to <a href="mailto:hi@xul.is" class="text-link">send an email to hi@xul.is</a> and let me know!
+        Missing a public API service, vector icon, or even a whole new SVG element? Feel free to <a href="mailto:hi@xul.is" class="text-link" tabindex="0">send an email to hi@xul.is</a> and let me know!
       </p>
       <div class="footer-meta">
         <p class="footer-license">Released under the MIT License.</p>
         <p class="footer-credit">
           ${sparkleIcon}
-          From <a href="https://github.com/xulbux" class="text-link" target="_blank" rel="noopener noreferrer"><b>XulbuX</b></a>
+          From <a href="https://github.com/xulbux" class="text-link" target="_blank" rel="noopener noreferrer" tabindex="0"><b>XulbuX</b></a>
           ${sparkleIcon}
         </p>
       </div>
@@ -333,7 +333,7 @@ export function renderPageLayout(options: PageLayoutOptions): string {
   <script src="${getSiteAssetUrl('site.js')}" defer></script>
 </head>
 <body${bodyClassAttr}>
-  <a class="skip-link" href="#main-content">Skip to content</a>
+  <a class="skip-link" href="#main-content" tabindex="0">Skip to content</a>
   ${renderUiSprite()}
   ${renderHeaderNav(options.activeNav, options.sidebar)}
   <div class="page-shell">

@@ -165,6 +165,8 @@ export interface ParamTableRow {
  * `title` and `description` support inline `` `code` `` and `**strong**` markup; Everything else is escaped.
  */
 export interface SectionHeaderOptions {
+  /** Optional raw HTML rendered beside the section title (e.g., the builder's `Reference` link). */
+  actionHtml?: string;
   /** Section lead paragraph. */
   description: string;
   /** Heading level of the title (`1` for docs pages, `2` for homepage sections; Defaults to `1`). */

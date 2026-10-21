@@ -126,7 +126,7 @@ function stripInlineMarkup(text: string): string {
 
 /** Render a hover/focus `#` permalink to an in-page anchor. */
 function renderAnchorLink(targetId: string, label: string): string {
-  return `<a class="anchor-link" href="#${escapeXml(targetId)}" aria-label="Link to “${escapeXml(label)}”">#</a>`;
+  return `<a class="anchor-link" href="#${escapeXml(targetId)}" aria-label="Link to “${escapeXml(label)}”" tabindex="0">#</a>`;
 }
 
 /**
@@ -367,12 +367,12 @@ export function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
 }
 
 /**
- * Render a copy button (copy and check icons plus a polite live label announced by the site script).
+ * Render an icon-only copy button (copy and check icons plus a polite live label announced by the site script).
  * @param extraAttrs   Additional button attributes (e.g., `'data-copy-target="builder-code"'`).
  * @returns Copy button HTML.
  */
 export function renderCopyButton(extraAttrs: string): string {
-  return `<button type="button" class="copy-btn" ${extraAttrs}>${renderUiIcon('copy', 13, 'icon-copy')}${renderUiIcon('check', 13, 'icon-check')}<span class="copy-btn-text" data-copy-label aria-live="polite">Copy</span></button>`;
+  return `<button type="button" class="copy-btn" ${extraAttrs}>${renderUiIcon('copy', 15, 'icon-copy')}${renderUiIcon('check', 15, 'icon-check')}<span class="visually-hidden" data-copy-label aria-live="polite">Copy</span></button>`;
 }
 
 /**
@@ -393,7 +393,7 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
     const svg = scopeSvgIds(renderSvgPath(item.path, item.sample), `${scopePrefix}-${i}`);
     const builderTarget = resolveBuilderTarget(item.path);
     svgsHtml += builderTarget
-      ? `<a class="preview-link" href="${escapeXml(builderTarget.href)}" aria-label="Open “${escapeXml(item.alt)}” in the Builder" title="Open in Builder">${svg}</a>\n`
+      ? `<a class="preview-link" href="${escapeXml(builderTarget.href)}" aria-label="Open “${escapeXml(item.alt)}” in the Builder" title="Open in Builder" tabindex="0">${svg}</a>\n`
       : `${svg}\n`;
     const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
     markdownLines.push(
@@ -410,8 +410,8 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
   const escapedTitle = escapeXml(card.title);
 
   const chevronIcon = renderUiIcon('chevron-right', 14, 'drawer-chevron');
-  const leftScrollIcon = renderUiIcon('chevron-left', 14);
-  const rightScrollIcon = renderUiIcon('chevron-right', 14);
+  const leftScrollIcon = renderUiIcon('chevron-left', 12);
+  const rightScrollIcon = renderUiIcon('chevron-right', 12);
 
   return `<div class="card-container" id="${cardId}">
     <div class="card">
@@ -426,17 +426,10 @@ export function renderShowcaseCard(card: ShowcaseCardConfig): string {
       <details class="code-drawer">
         <summary>${chevronIcon}View Markdown</summary>
         <div class="code-drawer-body">
-          <div class="code-drawer-toolbar">
-            <span class="code-drawer-label">Markdown</span>
-            <div class="code-toolbar-actions">
-              <button type="button" class="scroll-btn scroll-btn-left" aria-label="Scroll code left">${leftScrollIcon}</button>
-              <button type="button" class="scroll-btn scroll-btn-right" aria-label="Scroll code right">${rightScrollIcon}</button>
-              ${renderCopyButton(`aria-describedby="${titleId}"`)}
-            </div>
-          </div>
-          <div class="code-pre-wrap">
-            <pre class="code-pre" tabindex="0" role="region" aria-label="Markdown snippet: ${escapedTitle}"><code>${markdownLines.join('\n')}</code></pre>
-          </div>
+          <button type="button" class="scroll-btn scroll-btn-left" aria-label="Scroll code left">${leftScrollIcon}</button>
+          <button type="button" class="scroll-btn scroll-btn-right" aria-label="Scroll code right">${rightScrollIcon}</button>
+          ${renderCopyButton(`aria-describedby="${titleId}"`)}
+          <pre class="code-pre" tabindex="0" role="region" aria-label="Markdown snippet: ${escapedTitle}"><code>${markdownLines.join('\n')}</code></pre>
         </div>
       </details>
     </div>
@@ -470,15 +463,19 @@ export function renderRoutePills(patterns: readonly string[]): string {
 }
 
 /**
- * Render a documentation section header (title, lead paragraph, and route pills).
- * @param options   Section header options (`title`, `description`, optional `routes` and `headingLevel`).
+ * Render a documentation section header (title, optional header action, lead paragraph, and route pills).
+ * @param options   Section header options (`title`, `description`, optional `actionHtml`, `routes`, and `headingLevel`).
  * @returns HTML string for the section header.
  */
 export function renderSectionHeader(options: SectionHeaderOptions): string {
   const headingTag = `h${options.headingLevel ?? 1}`;
+  const titleHtml = `<${headingTag} class="section-title">${formatInlineMarkupHtml(options.title)}</${headingTag}>`;
+  const headerTopHtml = options.actionHtml
+    ? `<div class="section-title-row">${titleHtml}${options.actionHtml}</div>`
+    : titleHtml;
   const routesHtml = options.routes ? renderRoutePills(options.routes) : '';
   return `<div class="section-header">
-      <${headingTag} class="section-title">${formatInlineMarkupHtml(options.title)}</${headingTag}>
+      ${headerTopHtml}
       <p class="section-desc">${formatInlineMarkupHtml(options.description)}</p>
       ${routesHtml}
     </div>`;

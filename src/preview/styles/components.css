@@ -32,7 +32,7 @@
   background: var(--c-btn-hover-bg);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(.is-copied, .is-failed) {
   border-color: var(--c-border-strong);
   background: color-mix(in srgb, var(--c-text-1), var(--c-border) 94%);
 }
@@ -61,11 +61,43 @@ button.btn-secondary {
   margin-block-end: 28px;
 }
 
+.section-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-block-end: 8px;
+}
+
 .section-title {
   margin-block-end: 8px;
   font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.65rem);
   font-weight: 700;
   letter-spacing: -0.015em;
+  color: var(--c-text-1);
+}
+
+.section-title-row .section-title {
+  margin-block-end: 0;
+}
+
+.section-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--c-text-2);
+  user-select: none;
+  -webkit-user-select: none;
+  transition: color var(--duration-base) ease;
+}
+
+.section-action:hover {
   color: var(--c-text-1);
 }
 
@@ -80,7 +112,7 @@ button.btn-secondary {
 .section-title code,
 .section-subhead code {
   padding: 1px 6px;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: 5px;
   font-size: 0.86em;
   color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 50%);
@@ -140,7 +172,7 @@ button.btn-secondary {
   opacity: 1;
 }
 
-@media (hover: none) {
+@media (max-width: 640px) {
   .anchor-link {
     opacity: 0.7;
   }
@@ -195,13 +227,6 @@ button.btn-secondary {
   margin-block-start: 20px;
 }
 
-/* Skip layout and paint of off-screen cards (most of each page's weight is inline SVG previews) */
-
-.card-container {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 320px;
-}
-
 /* Outer Card: Distinct divider border + soft surface (shared surface card in base.css) */
 
 .card {
@@ -253,7 +278,7 @@ button.btn-secondary {
 
 .card-title-meta {
   padding: 1px 7px;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: 5px;
   font-size: 0.74rem;
   font-weight: 500;
@@ -263,7 +288,7 @@ button.btn-secondary {
 
 .card-title-pill {
   padding: 2px 8px;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: var(--radius-pill);
   font-size: 0.7rem;
   font-weight: 600;
@@ -280,7 +305,7 @@ button.btn-secondary {
   color: var(--c-text-2);
 }
 
-/* Inner Preview Stage: Subtle border and non-interactable SVG previews */
+/* Inner Preview Stage: Inner border and non-interactable SVG previews */
 
 .preview-stage {
   position: relative;
@@ -291,7 +316,7 @@ button.btn-secondary {
   max-inline-size: 100%;
   padding: 18px 20px;
   overflow-x: auto;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: 9px;
   background: var(--c-bg);
   user-select: none;
@@ -302,6 +327,9 @@ button.btn-secondary {
 }
 
 :root[data-preview-bg='inverse'] .preview-stage {
+  --c-btn-bg: var(--c-preview-inverse-btn-bg);
+  --c-btn-text: var(--c-preview-inverse-btn-text);
+
   border-color: var(--c-preview-inverse-border);
   background: var(--c-preview-inverse-bg);
 }
@@ -324,7 +352,6 @@ button.btn-secondary {
   flex-shrink: 0;
   max-inline-size: 100%;
   block-size: auto;
-  pointer-events: none;
 }
 
 /* Preview Links: Every documented preview opens its prefilled builder */
@@ -371,20 +398,14 @@ button.btn-secondary {
   }
 }
 
+.preview-link:hover::after,
 .preview-link:focus-visible::after {
   opacity: 1;
 }
 
-/* Hover only on devices that can hover: Reveal the `Edit` chip and dim sibling previews in the same stage */
-
-@media (hover: hover) {
-  .preview-link:hover::after {
-    opacity: 1;
-  }
-
-  .preview-stage:has(.preview-link:hover) .preview-link:not(:hover) {
-    opacity: 0.45;
-  }
+.preview-stage:has(.preview-link:hover) .preview-link:not(:hover),
+.preview-stage:has(.preview-link:focus-visible) .preview-link:not(:focus-visible) {
+  opacity: 0.45;
 }
 
 /* Expandable <details> Markdown Code Drawer (Subtle inner hierarchy) */
@@ -411,32 +432,26 @@ details.code-drawer[open]::details-content {
 details.code-drawer > summary {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 11px;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 7px;
+  gap: 5px;
+  padding-block: 2px;
+  border-radius: 4px;
   list-style: none;
   font-size: 0.76rem;
   font-weight: 600;
   color: var(--c-text-2);
-  background: var(--c-bg);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    color 0.18s ease,
-    border-color 0.18s ease,
-    background-color 0.18s ease;
+  transition: color var(--duration-base) ease;
 }
 
 details.code-drawer > summary::-webkit-details-marker {
   display: none;
 }
 
-details.code-drawer > summary:hover {
-  border-color: var(--c-border-strong);
+details.code-drawer > summary:hover,
+details.code-drawer[open] > summary {
   color: var(--c-text-1);
-  background: color-mix(in srgb, var(--c-hover), var(--c-bg));
 }
 
 .drawer-chevron {
@@ -449,108 +464,112 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .code-drawer-body {
+  position: relative;
   margin-block-start: 10px;
-  padding: 10px 13px;
   overflow: hidden;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
   color: var(--c-text-1);
   background: var(--c-bg);
 }
 
-.code-drawer-toolbar {
-  display: flex;
+.scroll-btn,
+.copy-btn {
+  position: absolute;
+  inset-block-start: 6px;
+  z-index: 2;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-block-end: 4px;
-  padding-block-end: 7px;
-  border-block-end: 1px solid var(--c-border-subtle);
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.code-drawer-label {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--c-text-3);
-}
-
-.code-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--c-divider) 85%, transparent);
+  border-radius: 4px;
+  color: var(--c-text-2);
+  background: color-mix(in srgb, var(--c-bg-soft) 76%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: none;
+  transition:
+    background-color var(--duration-base) ease,
+    border-color var(--duration-base) ease,
+    color var(--duration-base) ease,
+    opacity var(--duration-base) ease;
 }
 
 .scroll-btn {
   display: none;
-  align-items: center;
-  justify-content: center;
-  inline-size: 22px;
-  block-size: 22px;
-  padding: 0;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: 5px;
-  color: var(--c-text-2);
-  background: var(--c-bg-soft);
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    opacity 0.18s ease;
+  inline-size: 18px;
+  block-size: 18px;
 }
 
 .scroll-btn.is-visible {
   display: inline-flex;
 }
 
-.scroll-btn:hover:not(:disabled) {
-  border-color: var(--c-border-strong);
-  color: var(--c-text-1);
+.scroll-btn-left {
+  inset-inline-start: 6px;
 }
 
-.scroll-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
+.scroll-btn-right {
+  inset-inline-start: 28px;
 }
 
 .copy-btn {
+  inset-inline-end: 6px;
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid var(--c-border-subtle);
-  border-radius: var(--radius-sm);
-  font-size: 0.71rem;
-  font-weight: 600;
-  color: var(--c-text-2);
-  background: var(--c-bg-soft);
-  cursor: pointer;
-  transition:
-    border-color 0.18s ease,
-    color 0.18s ease,
-    background-color 0.18s ease;
+  inline-size: 30px;
+  block-size: 30px;
 }
 
-.copy-btn:hover:not(:disabled) {
+.code-drawer-body:hover .scroll-btn.is-visible,
+.scroll-btn.is-visible:focus-visible,
+.code-drawer-body:hover .copy-btn,
+.copy-btn:focus-visible,
+.copy-btn.is-copied,
+.copy-btn.is-failed {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.scroll-btn:hover:not(:disabled),
+.copy-btn:hover:not(:disabled, .is-copied, .is-failed) {
   border-color: var(--c-border-strong);
   color: var(--c-text-1);
+  background: color-mix(in srgb, var(--c-bg-soft) 88%, var(--c-text-1) 6%);
 }
 
+.scroll-btn:disabled,
 .copy-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  border-color: color-mix(in srgb, var(--c-divider) 45%, transparent);
+  color: color-mix(in srgb, var(--c-text-2) 40%, transparent);
+  background: color-mix(in srgb, var(--c-bg-soft) 45%, transparent);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  cursor: default;
+  pointer-events: none;
 }
 
-.copy-btn.is-copied {
+@media (max-width: 640px) {
+  .scroll-btn.is-visible {
+    display: none;
+  }
+
+  .copy-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.copy-btn.is-copied,
+.btn-secondary.is-copied {
   border-color: var(--c-brand-border);
   color: var(--c-brand-1);
-  background: var(--c-brand-soft);
+  background: color-mix(in srgb, var(--c-brand-soft) 85%, var(--c-bg-soft) 60%);
 }
 
-.copy-btn.is-failed {
+.copy-btn.is-failed,
+.btn-secondary.is-failed {
   border-color: color-mix(in srgb, var(--c-danger) 40%, transparent);
   color: var(--c-danger);
 }
@@ -566,15 +585,11 @@ details.code-drawer[open] .drawer-chevron {
 
 /* Soft-Edge Inner Fade-Out for Code Blocks (a horizontal mask on the scrolling `<pre>`) */
 
-.code-pre-wrap {
-  margin-inline: -13px;
-  margin-block-end: -10px;
-}
-
 .code-pre {
   margin: 0;
-  padding: 6px 14px 10px;
+  padding: 11px 14px;
   overflow-x: auto;
+  border-radius: var(--radius-md);
   font-size: 0.76rem;
   line-height: 1.55;
   white-space: pre;
@@ -668,7 +683,7 @@ details.code-drawer[open] .drawer-chevron {
 .param-table th,
 .param-table td {
   padding: 10px 15px;
-  border-block-end: 1px solid var(--c-border-subtle);
+  border-block-end: 1px solid var(--c-border);
   vertical-align: top;
   text-align: start;
 }
@@ -701,7 +716,7 @@ details.code-drawer[open] .drawer-chevron {
 
 .param-code {
   padding: 1px 6px;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: 5px;
   font-size: 0.77rem;
   color: color-mix(in srgb, var(--c-text-2), var(--c-text-1) 65%);
@@ -772,7 +787,7 @@ details.code-drawer[open] .drawer-chevron {
 
   .param-table tbody tr {
     padding: 12px 15px;
-    border-block-end: 1px solid var(--c-border-subtle);
+    border-block-end: 1px solid var(--c-border);
   }
 
   .param-table tbody th {
@@ -836,13 +851,11 @@ details.code-drawer[open] .drawer-chevron {
 .anatomy-url {
   display: block;
   padding: 10px 13px;
-  overflow-x: auto;
-  border: 1px solid var(--c-border-subtle);
+  border: 1px solid var(--c-border);
   border-radius: var(--radius-md);
   font-size: clamp(0.74rem, 0.7rem + 0.2vw, 0.86rem);
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   background: var(--c-bg);
-  scrollbar-width: thin;
 }
 
 .anatomy-legend {
