@@ -179,7 +179,7 @@
   border-radius: 50%;
   color: var(--c-text-2);
   background: var(--c-switch-thumb-bg);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+  box-shadow: var(--c-shadow-sm);
   translate: var(--c-switch-thumb-shift) 0;
   transition:
     translate var(--duration-slow) ease,
@@ -227,44 +227,30 @@
   color: var(--c-text-1);
 }
 
-/* Header Preview Background Picker (native popover, positioned by `placePopover`) */
+/* Header Preview Background Toggle (toggles `:root[data-preview-bg='inverse']`) */
 
-.bg-picker {
-  position: relative;
+.bg-toggle {
   display: inline-flex;
-}
-
-.bg-picker-trigger {
-  display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 3px;
+  justify-content: center;
+  inline-size: 22px;
   block-size: 22px;
-  padding: 0 5px 0 3px;
+  padding: 0;
   border: 1px solid var(--c-divider);
-  border-radius: 11px;
-  color: var(--c-text-2);
+  border-radius: 50%;
   background: var(--c-switch-bg);
   cursor: pointer;
   transition:
     border-color var(--duration-slow) ease,
-    color var(--duration-slow) ease;
+    background-color var(--duration-slow) ease;
 }
 
-.bg-picker-trigger:hover,
-.bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-trigger {
+.bg-toggle:hover {
   border-color: var(--c-text-3);
-  color: var(--c-text-1);
 }
 
-.bg-picker-chevron {
-  transition: rotate var(--duration-base) ease;
-}
-
-.bg-picker:has(.bg-picker-menu:where(:popover-open, .is-open)) .bg-picker-chevron {
-  rotate: 180deg;
-}
-
-/* Swatches: Options show their own checker background; The trigger mirrors the active one */
+/* Checker swatch: Mirrors the active preview stage background (`auto` or `inverse`) */
 
 .bg-swatch {
   --swatch-bg: var(--c-bg);
@@ -273,91 +259,21 @@
   flex-shrink: 0;
   inline-size: 14px;
   block-size: 14px;
-  border: 1px solid var(--c-border);
   border-radius: 50%;
   background:
     repeating-conic-gradient(
-        color-mix(in srgb, var(--swatch-fg) 24%, transparent) 0 25%,
+        color-mix(in srgb, var(--swatch-fg) 28%, transparent) 0 25%,
         transparent 0 50%
       )
-      0 0 / 6px 6px,
+      50% 50% / 7.5px 7.5px,
     var(--swatch-bg);
+  box-shadow: var(--c-shadow-sm);
+  transition: background-color var(--duration-slow) ease;
 }
 
-.bg-swatch[data-bg='inverse'],
-:root[data-preview-bg='inverse'] .bg-swatch-current {
+:root[data-preview-bg='inverse'] .bg-swatch {
   --swatch-bg: var(--c-preview-inverse-bg);
   --swatch-fg: var(--c-bg);
-
-  border-color: var(--c-preview-inverse-border);
-}
-
-/* Menu Panel: Shared popover surface (`.popover-panel` in base.css) */
-
-.bg-picker-menu {
-  gap: 2px;
-  min-inline-size: 176px;
-  padding: 6px;
-}
-
-/* Fallback without the Popover API: The menu stays in flow, so position it below the trigger */
-
-.bg-picker-menu.is-open {
-  position: absolute;
-  inset-block-start: calc(100% + 8px);
-  inset-inline-end: 0;
-}
-
-.bg-picker-title {
-  padding: 4px 8px 6px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--c-text-3);
-}
-
-.bg-picker-option {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--c-text-2);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) ease,
-    color var(--duration-fast) ease;
-}
-
-.bg-picker-option:hover {
-  color: var(--c-text-1);
-  background: color-mix(in srgb, var(--c-text-1) 6%, transparent);
-}
-
-.bg-picker-option:has(:checked) {
-  color: var(--c-text-1);
-  background: var(--c-selected);
-}
-
-.bg-picker-option:has(:focus-visible) {
-  outline: 2px solid var(--c-focus);
-  outline-offset: -2px;
-}
-
-.bg-picker-label {
-  flex: 1;
-}
-
-.bg-picker-check {
-  visibility: hidden;
-}
-
-.bg-picker-option:has(:checked) .bg-picker-check {
-  visibility: visible;
 }
 
 /* Narrow Screens: The nav row wraps below the brand on every page (sidebar toggle left, tabs right) */
@@ -442,9 +358,7 @@
 }
 
 .sidebar-group + .sidebar-group {
-  margin-block-start: 22px;
-  padding-block-start: 18px;
-  border-block-start: 1px solid var(--c-border);
+  margin-block-start: 24px;
 }
 
 .sidebar-group-title {
@@ -517,7 +431,7 @@
     block-size: 100dvh;
     padding: 24px 22px 40px;
     background: color-mix(in srgb, var(--c-bg) 82%, transparent);
-    box-shadow: 0 10px 40px rgb(0 0 0 / 0.25);
+    box-shadow: var(--c-shadow-dialog);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     translate: -100% 0;

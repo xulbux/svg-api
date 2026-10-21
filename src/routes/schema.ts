@@ -66,7 +66,7 @@ interface RedirectProbe {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Example `/stack` groups the tech stack builder starts with. */
-const EXAMPLE_STACK_GROUPS = 'html,css,js,ts:4|react,nodejs,docker:3';
+const EXAMPLE_STACK_GROUPS = 'js,ts,html,css|react,vue,tailwind';
 
 /** Example quote text the quote card builder starts with. */
 const EXAMPLE_QUOTE_TEXT =
@@ -525,8 +525,6 @@ function buildStackFields(): BuilderField[] {
     {
       aliases: ['groups', 'icons', 'i'],
       control: 'stackGroups',
-      description:
-        'Comma-separated slugs; :N sets the columns of a group, | places groups side by side, and ; starts a new row band.',
       id: 'groups',
       isRequired: true,
       label: 'Icon groups',

@@ -8,8 +8,8 @@ import {
   DEFAULT_ICON_SLUG,
   DEFAULT_ICON_STROKE_WIDTH,
   FALLBACK_ICON_SLUG,
-  resolveFallbackIcon,
   resolveIconLookup,
+  resolvePlaceholderIcon,
 } from '@/svg/icons';
 import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from '@/svg/measure';
 import {
@@ -131,6 +131,8 @@ interface PackedCompartment {
 
 /** A requested icon slot of a badge or button (resolved data, canonical key, and requested slug). */
 interface IconSlot extends IconLookup {
+  /** Whether the slot fell back to the placeholder icon because the requested slug was unknown. */
+  isFallback?: boolean;
   /** Trimmed requested slug (used as the accessible fallback name). */
   slug: string;
 }
@@ -157,6 +159,8 @@ interface IconMarkupOptions {
   iconSize: number;
   /** Top Y coordinate of the icon box. */
   iconY: number;
+  /** Whether the icon sits on a vivid primary (`variant=1`) surface. */
+  isOnPrimary: boolean;
   /** Micro-animation applied to the icon. */
   motion: IconMotionMode;
   /** Stroke or fill color and optional group opacity. */
@@ -900,10 +904,16 @@ function resolveIconAnimationPair(
     : { leftMotion: firstToken, rightMotion: 'none' };
 }
 
-/** Resolve a single requested icon slug into an icon slot (empty slugs become `'none'`). */
+/** Resolve a single requested icon slug into an icon slot (empty slugs become `'none'`, unknown slugs render the red placeholder icon). */
 function resolveIconSlot(rawSlug: string): IconSlot {
   const slug = rawSlug.trim() || 'none';
+  if (slug === 'none') {
+    return EMPTY_ICON_SLOT;
+  }
   const lookup = resolveIconLookup(slug);
+  if (!lookup.data) {
+    return { data: resolvePlaceholderIcon(), isFallback: true, key: FALLBACK_ICON_SLUG, slug };
+  }
   return { data: lookup.data, key: lookup.key, slug };
 }
 
@@ -939,10 +949,16 @@ function renderIconMarkup(options: IconMarkupOptions): string {
   const scaleNum = options.iconSize / 24;
   const scale = roundScale(scaleNum);
   const translateX = roundCoord(options.visualStartX - iconData.minX * scaleNum);
+  const isFallback = options.slot.isFallback === true;
+  const animatedSvg = wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion);
+  const innerSvg =
+    isFallback && options.isOnPrimary
+      ? `<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}" stroke="none" />${animatedSvg}`
+      : animatedSvg;
   return renderIconGroup({
-    color: options.paint.color,
-    innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),
-    opacity: options.paint.opacity,
+    color: isFallback ? THEMES.red.iconColor : options.paint.color,
+    innerSvg,
+    opacity: isFallback ? undefined : options.paint.opacity,
     strokeWidth: CAPSULE_ICON_STROKE_WIDTH,
     transform: `translate(${translateX}, ${options.iconY}) scale(${scale})`,
     type: iconData.type,
@@ -1490,6 +1506,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
   const leftIconMarkup = renderIconMarkup({
     iconSize,
     iconY,
+    isOnPrimary: options.isLeftOnPrimary,
     motion: leftMotion,
     paint: resolveForegroundPaint(options.isLeftOnPrimary, palette.iconColor),
     slot: icons.left,
@@ -1498,6 +1515,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
   const rightIconMarkup = renderIconMarkup({
     iconSize,
     iconY,
+    isOnPrimary: options.isRightOnPrimary,
     motion: rightMotion,
     paint: resolveForegroundPaint(options.isRightOnPrimary, palette.iconColor),
     slot: icons.right,
@@ -1749,14 +1767,14 @@ export function renderButton(options: ButtonRenderOptions): string {
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderIcon(options: IconRenderOptions): string {
-  const { iconColor } = THEMES[options.color];
   const animMode: AnimationMode = options.anim ?? 'default';
   const size = clampInt(options.size, ICON_SIZE_RANGE);
   const strokeWidth = Number(clampNumber(options.strokeWidth, ICON_STROKE_RANGE).toFixed(2));
 
   const slug = options.icon.trim().toLowerCase() || DEFAULT_ICON_SLUG;
   const lookup = resolveIconLookup(slug);
-  const iconData = lookup.data ?? resolveFallbackIcon(FALLBACK_ICON_SLUG);
+  const iconData = lookup.data ?? resolvePlaceholderIcon();
+  const iconColor = lookup.data ? THEMES[options.color].iconColor : THEMES.red.iconColor;
   const slot: IconSlot = { data: iconData, key: lookup.key, slug };
   // Per-icon pairs (e.g., `nudge,shake`) apply their first motion to the single standalone icon.
   const { leftMotion } = resolveIconAnimationPair(animMode, { left: slot, right: EMPTY_ICON_SLOT });

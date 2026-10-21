@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
+import { STACK_CATEGORIES } from '@/config/stack';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { getSiteAsset } from '@/preview/assets';
 import { renderBuilderHtml } from '@/preview/builder';
@@ -70,6 +71,11 @@ interface BuilderCore {
   ) => Record<keyof SnippetSet, HighlightToken[]>;
   collectStackSlugs: (groups: string) => string[];
   composeAnim: (hasSheen: boolean, left: string, right: string) => string;
+  composeCategorizedStack: (
+    categoryGroups: readonly (readonly string[])[],
+    isGroupedByCategory: boolean,
+    rawPerLine?: string
+  ) => string;
   composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
   composeSpecial: (kind: string, payload: string, modifier: string) => string;
   computeGridFocusIndex: (
@@ -520,13 +526,202 @@ describe('builder client core', () => {
       payload: '+24%',
     });
     expect(core.composeSpecial('sparkline', ' ', '')).toBe('');
-    expect(core.collectStackSlugs('c,cpp:4|rust\n py ; ts:2')).toEqual([
+    expect(core.collectStackSlugs('c,cpp:4|rust@amber\n py ; ts:2|cpu@emerald:1')).toEqual([
       'c',
       'cpp',
       'rust',
       'py',
       'ts',
+      'cpu',
     ]);
+    // Bare trailing `:` (without digits) or mid-group `:N` tokens are not valid group column suffixes and must be flagged as unknown slugs.
+    expect(core.collectStackSlugs('nodejs,postgres:|rust:2,go')).toEqual([
+      'nodejs',
+      'postgres:',
+      'rust:2',
+      'go',
+    ]);
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['ts', 'js', 'py', 'rust'],
+          ['react', 'vue', 'tailwind'],
+          ['docker', 'git', 'linux'],
+        ],
+        true
+      )
+    ).toBe('ts,js,py,rust|react,vue,tailwind;docker,git,linux');
+    expect(
+      core.composeCategorizedStack(
+        [['c', 'cpp', 'cs', 'rust', 'go', 'zig', 'py', 'js', 'ts', 'java']],
+        true
+      )
+    ).toBe('c,cpp,cs,rust,go,zig,py,js,ts,java:5');
+    expect(
+      core.composeCategorizedStack(
+        [
+          [
+            'react',
+            'vue',
+            'tailwind',
+            'unocss',
+            'bun',
+            'threejs',
+            'webgl',
+            'greensock',
+            'electron',
+            'gtk',
+          ],
+          ['nodejs', 'dotnet', 'laravel'],
+          ['docker', 'aws', 'azure', 'cloudflare'],
+          ['git', 'vite'],
+        ],
+        true
+      )
+    ).toBe(
+      'react,vue,tailwind,unocss,bun,threejs,webgl,greensock,electron,gtk:5|nodejs,dotnet,laravel:2;docker,aws,azure,cloudflare|git,vite'
+    );
+    expect(
+      core.composeCategorizedStack(
+        [
+          [
+            'react',
+            'vue',
+            'tailwind',
+            'unocss',
+            'bun',
+            'threejs',
+            'webgl',
+            'greensock',
+            'electron',
+            'gtk',
+          ],
+          ['nodejs', 'dotnet', 'laravel', 'graphql'],
+          ['docker', 'aws', 'azure', 'cloudflare'],
+          ['git', 'vite'],
+        ],
+        true
+      )
+    ).toBe(
+      'react,vue,tailwind,unocss,bun,threejs,webgl,greensock,electron,gtk:5|nodejs,dotnet,laravel,graphql:2;docker,aws,azure,cloudflare|git,vite'
+    );
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['react', 'vue', 'svelte', 'tailwind', 'unocss', 'threejs'],
+          ['nodejs', 'dotnet', 'laravel', 'graphql'],
+        ],
+        true
+      )
+    ).toBe('react,vue,svelte,tailwind,unocss,threejs:3|nodejs,dotnet,laravel,graphql:2');
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['ts', 'js', 'py', 'rust'],
+          ['react', 'vue', 'tailwind'],
+          ['docker', 'git', 'linux'],
+        ],
+        true,
+        '6'
+      )
+    ).toBe('ts,js,py,rust;react,vue,tailwind|docker,git,linux');
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['ts', 'js', 'py', 'rust'],
+          ['react', 'vue', 'tailwind'],
+          ['docker', 'git', 'linux'],
+        ],
+        true,
+        '10'
+      )
+    ).toBe('ts,js,py,rust|react,vue,tailwind|docker,git,linux');
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['ts', 'js', 'py', 'rust'],
+          ['react', 'vue', 'tailwind'],
+          ['docker', 'git', 'linux'],
+        ],
+        true,
+        '2,2,3'
+      )
+    ).toBe('ts,js,py,rust|react,vue,tailwind;docker,git,linux');
+    expect(
+      core.composeCategorizedStack(
+        [['c', 'cpp', 'cs', 'rust', 'go', 'zig', 'py', 'js', 'ts', 'java']],
+        true,
+        '6'
+      )
+    ).toBe('c,cpp,cs,rust,go,zig,py,js,ts,java:5');
+    expect(
+      core.composeCategorizedStack(
+        [
+          [
+            'c',
+            'cpp',
+            'cs',
+            'rust',
+            'java',
+            'py',
+            'js',
+            'ts',
+            'php',
+            'lua',
+            'bash',
+            'powershell',
+            'html',
+            'css',
+            'sass',
+            'md',
+          ],
+          [
+            'dotnet',
+            'vue',
+            'pinia',
+            'laravel',
+            'symfony',
+            'nodejs',
+            'threejs',
+            'tauri',
+            'unity',
+            'unreal',
+            'tailwind',
+            'wordpress',
+          ],
+          [
+            'git',
+            'github',
+            'githubactions',
+            'vscode',
+            'visualstudio',
+            'npm',
+            'vite',
+            'cmake',
+            'linux',
+            'windows',
+            'raspberrypi',
+            'arduino',
+          ],
+          ['aws', 'azure', 'cloudflare', 'firebase', 'netlify', 'terraform', 'mysql', 'sqlite'],
+          ['figma', 'ai', 'blender', 'ps', 'pr', 'ae'],
+          ['obsidian', 'notion', 'codepen', 'gtk', 'latex', 'regex'],
+        ],
+        true,
+        '10'
+      )
+    ).toBe(
+      'c,cpp,cs,rust,java,py,js,ts,php,lua,bash,powershell,html,css,sass,md:8;dotnet,vue,pinia,laravel,symfony,nodejs,threejs,tauri,unity,unreal,tailwind,wordpress:6;git,github,githubactions,vscode,visualstudio,npm,vite,cmake,linux,windows,raspberrypi,arduino:6|aws,azure,cloudflare,firebase,netlify,terraform,mysql,sqlite:4;figma,ai,blender,ps,pr,ae:3|obsidian,notion,codepen,gtk,latex,regex:3'
+    );
+    expect(
+      core.composeCategorizedStack(
+        [
+          ['ts', 'rust@amber'],
+          ['react', 'docker'],
+        ],
+        false
+      )
+    ).toBe('ts,rust@amber,react,docker');
   });
 
   it('builds exact Markdown, HTML, and URL snippets with escaped alt text and links', () => {
@@ -841,6 +1036,41 @@ describe('builder pages & "Open in Builder" links', () => {
       '<svg data-set="brands" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"></svg>'
     );
     expect(builderScript).not.toContain("'stroke-linecap'");
+  });
+
+  it('renders verified developer categories, group-by-category toggle, and DSL syntax popover on /builder/stack', () => {
+    const html = renderBuilderHtml('stack');
+    expect(html).toContain('id="stack-tab-categories"');
+    expect(html).toContain('id="stack-tab-raw"');
+    expect(html).toContain('id="stack-group-by-category" checked');
+    expect(html).toContain('id="stack-syntax-help" popover role="dialog"');
+    expect(html).toContain('<code class="param-code">rust@amber</code>');
+    expect(html).toContain(
+      'Switch to <strong>Raw DSL</strong> to add any icon from the full catalog or customize per-icon colors.'
+    );
+    expect(html).not.toContain('All icons…');
+    expect(html.indexOf('data-validation-for="field-groups"')).toBeLessThan(
+      html.indexOf('data-stack-raw-actions')
+    );
+    expect(builderScript).toContain("'is-invalid'");
+    expect(builderScript).toContain("classList.toggle('is-missing', isMissing)");
+
+    const resolver = core.createIconResolver(getIconPickerIndex(), MAX_ICON_SLUG_LENGTH);
+    const seenSlugs = new Set<string>();
+    for (const category of STACK_CATEGORIES) {
+      expect(html, category.id).toContain(`data-stack-category="${category.id}"`);
+      for (const item of category.items) {
+        expect(seenSlugs.has(item.slug), item.slug).toBe(false);
+        seenSlugs.add(item.slug);
+        const resolvedSlug = resolveIcon(item.slug, true);
+        const resolvedCanonical = resolveIcon(item.canonical, true);
+        expect(resolvedSlug, item.slug).toBeDefined();
+        expect(resolvedSlug?.innerSvg, item.slug).toBe(resolvedCanonical?.innerSvg);
+        expect(resolver.resolve(item.slug, true), item.slug).toBe('brands');
+        expect(html, item.slug).toContain(`data-stack-chip="${item.slug}"`);
+      }
+    }
+    expect(seenSlugs.size).toBeGreaterThan(350);
   });
 
   it('links every docs preview to a builder whose prefill renders the identical SVG', () => {

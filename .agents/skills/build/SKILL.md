@@ -23,7 +23,7 @@ In accordance with `AGENTS.md` Section 4, keep `src/preview/` and the builder sc
 pnpm run dev
 ```
 
-Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch), on every preview stage background (header picker: Match page, Inverted, Checker), and on narrow screens (sidebar drawer). On `/builder/:kind`, edit fields, open the icon picker, and click a docs preview to verify it opens prefilled in its builder.
+Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch), on both preview stage backgrounds (header preview background toggle), and on narrow screens (sidebar drawer). On `/builder/:kind`, edit fields, open the icon picker, and click a docs preview to verify it opens prefilled in its builder.
 
 ## 3. Verify Worker Bundle (Dry Run)
 

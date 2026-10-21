@@ -6,6 +6,7 @@
  * requests to the live SVG routes, so the builder never duplicates rendering logic.
  */
 
+import { STACK_CATEGORIES } from '@/config/stack';
 import { getSiteAssetUrl } from '@/preview/assets';
 import {
   BRAND_FILL_ATTRS,
@@ -285,6 +286,65 @@ function renderSizeControlHtml(field: BuilderField): string {
         </div>`;
 }
 
+/** Render the interactive category composer and raw DSL controls of a `stackGroups` field. */
+function renderStackGroupsControlHtml(
+  controlId: string,
+  initialValue: string,
+  requiredAttr: string
+): string {
+  let categoriesHtml = '';
+  for (const category of STACK_CATEGORIES) {
+    let chipsHtml = '';
+    for (const item of category.items) {
+      const canonicalAttr =
+        item.canonical === item.slug ? '' : ` data-stack-canonical="${escapeXml(item.canonical)}"`;
+      chipsHtml += `<button type="button" class="stack-chip" data-stack-chip="${escapeXml(item.slug)}"${canonicalAttr} aria-pressed="false" title="${escapeXml(`${item.label} (${item.slug})`)}"><span class="stack-chip-glyph" aria-hidden="true"></span><span class="stack-chip-label">${escapeXml(item.label)}</span></button>`;
+    }
+    categoriesHtml += `<section class="stack-category" data-stack-category="${escapeXml(category.id)}"><p class="stack-category-title">${escapeXml(category.title)}</p><div class="stack-chip-list">${chipsHtml}</div></section>`;
+  }
+
+  return `<div class="stack-toolbar">
+          <div class="builder-tabs stack-mode-tabs" role="tablist" aria-label="Stack input mode">
+            <button type="button" class="stack-mode-tab is-active" role="tab" id="stack-tab-categories" data-stack-mode="categories" aria-selected="true" aria-controls="stack-panel-categories" tabindex="0">Categories</button>
+            <button type="button" class="stack-mode-tab" role="tab" id="stack-tab-raw" data-stack-mode="raw" aria-selected="false" aria-controls="stack-panel-raw" tabindex="-1">Raw DSL</button>
+          </div>
+          <label class="builder-check stack-group-check" for="stack-group-by-category" data-stack-group-toggle><input class="check-input" type="checkbox" id="stack-group-by-category" checked /><span class="check-box" aria-hidden="true">${renderUiIcon('check', 12, 'check-icon')}</span><span>Group by category</span></label>
+        </div>
+        <div class="stack-panel" id="stack-panel-categories" data-stack-panel="categories" role="tabpanel" aria-labelledby="stack-tab-categories">
+          <div class="select-search stack-search">${renderUiIcon('search', 14)}<input class="select-search-input" id="stack-category-search" type="search" placeholder="Filter categories…" aria-label="Filter category icons" spellcheck="false" autocomplete="off" /></div>
+          <div class="stack-catalog-wrap">
+            <div class="stack-catalog" id="stack-catalog">
+              ${categoriesHtml}
+              <p class="select-empty stack-catalog-empty" id="stack-catalog-empty" hidden>No matching technologies in the quick categories – switch to Raw DSL to insert any bundled icon.</p>
+            </div>
+          </div>
+          <p class="builder-hint">Switch to <strong>Raw DSL</strong> to add any icon from the full catalog or customize per-icon colors.</p>
+        </div>
+        <div class="stack-panel" id="stack-panel-raw" data-stack-panel="raw" role="tabpanel" aria-labelledby="stack-tab-raw" hidden>
+          <div class="stack-textarea-wrap">
+            <textarea class="builder-input builder-textarea is-mono" id="${controlId}" rows="4" spellcheck="false"${requiredAttr}>${escapeXml(initialValue)}</textarea>
+            <button type="button" class="stack-help-btn" id="stack-help-trigger" popovertarget="stack-syntax-help" aria-label="Stack DSL syntax help" title="Syntax help"><svg class="ui-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+          </div>
+          <div class="popover-panel stack-help-popover" id="stack-syntax-help" popover role="dialog" aria-label="Stack DSL syntax reference">
+            <div class="stack-help-head">
+              <p class="stack-help-title">Stack DSL syntax</p>
+              <p class="stack-help-desc">Comma-separated icon slugs; line breaks or <code>;</code> stack row bands.</p>
+            </div>
+            <dl class="stack-help-list">
+              <div class="stack-help-row"><dt><code class="param-code">rust,go,ts</code></dt><dd>Icons in the same group</dd></div>
+              <div class="stack-help-row"><dt><code class="param-code">rust@amber</code></dt><dd>Custom tile color per icon</dd></div>
+              <div class="stack-help-row"><dt><code class="param-code">figma,ps,ai:3</code></dt><dd>Columns (<code>:N</code>) for a group</dd></div>
+              <div class="stack-help-row"><dt><code class="param-code">a,b | c,d</code></dt><dd>Place groups side by side</dd></div>
+              <div class="stack-help-row"><dt><code class="param-code">row1 ; row2</code></dt><dd>Start a new row band</dd></div>
+            </dl>
+          </div>
+        </div>
+        <p class="builder-hint builder-validation" data-validation-for="${controlId}" aria-live="polite"></p>
+        <div class="builder-field-actions" data-stack-raw-actions hidden>
+          <button type="button" class="btn-secondary btn-small" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}Insert icon</button>
+        </div>`;
+}
+
 /** Render the control(s) of a builder field. */
 function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): string {
   const controlId = buildFieldId(field);
@@ -323,11 +383,7 @@ function renderFieldControlHtml(field: BuilderField, schema: BuilderSchema): str
       return renderSpecialControlHtml(field);
     }
     case 'stackGroups': {
-      return `<textarea class="builder-input builder-textarea is-mono" id="${controlId}" rows="4" spellcheck="false"${requiredAttr}>${escapeXml(initialValue)}</textarea>
-        <div class="builder-field-actions">
-          <button type="button" class="btn-secondary btn-small" data-icon-target="${controlId}" data-icon-insert="true" popovertarget="icon-picker">${renderUiIcon('layout-grid', 14)}Insert icon</button>
-        </div>
-        <p class="builder-hint builder-validation" data-validation-for="${controlId}" aria-live="polite"></p>`;
+      return renderStackGroupsControlHtml(controlId, initialValue, requiredAttr);
     }
     case 'textarea': {
       return `<textarea class="builder-input builder-textarea" id="${controlId}" rows="4"${maxLengthAttr}${placeholderAttr}${requiredAttr}>${escapeXml(initialValue)}</textarea>`;
@@ -433,7 +489,7 @@ function renderOutputPanelHtml(): string {
           <div class="builder-actions">
             <a class="btn-secondary btn-small" id="builder-open" target="_blank" rel="noopener noreferrer" aria-disabled="true" tabindex="-1">${renderUiIcon('external-link', 14)}Open SVG</a>
             <button type="button" class="btn-secondary btn-small" id="builder-share" data-copied-label="Link copied">${renderUiIcon('link', 14)}<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span></button>
-            <button type="button" class="btn-secondary btn-small" id="builder-reset">${renderUiIcon('rotate-ccw', 14)}Reset</button>
+            <button type="button" class="btn-secondary btn-small" id="builder-reset">${renderUiIcon('eraser', 14)}Clear</button>
           </div>
         </div>
       </div>

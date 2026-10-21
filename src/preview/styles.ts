@@ -58,12 +58,12 @@ const MONO_FONT_STACK =
 const SOFT_SURFACE: SchemeColor = { dark: ISOLUX_GRAY[950], light: ISOLUX_GRAY[50] };
 
 /**
- * Warning text: The amber strip tick (`#FFB900`, at least 11:1 on the dark surfaces), mixed half with
- * black in the light scheme (`#805C00`, at least 5.8:1 on white and gray `50`).
+ * Error and validation status color: The red strip tick (`#FF6467`, at least 6.6:1 on the dark surfaces)
+ * and the Isolux operator red (`#C5002B`, at least 5.8:1 on white and gray `50`) in the light scheme.
  */
-const WARNING_COLOR: SchemeColor = {
-  dark: STRIP_DARK_COLORS[3],
-  light: `color-mix(in srgb, ${STRIP_DARK_COLORS[3]}, ${ISOLUX_GRAY[950]} 50%)`,
+const DANGER_COLOR: SchemeColor = {
+  dark: STRIP_DARK_COLORS[1],
+  light: ISOLUX_SYNTAX.operator.light,
 };
 
 /** Static stylesheets in cascade order. */
@@ -122,9 +122,8 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('brand-2', { dark: BRAND_INDIGO[500], light: BRAND_INDIGO[500] }),
     buildDerivedToken('brand-soft', 'color-mix(in srgb, var(--c-brand-1) 12%, transparent)'),
     buildDerivedToken('brand-border', 'color-mix(in srgb, var(--c-brand-1) 36%, transparent)'),
-    // Status colors (WCAG AA for small text on both `bg` and `bg-soft`); Danger keeps the Isolux operator red.
-    buildColorToken('danger', ISOLUX_SYNTAX.operator),
-    buildColorToken('warning', WARNING_COLOR),
+    // Error status color (WCAG AA for small text and invalid input borders on both `bg` and `bg-soft`).
+    buildColorToken('danger', DANGER_COLOR),
     buildColorToken('nav-bg', {
       dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
       light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
@@ -154,7 +153,25 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('hl-key', ISOLUX_SYNTAX.property),
     buildColorToken('hl-val', ISOLUX_SYNTAX.constant),
     buildColorToken('hl-href', ISOLUX_SYNTAX.string),
-    // Theme switch state (non-color tokens, so they never go through `light-dark()`).
+    // Elevation shadows and theme switch state (non-color tokens, so they never go through `light-dark()`).
+    {
+      dark: '0 0 3px rgb(0 0 0 / 0.65)',
+      isColor: false,
+      light: '0 0 2px rgb(0 0 0 / 0.12)',
+      name: 'shadow-sm',
+    },
+    {
+      dark: '0 14px 38px rgb(0 0 0 / 0.78), 0 4px 14px rgb(0 0 0 / 0.55)',
+      isColor: false,
+      light: '0 10px 30px rgb(0 0 0 / 0.18)',
+      name: 'shadow-popover',
+    },
+    {
+      dark: '0 20px 52px rgb(0 0 0 / 0.85), 0 6px 18px rgb(0 0 0 / 0.6)',
+      isColor: false,
+      light: '0 16px 40px rgb(0 0 0 / 0.22)',
+      name: 'shadow-dialog',
+    },
     { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
     { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
     { dark: 'inline-flex', isColor: false, light: 'none', name: 'theme-dark-display' },

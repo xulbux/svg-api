@@ -336,23 +336,19 @@ describe('documentation pages – head metadata & client script', () => {
     expect(html).not.toContain('<script blocking="render">');
   });
 
-  it('renders one persisted preview background picker per page in the header', () => {
+  it('renders one persisted preview background toggle switch per page in the header', () => {
     for (const page of renderAllPages()) {
       const headerHtml = page.html.slice(
         page.html.indexOf('<header class="site-header">'),
         page.html.indexOf('</header>')
       );
-      expect(
-        headerHtml.split('role="radiogroup" aria-labelledby="bg-picker-title"').length - 1,
-        page.path
-      ).toBe(1);
-      expect(page.html.split('name="preview-bg" value="').length - 1, page.path).toBe(2);
-      expect(headerHtml, page.path).toContain('popovertarget="bg-picker-menu"');
-      expect(headerHtml, page.path).toContain('id="bg-picker-menu" popover');
-      for (const value of ['auto', 'inverse']) {
-        expect(headerHtml, page.path).toContain(`name="preview-bg" value="${value}"`);
-      }
-      expect(headerHtml, page.path).not.toContain('name="preview-bg" value="checker"');
+      expect(headerHtml.split('id="preview-bg-toggle"').length - 1, page.path).toBe(1);
+      expect(headerHtml, page.path).toContain(
+        'class="bg-toggle" id="preview-bg-toggle" role="switch" aria-checked="false"'
+      );
+      expect(headerHtml, page.path).toContain('<span class="bg-swatch" aria-hidden="true"></span>');
+      expect(headerHtml, page.path).not.toContain('id="bg-picker-menu"');
+      expect(page.html, page.path).toContain('"previewBgValues":["auto","inverse"]');
     }
   });
 
@@ -708,10 +704,10 @@ describe('website client scripts & markup regressions', () => {
     }
     const docsHtml = renderDocsHtml('buttons');
     expect(docsHtml).toContain('<div class="card-grid is-3col">');
-    expect(docsHtml).toContain('class="popover-panel bg-picker-menu"');
     const builderHtml = renderBuilderHtml('badge');
     expect(builderHtml).toContain('class="popover-panel select-menu"');
     expect(builderHtml).toContain('class="popover-panel icon-picker"');
+    expect(renderBuilderHtml('stack')).toContain('class="popover-panel stack-help-popover"');
   });
 
   it('documents variant tiers, widget examples, sizes, quote widths, and alias rules from shared sources (docs drift)', () => {
@@ -783,21 +779,23 @@ describe('site stylesheet', () => {
     );
     expect(css).toContain('.popover-panel:where(:popover-open, .is-open) {');
     expect(css).toContain('.popover-panel:not(:where(:popover-open, .is-open)) {');
-    for (const popover of ['.bg-picker-menu', '.select-menu', '.icon-picker']) {
+    for (const popover of ['.select-menu', '.icon-picker', '.stack-help-popover']) {
       expect(css, popover).not.toContain(`${popover}:where(:popover-open, .is-open) {`);
     }
   });
 
-  it('colors errors and warnings with status tokens and keeps --c-hl-op for syntax highlighting', () => {
+  it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-op for syntax highlighting', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-danger: light-dark(#C5002B, #FFA4AA);');
-    expect(css).toContain(
-      '--c-warning: light-dark(color-mix(in srgb, #FFB900, #000000 50%), #FFB900);'
-    );
+    expect(css).toContain('--c-danger: light-dark(#C5002B, #FF6467);');
+    expect(css).not.toContain('--c-warning');
     expect(css).toMatch(
       /\.copy-btn\.is-failed,\s*\.btn-secondary\.is-failed \{[^}]*color: var\(--c-danger\);/
     );
-    expect(css).toMatch(/\.builder-status\.is-warning \{\s*color: var\(--c-warning\);/);
+    expect(css).toMatch(/\.builder-hint\.is-warning \{\s*color: var\(--c-danger\);/);
+    expect(css).toMatch(/\.builder-status\.is-warning \{\s*color: var\(--c-danger\);/);
+    expect(css).toMatch(
+      /\.icon-input\.is-invalid \.icon-select-trigger,\s*\.builder-field:is\(\.is-invalid, \.is-missing\) :is\(\.builder-input, \.stack-catalog-wrap\) \{\s*border-color: var\(--c-danger\);/
+    );
     expect(css.split('var(--c-hl-op)').length - 1).toBe(1);
     expect(css).toMatch(/\.hl-op \{\s*color: var\(--c-hl-op\);/);
   });

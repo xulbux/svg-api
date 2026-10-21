@@ -88,9 +88,6 @@
   --radius-lg: 12px;
   --radius-pill: calc(infinity * 1px);
 
-  /* Elevation */
-  --shadow-popover: 0 10px 30px rgb(0 0 0 / 0.18);
-
   /* Motion */
   --duration-fast: 0.15s;
   --duration-base: 0.2s;
@@ -291,7 +288,7 @@ input[type='search']::-webkit-search-decoration {
   background: var(--c-bg-soft);
 }
 
-/* Shared Popover Panels (preview background picker, dropdown listboxes, icon picker) */
+/* Shared Popover Panels (dropdown listboxes, icon picker, syntax help) */
 
 .popover-panel {
   position: fixed;
@@ -304,7 +301,7 @@ input[type='search']::-webkit-search-decoration {
   border-radius: 10px;
   color: var(--c-text-1);
   background: color-mix(in srgb, var(--c-bg-elv) 78%, transparent);
-  box-shadow: var(--shadow-popover);
+  box-shadow: var(--c-shadow-popover);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -319,7 +316,6 @@ input[type='search']::-webkit-search-decoration {
 
 /* Shared Hidden Input Overlays: The native input covers its custom-styled label for clicks and keyboard focus */
 
-.bg-picker-input,
 .swatch-input,
 .check-input,
 .icon-picker-tab input {

@@ -1280,9 +1280,9 @@ function buildStackParamRows(): ParamTableRow[] {
     {
       defaultVal: '~required',
       description:
-        'Icon slugs with :N columns per group, | side-by-side groups, and ; row bands; Read from the path segment, then ?groups=, ?icons=, and ?i= (empty values fall through).',
+        'Icon slugs with optional @color per-tile overrides, :N columns per group, | side-by-side groups, and ; row bands; Read from the path segment, then ?groups=, ?icons=, and ?i= (empty values fall through).',
       name: ':groups / ?groups= / ?icons= / ?i=',
-      values: 'c,cpp,cs,rust:4 | aws,cloudflare:2 ; figma,blender:2',
+      values: 'c,cpp,cs,rust@amber:4 | aws,cloudflare:2 ; figma,blender:2',
     },
     buildVariantParamRow('2', 'Tile hierarchy'),
     buildColorParamRow(
@@ -1642,7 +1642,7 @@ export function renderIconsSectionHtml(): string {
 export function renderStackSectionHtml(): string {
   return `<section class="doc-section" id="stack">
     ${renderSectionHeader({
-      description: `Combine multiple technology groups into one SVG using \`:N\` for columns, \`|\` for side-by-side groups, and \`;\` for row bands. Every example below renders the same ${countFullProfileIcons()}-icon profile.`,
+      description: `Combine multiple technology groups into one SVG using \`icon@color\` for per-tile colors, \`:N\` for columns, \`|\` for side-by-side groups, and \`;\` for row bands. Every example below renders the same ${countFullProfileIcons()}-icon profile.`,
       routes: [
         '/stack/:groups',
         '/stack?groups=:groups',
@@ -1723,7 +1723,7 @@ export function renderOverviewSectionHtml(): string {
   return `<section class="doc-section" id="overview">
     ${renderSectionHeader({
       description:
-        'Every element is a plain `GET` URL that returns an SVG image. Compose one by hand with the rules below, or click any preview in the docs to open it in the **Builder**.',
+        'Every element is a plain `GET` URL that returns an SVG image; 100% free for everyone, with no signup, no API keys, and no rate limits. Compose one by hand with the rules below, or click any preview in the docs to open it in the **Builder**.',
       routes: ENDPOINT_ROUTES,
       title: 'Getting Started',
     })}

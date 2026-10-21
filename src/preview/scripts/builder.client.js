@@ -39,6 +39,9 @@
   /** Maximum number of unknown icon slugs listed in a validation hint. */
   const MAX_LISTED_UNKNOWN_ICONS = 6;
 
+  /** Maximum number of columns packed onto a single horizontal `/stack` band when auto-grouping by category. */
+  const MAX_STACK_BAND_COLUMNS = 8;
+
   /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
   const STATIC_ANIM_PAIR = 'anim=none';
 
@@ -66,14 +69,14 @@
   /** Matches comma or whitespace separators in list-style payloads. */
   const LIST_SEPARATOR_RX = /[,\s]+/;
 
-  /** Matches stack DSL separators between icon slugs (`,` `|` `;` and whitespace). */
-  const STACK_SEPARATOR_RX = /[,|;\s]+/;
+  /** Matches group separators (`;` and `|`) in the stack DSL. */
+  const STACK_GROUP_SEPARATOR_RX = /[;|]+/;
 
   /** Matches a stack DSL separator (or whitespace) at the end of the text before the cursor. */
   const TRAILING_STACK_SEPARATOR_RX = /[,|;\s]$/;
 
-  /** Matches a trailing `:N` column suffix of a stack group. */
-  const COLUMN_SUFFIX_RX = /:\d*$/;
+  /** Matches a trailing `:N` column suffix at the end of a non-empty stack group. */
+  const COLUMN_SUFFIX_RX = /(?<=.):\d+$/;
 
   /** Matches line breaks (with surrounding spaces) in the stack groups textarea. */
   const LINE_BREAK_RX = /\s*\n\s*/g;
@@ -320,19 +323,226 @@
   }
 
   /**
-   * Collect the icon slugs of a `/stack` DSL string (without `:N` column suffixes).
+   * Collect the individual tile tokens (`<slug>` or `<slug>@<color>`) of a `/stack` DSL string,
+   * stripping only a valid group-trailing `:<digits>` column suffix at the end of each `;` / `|` group
+   * (mirroring `splitGroupToken` in `src/svg/stack.ts`).
+   * @param {string} groups   Stack DSL.
+   * @returns {string[]}
+   */
+  function collectStackTileTokens(groups) {
+    /** @type {string[]} */
+    const tokens = [];
+    for (const rawGroup of normalizeStackGroups(groups).split(STACK_GROUP_SEPARATOR_RX)) {
+      const iconList = rawGroup.replace(COLUMN_SUFFIX_RX, '');
+      for (const token of iconList.split(',')) {
+        if (token) {
+          tokens.push(token);
+        }
+      }
+    }
+    return tokens;
+  }
+
+  /**
+   * Strip an optional `@<color>` suffix off a stack tile token (mirroring `splitTileToken` in `src/svg/stack.ts`).
+   * @param {string} token   Tile token.
+   * @returns {string}
+   */
+  function stripStackTileColor(token) {
+    const atIndex = token.lastIndexOf('@');
+    return atIndex > 0 ? token.slice(0, atIndex) : token;
+  }
+
+  /**
+   * Collect the icon slugs of a `/stack` DSL string (without `@<color>` overrides or group-trailing `:N` column suffixes).
    * @param {string} groups   Stack DSL.
    * @returns {string[]}
    */
   function collectStackSlugs(groups) {
+    /** @type {string[]} */
     const slugs = [];
-    for (const token of normalizeStackGroups(groups).split(STACK_SEPARATOR_RX)) {
-      const slug = token.replace(COLUMN_SUFFIX_RX, '');
+    for (const token of collectStackTileTokens(groups)) {
+      const slug = stripStackTileColor(token);
       if (slug) {
         slugs.push(slug);
       }
     }
     return slugs;
+  }
+
+  /**
+   * Format a candidate horizontal `/stack` band of category groups within `maxBandCols`, or return `undefined`
+   * when the groups do not fit together (or exceed 2 groups on a multi-row band).
+   * Groups that exceed `maxBandCols` (and 3+ icon companion groups on multi-row bands) wrap into balanced
+   * `:N` blocks (`cols = Math.ceil(count / rows)`) so every row of a wrapped group has the same number of items
+   * (or differs by at most 1).
+   * @param {readonly (readonly string[])[]} bandGroups   Non-empty icon token lists on the candidate band.
+   * @param {number} [maxBandCols]                        Maximum columns across the band (defaults to `MAX_STACK_BAND_COLUMNS`).
+   * @returns {string | undefined}
+   */
+  function formatStackBand(bandGroups, maxBandCols = MAX_STACK_BAND_COLUMNS) {
+    let bandRows = 1;
+    let totalCount = 0;
+    let minGroupCount = Infinity;
+    let maxGroupCount = 0;
+    for (const group of bandGroups) {
+      bandRows = Math.max(bandRows, Math.ceil(group.length / maxBandCols));
+      totalCount += group.length;
+      minGroupCount = Math.min(minGroupCount, group.length);
+      maxGroupCount = Math.max(maxGroupCount, group.length);
+    }
+    if (
+      bandRows === 1 &&
+      bandGroups.length === 2 &&
+      totalCount > maxBandCols &&
+      maxGroupCount >= 6 &&
+      minGroupCount >= 3
+    ) {
+      bandRows = 2;
+    }
+    if (bandRows > 1 && bandGroups.length > 2) {
+      return undefined;
+    }
+    const groupStrings = [];
+    let totalCols = 0;
+    for (const group of bandGroups) {
+      const count = group.length;
+      const maxGroupRows = count < 3 ? 1 : Math.ceil(count / 2);
+      const rows = Math.max(Math.ceil(count / maxBandCols), Math.min(bandRows, maxGroupRows));
+      const cols = Math.ceil(count / rows);
+      totalCols += cols;
+      groupStrings.push(cols < count ? `${group.join(',')}:${cols}` : group.join(','));
+    }
+    return bandGroups.length > 1 && totalCols > maxBandCols ? undefined : groupStrings.join('|');
+  }
+
+  /**
+   * Parse a `?perline=` input into a positional array of clamped (`1..20`) column counts (`undefined` for invalid entries),
+   * dropping trailing holes just like `parsePerLineList` in `src/routes/params.ts`.
+   * @param {string} rawPerLine   Raw `#field-perline` value.
+   * @returns {(number | undefined)[]}
+   */
+  function parsePerLineValues(rawPerLine) {
+    /** @type {(number | undefined)[]} */
+    const values = [];
+    for (const part of rawPerLine.trim().split(LIST_SEPARATOR_RX)) {
+      const cleaned = part.trim();
+      const parsed = cleaned ? Number(cleaned) : Number.NaN;
+      const rounded = Math.round(parsed);
+      values.push(
+        Number.isFinite(parsed) && parsed >= 1 ? Math.min(20, Math.max(1, rounded)) : undefined
+      );
+    }
+    while (values.length > 0 && values.at(-1) === undefined) {
+      values.pop();
+    }
+    return values;
+  }
+
+  /**
+   * Compose a categorized `/stack` DSL string when `?perline=` has multiple per-group column limits,
+   * balancing any group that wraps across multiple rows (`cols = Math.ceil(count / rows)`).
+   * @param {readonly (readonly string[])[]} categoryGroups
+   * @param {readonly (number | undefined)[]} perLineValues
+   * @returns {string}
+   */
+  function composeStackWithExplicitPerLine(categoryGroups, perLineValues) {
+    const defaultPerLine = perLineValues[0] ?? MAX_STACK_BAND_COLUMNS;
+    /** @type {string[]} */
+    const explicitBands = [];
+    /** @type {string[]} */
+    let bandTokens = [];
+    let bandCols = 0;
+    let bandMaxRows = 1;
+    let groupIndex = 0;
+
+    for (const group of categoryGroups) {
+      const tokens = group.filter(Boolean);
+      if (tokens.length > 0) {
+        const groupPerLine =
+          perLineValues[Math.min(groupIndex, perLineValues.length - 1)] ?? defaultPerLine;
+        const groupRows = Math.ceil(tokens.length / groupPerLine);
+        const groupCols = Math.ceil(tokens.length / groupRows);
+        const groupToken =
+          groupCols < tokens.length && groupCols !== groupPerLine
+            ? `${tokens.join(',')}:${groupCols}`
+            : tokens.join(',');
+        const nextMaxRows = Math.max(bandMaxRows, groupRows);
+        if (
+          bandTokens.length > 0 &&
+          (bandCols + groupCols > MAX_STACK_BAND_COLUMNS ||
+            (nextMaxRows > 1 && bandTokens.length >= 2))
+        ) {
+          explicitBands.push(bandTokens.join('|'));
+          bandTokens = [groupToken];
+          bandCols = groupCols;
+          bandMaxRows = groupRows;
+        } else {
+          bandTokens.push(groupToken);
+          bandCols += groupCols;
+          bandMaxRows = nextMaxRows;
+        }
+        groupIndex += 1;
+      }
+    }
+    if (bandTokens.length > 0) {
+      explicitBands.push(bandTokens.join('|'));
+    }
+    return explicitBands.join(';');
+  }
+
+  /**
+   * Compose a `/stack` DSL string from categorized icon token lists.
+   * When `isGroupedByCategory` is `true`, non-empty category groups are packed side by side (`|`) up to
+   * the band column budget (`perLineValues[0] ?? MAX_STACK_BAND_COLUMNS`) and stacked vertically (`;`),
+   * wrapping multi-row groups into balanced `:N` blocks (`cols = Math.ceil(count / rows)`) so every row
+   * has the same number of items (or differs by at most 1).
+   * @param {readonly (readonly string[])[]} categoryGroups   Icon tokens grouped by category in display order.
+   * @param {boolean} isGroupedByCategory                     Whether to group by category (`true`) or emit a flat list (`false`).
+   * @param {string} [rawPerLine]                             Optional `#field-perline` value (e.g., `'10'` or `'8,6,4'`).
+   * @returns {string}
+   */
+  function composeCategorizedStack(categoryGroups, isGroupedByCategory, rawPerLine = '') {
+    if (!isGroupedByCategory) {
+      const flatTokens = [];
+      for (const group of categoryGroups) {
+        for (const token of group) {
+          if (token) {
+            flatTokens.push(token);
+          }
+        }
+      }
+      return flatTokens.join(',');
+    }
+
+    const perLineValues = parsePerLineValues(rawPerLine);
+    if (perLineValues.length > 1) {
+      return composeStackWithExplicitPerLine(categoryGroups, perLineValues);
+    }
+
+    const maxBandCols = perLineValues[0] ?? MAX_STACK_BAND_COLUMNS;
+    const bandStrings = [];
+    /** @type {string[][]} */
+    let currentBand = [];
+
+    for (const group of categoryGroups) {
+      const tokens = group.filter(Boolean);
+      if (tokens.length > 0) {
+        if (
+          currentBand.length > 0 &&
+          formatStackBand([...currentBand, tokens], maxBandCols) === undefined
+        ) {
+          bandStrings.push(formatStackBand(currentBand, maxBandCols) ?? '');
+          currentBand = [tokens];
+        } else {
+          currentBand.push(tokens);
+        }
+      }
+    }
+    if (currentBand.length > 0) {
+      bandStrings.push(formatStackBand(currentBand, maxBandCols) ?? '');
+    }
+    return bandStrings.join(';');
   }
 
   /**
@@ -1107,6 +1317,7 @@
     buildSnippets,
     collectStackSlugs,
     composeAnim,
+    composeCategorizedStack,
     composeIconPair,
     composeSpecial,
     computeGridFocusIndex,
@@ -1166,6 +1377,20 @@
   const pickerStatus = document.getElementById('icon-picker-status');
   const pickerNoneButton = document.getElementById('icon-picker-none');
   const glyphTemplates = document.getElementById('icon-glyph-templates');
+  const stackCatalog = document.getElementById('stack-catalog');
+  const stackCategorySearch = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('stack-category-search')
+  );
+  const stackCatalogEmpty = document.getElementById('stack-catalog-empty');
+  const stackGroupToggle = /** @type {HTMLInputElement | null} */ (
+    document.getElementById('stack-group-by-category')
+  );
+  const stackGroupToggleLabel = document.querySelector('[data-stack-group-toggle]');
+  const stackCategoriesPanel = document.getElementById('stack-panel-categories');
+  const stackRawPanel = document.getElementById('stack-panel-raw');
+  const stackRawActions = document.querySelector('[data-stack-raw-actions]');
+  const stackHelpTrigger = document.getElementById('stack-help-trigger');
+  const stackSyntaxHelp = document.getElementById('stack-syntax-help');
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
   const iconIndexUrl = picker?.dataset.indexUrl ?? '/assets/icons.json';
   const iconVersion = new URL(iconIndexUrl, globalThis.location.href).searchParams.get('v') ?? '';
@@ -1223,6 +1448,21 @@
   let tileObserver = undefined;
   /** @type {IntersectionObserver | undefined} */
   let sentinelObserver = undefined;
+  /** @type {IntersectionObserver | undefined} */
+  let chipObserver = undefined;
+  /** @type {HTMLButtonElement[]} */
+  const stackChips = [];
+  /** @type {Map<string, HTMLButtonElement>} */
+  const stackChipBySlug = new Map();
+  /** @type {HTMLButtonElement[][]} */
+  const stackChipsByCategory = [];
+  /** @type {Map<string, string>} */
+  const stackTokenOverrides = new Map();
+  /** @type {string[]} */
+  let customStackTokens = [];
+  /** @type {Set<HTMLButtonElement>} */
+  const pendingVisibleChips = new Set();
+  let isComposingStackFromCatalog = false;
 
   const loadIconIndexOnce = createAsyncCache(() =>
     fetch(iconIndexUrl).then((response) => {
@@ -1708,6 +1948,83 @@
     }
   }
 
+  /** Collect all `[data-stack-chip]` buttons and index them by slug and category. */
+  function indexStackCatalog() {
+    if (!stackCatalog || stackChips.length > 0) {
+      return;
+    }
+    for (const section of stackCatalog.querySelectorAll('[data-stack-category]')) {
+      /** @type {HTMLButtonElement[]} */
+      const categoryChips = [];
+      for (const button of section.querySelectorAll('[data-stack-chip]')) {
+        if (button instanceof HTMLButtonElement) {
+          const chipSlug = button.dataset.stackChip ?? '';
+          const canonicalSlug = button.dataset.stackCanonical ?? chipSlug;
+          stackChips.push(button);
+          categoryChips.push(button);
+          if (chipSlug) {
+            stackChipBySlug.set(chipSlug, button);
+          }
+          if (canonicalSlug) {
+            stackChipBySlug.set(canonicalSlug, button);
+          }
+        }
+      }
+      if (categoryChips.length > 0) {
+        stackChipsByCategory.push(categoryChips);
+      }
+    }
+  }
+
+  /**
+   * Look up a category chip button by raw or canonical icon slug.
+   * @param {string} slug
+   * @returns {HTMLButtonElement | undefined}
+   */
+  function findStackChip(slug) {
+    const clean = slug.trim().toLowerCase();
+    return (
+      stackChipBySlug.get(clean) ?? stackChipBySlug.get(clean.replace(BRAND_SLUG_CLEAN_RX, ''))
+    );
+  }
+
+  /**
+   * Sync the `aria-pressed` state of every category chip and custom token list from a `/stack` DSL string.
+   * @param {string} dslValue
+   */
+  function syncStackCatalogFromDsl(dslValue) {
+    indexStackCatalog();
+    if (stackChips.length === 0) {
+      return;
+    }
+    stackTokenOverrides.clear();
+    customStackTokens = [];
+    /** @type {Set<HTMLButtonElement>} */
+    const selectedChips = new Set();
+
+    for (const tileToken of collectStackTileTokens(dslValue)) {
+      const baseSlug = stripStackTileColor(tileToken).toLowerCase();
+      if (baseSlug) {
+        const chip = findStackChip(baseSlug);
+        if (chip) {
+          selectedChips.add(chip);
+          const chipSlug = chip.dataset.stackChip ?? baseSlug;
+          const atIndex = tileToken.lastIndexOf('@');
+          stackTokenOverrides.set(
+            chipSlug,
+            atIndex > 0 ? `${chipSlug}${tileToken.slice(atIndex).toLowerCase()}` : chipSlug
+          );
+        } else if (!customStackTokens.includes(tileToken)) {
+          customStackTokens.push(tileToken);
+        }
+      }
+    }
+
+    for (const chip of stackChips) {
+      chip.setAttribute('aria-pressed', String(selectedChips.has(chip)));
+    }
+  }
+
   /**
    * Write a state value into the control(s) of a field.
    * @param {BuilderField} field
@@ -1764,8 +2081,16 @@
       }
       default: {
         const control = getControl(field.id);
-        if (control) {
+        if (control instanceof HTMLSelectElement) {
           control.value = value;
+          if (control.selectedIndex < 0 && control.options.length > 0) {
+            control.selectedIndex = 0;
+          }
+        } else if (control) {
+          control.value = value;
+        }
+        if (field.control === 'stackGroups') {
+          syncStackCatalogFromDsl(value);
         }
       }
     }
@@ -1933,12 +2258,16 @@
         unknown.push(slug);
       }
     }
+    const hasUnknown = unknown.length > 0;
     const more = unknown.length > MAX_LISTED_UNKNOWN_ICONS ? ', …' : '';
-    hint.textContent =
-      unknown.length > 0
-        ? `Unknown icon${unknown.length > 1 ? 's' : ''}: ${unknown.slice(0, MAX_LISTED_UNKNOWN_ICONS).join(', ')}${more} (renders a fallback).`
-        : '';
-    hint.classList.toggle('is-warning', unknown.length > 0);
+    hint.textContent = hasUnknown
+      ? `Unknown icon${unknown.length > 1 ? 's' : ''}: ${unknown.slice(0, MAX_LISTED_UNKNOWN_ICONS).join(', ')}${more} (renders a fallback).`
+      : '';
+    hint.classList.toggle('is-warning', hasUnknown);
+    (hint.closest('.icon-input') ?? hint.closest('[data-field]'))?.classList.toggle(
+      'is-invalid',
+      hasUnknown
+    );
   }
 
   /**
@@ -1984,6 +2313,13 @@
    */
   function syncOutputAvailability(result) {
     const isComplete = result.missing.length === 0;
+    const service = schema.kind === 'service' ? findService(schema, state.service) : undefined;
+    for (const field of schema.fields) {
+      const isRequired =
+        field.isRequired || (field.id === 'owner' && service?.ownerMode === 'required');
+      const isMissing = isRequired && isFieldVisible(field, state) && !readState(state, field.id);
+      fieldElements.get(field.id)?.classList.toggle('is-missing', isMissing);
+    }
     if (openLink) {
       if (isComplete) {
         openLink.href = result.path;
@@ -2053,13 +2389,247 @@
   }
 
   /**
+   * Read the currently selected category icon tokens grouped by category (plus any custom tokens).
+   * @returns {string[][]}
+   */
+  function readSelectedCategoryGroups() {
+    /** @type {string[][]} */
+    const categoryGroups = [];
+    for (const categoryChips of stackChipsByCategory) {
+      /** @type {string[]} */
+      const groupTokens = [];
+      for (const chip of categoryChips) {
+        if (chip.getAttribute('aria-pressed') === 'true') {
+          const chipSlug = chip.dataset.stackChip ?? '';
+          if (chipSlug) {
+            groupTokens.push(stackTokenOverrides.get(chipSlug) ?? chipSlug);
+          }
+        }
+      }
+      if (groupTokens.length > 0) {
+        categoryGroups.push(groupTokens);
+      }
+    }
+    if (customStackTokens.length > 0) {
+      categoryGroups.push([...customStackTokens]);
+    }
+    return categoryGroups;
+  }
+
+  /**
+   * Recompute the `#field-groups` textarea value from the selected category chips, `Group by category` toggle,
+   * and current `perline` state.
+   * @returns {HTMLTextAreaElement | undefined}
+   */
+  function writeStackGroupsFromCatalog() {
+    const textarea = getControl('groups');
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      return undefined;
+    }
+    const isGroupedByCategory = stackGroupToggle ? stackGroupToggle.checked : true;
+    textarea.value = composeCategorizedStack(
+      readSelectedCategoryGroups(),
+      isGroupedByCategory,
+      readState(state, 'perline')
+    );
+    state.groups = textarea.value;
+    return textarea;
+  }
+
+  /**
+   * Rebuild the `#field-groups` textarea from the currently selected category chips and `Group by category` toggle.
+   */
+  function applyStackCatalogSelection() {
+    const textarea = writeStackGroupsFromCatalog();
+    if (!textarea) {
+      return;
+    }
+    isComposingStackFromCatalog = true;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    isComposingStackFromCatalog = false;
+  }
+
+  /**
+   * Fill the inline SVG glyph of a visible category chip once the icon index is ready.
+   * @param {HTMLButtonElement} chip
+   */
+  function fillStackChip(chip) {
+    if (chip.dataset.filled) {
+      return;
+    }
+    if (!iconResolver) {
+      pendingVisibleChips.add(chip);
+      return;
+    }
+    const glyphContainer = chip.querySelector('.stack-chip-glyph');
+    const chipLocation = iconResolver.locate(chip.dataset.stackChip ?? '', true);
+    if (!(glyphContainer instanceof HTMLElement) || !chipLocation) {
+      return;
+    }
+    chip.dataset.filled = 'true';
+    loadIconPage(chipLocation).then(
+      (bodies) => {
+        const body = bodies[chipLocation.slug];
+        if (body) {
+          glyphContainer.replaceChildren(createGlyph(chipLocation.set, body));
+        }
+      },
+      () => {
+        delete chip.dataset.filled;
+      }
+    );
+  }
+
+  /** Fill any category chips that became visible before the icon index finished loading. */
+  function flushPendingStackChips() {
+    if (!iconResolver || pendingVisibleChips.size === 0) {
+      return;
+    }
+    for (const chip of pendingVisibleChips) {
+      fillStackChip(chip);
+    }
+    pendingVisibleChips.clear();
+  }
+
+  /** Filter the category chips and category sections by the search query. */
+  function filterStackCatalog() {
+    if (!stackCatalog) {
+      return;
+    }
+    const query = (stackCategorySearch?.value ?? '').trim().toLowerCase();
+    let visibleCategories = 0;
+
+    for (const section of stackCatalog.querySelectorAll('[data-stack-category]')) {
+      let visibleChips = 0;
+      for (const button of section.querySelectorAll('[data-stack-chip]')) {
+        if (button instanceof HTMLButtonElement) {
+          const slug = button.dataset.stackChip ?? '';
+          const canonical = button.dataset.stackCanonical ?? '';
+          const label = (button.textContent ?? '').toLowerCase();
+          const isMatch =
+            !query || slug.includes(query) || canonical.includes(query) || label.includes(query);
+          button.hidden = !isMatch;
+          if (isMatch) {
+            visibleChips += 1;
+          }
+        }
+      }
+      if (section instanceof HTMLElement) {
+        section.hidden = visibleChips === 0;
+      }
+      if (visibleChips > 0) {
+        visibleCategories += 1;
+      }
+    }
+
+    stackCatalogEmpty?.toggleAttribute('hidden', visibleCategories > 0);
+  }
+
+  /**
+   * Switch between the `Categories` and `Raw DSL` panels on `/builder/stack`.
+   * @param {HTMLElement} tab
+   */
+  function selectStackModeTab(tab) {
+    const isCategories = tab.dataset.stackMode !== 'raw';
+    for (const otherTab of form?.querySelectorAll('.stack-mode-tab') ?? []) {
+      const isSelected = otherTab === tab;
+      otherTab.classList.toggle('is-active', isSelected);
+      otherTab.setAttribute('aria-selected', String(isSelected));
+      otherTab.setAttribute('tabindex', isSelected ? '0' : '-1');
+    }
+    stackCategoriesPanel?.toggleAttribute('hidden', !isCategories);
+    stackRawPanel?.toggleAttribute('hidden', isCategories);
+    stackRawActions?.toggleAttribute('hidden', isCategories);
+    stackGroupToggleLabel?.toggleAttribute('hidden', !isCategories);
+  }
+
+  /** Bind the `/builder/stack` interactive category picker, mode tabs, filter search, and syntax help popover. */
+  function bindStackCatalog() {
+    if (!stackCatalog) {
+      return;
+    }
+    indexStackCatalog();
+    chipObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.target instanceof HTMLButtonElement) {
+            fillStackChip(entry.target);
+            chipObserver?.unobserve(entry.target);
+          }
+        }
+      },
+      { root: stackCatalog, rootMargin: '120px 0px' }
+    );
+    for (const chip of stackChips) {
+      chipObserver.observe(chip);
+    }
+
+    stackCatalog.addEventListener('click', (event) => {
+      const chip =
+        event.target instanceof Element ? event.target.closest('[data-stack-chip]') : undefined;
+      if (chip instanceof HTMLButtonElement) {
+        const isPressed = chip.getAttribute('aria-pressed') === 'true';
+        chip.setAttribute('aria-pressed', String(!isPressed));
+        applyStackCatalogSelection();
+      }
+    });
+
+    stackCategorySearch?.addEventListener('input', filterStackCatalog);
+    stackGroupToggle?.addEventListener('change', applyStackCatalogSelection);
+
+    const modeTabList = form?.querySelector('.stack-mode-tabs');
+    modeTabList?.addEventListener('click', (event) => {
+      const tab =
+        event.target instanceof Element ? event.target.closest('.stack-mode-tab') : undefined;
+      if (tab instanceof HTMLElement) {
+        selectStackModeTab(tab);
+      }
+    });
+    modeTabList?.addEventListener('keydown', (event) => {
+      const keyEvent = /** @type {KeyboardEvent} */ (event);
+      if (keyEvent.key !== 'ArrowLeft' && keyEvent.key !== 'ArrowRight') {
+        return;
+      }
+      const tabs = [...modeTabList.querySelectorAll('.stack-mode-tab')];
+      const next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
+      if (next instanceof HTMLElement) {
+        keyEvent.preventDefault();
+        selectStackModeTab(next);
+        next.focus();
+      }
+    });
+
+    stackSyntaxHelp?.addEventListener('toggle', (event) => {
+      if (/** @type {ToggleEvent} */ (event).newState === 'open' && stackHelpTrigger) {
+        site?.placePopover(stackSyntaxHelp, stackHelpTrigger, { align: 'end', gap: 6 });
+      }
+    });
+  }
+
+  /**
+   * Sync the `/builder/stack` category chips or recompute `#field-groups` when a stack field changes.
+   * @param {BuilderField} field
+   */
+  function syncStackFieldChange(field) {
+    if (field.control === 'stackGroups' && !isComposingStackFromCatalog) {
+      syncStackCatalogFromDsl(state[field.id] ?? '');
+    } else if (field.id === 'perline' && stackCategoriesPanel && !stackCategoriesPanel.hidden) {
+      writeStackGroupsFromCatalog();
+    }
+  }
+
+  /**
    * Handle input on a field: Read its value, sync dependent controls, and update the outputs. Text-like controls
    * report through `input` only; `change` is handled for the (programmatically changed) native selects.
    * @param {Event} event
    */
   function handleFieldInput(event) {
     const { target } = event;
-    if (event.type === 'change' && !(target instanceof HTMLSelectElement)) {
+    if (
+      (event.type === 'change' && !(target instanceof HTMLSelectElement)) ||
+      target === stackCategorySearch ||
+      target === stackGroupToggle
+    ) {
       return;
     }
     const fieldElement = target instanceof Element ? target.closest('[data-field]') : undefined;
@@ -2078,6 +2648,7 @@
       syncSizeParts(fieldElement);
     }
     state[field.id] = readFieldValue(field, fieldElement);
+    syncStackFieldChange(field);
     if (field.id === 'service') {
       syncServiceFields();
     }
@@ -2332,10 +2903,11 @@
       target.value = `${before}${insertion}${after}`;
       const cursorAfter = before.length + insertion.length;
       target.setSelectionRange(cursorAfter, cursorAfter);
+      target.dispatchEvent(new Event('input', { bubbles: true }));
     } else {
       target.value = slug;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
     }
-    target.dispatchEvent(new Event('input', { bubbles: true }));
     if (picker) {
       site?.closePopover(picker);
     }
@@ -2452,7 +3024,7 @@
     });
     reducedMotionQuery.addEventListener('change', () => loadPreview(currentPreviewPath));
 
-    const tabList = document.querySelector('.builder-tabs');
+    const tabList = outputElement?.querySelector('.builder-tabs');
     tabList?.addEventListener('click', (event) => {
       const tab =
         event.target instanceof Element ? event.target.closest('.builder-tab') : undefined;
@@ -2488,7 +3060,11 @@
       if (linkInput) {
         linkInput.value = '';
       }
-      applyState(schema.initialState);
+      if (stackCategorySearch && stackCategorySearch.value) {
+        stackCategorySearch.value = '';
+        filterStackCatalog();
+      }
+      applyState({});
     });
     shareButton?.addEventListener('click', copyShareLink);
   }
@@ -2524,6 +3100,7 @@
       () => {
         syncIconSelects(form ?? document);
         validateIcons(form ?? document);
+        flushPendingStackChips();
         if (picker && site?.isPopoverOpen(picker)) {
           renderPicker(true);
         }
@@ -2677,6 +3254,7 @@
 
   initializeState();
   bindBuilderEvents();
+  bindStackCatalog();
   if (picker && pickerGrid) {
     bindIconPicker(picker, pickerGrid);
   }
@@ -2686,6 +3264,7 @@
     () => {
       syncIconSelects(form);
       validateIcons(form);
+      flushPendingStackChips();
       if (picker && site.isPopoverOpen(picker)) {
         renderPicker(true);
       }

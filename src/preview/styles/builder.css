@@ -98,6 +98,16 @@
   box-shadow: 0 0 0 3px var(--c-hover);
 }
 
+.icon-input.is-invalid .icon-select-trigger,
+.builder-field:is(.is-invalid, .is-missing) :is(.builder-input, .stack-catalog-wrap) {
+  border-color: var(--c-danger);
+}
+
+.icon-input.is-invalid .icon-select-trigger:focus-visible,
+.builder-field:is(.is-invalid, .is-missing) .builder-input:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-danger) 20%, transparent);
+}
+
 .builder-textarea {
   min-block-size: 88px;
   line-height: 1.5;
@@ -117,7 +127,7 @@
 }
 
 .builder-hint.is-warning {
-  color: var(--c-warning);
+  color: var(--c-danger);
 }
 
 .builder-validation:empty {
@@ -587,7 +597,7 @@
 }
 
 .builder-status.is-warning {
-  color: var(--c-warning);
+  color: var(--c-danger);
 }
 
 /* Segmented Tabs (snippet formats and icon sets) */
@@ -613,6 +623,7 @@
 }
 
 .builder-tab,
+.stack-mode-tab,
 .icon-picker-tab span {
   border-radius: var(--radius-sm);
   color: var(--c-text-2);
@@ -622,18 +633,21 @@
 }
 
 .builder-tab:hover,
+.stack-mode-tab:hover,
 .icon-picker-tab:hover span {
   color: var(--c-text-1);
   background: var(--c-hover);
 }
 
 .builder-tab.is-active,
+.stack-mode-tab.is-active,
 .icon-picker-tab input:checked + span {
   color: var(--c-text-1);
   background: var(--c-selected);
 }
 
-.builder-tab {
+.builder-tab,
+.stack-mode-tab {
   padding: 5px 13px;
   border: 0;
   font: inherit;
@@ -643,7 +657,8 @@
   cursor: pointer;
 }
 
-.builder-tab:focus-visible {
+.builder-tab:focus-visible,
+.stack-mode-tab:focus-visible {
   outline-offset: -2px;
 }
 
@@ -696,7 +711,7 @@
   inline-size: min(384px, calc(100vw - 16px));
   block-size: min(452px, 72vh);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 40px rgb(0 0 0 / 0.22);
+  box-shadow: var(--c-shadow-dialog);
 }
 
 .icon-picker-head {
@@ -825,4 +840,235 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--c-text-3);
+}
+
+/* Interactive Tech Stack Category Composer & DSL Help Popover (`/builder/stack`) */
+
+.stack-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stack-group-check {
+  font-size: 0.8rem;
+}
+
+.stack-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stack-search {
+  margin: 0;
+  padding-inline: 10px;
+  border-radius: var(--radius-md);
+}
+
+.stack-catalog-wrap {
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  background: var(--c-bg);
+  transition: border-color var(--duration-fast) ease;
+}
+
+.stack-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-block-size: 380px;
+  padding: 12px 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 14px,
+    black calc(100% - 14px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    black 14px,
+    black calc(100% - 14px),
+    transparent 100%
+  );
+}
+
+.stack-category {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.stack-category + .stack-category {
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--c-border);
+}
+
+.stack-category-title {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--c-text-1);
+}
+
+.stack-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.stack-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--c-border);
+  border-radius: 7px;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--c-text-2);
+  background: var(--c-bg-soft);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.stack-chip:hover {
+  border-color: var(--c-border-strong);
+  color: var(--c-text-1);
+  background: var(--c-hover);
+}
+
+.stack-chip[aria-pressed='true'] {
+  border-color: var(--c-focus);
+  color: var(--c-text-1);
+  background: var(--c-selected);
+}
+
+.stack-chip-glyph {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 14px;
+  block-size: 14px;
+}
+
+.stack-chip-glyph:empty {
+  display: none;
+}
+
+.stack-chip-glyph svg {
+  inline-size: 14px;
+  block-size: 14px;
+  pointer-events: none;
+}
+
+.stack-catalog-empty {
+  margin: 0;
+  text-align: center;
+}
+
+.stack-textarea-wrap {
+  position: relative;
+  display: flex;
+}
+
+.stack-textarea-wrap .builder-textarea {
+  padding-inline-end: 34px;
+  resize: none;
+}
+
+.stack-help-btn {
+  position: absolute;
+  inset-block-end: 8px;
+  inset-inline-end: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 20px;
+  block-size: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--c-bg);
+  background: var(--c-text-1);
+  cursor: pointer;
+  transition:
+    opacity var(--duration-fast) ease,
+    scale var(--duration-fast) ease;
+}
+
+.stack-help-btn:hover,
+.stack-help-btn:focus-visible {
+  opacity: 0.86;
+  scale: 1.06;
+}
+
+.stack-help-popover {
+  inline-size: min(332px, calc(100vw - 16px));
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+}
+
+.stack-help-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-block-end: 10px;
+  padding-block-end: 9px;
+  border-block-end: 1px solid var(--c-border);
+}
+
+.stack-help-title {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--c-text-1);
+}
+
+.stack-help-desc {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--c-text-2);
+}
+
+.stack-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+}
+
+.stack-help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.75rem;
+}
+
+.stack-help-row dt {
+  flex-shrink: 0;
+}
+
+.stack-help-row dd {
+  margin: 0;
+  text-align: end;
+  color: var(--c-text-2);
 }

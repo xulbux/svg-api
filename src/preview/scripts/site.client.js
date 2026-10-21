@@ -76,6 +76,7 @@
   );
   const themeColorMetas = document.querySelectorAll('meta[name="theme-color"]');
   const themeToggle = document.getElementById('theme-toggle');
+  const previewBgToggle = document.getElementById('preview-bg-toggle');
   const darkSchemeQuery = globalThis.matchMedia('(prefers-color-scheme: dark)');
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
   const drawerQuery = globalThis.matchMedia(siteConfig.drawerMediaQuery);
@@ -216,20 +217,17 @@
   }
 
   /**
-   * Apply a preview stage background to `<html data-preview-bg>` and sync every picker radio input.
+   * Apply a preview stage background to `<html data-preview-bg>` and sync the header toggle switch.
    * @param {string} previewBg   Sanitized preview background value.
    */
   function applyPreviewBg(previewBg) {
-    if (previewBg === siteConfig.previewBgValues[0]) {
-      rootElement.removeAttribute('data-preview-bg');
-    } else {
+    const isInverse = previewBg !== siteConfig.previewBgValues[0];
+    if (isInverse) {
       rootElement.setAttribute('data-preview-bg', previewBg);
+    } else {
+      rootElement.removeAttribute('data-preview-bg');
     }
-    for (const radioInput of document.querySelectorAll('input[name="preview-bg"]')) {
-      if (radioInput instanceof HTMLInputElement) {
-        radioInput.checked = radioInput.value === previewBg;
-      }
-    }
+    previewBgToggle?.setAttribute('aria-checked', String(isInverse));
   }
 
   /** Reduced motion: CSS cannot stop SMIL, so pause every inline preview SVG at its first frame. */
@@ -390,16 +388,17 @@
 
   reducedMotionQuery.addEventListener('change', syncPreviewAnimations);
 
-  document.addEventListener('change', (event) => {
-    const input = event.target;
-    if (input instanceof HTMLInputElement && input.name === 'preview-bg') {
-      const previewBg = sanitizePreviewBg(input.value);
-      writeStorage(
-        siteConfig.previewBgStorageKey,
-        previewBg === siteConfig.previewBgValues[0] ? undefined : previewBg
-      );
-      applyPreviewBg(previewBg);
-    }
+  previewBgToggle?.addEventListener('click', () => {
+    const currentPreviewBg = sanitizePreviewBg(readStorage(siteConfig.previewBgStorageKey));
+    const nextPreviewBg =
+      currentPreviewBg === siteConfig.previewBgValues[0]
+        ? (siteConfig.previewBgValues[1] ?? siteConfig.previewBgValues[0])
+        : siteConfig.previewBgValues[0];
+    writeStorage(
+      siteConfig.previewBgStorageKey,
+      nextPreviewBg === siteConfig.previewBgValues[0] ? undefined : nextPreviewBg
+    );
+    applyPreviewBg(nextPreviewBg);
   });
 
   globalThis.addEventListener('storage', (event) => {
@@ -410,7 +409,7 @@
     }
   });
 
-  // Popover menus (preview background picker, mobile sidebar): Native popovers with a class-toggle fallback.
+  // Popovers (mobile sidebar drawer, builder menus): Native popovers with a class-toggle fallback.
 
   if (!hasPopoverApi) {
     for (const trigger of document.querySelectorAll('[popovertarget]')) {
@@ -443,50 +442,6 @@
             trigger.focus();
           }
         }
-      }
-    });
-  }
-
-  const bgPickerTrigger = document.getElementById('bg-picker-trigger');
-  const bgPickerMenu = document.getElementById('bg-picker-menu');
-  if (bgPickerTrigger && bgPickerMenu) {
-    bgPickerMenu.addEventListener('toggle', (event) => {
-      if (/** @type {ToggleEvent} */ (event).newState === 'open') {
-        placePopover(bgPickerMenu, bgPickerTrigger, { align: 'end' });
-        const checkedInput = bgPickerMenu.querySelector('input[name="preview-bg"]:checked');
-        if (checkedInput instanceof HTMLElement) {
-          checkedInput.focus();
-        }
-      }
-    });
-    bgPickerTrigger.addEventListener('keydown', (event) => {
-      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && bgPickerMenu.showPopover) {
-        event.preventDefault();
-        bgPickerMenu.showPopover();
-      }
-    });
-    bgPickerMenu.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        closePopover(bgPickerMenu);
-        bgPickerTrigger.focus();
-      }
-    });
-    bgPickerMenu.addEventListener('focusout', (event) => {
-      if (
-        event.relatedTarget instanceof Node &&
-        !bgPickerMenu.contains(event.relatedTarget) &&
-        !bgPickerTrigger.contains(event.relatedTarget)
-      ) {
-        closePopover(bgPickerMenu);
-      }
-    });
-
-    // Pointer selections close the menu; Keyboard arrow selections (click detail 0) keep it open.
-    bgPickerMenu.addEventListener('click', (event) => {
-      const { target } = event;
-      if (event.detail > 0 && target instanceof Element && target.closest('.bg-picker-option')) {
-        closePopover(bgPickerMenu);
       }
     });
   }

@@ -170,3 +170,23 @@ export interface BuilderTarget {
   /** Builder element kind. */
   kind: BuilderKind;
 }
+
+/** Single technology item in a curated `/builder/stack` category. */
+export interface StackCategoryItem {
+  /** Canonical brand slug after alias resolution (e.g., `'typescript'` for `'ts'`). */
+  canonical: string;
+  /** Human-readable technology label (e.g., `'TypeScript'`). */
+  label: string;
+  /** Short slug emitted into the `/stack` DSL (e.g., `'ts'`). */
+  slug: string;
+}
+
+/** Curated technology category in the `/builder/stack` category picker. */
+export interface StackCategory {
+  /** Stable category identifier (e.g., `'languages'`). */
+  id: string;
+  /** Curated technology items in display order. */
+  items: readonly StackCategoryItem[];
+  /** Visible category heading (e.g., `'Languages'`). */
+  title: string;
+}

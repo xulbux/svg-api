@@ -17,7 +17,7 @@ import {
   renderIcon,
 } from '@/svg/renderer';
 import { escapeXml, prepareDisplayText, sliceAtCodePoint } from '@/svg/shared';
-import { STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
+import { resolveStackIconColor, STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
 import type {
   AnimationMode,
   BadgeSpecialElement,
@@ -568,6 +568,28 @@ describe('renderStack', () => {
     const stackSvgV3 = renderStack({ icons: ['rust', 'ts'], variant: '3' });
     expect(stackSvgV3).toContain(`stroke="${BASE_DARK.borderNeutral}"`);
     expect(stackSvgV3).toContain('fill="#FFFFFF" fill-opacity="0.045"');
+  });
+
+  it('resolves automatic official brand colors across all bundled icon sets and supports per-tile icon@color overrides', () => {
+    expect(resolveStackIconColor('supabase')).toBe('emerald');
+    expect(resolveStackIconColor('prisma')).toBe('slate');
+    expect(resolveStackIconColor('zig')).toBe('amber');
+    expect(resolveStackIconColor('gleam')).toBe('fuchsia');
+    expect(resolveStackIconColor('rust@amber')).toBe('amber');
+    expect(resolveStackIconColor('cpu@emerald')).toBe('emerald');
+    expect(resolveStackIconColor('rust@amber', 'sky')).toBe('amber');
+
+    const perTileSvg = renderStack({
+      color: 'slate',
+      icons: ['rust@amber,cpu@emerald,go'],
+      variant: '2',
+    });
+    expect(perTileSvg).toContain('<title>Rust</title>');
+    expect(perTileSvg).toContain('<title>Cpu</title>');
+    expect(perTileSvg).toContain('<title>Go</title>');
+    expect(perTileSvg).toContain(`fill="${THEMES.amber.tintBg}"`);
+    expect(perTileSvg).toContain(`fill="${THEMES.emerald.tintBg}"`);
+    expect(perTileSvg).toContain(`fill="${THEMES.slate.tintBg}"`);
   });
 });
 
@@ -1235,6 +1257,52 @@ describe('rendering regressions', () => {
   it('caps the quote author before ink-measuring it (regression: 1000-character authors cost ~26 ms of CPU)', () => {
     expect(renderAuthorQuote('W'.repeat(1000))).toBe(renderAuthorQuote('W'.repeat(400)));
     expect(extractAriaLabel(renderAuthorQuote('Ada'))).toBe('Short quote. — Ada');
+  });
+
+  it('renders unmistakable red exclamation-mark placeholders with a translucent border across /stack, /icon, /badge, and /button even when color or variant is overridden', () => {
+    const redStroke = `stroke="${THEMES.red.iconColor}"`;
+
+    // Stack fallback tiles use a hollow transparent frame with a translucent red stroke and standalone red `!` icon.
+    const stackSvg = renderStack({ color: 'emerald', icons: ['unknown-tool@amber'], variant: '1' });
+    expect(stackSvg).toContain(
+      '<g stroke-width="2.75"><path d="M12 3.5v10.5" /><path d="M12 19.5h.01" /></g>'
+    );
+    expect(stackSvg).not.toContain('<circle cx="12" cy="12" r="10"');
+    expect(stackSvg).toContain(
+      `<rect x="0.5" y="0.5" width="41" height="41" rx="9.5" ${redStroke} stroke-opacity="0.45" stroke-width="1" />`
+    );
+    expect(stackSvg).toContain(
+      `fill="none" ${redStroke} stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"`
+    );
+    expect(stackSvg).not.toContain('url(#grad-');
+
+    // Standalone unknown icons use the translucent-circle `!` placeholder in red regardless of `color`.
+    const iconSvg = renderIcon({ color: 'sky', icon: 'unknown-tool' });
+    expect(iconSvg).toContain(redStroke);
+    expect(iconSvg).toContain('<circle cx="12" cy="12" r="10" stroke-opacity="0.45" />');
+    expect(iconSvg).toContain('<path d="M12 7v5.5" /><path d="M12 16.5h.01" />');
+
+    // Badges and buttons with unknown `?icon=` slugs render the red translucent-circle `!` placeholder instead of omitting the icon.
+    const badgeSvg = renderBadge({
+      color: 'emerald',
+      icon: 'unknown-tool',
+      label: 'build',
+      value: 'ok',
+      variant: '2',
+    });
+    expect(badgeSvg).toContain(redStroke);
+    expect(badgeSvg).toContain('<circle cx="12" cy="12" r="10" stroke-opacity="0.45" />');
+    expect(badgeSvg).toContain('<path d="M12 7v5.5" /><path d="M12 16.5h.01" />');
+
+    const buttonSvg = renderButton({
+      color: 'red',
+      icon: 'unknown-tool',
+      label: 'Deploy',
+      variant: '1',
+    });
+    expect(buttonSvg).toContain(redStroke);
+    expect(buttonSvg).toContain('<circle cx="12" cy="12" r="10" stroke-opacity="0.45" />');
+    expect(buttonSvg).toContain(`<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}"`);
   });
 });
 

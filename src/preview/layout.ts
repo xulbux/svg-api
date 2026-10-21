@@ -1,7 +1,7 @@
 /**
- * Documentation layout – Shared responsive HTML document shell: Header with the 3-tab navigation, preview background picker, and theme switch, the grouped sidebar, footer, and favicon.
+ * Documentation layout – Shared responsive HTML document shell: Header with the 3-tab navigation, preview background toggle, and theme switch, the grouped sidebar, footer, and favicon.
  *
- * Page-independent fragments (header per tab, footer, head script, preview background picker, favicon)
+ * Page-independent fragments (header per tab, footer, head script, favicon)
  * are rendered lazily on first use and then reused by every page rendered in the same Worker isolate.
  * Styles and the site script are served as cached static assets (`src/preview/assets.ts`).
  */
@@ -16,14 +16,6 @@ import { escapeXml } from '@/svg/shared';
 import type { NavPageId, PageLayoutOptions, PageSidebar } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Selectable preview stage background (persisted in `localStorage` under `preview-bg`). */
-interface PreviewBackgroundOption {
-  /** Visible option label. */
-  label: string;
-  /** Stored value and `data-preview-bg` attribute value on `<html>` (`'auto'` removes the attribute). */
-  value: string;
-}
 
 /** Top navigation tab. */
 interface NavTab {
@@ -56,11 +48,8 @@ const DRAWER_MEDIA_QUERY = '(max-width: 960px)';
 /** Page background per color scheme (`theme-color` meta tags, also following the manual scheme override). */
 const THEME_COLORS: Readonly<Record<'dark' | 'light', string>> = { dark: DARK_BG, light: LIGHT_BG };
 
-/** Preview stage background options; The first option is the default and follows the page theme. */
-const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
-  { label: 'Match page', value: 'auto' },
-  { label: 'Inverted', value: 'inverse' },
-];
+/** Allowed preview stage background values (`'auto'` follows the page theme and removes `data-preview-bg`). */
+const PREVIEW_BG_VALUES: readonly string[] = ['auto', 'inverse'];
 
 /** Memoized header HTML keyed by active navigation tab and active sidebar path. */
 const HEADER_HTML_CACHE = new Map<string, string>();
@@ -74,22 +63,10 @@ let siteConfigHtmlCache: string | undefined = undefined;
 /** Memoized footer HTML (`undefined` until first rendered). */
 let footerHtmlCache: string | undefined = undefined;
 
-/** Memoized header preview background picker HTML (`undefined` until first rendered). */
-let previewBgPickerHtmlCache: string | undefined = undefined;
-
 /** Memoized standalone favicon SVG (`undefined` until first rendered). */
 let faviconSvgCache: string | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Collect the allowed preview background values (the first one is the default). */
-function collectPreviewBgValues(): string[] {
-  const values: string[] = [];
-  for (const option of PREVIEW_BG_OPTIONS) {
-    values.push(option.value);
-  }
-  return values;
-}
 
 /** Render a single top navigation link. */
 function renderNavLink(href: string, label: string, isActive: boolean): string {
@@ -97,31 +74,6 @@ function renderNavLink(href: string, label: string, isActive: boolean): string {
     ? ' class="nav-link is-active" aria-current="page"'
     : ' class="nav-link"';
   return `<a href="${escapeXml(href)}"${activeAttrs} tabindex="0">${escapeXml(label)}</a>`;
-}
-
-/**
- * Render (once per isolate) the header preview background picker: A compact swatch trigger that opens a
- * native popover radio group (Match page / Inverted), persisted by the client script.
- */
-function renderPreviewBgPicker(): string {
-  if (previewBgPickerHtmlCache === undefined) {
-    let optionsHtml = '';
-    for (const [i, option] of PREVIEW_BG_OPTIONS.entries()) {
-      const checkedAttr = i === 0 ? ' checked' : '';
-      optionsHtml += `<label class="bg-picker-option"><input class="bg-picker-input" type="radio" name="preview-bg" value="${option.value}"${checkedAttr} /><span class="bg-swatch" data-bg="${option.value}" aria-hidden="true"></span><span class="bg-picker-label">${escapeXml(option.label)}</span>${renderUiIcon('check', 13, 'bg-picker-check')}</label>`;
-    }
-    const chevronIcon = renderUiIcon('chevron-down', 12, 'bg-picker-chevron');
-    previewBgPickerHtmlCache = `<div class="bg-picker">
-          <button type="button" class="bg-picker-trigger" id="bg-picker-trigger" popovertarget="bg-picker-menu" aria-label="Preview background" title="Preview background">
-            <span class="bg-swatch bg-swatch-current" aria-hidden="true"></span>${chevronIcon}
-          </button>
-          <div class="popover-panel bg-picker-menu" id="bg-picker-menu" popover role="radiogroup" aria-labelledby="bg-picker-title">
-            <span class="bg-picker-title" id="bg-picker-title">Preview background</span>
-            ${optionsHtml}
-          </div>
-        </div>`;
-  }
-  return previewBgPickerHtmlCache;
 }
 
 /** Find the label of the active sidebar link (empty when no link matches the active path). */
@@ -181,7 +133,9 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
       </div>
       <div class="header-actions">
         <span class="header-divider" aria-hidden="true"></span>
-        ${renderPreviewBgPicker()}
+        <button type="button" class="bg-toggle" id="preview-bg-toggle" role="switch" aria-checked="false" aria-label="Invert preview background" title="Toggle inverted preview background">
+          <span class="bg-swatch" aria-hidden="true"></span>
+        </button>
         <button type="button" class="theme-switch" id="theme-toggle" role="switch" aria-checked="false" aria-label="Dark color scheme" title="Toggle dark color scheme">
           <span class="theme-switch-thumb">
             ${sunIcon}
@@ -258,7 +212,7 @@ function renderFooter(): string {
  */
 function renderHeadScript(): string {
   if (headScriptHtmlCache === undefined) {
-    const previewBgValues = serializeInlineJson(collectPreviewBgValues());
+    const previewBgValues = serializeInlineJson(PREVIEW_BG_VALUES);
     const themeColors = serializeInlineJson(THEME_COLORS);
     headScriptHtmlCache = `<script>try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;document.querySelectorAll('meta[name="theme-color"]').forEach(function(meta){meta.content=${themeColors}[storedScheme];});}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}</script>`;
   }
@@ -270,7 +224,7 @@ function renderSiteConfig(): string {
   siteConfigHtmlCache ??= `<script type="application/json" id="site-config">${serializeInlineJson({
     drawerMediaQuery: DRAWER_MEDIA_QUERY,
     previewBgStorageKey: PREVIEW_BG_STORAGE_KEY,
-    previewBgValues: collectPreviewBgValues(),
+    previewBgValues: PREVIEW_BG_VALUES,
     schemeStorageKey: COLOR_SCHEME_STORAGE_KEY,
     themeColors: THEME_COLORS,
   })}</script>`;

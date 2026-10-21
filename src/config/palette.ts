@@ -58,7 +58,7 @@ export const ISOLUX_UI = {
   /** Raised surfaces (widgets, inputs, inlay hints). */
   raised: { dark: ISOLUX_GRAY[800], light: '#F2F2F2' },
   /** Translucent fill of selected list items, tabs, and options. */
-  selected: { dark: '#FAFAFA1A', light: '#0000000D' },
+  selected: { dark: '#FAFAFA1A', light: '#00000017' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
 /** Isolux Pro syntax colors (resolved `token.*` colors) as dark / light pairs. */

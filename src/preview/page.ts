@@ -89,7 +89,7 @@ const HOME_PAGER_LINK: PagerLink = { href: '/', label: 'Home' };
 const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
-      { alt: 'Build Passing', path: '/badge/build/passing?icon=circle-check' },
+      { alt: 'Status Online', path: '/badge/status/online/operational' },
       { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
       {
         alt: 'Coverage',
@@ -97,12 +97,16 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
       },
       {
         alt: 'Edge Latency',
-        path: '/badge/latency/11ms?icon=zap&color=cyan&dot=green&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
+        path: '/badge/latency/11ms?icon=zap&color=cyan&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
+      },
+      {
+        alt: 'Uptime',
+        path: '/badge/uptime/99.98%25?icon=activity&color=violet&variant=3&special=strip:9998997999',
       },
       {
         alt: 'Explore Docs',
         href: `${SITE_ORIGIN}/docs/buttons`,
-        path: '/button/Explore+Docs?icon=rocket,arrow-right&anim=sheen',
+        path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=sheen,none,nudge',
       },
     ],
     subtitle: 'Static 22px badges, live package metrics, inline data widgets, and 3D CTA buttons.',
@@ -110,15 +114,17 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
-      { alt: 'Info', path: '/icon/circle-info?size=32' },
-      { alt: 'Terminal', path: '/icon/square-terminal?size=32&color=sky' },
-      { alt: 'Quick Start', path: '/icon/zap?size=32&color=amber' },
-      { alt: 'Arch Linux', path: '/icon/archlinux?size=32&color=cyan' },
-      { alt: 'Rust', path: '/icon/rust?size=32&color=orange' },
-      { alt: 'Cloudflare', path: '/icon/cloudflare?size=32&color=orange' },
+      { alt: 'Loading', path: '/icon/loader?size=32&color=sky&anim=spin' },
+      { alt: 'Heart', path: '/icon/heart?size=32&color=rose&anim=pulse' },
+      { alt: 'Notifications', path: '/icon/bell?size=32&color=amber&anim=shake' },
+      { alt: 'Launch', path: '/icon/rocket?size=32&color=indigo&anim=nudge' },
+      { alt: 'Cloud', path: '/icon/cloud?size=32&color=cyan&anim=float' },
+      { alt: 'Rust', path: '/icon/rust?size=32&color=orange&anim=sheen' },
+      { alt: 'TypeScript', path: '/icon/ts?size=32&color=blue' },
+      { alt: 'Vue.js', path: '/icon/vue?size=32&color=emerald' },
     ],
     subtitle:
-      'Lucide stroke icons and Simple Icons / Devicon brand logos with intrinsic pixel sizing.',
+      'Lucide stroke icons and Simple Icons / Devicon brand logos with OKLCH colors, custom sizing, and SMIL motions.',
     title: 'Standalone Icons (/icon/:icon)',
   },
   {
@@ -126,7 +132,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Tech Stack',
-        path: '/stack/c,cpp,cs,rust,java,py,js,ts:4|docker,cloudflare,linux,git:2;vue,nodejs,threejs,tauri,tailwind,vite:6;figma,blender,obsidian,notion:4|aws,azure:2',
+        path: '/stack/c,cpp,cs,rust,py,js,ts,java:4|vue,tailwind,unocss,threejs:2;docker,cloudflare|git,vite|figma,pr;linux,raspberrypi,markdown,latex,obsidian,n8n',
       },
     ],
     subtitle:
@@ -255,7 +261,7 @@ export function renderHomeHtml(): string {
     const bodyHtml = `<section class="hero">
     <h1 class="hero-title">One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs &amp; Docs</h1>
     <p class="hero-lead">
-      Dynamic badges, CTA buttons, icons, tech stacks, and quote cards: Every element is a plain URL, composed visually in seconds and rendered at the edge (no signup, no tokens).
+      Dynamic badges, CTA buttons, icons, tech stacks, and quote cards: Every element is a plain URL, composed visually in seconds and rendered at the edge; 100% free for everyone, with no signup, no API keys, and no rate limits.
     </p>
     <div class="hero-cta-row">
       <a href="${builderPath}" class="btn-primary" tabindex="0">${builderIcon}Start Building${rightArrow}</a>

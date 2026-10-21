@@ -2,15 +2,16 @@
  * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles (`svg.xul.is/stack/:icons`).
  */
 
-import { THEMES } from '@/config/theme';
+import { resolveStackBrandColor } from '@/config/stack';
+import { resolveOptionalColor, THEMES } from '@/config/theme';
 import {
   DEFAULT_ICON_SLUG,
   MAX_ICON_SLUG_LENGTH,
-  STACK_FALLBACK_ICON_SLUG,
+  PLACEHOLDER_BORDER_OPACITY,
   formatSlugTitle,
   normalizeIconSlug,
-  resolveFallbackIcon,
   resolveIconLookup,
+  resolveStackPlaceholderIcon,
 } from '@/svg/icons';
 import {
   buildIconBodyId,
@@ -51,10 +52,12 @@ interface StackIconMeta {
 
 /** A single resolved stack tile. */
 interface StackTile {
+  /** Resolved theme color for this tile (per-tile `@color`, curated meta, brand color, or default `'indigo'`). */
+  color: ThemeColorName;
+  /** Inline `@<color>` override on this tile (`undefined` when none). */
+  colorOverride: ThemeColorName | undefined;
   /** Resolved icon data (`undefined` for unknown slugs, which render the stack fallback icon). */
   data: ResolvedIcon | undefined;
-  /** Curated color and title of the canonical slug (`undefined` for uncurated slugs). */
-  meta: StackIconMeta | undefined;
   /** Raw, unescaped display title (tile `<title>` tooltip and `aria-label` entry). */
   title: string;
 }
@@ -135,6 +138,8 @@ interface StackTileIcon {
   bodyId: string;
   /** Resolved icon data (bounds, type, and body). */
   data: ResolvedIcon;
+  /** Whether the tile is rendering the fallback icon (unknown slug or body budget exceeded). */
+  isFallback: boolean;
 }
 
 /** Icon list and optional `:N` column suffix of a single group token. */
@@ -143,6 +148,14 @@ interface GroupTokenParts {
   iconList: string;
   /** Inline `perLine` override from a trailing `:N` suffix. */
   perLine: number | undefined;
+}
+
+/** Icon slug and optional `@<color>` override of a single tile token. */
+interface TileTokenParts {
+  /** Inline per-tile theme color override from an `@<color>` suffix. */
+  colorOverride: ThemeColorName | undefined;
+  /** Raw icon slug part before `@<color>`. */
+  slug: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -174,6 +187,9 @@ const MAX_STACK_ICON_BODY_LENGTH = 400_000;
 
 /** Maximum length of a tile `<title>` derived from an uncurated slug. */
 const MAX_TILE_TITLE_LENGTH = 64;
+
+/** Maximum length of a single tile token (`<slug>@<color>`) in characters. */
+const MAX_STACK_TOKEN_LENGTH = MAX_ICON_SLUG_LENGTH + 16;
 
 /** Theme color of uncurated stack icons without a uniform `?color=` override. */
 const DEFAULT_STACK_ICON_COLOR: ThemeColorName = 'indigo';
@@ -276,7 +292,22 @@ const SLUG_SPLIT_RX = /[,\s]+/;
 /** Matches a string consisting only of ASCII digits. */
 const DIGITS_ONLY_RX = /^\d+$/;
 
+/** Matches hyphen, underscore, or dot characters in brand icon slugs. */
+const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Split an optional `@<color>` suffix off a tile token (e.g., `rust@amber` or `cpu@emerald`). */
+function splitTileToken(token: string): TileTokenParts {
+  const atIndex = token.lastIndexOf('@');
+  if (atIndex <= 0) {
+    return { colorOverride: undefined, slug: token };
+  }
+  return {
+    colorOverride: resolveOptionalColor(token.slice(atIndex + 1)),
+    slug: token.slice(0, atIndex),
+  };
+}
 
 /** Split an optional trailing `:<perLine>` suffix off a group token (e.g., `figma,ai,ps:3`). */
 function splitGroupToken(token: string): GroupTokenParts {
@@ -288,7 +319,7 @@ function splitGroupToken(token: string): GroupTokenParts {
   return { iconList: token.slice(0, colonIndex), perLine: Number(suffix) };
 }
 
-/** Parse a single group token (`icon1,icon2:6`) and return its cleaned icon list (slugs capped at `MAX_ICON_SLUG_LENGTH`) and optional `perLine` override. */
+/** Parse a single group token (`icon1,icon2:6`) and return its cleaned icon list (tokens capped at `MAX_STACK_TOKEN_LENGTH`) and optional `perLine` override. */
 function parseSingleGroupToken(
   rawGroup: string,
   fallbackPerLine: number | undefined,
@@ -307,7 +338,7 @@ function parseSingleGroupToken(
     }
     const clean = part.trim().toLowerCase();
     if (clean.length > 0) {
-      slugs.push(clean.slice(0, MAX_ICON_SLUG_LENGTH));
+      slugs.push(clean.slice(0, MAX_STACK_TOKEN_LENGTH));
     }
   }
 
@@ -318,17 +349,20 @@ function parseSingleGroupToken(
   return { icons: slugs, perLine: perLine ?? fallbackPerLine };
 }
 
-/** Resolve a requested slug into a stack tile (`undefined` for blank slugs): Brand-first icon data, curated metadata, and a bounded title. */
-function buildStackTile(slug: string): StackTile | undefined {
+/** Resolve a requested tile token (`<slug>` or `<slug>@<color>`) into a stack tile (`undefined` for blank slugs). */
+function buildStackTile(rawToken: string): StackTile | undefined {
+  const { colorOverride, slug } = splitTileToken(rawToken);
   const lookup = resolveIconLookup(slug, true);
   if (lookup.key.length === 0) {
     return undefined;
   }
-  const meta = getOwnValue(STACK_ICON_META, lookup.key);
+  const cleanKey = lookup.key.replace(BRAND_SLUG_CLEAN_RX, '');
+  const meta = getOwnValue(STACK_ICON_META, cleanKey);
+  const color = meta?.color ?? resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
   const title =
     meta?.title ??
     truncateText(formatSlugTitle(slug.slice(0, MAX_ICON_SLUG_LENGTH)), MAX_TILE_TITLE_LENGTH);
-  return { data: lookup.data, meta, title };
+  return { color, colorOverride, data: lookup.data, title };
 }
 
 /** Measure `StackGroup` bands into pixel dimensions, capping the total tile count at `MAX_STACK_ICONS`. */
@@ -410,25 +444,30 @@ function buildMeasuredBands(
  * the fallback icon for unknown slugs and once the unique-body length budget (`MAX_STACK_ICON_BODY_LENGTH`) is spent.
  */
 function resolveStackTileIcon(tile: StackTile, context: StackTileContext): StackTileIcon {
-  let data = tile.data ?? resolveFallbackIcon(STACK_FALLBACK_ICON_SLUG);
+  let isFallback = tile.data === undefined;
+  let data = tile.data ?? resolveStackPlaceholderIcon();
   let bodyId = buildIconBodyId(data, STACK_ICON_ID_PREFIX);
   if (context.iconBodyIds.has(bodyId)) {
-    return { bodyId, data };
+    return { bodyId, data, isFallback };
   }
   if (context.iconBodyLength + data.innerSvg.length > MAX_STACK_ICON_BODY_LENGTH) {
-    data = resolveFallbackIcon(STACK_FALLBACK_ICON_SLUG);
+    isFallback = true;
+    data = resolveStackPlaceholderIcon();
     bodyId = buildIconBodyId(data, STACK_ICON_ID_PREFIX);
     if (context.iconBodyIds.has(bodyId)) {
-      return { bodyId, data };
+      return { bodyId, data, isFallback };
     }
   }
   context.iconBodyIds.add(bodyId);
   context.iconBodyLength += data.innerSvg.length;
   context.iconDefs += `<g id="${bodyId}">${data.innerSvg}</g>`;
-  return { bodyId, data };
+  return { bodyId, data, isFallback };
 }
 
-/** Render a single Kumo 3D stack tile `<g>` with its `<title>` tooltip, surface layers, and an icon centered by its visible bounds. */
+/**
+ * Render a single Kumo 3D stack tile `<g>` with its `<title>` tooltip, surface layers, and an icon centered
+ * by its visible bounds (unknown/fallback tiles draw a hollow transparent frame with a translucent red stroke and standalone red `!` icon).
+ */
 function renderSingleStackTile(
   tile: StackTile,
   tileX: number,
@@ -436,17 +475,34 @@ function renderSingleStackTile(
   context: StackTileContext
 ): string {
   const { iconScale, iconSize, radius, tileSize, variant } = context;
-  const themeColor = context.colorOverride ?? tile.meta?.color ?? DEFAULT_STACK_ICON_COLOR;
-  const isOnPrimary = variant === '1';
-  if (isOnPrimary) {
-    context.usedPrimaryColors.add(themeColor);
-  }
-
   const icon = resolveStackTileIcon(tile, context);
   // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile.
   const visualCenterX = ((icon.data.minX + icon.data.maxX) / 2) * iconScale;
   const iconX = roundCoord(tileX + tileSize / 2 - visualCenterX);
   const iconY = roundCoord(tileY + (tileSize - iconSize) / 2);
+  const iconTransform =
+    iconScale === 1
+      ? `translate(${iconX}, ${iconY})`
+      : `translate(${iconX}, ${iconY}) scale(${iconScale})`;
+
+  if (icon.isFallback) {
+    const placeholderColor = THEMES.red.iconColor;
+    const hollowFrame = `<rect x="${tileX + 0.5}" y="${tileY + 0.5}" width="${tileSize - 1}" height="${tileSize - 1}" rx="${radius - 0.5}" stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" stroke-width="1" />`;
+    const placeholderIcon = renderIconGroup({
+      color: placeholderColor,
+      innerSvg: `<use href="#${icon.bodyId}" />`,
+      strokeWidth: STACK_ICON_STROKE_WIDTH,
+      transform: iconTransform,
+      type: icon.data.type,
+    });
+    return `<g><title>${escapeXml(tile.title)}</title>${hollowFrame}${placeholderIcon}</g>`;
+  }
+
+  const themeColor = tile.colorOverride ?? context.colorOverride ?? tile.color;
+  const isOnPrimary = variant === '1';
+  if (isOnPrimary) {
+    context.usedPrimaryColors.add(themeColor);
+  }
   const surfaceMarkup = renderKumoBoxSurface({
     boxX: tileX,
     boxY: tileY,
@@ -462,10 +518,7 @@ function renderSingleStackTile(
     innerSvg: `<use href="#${icon.bodyId}" />`,
     opacity: iconPaint.opacity,
     strokeWidth: STACK_ICON_STROKE_WIDTH,
-    transform:
-      iconScale === 1
-        ? `translate(${iconX}, ${iconY})`
-        : `translate(${iconX}, ${iconY}) scale(${iconScale})`,
+    transform: iconTransform,
     type: icon.data.type,
   });
 
@@ -475,15 +528,19 @@ function renderSingleStackTile(
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug.
- * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'vue'`).
+ * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug or `<slug>@<color>` token.
+ * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'cpu@emerald'`).
  * @param fallback   Optional explicit theme color override.
- * @returns The resolved `ThemeColorName` (`'indigo'` for uncurated slugs).
+ * @returns The resolved `ThemeColorName` (`'indigo'` for uncurated non-brand slugs).
  */
 export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
+  const { colorOverride, slug: cleanSlug } = splitTileToken(slug);
+  const cleanKey = normalizeIconSlug(cleanSlug).replace(BRAND_SLUG_CLEAN_RX, '');
   return (
+    colorOverride ??
     fallback ??
-    getOwnValue(STACK_ICON_META, normalizeIconSlug(slug))?.color ??
+    getOwnValue(STACK_ICON_META, cleanKey)?.color ??
+    resolveStackBrandColor(cleanKey) ??
     DEFAULT_STACK_ICON_COLOR
   );
 }

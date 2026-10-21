@@ -79,6 +79,10 @@ interface ArcSegment {
 interface LazyIconCache {
   /** Plain stroked circle used when even the fallback slug cannot be resolved. */
   circle?: ResolvedIcon;
+  /** Translucent-ring `!` placeholder icon used for unknown icon slugs on `/icon`, `/badge`, and `/button`. */
+  placeholder?: ResolvedIcon;
+  /** Standalone `!` placeholder icon used inside the translucent frame of unknown `/stack` tiles. */
+  stackPlaceholder?: ResolvedIcon;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -151,14 +155,21 @@ export const DEFAULT_ICON_STROKE_WIDTH = 2.25;
 /** Slug rendered for empty requests: Standalone `/icon/` requests with an empty slug and stacks without any tiles. */
 export const DEFAULT_ICON_SLUG = 'sparkles';
 
-/** Lucide slug rendered by standalone `/icon/:icon` requests whose slug cannot be resolved. */
-export const FALLBACK_ICON_SLUG = 'circle-help';
+/** Lucide slug rendered for icon requests whose slug cannot be resolved. */
+export const FALLBACK_ICON_SLUG = 'circle-alert';
 
-/** Lucide slug rendered for stack tiles whose slug cannot be resolved. */
-export const STACK_FALLBACK_ICON_SLUG = 'code-xml';
+/** Stroke opacity of the outer border around unknown-icon placeholders across all SVG elements. */
+export const PLACEHOLDER_BORDER_OPACITY = 0.45;
 
 /** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
 export const MAX_ICON_SLUG_LENGTH = 64;
+
+/** Inner SVG of the placeholder icon (translucent circle border + standalone `!`) rendered for unknown icon slugs on `/icon`, `/badge`, and `/button`. */
+const PLACEHOLDER_ICON_SVG = `<circle cx="12" cy="12" r="10" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" /><path d="M12 7v5.5" /><path d="M12 16.5h.01" />`;
+
+/** Inner SVG of the standalone `!` placeholder icon rendered inside the translucent frame of unknown `/stack` tiles. */
+const STACK_PLACEHOLDER_ICON_SVG =
+  '<g stroke-width="2.75"><path d="M12 3.5v10.5" /><path d="M12 19.5h.01" /></g>';
 
 /** Inner SVG of the last-resort fallback icon (a plain `24x24` circle). */
 const FALLBACK_CIRCLE_SVG = '<circle cx="12" cy="12" r="9" />';
@@ -992,6 +1003,36 @@ export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon |
  */
 export function resolveFallbackIcon(fallbackSlug: string): ResolvedIcon {
   return resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
+}
+
+/**
+ * Return the lazily built placeholder icon (translucent circle border + standalone `!`) used to flag
+ * unknown icon slugs on standalone `/icon/:icon`, `/badge/*`, and `/button/*` elements.
+ * @returns The resolved placeholder icon data (never `undefined`).
+ */
+export function resolvePlaceholderIcon(): ResolvedIcon {
+  LAZY_ICONS.placeholder ??= {
+    coordScale: 1,
+    innerSvg: PLACEHOLDER_ICON_SVG,
+    ...computeIconXBounds(PLACEHOLDER_ICON_SVG, true),
+    type: 'lucide',
+  };
+  return LAZY_ICONS.placeholder;
+}
+
+/**
+ * Return the lazily built standalone `!` placeholder icon rendered inside the translucent frame of
+ * unknown `/stack/:icons` tiles.
+ * @returns The resolved stack placeholder icon data (never `undefined`).
+ */
+export function resolveStackPlaceholderIcon(): ResolvedIcon {
+  LAZY_ICONS.stackPlaceholder ??= {
+    coordScale: 1,
+    innerSvg: STACK_PLACEHOLDER_ICON_SVG,
+    ...computeIconXBounds(STACK_PLACEHOLDER_ICON_SVG, true),
+    type: 'lucide',
+  };
+  return LAZY_ICONS.stackPlaceholder;
 }
 
 /**
