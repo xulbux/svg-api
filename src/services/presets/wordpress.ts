@@ -2,12 +2,13 @@
  * WordPress service presets – Plugin and theme version, PHP/WordPress requirements, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
   createCountMetric,
   createDownloadsMetric,
   createRatingMetric,
   createVersionMetric,
+  readFiniteNumber,
   readText,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
@@ -22,6 +23,8 @@ interface WordPressInfoPayload {
   downloaded: number;
   /** Average rating in percent (`0`–`100`; Stars = `rating / 20`). */
   rating: number;
+  /** Star vote breakdown keyed by `'1'`–`'5'`. */
+  ratings?: Record<string, number>;
   /** Minimum required WordPress version (`false` when unspecified). */
   requires: string | boolean;
   /** Minimum required PHP version (`false` when unspecified). */
@@ -53,6 +56,9 @@ interface WordPressDirectory {
 /** Maximum WordPress.org rating (percent). */
 const MAX_WORDPRESS_RATING = 100;
 
+/** Star vote keys in ascending order (`1` through `5` stars). */
+const STAR_KEYS: readonly string[] = ['1', '2', '3', '4', '5'];
+
 /** Fields disabled for plugin requests (shrinks the response from `~66 KB` to `~1 KB`). */
 const TRIMMED_PLUGIN_FIELDS: readonly string[] = [
   'banners',
@@ -75,12 +81,25 @@ const INFO_PROJECTION = pickFields<WordPressInfoPayload>([
   'active_installs',
   'downloaded',
   'rating',
+  'ratings',
   'requires',
   'requires_php',
   'version',
 ]);
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Read the 1-star through 5-star vote distribution from `info.ratings`. */
+function readWordPressRatings(info: Partial<WordPressInfoPayload>): number[] | undefined {
+  if (!isJsonObject(info.ratings)) {
+    return undefined;
+  }
+  const counts: number[] = [];
+  for (const key of STAR_KEYS) {
+    counts.push(readFiniteNumber(info.ratings[key]) ?? 0);
+  }
+  return counts;
+}
 
 /** Build the `request[fields]` query of a directory (enables installs/downloads, disables bulky fields). */
 function buildFieldsQuery(directory: WordPressDirectory): string {
@@ -114,7 +133,11 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
         { defaultColor: 'indigo', defaultIcon: 'php', defaultLabel: 'php' },
         (info) => readText(info.requires_php)
       ),
-      rating: createRatingMetric(endpoint, (info) => [info.rating, MAX_WORDPRESS_RATING]),
+      rating: createRatingMetric(
+        endpoint,
+        (info) => [info.rating, MAX_WORDPRESS_RATING],
+        readWordPressRatings
+      ),
       v: createVersionMetric(
         endpoint,
         { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: directory.label },

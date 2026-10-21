@@ -6,6 +6,8 @@
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
+  RATIO_SPECIALS,
+  buildRatioSpecials,
   createCountMetric,
   createDownloadsMetric,
   createLicenseMetric,
@@ -86,9 +88,13 @@ export const ZENODO_SERVICE = defineService({
     ),
     dt: createDownloadsMetric(ZENODO_ENDPOINT, 'dt', (record) => record.downloads),
     license: createLicenseMetric(ZENODO_ENDPOINT, (record) => record.license),
-    unique: createDownloadsMetric(ZENODO_ENDPOINT, 'dt', (record) => record.uniqueDownloads, {
-      defaultLabel: 'unique downloads',
-    }),
+    unique: createDownloadsMetric(
+      ZENODO_ENDPOINT,
+      'dt',
+      (record) => record.uniqueDownloads,
+      { autoSpecials: RATIO_SPECIALS, defaultLabel: 'unique downloads' },
+      (record) => buildRatioSpecials(record.uniqueDownloads, record.downloads)
+    ),
     v: createVersionMetric(
       ZENODO_ENDPOINT,
       { defaultColor: 'blue', defaultIcon: 'zenodo', defaultLabel: 'zenodo' },

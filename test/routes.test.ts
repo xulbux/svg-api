@@ -23,6 +23,7 @@ import {
   resolveIconQueryParam,
   resolveQuoteLayout,
   resolveSizeToken,
+  resolveSpecialParam,
   resolveVariant,
   SIZE_TOKENS,
 } from '@/routes/params';
@@ -34,7 +35,7 @@ import {
   MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
 } from '@/svg/renderer';
-import type { Env, ThemeColorName } from '@/types';
+import type { BadgeSpecialElement, BadgeSpecialMap, Env, ThemeColorName } from '@/types';
 import { extractAriaLabel, installEdgeCacheStub, requireDefined, TEST_ENV } from './helpers';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -238,6 +239,46 @@ describe('route parameter parsers', () => {
     expect(resolveDotState('', 'sky')).toBe('sky');
     expect(resolveDotState('constructor', 'sky')).toBe('sky');
     expect(resolveDotState('bogus')).toBeUndefined();
+  });
+
+  it('resolves automatic, manual, and none ?special= parameters against preset widgets', () => {
+    const defaultRing: BadgeSpecialElement = { type: 'ring', value: 85 };
+    const autoSpecials: BadgeSpecialMap = {
+      bar: { type: 'bar', value: 85 },
+      delta: { type: 'delta', value: '+14%' },
+      ring: defaultRing,
+      sparkline: { type: 'sparkline', values: [10, 20, 30] },
+    };
+    expect(resolveSpecialParam(MISSING_PARAM, defaultRing, autoSpecials)).toEqual(defaultRing);
+    expect(resolveSpecialParam('', defaultRing, autoSpecials)).toEqual(defaultRing);
+    expect(resolveSpecialParam('none', defaultRing, autoSpecials)).toBeUndefined();
+    expect(resolveSpecialParam('sparkline', defaultRing, autoSpecials)).toEqual(
+      autoSpecials.sparkline
+    );
+    expect(resolveSpecialParam('sparkline:auto', defaultRing, autoSpecials)).toEqual(
+      autoSpecials.sparkline
+    );
+    expect(resolveSpecialParam('bar:static', defaultRing, autoSpecials)).toEqual({
+      hasPulse: false,
+      type: 'bar',
+      value: 85,
+    });
+    expect(resolveSpecialParam('ring:pulse', defaultRing, autoSpecials)).toEqual({
+      hasPulse: true,
+      type: 'ring',
+      value: 85,
+    });
+    expect(resolveSpecialParam('ring::static', defaultRing, autoSpecials)).toEqual({
+      hasPulse: false,
+      type: 'ring',
+      value: 85,
+    });
+    expect(resolveSpecialParam('steps', defaultRing, autoSpecials)).toEqual(defaultRing);
+    expect(resolveSpecialParam('steps', undefined, autoSpecials)).toBeUndefined();
+    expect(resolveSpecialParam('delta:+99%', defaultRing, autoSpecials)).toEqual({
+      type: 'delta',
+      value: '+99%',
+    });
   });
 
   it('rejects malformed special payloads and caps sparkline, bars, steps, and strip lengths', () => {

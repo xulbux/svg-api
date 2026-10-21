@@ -118,7 +118,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
   },
   {
     description:
-      'Build live service badge URLs for package registries, forges, and CDNs with metric selection, label overrides, and styling, previewed with live data.',
+      'Build live service badge URLs for package registries, forges, and CDNs with metric selection, automatic data widgets (marked Auto), label overrides, and styling, previewed with live data.',
     group: 'badges',
     kind: 'service',
     navLabel: 'Service Badge',

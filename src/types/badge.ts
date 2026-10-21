@@ -108,6 +108,12 @@ export type BadgeSpecialElement =
   | StepsSpecialElement
   | StripSpecialElement;
 
+/** Discriminant kind of an inline data visualization element (`?special=`). */
+export type BadgeSpecialKind = BadgeSpecialElement['type'];
+
+/** Candidate inline data visualization elements derived from upstream data, keyed by kind. */
+export type BadgeSpecialMap = Partial<Record<BadgeSpecialKind, BadgeSpecialElement>>;
+
 /** Options for rendering a `22px` badge SVG via `renderBadge`. */
 export interface BadgeRenderOptions {
   /** Optional micro-animation control mode (defaults to `'default'`). */

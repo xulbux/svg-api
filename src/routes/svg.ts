@@ -14,12 +14,12 @@ import {
   decodeSegment,
   parseOptionalNumber,
   parsePerLineList,
-  parseSpecialParam,
   resolveAnimationMode,
   resolveDotState,
   resolveIconQueryParam,
   resolveQuoteLayout,
   resolveSizeToken,
+  resolveSpecialParam,
   resolveVariant,
 } from '@/routes/params';
 import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
@@ -29,6 +29,7 @@ import { getOwnValue } from '@/svg/shared';
 import { parseStackGroups, renderStack } from '@/svg/stack';
 import type {
   BadgeSpecialElement,
+  BadgeSpecialMap,
   BadgeVariant,
   DotState,
   MetricResult,
@@ -54,6 +55,8 @@ interface RouteBadgeDefaults {
   label: string;
   /** Default right-hand special element. */
   special?: BadgeSpecialElement;
+  /** Candidate automatic right-hand special elements from upstream service data. */
+  specials?: BadgeSpecialMap;
   /** Default right-hand value text. */
   value?: string;
   /** Default badge variant (`1`, `2`, `3`). */
@@ -168,7 +171,7 @@ function renderBadgeFromQuery(
     dot: resolveDotState(query.get('dot'), defaults.dot),
     icon: resolveIconQueryParam(query.get('icon'), defaults.icon),
     label: labelParam ?? defaults.label,
-    special: parseSpecialParam(query.get('special')) ?? defaults.special,
+    special: resolveSpecialParam(query.get('special'), defaults.special, defaults.specials),
     value: defaults.value,
     variant: resolveVariant(query.get('variant'), defaults.variant),
   });
@@ -399,6 +402,7 @@ export function renderServiceBadge(result: MetricResult, query: URLSearchParams)
       icon: result.icon,
       label: result.label,
       special: result.special,
+      specials: result.specials,
       value: result.value,
       variant: '1',
     },

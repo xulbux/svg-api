@@ -2,15 +2,32 @@
  * OpenSSF Scorecard service preset – Supply-chain security score (`0`–`10`) of a GitHub repository with a threshold-colored ring gauge (`/badge/scorecard/:owner/:repo/:metric`).
  */
 
-import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createScorecardMetric } from '@/services/metrics';
+import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  createScorecardMetric,
+  readFiniteNumber,
+  readScorecardCheckScores,
+} from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial OpenSSF Scorecard project payload (`api.securityscorecards.dev/projects/github.com/:owner/:repo`). */
-interface ScorecardProjectPayload {
+/** Projected OpenSSF Scorecard project payload (`api.securityscorecards.dev/projects/github.com/:owner/:repo`). */
+interface ScorecardProjectProjection {
+  /** Valid check scores (`0`–`10`). */
+  checks?: number[];
   /** Aggregate score (`0`–`10`). */
-  score: number;
+  score?: number;
+}
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project an OpenSSF Scorecard payload to its aggregate score and individual check scores. */
+function projectScorecard(data: unknown): ScorecardProjectProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const checks = readScorecardCheckScores(data.checks);
+  return { ...(checks ? { checks } : {}), score: readFiniteNumber(data.score) };
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -19,7 +36,7 @@ interface ScorecardProjectPayload {
 const SCORECARD_ENDPOINT = createEndpoint({
   api: 'https://api.securityscorecards.dev/projects/github.com/{owner}/{target}',
   page: 'https://scorecard.dev/viewer/?uri=github.com/{owner}/{target}',
-  project: pickFields<ScorecardProjectPayload>(['score']),
+  project: projectScorecard,
   ttl: CACHE_TTL.daily,
 });
 
@@ -31,6 +48,12 @@ export const SCORECARD_SERVICE = defineService({
     description: 'OpenSSF Scorecard score of a GitHub repository (ring gauge, colored by score).',
     title: 'OpenSSF Scorecard',
   },
-  metrics: { score: createScorecardMetric(SCORECARD_ENDPOINT, (project) => project.score) },
+  metrics: {
+    score: createScorecardMetric(
+      SCORECARD_ENDPOINT,
+      (project) => project.score,
+      (project) => project.checks
+    ),
+  },
   route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
 });

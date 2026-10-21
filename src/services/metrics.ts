@@ -3,8 +3,11 @@
  */
 
 import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
+import { MAX_BARS_POINTS, MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
 import type {
+  BadgeSpecialKind,
+  BadgeSpecialMap,
   CommunityMetricKind,
   DownloadMetricKey,
   MetricEndpoint,
@@ -14,10 +17,23 @@ import type {
   ScoreColorThreshold,
   ServiceDefinition,
   ServiceMetricConfig,
+  StripTickState,
   ThemeColorName,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Options for building time-series and delta inline widgets (`buildSeriesSpecials`). */
+export interface SeriesSpecialsOptions {
+  /** Numeric bar heights for `bars` (defaults to `sparklineValues` when omitted). */
+  barsValues?: readonly number[];
+  /** Current period value for `delta` percentage comparison. */
+  current?: RawCount;
+  /** Previous period value for `delta` percentage comparison. */
+  previous?: RawCount;
+  /** Numeric series points for `sparkline` (defaults to `barsValues` when omitted). */
+  sparklineValues?: readonly number[];
+}
 
 /** Badge color and value suffix of a download period. */
 interface DownloadPeriodSpec {
@@ -29,6 +45,8 @@ interface DownloadPeriodSpec {
 
 /** Projected coverage payload of `createCoverageService` endpoints. */
 interface CoveragePayload {
+  /** Optional signed coverage percentage change from the previous build. */
+  delta?: number;
   /** Raw coverage percentage (`0`–`100`), possibly missing. */
   percent: unknown;
 }
@@ -43,6 +61,8 @@ interface CoverageServiceOptions<P extends object> {
   icon: string;
   /** Browser page URL template (`{owner}`, `{target}`). */
   page: string;
+  /** Optional reader for signed coverage percentage point change (e.g., Coveralls `coverage_change`). */
+  readDelta?: (payload: Partial<P>) => unknown;
   /** Reads the raw coverage percentage from the upstream payload. */
   readPercent: (payload: Partial<P>) => unknown;
   /** Human-readable service name. */
@@ -252,7 +272,7 @@ function readText(raw: unknown): string | undefined {
   return typeof raw === 'string' ? raw : undefined;
 }
 
-/** Build score badge properties (value plus ring gauge, optionally threshold-colored). */
+/** Build score badge properties (value plus ring gauge and bar/steps alternatives, optionally threshold-colored). */
 function buildScoreResult(
   rawAchieved: unknown,
   rawMaximum: unknown,
@@ -265,20 +285,68 @@ function buildScoreResult(
     return { value: MISSING_VALUE };
   }
   const percent = Math.min(MAX_PERCENT, Math.round((achieved / maximum) * 100));
+  const ring = { type: 'ring' as const, value: percent };
   return {
     color: thresholds ? resolveThresholdColor(percent, thresholds) : undefined,
-    special: { type: 'ring', value: percent },
+    special: ring,
+    specials: {
+      bar: { type: 'bar', value: percent },
+      ring,
+      steps: { done: Math.round(percent / 10), total: 10, type: 'steps' },
+    },
     value: format(achieved, maximum),
   };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+/** Automatic inline widget kinds supported by score and coverage metrics (`ring` by default, plus `bar` and `steps`). */
+export const SCORE_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
+
+/** Automatic inline widget kinds supported by OpenSSF Scorecard metrics with check breakdowns. */
+export const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
+  'ring',
+  'bar',
+  'steps',
+  'strip',
+  'bars',
+  'sparkline',
+];
+
+/** Automatic inline widget kinds supported by star rating metrics (`ring`, `bar`, `steps`). */
+export const RATING_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
+
+/** Automatic inline widget kinds supported by star rating metrics with a vote distribution (`bars`, `sparkline`, `ring`, `bar`, `steps`). */
+export const RATING_HISTOGRAM_SPECIALS: readonly BadgeSpecialKind[] = [
+  'bars',
+  'sparkline',
+  'ring',
+  'bar',
+  'steps',
+];
+
+/** Automatic inline widget kinds supported by time-series metrics (`sparkline`, `bars`). */
+export const SERIES_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars'];
+
+/** Automatic inline widget kinds supported by time-series metrics with period-over-period delta (`sparkline`, `bars`, `delta`). */
+export const SERIES_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars', 'delta'];
+
+/** Automatic inline widget kinds supported by period-over-period delta metrics (`delta`). */
+export const DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['delta'];
+
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics (`bar`, `ring`). */
+export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
+
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps (`bar`, `ring`, `steps`). */
+export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
+
 /** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
 export const COVERAGE: MetricPresentation = {
+  autoSpecials: SCORE_SPECIALS,
   defaultColor: 'emerald',
   defaultIcon: 'shield-check',
   defaultLabel: 'coverage',
+  defaultSpecial: 'ring',
 };
 
 /** Default presentation for repository fork metrics (`forks`). */
@@ -321,6 +389,7 @@ export const PULL_REQUESTS: MetricPresentation = {
 
 /** Default presentation for average star rating metrics (`rating`). */
 export const RATING: MetricPresentation = {
+  autoSpecials: RATING_SPECIALS,
   defaultColor: 'amber',
   defaultIcon: 'star',
   defaultLabel: 'rating',
@@ -335,9 +404,11 @@ export const RELEASE: MetricPresentation = {
 
 /** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
 export const SCORE: MetricPresentation = {
+  autoSpecials: SCORE_SPECIALS,
   defaultColor: 'emerald',
   defaultIcon: 'gauge',
   defaultLabel: 'score',
+  defaultSpecial: 'ring',
 };
 
 /** Default presentation for repository star metrics (`stars`). */
@@ -620,85 +691,251 @@ export function encodeNpmPackageName(owner: string, pkg: string): string {
 }
 
 /**
+ * Sum the finite numeric entries in `values` across `[start, end)`.
+ * @param values   Numeric series.
+ * @param start    Inclusive start index (defaults to `0`).
+ * @param end      Exclusive end index (defaults to `values.length`).
+ * @returns Sum of finite entries in the slice.
+ */
+export function sumSeries(
+  values: readonly number[],
+  start = 0,
+  end: number = values.length
+): number {
+  const from = Math.max(0, start);
+  const to = Math.min(values.length, end);
+  let total = 0;
+  for (let i = from; i < to; i += 1) {
+    const item = values[i];
+    if (item !== undefined && Number.isFinite(item)) {
+      total += item;
+    }
+  }
+  return total;
+}
+
+/**
+ * Aggregate a numeric series into at most `bucketCount` contiguous summed buckets.
+ * @param values        Source numeric series in chronological order.
+ * @param bucketCount   Target number of buckets.
+ * @returns Bucketed series (empty when `values` is empty or `bucketCount <= 0`).
+ */
+export function bucketSeries(values: readonly number[], bucketCount: number): number[] {
+  if (values.length === 0 || bucketCount <= 0) {
+    return [];
+  }
+  const count = Math.min(bucketCount, values.length);
+  const buckets: number[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const start = Math.floor((i * values.length) / count);
+    const end = Math.floor(((i + 1) * values.length) / count);
+    buckets.push(sumSeries(values, start, end));
+  }
+  return buckets;
+}
+
+/**
+ * Format a period-over-period percentage change (`'+14%'`, `'-3.2%'`, `'0%'`).
+ * @param current    Current period count or metric value.
+ * @param previous   Previous period count or baseline value (must be `> 0`).
+ * @returns Formatted delta string, or `undefined` when either value is missing or `previous <= 0`.
+ */
+export function formatDeltaPercent(current: RawCount, previous: RawCount): string | undefined {
+  const currentValue = toFiniteNumber(current);
+  const previousValue = toFiniteNumber(previous);
+  if (currentValue === undefined || previousValue === undefined || previousValue <= 0) {
+    return undefined;
+  }
+  const percent = ((currentValue - previousValue) / previousValue) * 100;
+  if (Math.abs(percent) < 0.05) {
+    return '0%';
+  }
+  const sign = percent > 0 ? '+' : '';
+  const rounded = Math.abs(percent) >= 10 ? Math.round(percent) : Number(percent.toFixed(1));
+  return `${sign}${rounded}%`;
+}
+
+/**
+ * Build a candidate `delta` widget comparing a shorter window count against the prior-window pace
+ * inside a longer cumulative window (e.g., 30-day installs vs the prior 60 days of 90-day installs).
+ * @param shorterCount   Count in the shorter recent window.
+ * @param shorterDays    Length of the shorter window in days (`> 0`).
+ * @param longerCount    Cumulative count in the longer window (`>= shorterCount`).
+ * @param longerDays     Length of the longer window in days (`> shorterDays`).
+ * @returns Candidate widget map with `delta`, or `undefined` when unavailable.
+ */
+export function buildWindowDeltaSpecials(
+  shorterCount: RawCount,
+  shorterDays: number,
+  longerCount: RawCount,
+  longerDays: number
+): BadgeSpecialMap | undefined {
+  const recent = toFiniteNumber(shorterCount);
+  const cumulative = toFiniteNumber(longerCount);
+  const priorDays = longerDays - shorterDays;
+  if (
+    recent === undefined ||
+    cumulative === undefined ||
+    shorterDays <= 0 ||
+    priorDays <= 0 ||
+    cumulative <= recent
+  ) {
+    return undefined;
+  }
+  const priorPace = ((cumulative - recent) * shorterDays) / priorDays;
+  const delta = formatDeltaPercent(recent, priorPace);
+  return delta ? { delta: { type: 'delta', value: delta } } : undefined;
+}
+
+/**
+ * Build candidate `bar` and `ring` (and optional 10-step `steps`) widgets from a `part / whole` ratio.
+ * @param part       Numerator value (`>= 0`).
+ * @param whole      Denominator value (`> 0`).
+ * @param hasSteps   Whether to also include a 10-segment `steps` widget.
+ * @returns Candidate widget map, or `undefined` when the ratio cannot be computed.
+ */
+export function buildRatioSpecials(
+  part: RawCount,
+  whole: RawCount,
+  hasSteps = false
+): BadgeSpecialMap | undefined {
+  const partValue = toFiniteNumber(part);
+  const wholeValue = toFiniteNumber(whole);
+  if (partValue === undefined || partValue < 0 || wholeValue === undefined || wholeValue <= 0) {
+    return undefined;
+  }
+  const percent = Math.min(MAX_PERCENT, Math.round((partValue / wholeValue) * 100));
+  return hasSteps
+    ? {
+        bar: { type: 'bar', value: percent },
+        ring: { type: 'ring', value: percent },
+        steps: { done: Math.round(percent / 10), total: 10, type: 'steps' },
+      }
+    : { bar: { type: 'bar', value: percent }, ring: { type: 'ring', value: percent } };
+}
+
+/**
+ * Build a candidate widget map (`sparkline`, `bars`, `delta`) from time-series and delta inputs.
+ * @param options   Series points and current/previous period counts.
+ * @returns Candidate widget map, or `undefined` when no widget can be derived.
+ */
+export function buildSeriesSpecials(options: SeriesSpecialsOptions): BadgeSpecialMap | undefined {
+  const specials: BadgeSpecialMap = {};
+  const sparklineSource = options.sparklineValues ?? options.barsValues;
+  if (sparklineSource && sparklineSource.length >= 2) {
+    specials.sparkline = {
+      type: 'sparkline',
+      values: sparklineSource.slice(-MAX_SPARKLINE_POINTS),
+    };
+  }
+  const barsSource = options.barsValues ?? options.sparklineValues;
+  if (barsSource && barsSource.length >= 2) {
+    specials.bars = { type: 'bars', values: barsSource.slice(-MAX_BARS_POINTS) };
+  }
+  const delta = formatDeltaPercent(options.current, options.previous);
+  if (delta !== undefined) {
+    specials.delta = { type: 'delta', value: delta };
+  }
+  return Object.keys(specials).length > 0 ? specials : undefined;
+}
+
+/**
  * Create a metric that formats a numeric count compactly.
- * @param endpoint       Upstream endpoint.
- * @param presentation   Default color, icon, and label.
- * @param readCount      Reads the raw count from the projected payload.
- * @param suffix         Optional unit suffix (e.g., `' followers'`).
+ * @param endpoint        Upstream endpoint.
+ * @param presentation    Default color, icon, and label.
+ * @param readCount       Reads the raw count from the projected payload.
+ * @param suffix          Optional unit suffix (e.g., `' followers'`).
+ * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
  * @returns Metric rendering (e.g., `'4.2M'`), or `'n/a'` when the count is missing.
  */
 export function createCountMetric<P>(
   endpoint: MetricEndpoint<P>,
   presentation: MetricPresentation,
   readCount: (payload: P) => RawCount,
-  suffix = ''
+  suffix = '',
+  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined
 ): ServiceMetricConfig {
   return createMetric(endpoint, presentation, (payload) => ({
+    specials: buildSpecials?.(payload),
     value: formatCount(readCount(payload), suffix),
   }));
 }
 
 /**
  * Create a download metric whose suffix and default color come from the shared period table.
- * @param endpoint    Upstream endpoint.
- * @param period      Canonical download metric key (e.g., `'dw'` -> `/wk`, `'dt'` -> all-time).
- * @param readCount   Reads the raw download count from the projected payload.
- * @param overrides   Optional presentation overrides (e.g., `{ defaultLabel: 'installs' }`).
+ * @param endpoint        Upstream endpoint.
+ * @param period          Canonical download metric key (e.g., `'dw'` -> `/wk`, `'dt'` -> all-time).
+ * @param readCount       Reads the raw download count from the projected payload.
+ * @param overrides       Optional presentation overrides (e.g., `{ defaultLabel: 'installs' }`).
+ * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
  * @returns Metric rendering (e.g., `'1.1M/wk'`).
  */
 export function createDownloadsMetric<P>(
   endpoint: MetricEndpoint<P>,
   period: DownloadMetricKey,
   readCount: (payload: P) => RawCount,
-  overrides?: Partial<MetricPresentation>
+  overrides?: Partial<MetricPresentation>,
+  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined
 ): ServiceMetricConfig {
   const spec = DOWNLOAD_PERIODS[period];
   return createCountMetric(
     endpoint,
     {
+      autoSpecials: overrides?.autoSpecials,
       defaultColor: overrides?.defaultColor ?? spec.color,
       defaultIcon: overrides?.defaultIcon ?? 'download',
       defaultLabel: overrides?.defaultLabel ?? 'downloads',
+      defaultSpecial: overrides?.defaultSpecial,
     },
     readCount,
-    spec.suffix
+    spec.suffix,
+    buildSpecials
   );
 }
 
 /**
  * Create a community count metric whose label and default color come from the shared community table.
- * @param endpoint    Upstream endpoint.
- * @param kind        Community count kind (e.g., `'followers'`, `'likes'`, `'members'`).
- * @param icon        Service brand icon identifying the platform (e.g., `'discord'`).
- * @param readCount   Reads the raw count from the projected payload.
+ * @param endpoint        Upstream endpoint.
+ * @param kind            Community count kind (e.g., `'followers'`, `'likes'`, `'members'`).
+ * @param icon            Service brand icon identifying the platform (e.g., `'discord'`).
+ * @param readCount       Reads the raw count from the projected payload.
+ * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
+ * @param autoSpecials    Optional list of automatic inline widget kinds supported by this metric.
  * @returns Metric rendering (e.g., `'12.4k'` labeled `followers`).
  */
 export function createCommunityMetric<P>(
   endpoint: MetricEndpoint<P>,
   kind: CommunityMetricKind,
   icon: string,
-  readCount: (payload: P) => RawCount
+  readCount: (payload: P) => RawCount,
+  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined,
+  autoSpecials?: readonly BadgeSpecialKind[]
 ): ServiceMetricConfig {
   return createCountMetric(
     endpoint,
-    { defaultColor: COMMUNITY_KINDS[kind], defaultIcon: icon, defaultLabel: kind },
-    readCount
+    { autoSpecials, defaultColor: COMMUNITY_KINDS[kind], defaultIcon: icon, defaultLabel: kind },
+    readCount,
+    '',
+    buildSpecials
   );
 }
 
 /**
  * Create a metric that formats a byte size with binary units.
- * @param endpoint       Upstream endpoint.
- * @param presentation   Default color, icon, and label.
- * @param readBytes      Reads the raw byte count from the projected payload.
+ * @param endpoint        Upstream endpoint.
+ * @param presentation    Default color, icon, and label.
+ * @param readBytes       Reads the raw byte count from the projected payload.
+ * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
  * @returns Metric rendering (e.g., `'7.8 kB'`), or `'n/a'` when the size is missing.
  */
 export function createBytesMetric<P>(
   endpoint: MetricEndpoint<P>,
   presentation: MetricPresentation,
-  readBytes: (payload: P) => RawCount
+  readBytes: (payload: P) => RawCount,
+  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined
 ): ServiceMetricConfig {
   return createMetric(endpoint, presentation, (payload) => ({
+    specials: buildSpecials?.(payload),
     value: formatBytes(readBytes(payload)),
   }));
 }
@@ -789,20 +1026,38 @@ export function createRelativeDateMetric<P>(
 
 /**
  * Create a rating metric on a 5-star scale (e.g., `'4.8/5'`), or `'unrated'` when missing or zero.
- * @param endpoint     Upstream endpoint.
- * @param readRating   Reads `[rating, maximum]` from the projected payload (e.g., `[94, 100]` for WordPress).
+ * @param endpoint        Upstream endpoint.
+ * @param readRating      Reads `[rating, maximum]` from the projected payload (e.g., `[94, 100]` for WordPress).
+ * @param readHistogram   Optional reader returning star vote counts (1-star through 5-star) for `bars` and `sparkline`.
  * @returns Metric rendering the rating scaled to 5 stars.
  */
 export function createRatingMetric<P>(
   endpoint: MetricEndpoint<P>,
-  readRating: (payload: P) => readonly [rating: unknown, maximum: number]
+  readRating: (payload: P) => readonly [rating: unknown, maximum: number],
+  readHistogram?: (payload: P) => readonly number[] | undefined
 ): ServiceMetricConfig {
-  return createMetric(endpoint, RATING, (payload) => {
+  const presentation: MetricPresentation = readHistogram
+    ? { ...RATING, autoSpecials: RATING_HISTOGRAM_SPECIALS }
+    : RATING;
+  return createMetric(endpoint, presentation, (payload) => {
     const [rawRating, maximum] = readRating(payload);
     const rating = typeof rawRating === 'number' && Number.isFinite(rawRating) ? rawRating : 0;
-    return {
-      value: rating > 0 && maximum > 0 ? `${((rating / maximum) * 5).toFixed(1)}/5` : 'unrated',
+    if (rating <= 0 || maximum <= 0) {
+      return { value: 'unrated' };
+    }
+    const scaled = (rating / maximum) * 5;
+    const percent = Math.min(MAX_PERCENT, Math.round((rating / maximum) * 100));
+    const specials: BadgeSpecialMap = {
+      bar: { type: 'bar', value: percent },
+      ring: { type: 'ring', value: percent },
+      steps: { done: Math.min(5, Math.max(0, Math.round(scaled))), total: 5, type: 'steps' },
     };
+    const histogram = readHistogram?.(payload);
+    if (histogram && histogram.length >= 2 && sumSeries(histogram) > 0) {
+      specials.bars = { type: 'bars', values: histogram.slice(0, MAX_BARS_POINTS) };
+      specials.sparkline = { type: 'sparkline', values: histogram.slice(0, MAX_SPARKLINE_POINTS) };
+    }
+    return { specials, value: `${scaled.toFixed(1)}/5` };
   });
 }
 
@@ -822,10 +1077,14 @@ export function createScoreMetric<P>(
   format: (achieved: number, maximum: number) => string,
   thresholds?: readonly ScoreColorThreshold[]
 ): ServiceMetricConfig {
-  return createMetric(endpoint, presentation, (payload) => {
-    const [achieved, maximum] = readScore(payload);
-    return buildScoreResult(achieved, maximum, format, thresholds);
-  });
+  return createMetric(
+    endpoint,
+    { autoSpecials: SCORE_SPECIALS, defaultSpecial: 'ring', ...presentation },
+    (payload) => {
+      const [achieved, maximum] = readScore(payload);
+      return buildScoreResult(achieved, maximum, format, thresholds);
+    }
+  );
 }
 
 /**
@@ -842,8 +1101,10 @@ export function createPercentScoreMetric<P>(
   readPercent: (payload: P) => unknown,
   thresholds?: readonly ScoreColorThreshold[]
 ): ServiceMetricConfig {
-  return createMetric(endpoint, presentation, (payload) =>
-    buildScoreResult(readPercent(payload), MAX_PERCENT, formatPercent, thresholds)
+  return createMetric(
+    endpoint,
+    { autoSpecials: SCORE_SPECIALS, defaultSpecial: 'ring', ...presentation },
+    (payload) => buildScoreResult(readPercent(payload), MAX_PERCENT, formatPercent, thresholds)
   );
 }
 
@@ -869,23 +1130,81 @@ export function createCoverageMetric<P>(
 }
 
 /**
+ * Extract valid `0`–`10` check scores from an OpenSSF Scorecard `checks` array.
+ * @param rawChecks   Upstream `checks` array (`[{ score: number }, ...]`).
+ * @returns Array of valid check scores (`0`–`10`), or `undefined` when fewer than 2 checks are present.
+ */
+export function readScorecardCheckScores(rawChecks: unknown): number[] | undefined {
+  if (!Array.isArray(rawChecks)) {
+    return undefined;
+  }
+  const scores: number[] = [];
+  for (const check of rawChecks) {
+    if (isJsonObject(check)) {
+      const score = readFiniteNumber(check.score);
+      if (score !== undefined && score >= 0 && score <= MAX_SCORECARD_SCORE) {
+        scores.push(score);
+      }
+    }
+  }
+  return scores.length >= 2 ? scores : undefined;
+}
+
+/**
  * Create an OpenSSF Scorecard score metric (`0`–`10`, e.g., `'8.3/10'`) with a ring gauge, colored
  * by threshold (`>= 7.0` emerald, `>= 4.0` amber, otherwise rose).
- * @param endpoint    Upstream endpoint.
- * @param readScore   Reads the raw aggregate score from the projected payload.
+ * @param endpoint     Upstream endpoint.
+ * @param readScore    Reads the raw aggregate score from the projected payload.
+ * @param readChecks   Optional reader returning valid `0`–`10` check scores for `strip`, `bars`, `sparkline`, and `steps`.
  * @returns Metric rendering the score plus ring, or `'n/a'` when missing.
  */
 export function createScorecardMetric<P>(
   endpoint: MetricEndpoint<P>,
-  readScore: (payload: P) => unknown
+  readScore: (payload: P) => unknown,
+  readChecks?: (payload: P) => readonly number[] | undefined
 ): ServiceMetricConfig {
-  return createScoreMetric(
-    endpoint,
-    { defaultColor: 'emerald', defaultIcon: 'shield-check', defaultLabel: 'openssf scorecard' },
-    (payload) => [readScore(payload), MAX_SCORECARD_SCORE],
-    formatScoreOutOf,
-    SCORECARD_THRESHOLDS
-  );
+  const presentation: MetricPresentation = {
+    autoSpecials: readChecks ? SCORECARD_CHECK_SPECIALS : SCORE_SPECIALS,
+    defaultColor: 'emerald',
+    defaultIcon: 'shield-check',
+    defaultLabel: 'openssf scorecard',
+    defaultSpecial: 'ring',
+  };
+  return createMetric(endpoint, presentation, (payload) => {
+    const base = buildScoreResult(
+      readScore(payload),
+      MAX_SCORECARD_SCORE,
+      formatScoreOutOf,
+      SCORECARD_THRESHOLDS
+    );
+    const checks = readChecks?.(payload);
+    if (!base.specials || !checks || checks.length < 2) {
+      return base;
+    }
+    const states: StripTickState[] = [];
+    for (const score of checks.slice(0, MAX_STRIP_TICKS)) {
+      const digit = Math.min(9, Math.max(0, Math.round((score / MAX_SCORECARD_SCORE) * 9)));
+      states.push(String(digit) as StripTickState);
+    }
+    let passedChecks = 0;
+    for (const score of checks) {
+      if (score >= 7) {
+        passedChecks += 1;
+      }
+    }
+    const stepTotal = Math.min(10, checks.length);
+    const stepDone = Math.round((passedChecks / checks.length) * stepTotal);
+    return {
+      ...base,
+      specials: {
+        ...base.specials,
+        bars: { type: 'bars', values: checks.slice(0, MAX_BARS_POINTS) },
+        sparkline: { type: 'sparkline', values: checks.slice(0, MAX_SPARKLINE_POINTS) },
+        steps: { done: stepDone, total: stepTotal, type: 'steps' },
+        strip: { states, type: 'strip' },
+      },
+    };
+  });
 }
 
 /**
@@ -900,14 +1219,44 @@ export function createCoverageService<P extends object>(
   const endpoint = createEndpoint<CoveragePayload>({
     api: options.api,
     page: options.page,
-    project: (data) =>
-      isJsonObject(data) ? { percent: options.readPercent(data as Partial<P>) } : undefined,
+    project: (data) => {
+      if (!isJsonObject(data)) {
+        return undefined;
+      }
+      const typed = data as Partial<P>;
+      const delta = options.readDelta
+        ? toFiniteNumber(options.readDelta(typed) as RawCount)
+        : undefined;
+      return delta === undefined
+        ? { percent: options.readPercent(typed) }
+        : { delta, percent: options.readPercent(typed) };
+    },
   });
+  const baseCoverage = createCoverageMetric(endpoint, options.icon, (payload) => payload.percent);
+  const coverageMetric: ServiceMetricConfig = options.readDelta
+    ? {
+        ...baseCoverage,
+        autoSpecials: [...SCORE_SPECIALS, 'delta'],
+        transform: (rawPayload, params) => {
+          const base = baseCoverage.transform(rawPayload, params);
+          const payload = rawPayload as CoveragePayload;
+          if (!base?.specials || payload.delta === undefined) {
+            return base;
+          }
+          const deltaText =
+            Math.abs(payload.delta) < 0.05
+              ? '0%'
+              : `${payload.delta > 0 ? '+' : ''}${Number(payload.delta.toFixed(1))}%`;
+          return {
+            ...base,
+            specials: { ...base.specials, delta: { type: 'delta', value: deltaText } },
+          };
+        },
+      }
+    : baseCoverage;
   return defineService({
     docs: { description: options.description, title: options.title },
-    metrics: {
-      coverage: createCoverageMetric(endpoint, options.icon, (payload) => payload.percent),
-    },
+    metrics: { coverage: coverageMetric },
     route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
   });
 }

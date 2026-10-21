@@ -4,6 +4,8 @@
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
+  DELTA_SPECIALS,
+  buildWindowDeltaSpecials,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
@@ -68,7 +70,13 @@ export const HEX_SERVICE = defineService({
   metrics: {
     dq: createDownloadsMetric(HEX_ENDPOINT, 'dq', (pkg) => pkg.recent),
     dt: createDownloadsMetric(HEX_ENDPOINT, 'dt', (pkg) => pkg.all),
-    dw: createDownloadsMetric(HEX_ENDPOINT, 'dw', (pkg) => pkg.week),
+    dw: createDownloadsMetric(
+      HEX_ENDPOINT,
+      'dw',
+      (pkg) => pkg.week,
+      { autoSpecials: DELTA_SPECIALS },
+      (pkg) => buildWindowDeltaSpecials(pkg.week, 7, pkg.recent, 90)
+    ),
     license: createLicenseMetric(HEX_ENDPOINT, (pkg) => pkg.license),
     v: createVersionMetric(
       HEX_ENDPOINT,

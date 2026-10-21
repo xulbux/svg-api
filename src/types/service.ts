@@ -2,7 +2,7 @@
  * Service types – Service preset configuration, Cloudflare Worker environment, and metric result types.
  */
 
-import type { BadgeSpecialElement } from './badge';
+import type { BadgeSpecialElement, BadgeSpecialKind, BadgeSpecialMap } from './badge';
 import type { DotState, ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -64,6 +64,8 @@ export interface MetricResult {
   redirectUrl: string;
   /** Optional right-hand special data visualization element. */
   special?: BadgeSpecialElement;
+  /** Optional candidate inline data visualization elements derived from upstream data (selected via `?special=<kind>`). */
+  specials?: BadgeSpecialMap;
   /** Right-side formatted metric value. */
   value?: string;
 }
@@ -134,12 +136,16 @@ export interface MetricEndpoint<P = unknown> {
 
 /** Default visual presentation of a metric badge before query overrides. */
 export interface MetricPresentation {
+  /** Inline data widget kinds supported automatically from upstream data without a manual payload (`?special=<kind>`). */
+  autoSpecials?: readonly BadgeSpecialKind[];
   /** Default theme color token when `?color=` is not provided. */
   defaultColor: ThemeColorName;
   /** Default icon slug when `?icon=` is not provided. */
   defaultIcon: string;
   /** Default left-side label when `?label=` is not provided. */
   defaultLabel: string;
+  /** Default inline data widget kind rendered when `?special=` is omitted. */
+  defaultSpecial?: BadgeSpecialKind;
 }
 
 /** Minimum percentage at which a score or coverage badge switches to a theme color. */

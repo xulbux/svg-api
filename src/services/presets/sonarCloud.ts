@@ -7,16 +7,23 @@
 
 import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
 import {
+  SCORE_SPECIALS,
+  buildRatioSpecials,
   createCoverageMetric,
+  formatCompactNumber,
   formatCount,
   formatPercent,
   toFiniteNumber,
 } from '@/services/metrics';
+import { MAX_STRIP_TICKS } from '@/svg/renderer';
 import type {
+  BadgeSpecialKind,
+  BadgeSpecialMap,
   MetricPresentation,
   MetricResult,
   ServiceDefinition,
   ServiceMetricConfig,
+  StripTickState,
   ThemeColorName,
 } from '@/types';
 
@@ -29,6 +36,12 @@ type SonarMeasureKey =
   | 'code_smells'
   | 'coverage'
   | 'duplicated_lines_density'
+  | 'new_bugs'
+  | 'new_code_smells'
+  | 'new_coverage'
+  | 'new_duplicated_lines_density'
+  | 'new_vulnerabilities'
+  | 'quality_gate_details'
   | 'reliability_rating'
   | 'security_rating'
   | 'sqale_rating'
@@ -54,11 +67,29 @@ const SONAR_MEASURE_KEYS: readonly SonarMeasureKey[] = [
   'code_smells',
   'coverage',
   'duplicated_lines_density',
+  'new_bugs',
+  'new_code_smells',
+  'new_coverage',
+  'new_duplicated_lines_density',
+  'new_vulnerabilities',
+  'quality_gate_details',
   'reliability_rating',
   'security_rating',
   'sqale_rating',
   'vulnerabilities',
 ];
+
+/** Automatic inline widget kinds supported by SonarCloud issue count metrics (`bugs`, `smells`, `vulnerabilities`). */
+const ISSUE_SPECIALS: readonly BadgeSpecialKind[] = ['delta', 'bar', 'ring'];
+
+/** Automatic inline widget kinds supported by SonarCloud letter grade metrics (`A`–`E`). */
+const GRADE_SPECIALS: readonly BadgeSpecialKind[] = ['steps', 'ring', 'bar'];
+
+/** Automatic inline widget kinds supported by SonarCloud `quality`. */
+const QUALITY_GATE_SPECIALS: readonly BadgeSpecialKind[] = ['strip', 'steps', 'ring', 'bar'];
+
+/** Automatic inline widget kinds supported by SonarCloud `duplication`. */
+const DUPLICATION_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'delta'];
 
 /** Letter grades of the SonarCloud ratings `1.0` (A) to `5.0` (E). */
 const SONAR_GRADES: readonly SonarGrade[] = [
@@ -78,6 +109,7 @@ const QUALITY_GATE_STATES: Readonly<Record<string, Partial<MetricResult>>> = {
 
 /** Shared presentation of the SonarCloud rating badges (label set per rating). */
 const RATING_PRESENTATION: MetricPresentation = {
+  autoSpecials: GRADE_SPECIALS,
   defaultColor: 'slate',
   defaultIcon: 'sonarcloud',
   defaultLabel: 'rating',
@@ -88,6 +120,21 @@ const RATING_PRESENTATION: MetricPresentation = {
 /** Check whether a measure key is one of the requested keys (guards against prototype keys). */
 function isSonarMeasureKey(key: string): key is SonarMeasureKey {
   return (SONAR_MEASURE_KEYS as readonly string[]).includes(key);
+}
+
+/** Read the value string of a SonarCloud measure (`measure.value` or `measure.period.value`). */
+function readMeasureValue(measure: Record<string, unknown>): string | undefined {
+  if (typeof measure.value === 'string') {
+    return measure.value;
+  }
+  if (isJsonObject(measure.period) && typeof measure.period.value === 'string') {
+    return measure.period.value;
+  }
+  const periods = Array.isArray(measure.periods) ? measure.periods : undefined;
+  const firstPeriod: unknown = periods ? periods[0] : undefined;
+  return isJsonObject(firstPeriod) && typeof firstPeriod.value === 'string'
+    ? firstPeriod.value
+    : undefined;
 }
 
 /** Project a SonarCloud measures response into a `metric -> value` map of the requested measures. */
@@ -101,23 +148,82 @@ function projectSonarMeasures(data: unknown): SonarMeasures | undefined {
     if (
       isJsonObject(measure) &&
       typeof measure.metric === 'string' &&
-      typeof measure.value === 'string' &&
       isSonarMeasureKey(measure.metric)
     ) {
-      measures[measure.metric] = measure.value;
+      const value = readMeasureValue(measure);
+      if (value !== undefined) {
+        measures[measure.metric] = value;
+      }
     }
   }
   return measures;
 }
 
+/** Build `strip`, `steps`, `ring`, and `bar` widgets from `quality_gate_details` conditions. */
+function buildQualityGateSpecials(detailsJson: string | undefined): BadgeSpecialMap | undefined {
+  if (!detailsJson) {
+    return undefined;
+  }
+  let parsed: unknown = undefined;
+  try {
+    parsed = JSON.parse(detailsJson) as unknown;
+  } catch {
+    return undefined;
+  }
+  const conditions =
+    isJsonObject(parsed) && Array.isArray(parsed.conditions) ? parsed.conditions : undefined;
+  if (!conditions || conditions.length === 0) {
+    return undefined;
+  }
+  const states: StripTickState[] = [];
+  let passedCount = 0;
+  for (const condition of conditions.slice(0, MAX_STRIP_TICKS)) {
+    if (isJsonObject(condition) && typeof condition.status === 'string') {
+      if (condition.status === 'OK') {
+        states.push('9');
+        passedCount += 1;
+      } else if (condition.status === 'WARN') {
+        states.push('4');
+      } else {
+        states.push('0');
+      }
+    }
+  }
+  if (states.length === 0) {
+    return undefined;
+  }
+  const total = states.length;
+  const ratio = buildRatioSpecials(passedCount, total);
+  return {
+    ...ratio,
+    steps: { done: passedCount, total, type: 'steps' },
+    strip: { states, type: 'strip' },
+  };
+}
+
 /** Transform the quality gate status into `passed`, `failed`, or `warning`. */
 function transformQualityGate(measures: SonarMeasures): Partial<MetricResult> {
   const status = measures.alert_status;
-  return (
-    (status && Object.hasOwn(QUALITY_GATE_STATES, status)
-      ? QUALITY_GATE_STATES[status]
-      : undefined) ?? { value: 'n/a' }
-  );
+  const base = (status && Object.hasOwn(QUALITY_GATE_STATES, status)
+    ? QUALITY_GATE_STATES[status]
+    : undefined) ?? { value: 'n/a' };
+  const specials = buildQualityGateSpecials(measures.quality_gate_details);
+  return specials ? { ...base, specials } : base;
+}
+
+/** Format a percentage point difference between a new-code measure and overall measure. */
+function formatPercentPointDelta(
+  newValue: number | undefined,
+  overallValue: number | undefined
+): string | undefined {
+  if (newValue === undefined || overallValue === undefined) {
+    return undefined;
+  }
+  const diff = newValue - overallValue;
+  if (Math.abs(diff) < 0.05) {
+    return '0%';
+  }
+  return `${diff > 0 ? '+' : ''}${Number(diff.toFixed(1))}%`;
 }
 
 /** Create the shared SonarCloud service preset. */
@@ -128,29 +234,86 @@ function createSonarCloudService(): ServiceDefinition {
     project: projectSonarMeasures,
   });
 
-  /** Create an issue count metric that turns emerald at zero. */
+  /** Create an issue count metric that turns emerald at zero and derives `delta`, `bar`, and `ring` from new code. */
   function createIssueCountMetric(
     key: SonarMeasureKey,
+    newKey: SonarMeasureKey,
     presentation: MetricPresentation
   ): ServiceMetricConfig {
-    return createMetric(measuresEndpoint, presentation, (measures) => {
-      const count = toFiniteNumber(measures[key]);
-      return { color: count === 0 ? 'emerald' : undefined, value: formatCount(count) };
-    });
+    return createMetric(
+      measuresEndpoint,
+      { ...presentation, autoSpecials: ISSUE_SPECIALS },
+      (measures) => {
+        const count = toFiniteNumber(measures[key]);
+        const newCount = toFiniteNumber(measures[newKey]);
+        const specials: BadgeSpecialMap = {};
+        if (newCount !== undefined) {
+          specials.delta = {
+            type: 'delta',
+            value:
+              newCount === 0 ? '0' : `${newCount > 0 ? '+' : ''}${formatCompactNumber(newCount)}`,
+          };
+          const ratio = buildRatioSpecials(newCount, count && count > 0 ? count : undefined);
+          if (ratio) {
+            specials.bar = ratio.bar;
+            specials.ring = ratio.ring;
+          }
+        }
+        return {
+          color: count === 0 ? 'emerald' : undefined,
+          specials: Object.keys(specials).length > 0 ? specials : undefined,
+          value: formatCount(count),
+        };
+      }
+    );
   }
 
-  /** Create a letter rating metric (`A`–`E`). */
+  /** Create a letter rating metric (`A`–`E`) with `steps`, `ring`, and `bar` widgets. */
   function createGradeMetric(key: SonarMeasureKey, label: string): ServiceMetricConfig {
     return createMetric(
       measuresEndpoint,
       { ...RATING_PRESENTATION, defaultLabel: label },
       (measures) => {
         const rating = toFiniteNumber(measures[key]);
-        const grade = rating === undefined ? undefined : SONAR_GRADES[Math.round(rating) - 1];
-        return grade ? { color: grade.color, value: grade.letter } : { value: 'n/a' };
+        const rounded = rating === undefined ? undefined : Math.round(rating);
+        const grade = rounded === undefined ? undefined : SONAR_GRADES[rounded - 1];
+        if (!grade || rounded === undefined) {
+          return { value: 'n/a' };
+        }
+        const done = Math.min(5, Math.max(1, 6 - rounded));
+        const percent = done * 20;
+        return {
+          color: grade.color,
+          specials: {
+            bar: { type: 'bar', value: percent },
+            ring: { type: 'ring', value: percent },
+            steps: { done, total: 5, type: 'steps' },
+          },
+          value: grade.letter,
+        };
       }
     );
   }
+
+  const baseCoverage = createCoverageMetric(measuresEndpoint, 'sonarcloud', (measures) =>
+    toFiniteNumber(measures.coverage)
+  );
+  const coverageMetric: ServiceMetricConfig = {
+    ...baseCoverage,
+    autoSpecials: [...SCORE_SPECIALS, 'delta'],
+    transform: (rawMeasures, params) => {
+      const base = baseCoverage.transform(rawMeasures, params);
+      const measures = rawMeasures as SonarMeasures;
+      const delta = formatPercentPointDelta(
+        toFiniteNumber(measures.new_coverage),
+        toFiniteNumber(measures.coverage)
+      );
+      if (!base?.specials || !delta) {
+        return base;
+      }
+      return { ...base, specials: { ...base.specials, delta: { type: 'delta', value: delta } } };
+    },
+  };
 
   return defineService({
     docs: {
@@ -167,36 +330,59 @@ function createSonarCloudService(): ServiceDefinition {
       vulns: 'vulnerabilities',
     },
     metrics: {
-      bugs: createIssueCountMetric('bugs', {
+      bugs: createIssueCountMetric('bugs', 'new_bugs', {
         defaultColor: 'rose',
         defaultIcon: 'bug',
         defaultLabel: 'bugs',
       }),
-      coverage: createCoverageMetric(measuresEndpoint, 'sonarcloud', (measures) =>
-        toFiniteNumber(measures.coverage)
-      ),
+      coverage: coverageMetric,
       duplication: createMetric(
         measuresEndpoint,
-        { defaultColor: 'sky', defaultIcon: 'copy', defaultLabel: 'duplicated lines' },
+        {
+          autoSpecials: DUPLICATION_SPECIALS,
+          defaultColor: 'sky',
+          defaultIcon: 'copy',
+          defaultLabel: 'duplicated lines',
+        },
         (measures) => {
           const percent = toFiniteNumber(measures.duplicated_lines_density);
-          return { value: percent === undefined ? 'n/a' : formatPercent(percent) };
+          if (percent === undefined) {
+            return { value: 'n/a' };
+          }
+          const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+          const delta = formatPercentPointDelta(
+            toFiniteNumber(measures.new_duplicated_lines_density),
+            percent
+          );
+          return {
+            specials: {
+              bar: { type: 'bar', value: clamped },
+              ...(delta ? { delta: { type: 'delta', value: delta } } : {}),
+              ring: { type: 'ring', value: clamped },
+            },
+            value: formatPercent(percent),
+          };
         }
       ),
       maintainability: createGradeMetric('sqale_rating', 'maintainability'),
       quality: createMetric(
         measuresEndpoint,
-        { defaultColor: 'emerald', defaultIcon: 'sonarcloud', defaultLabel: 'quality gate' },
+        {
+          autoSpecials: QUALITY_GATE_SPECIALS,
+          defaultColor: 'emerald',
+          defaultIcon: 'sonarcloud',
+          defaultLabel: 'quality gate',
+        },
         transformQualityGate
       ),
       reliability: createGradeMetric('reliability_rating', 'reliability'),
       security: createGradeMetric('security_rating', 'security'),
-      smells: createIssueCountMetric('code_smells', {
+      smells: createIssueCountMetric('code_smells', 'new_code_smells', {
         defaultColor: 'amber',
         defaultIcon: 'wind',
         defaultLabel: 'code smells',
       }),
-      vulnerabilities: createIssueCountMetric('vulnerabilities', {
+      vulnerabilities: createIssueCountMetric('vulnerabilities', 'new_vulnerabilities', {
         defaultColor: 'orange',
         defaultIcon: 'shield-alert',
         defaultLabel: 'vulnerabilities',

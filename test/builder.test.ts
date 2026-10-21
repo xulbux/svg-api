@@ -77,7 +77,12 @@ interface BuilderCore {
     rawPerLine?: string
   ) => string;
   composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
-  composeSpecial: (kind: string, payload: string, modifier: string) => string;
+  composeSpecial: (
+    kind: string,
+    payload: string,
+    modifier: string,
+    isAutoAllowed?: boolean
+  ) => string;
   computeGridFocusIndex: (
     key: string,
     index: number,
@@ -499,6 +504,7 @@ describe('builder client core', () => {
 
   it('composes and splits the composite icon, animation, and widget values', () => {
     const specialOptions = findField(getBuilderSchema('badge'), 'special').options ?? [];
+    const serviceSpecialOptions = findField(getBuilderSchema('service'), 'special').options ?? [];
     expect(core.composeIconPair('', 'arrow-right', false)).toBe('none,arrow-right');
     expect(core.composeIconPair('', 'star', true)).toBe(',star');
     expect(core.composeIconPair('rocket', '', false)).toBe('rocket');
@@ -525,7 +531,30 @@ describe('builder client core', () => {
       modifier: '',
       payload: '+24%',
     });
+    expect(core.splitSpecial('sparkline', serviceSpecialOptions)).toEqual({
+      kind: 'sparkline',
+      modifier: '',
+      payload: '',
+    });
+    expect(core.splitSpecial('bar:static', serviceSpecialOptions)).toEqual({
+      kind: 'bar',
+      modifier: 'static',
+      payload: '',
+    });
+    expect(core.splitSpecial('ring:auto:pulse', serviceSpecialOptions)).toEqual({
+      kind: 'ring',
+      modifier: 'pulse',
+      payload: '',
+    });
+    expect(core.splitSpecial('none', serviceSpecialOptions)).toEqual({
+      kind: 'none',
+      modifier: '',
+      payload: '',
+    });
     expect(core.composeSpecial('sparkline', ' ', '')).toBe('');
+    expect(core.composeSpecial('sparkline', ' ', '', true)).toBe('sparkline');
+    expect(core.composeSpecial('bar', ' ', 'static', true)).toBe('bar:static');
+    expect(core.composeSpecial('none', '', '')).toBe('none');
     expect(core.collectStackSlugs('c,cpp:4|rust@amber\n py ; ts:2|cpu@emerald:1')).toEqual([
       'c',
       'cpp',
@@ -972,9 +1001,23 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(serviceHtml).toContain(
       '<span class="builder-label-text">Owner</span><span class="builder-required" aria-hidden="true" hidden>*</span>'
     );
+    expect(serviceHtml).toContain(
+      '<option value="npm" data-badge="Auto" selected>npm (npm)</option>'
+    );
+    expect(serviceHtml).toContain(
+      'Services and metrics marked Auto offer automatic data widgets from live upstream data.'
+    );
+    expect(serviceHtml).toContain('<option value="docker">Docker Hub (docker)</option>');
+    expect(serviceHtml).toContain('<option value="dl" data-badge="Auto">');
+    expect(serviceHtml).toContain('<option value="v" selected>v · npm</option>');
+    expect(serviceHtml).toContain('id="special-help-trigger"');
+    expect(serviceHtml).toContain('id="special-syntax-help" popover role="dialog"');
     expect(builderScript).toContain("querySelector('.builder-label-text')");
+    expect(builderScript).toContain('resolveSpecialHint(');
     expect(builderScript).not.toContain('labelElement.textContent');
     const badgeHtml = renderBuilderHtml('badge');
+    expect(badgeHtml).toContain('id="special-help-trigger"');
+    expect(badgeHtml).toContain('id="special-syntax-help" popover role="dialog"');
     expect(badgeHtml).toMatch(/data-field="color" data-control="color">/);
     expect(badgeHtml).toContain('role="radiogroup" aria-labelledby="field-color-label"');
     expect(badgeHtml).toMatch(/data-field="anim" data-control="anim" role="group"/);

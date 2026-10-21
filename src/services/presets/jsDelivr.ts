@@ -9,13 +9,28 @@ import {
   defineService,
   isJsonObject,
 } from '@/services/endpoint';
-import { createCountMetric, readFiniteNumber } from '@/services/metrics';
+import {
+  SERIES_DELTA_SPECIALS,
+  bucketSeries,
+  buildSeriesSpecials,
+  createCountMetric,
+  readFiniteNumber,
+  sumSeries,
+} from '@/services/metrics';
 import type { MetricEndpoint, MetricPresentation } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Projected jsDelivr package hit statistics (`data.jsdelivr.com/v1/stats/packages/npm/:pkg`). */
 interface JsDelivrHitsProjection {
+  /** Compact bucketed bar series for the period. */
+  bars?: number[];
+  /** Current comparison total (`hits.total` when `hits.prev.total` is present, else second half of `dates`). */
+  currDelta?: number;
+  /** Previous comparison total (`hits.prev.total` when present, else first half of `dates`). */
+  prevDelta?: number;
+  /** Compact bucketed sparkline series for the period. */
+  sparkline?: number[];
   /** Total hits in the requested period. */
   total?: number;
 }
@@ -24,6 +39,7 @@ interface JsDelivrHitsProjection {
 
 /** Default presentation for jsDelivr hit metrics. */
 const HITS: MetricPresentation = {
+  autoSpecials: SERIES_DELTA_SPECIALS,
   defaultColor: 'orange',
   defaultIcon: 'jsdelivr',
   defaultLabel: 'jsdelivr',
@@ -31,13 +47,42 @@ const HITS: MetricPresentation = {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Project a jsDelivr statistics payload to its total hit count (discarding per-day/per-version breakdowns). */
+/** Extract chronologically ordered daily hit counts from `hits.dates`. */
+function readDailySeries(dates: unknown): number[] {
+  if (!isJsonObject(dates)) {
+    return [];
+  }
+  const daily: number[] = [];
+  for (const dateKey of Object.keys(dates).toSorted()) {
+    daily.push(readFiniteNumber(dates[dateKey]) ?? 0);
+  }
+  return daily;
+}
+
+/** Project a jsDelivr statistics payload to its total hit count, prior period total, and bucketed series. */
 function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
   const hits = isJsonObject(data.hits) ? data.hits : undefined;
-  return { total: readFiniteNumber(hits?.total) };
+  const prev = isJsonObject(hits?.prev) ? hits.prev : undefined;
+  const total = readFiniteNumber(hits?.total);
+  const prevTotal = readFiniteNumber(prev?.total);
+  const daily = readDailySeries(hits?.dates);
+  const mid = Math.floor(daily.length / 2);
+  let currDelta = total !== undefined && prevTotal !== undefined ? total : undefined;
+  let prevDelta = total !== undefined && prevTotal !== undefined ? prevTotal : undefined;
+  if (currDelta === undefined && mid >= 1) {
+    currDelta = sumSeries(daily, mid, daily.length);
+    prevDelta = sumSeries(daily, 0, mid);
+  }
+  return {
+    bars: daily.length >= 2 ? bucketSeries(daily, 12) : undefined,
+    currDelta,
+    prevDelta,
+    sparkline: daily.length >= 2 ? bucketSeries(daily, 15) : undefined,
+    total,
+  };
 }
 
 /** Create a jsDelivr npm package statistics endpoint for a period (`week`, `month`, `year`; Refreshed daily). */
@@ -50,6 +95,23 @@ function createJsDelivrEndpoint(period: string): MetricEndpoint<JsDelivrHitsProj
   });
 }
 
+/** Create a jsDelivr hit count metric with automatic `sparkline`, `bars`, and `delta` widgets. */
+function createJsDelivrMetric(period: string, suffix: string) {
+  return createCountMetric(
+    createJsDelivrEndpoint(period),
+    HITS,
+    (stats) => stats.total,
+    suffix,
+    (stats) =>
+      buildSeriesSpecials({
+        barsValues: stats.bars,
+        current: stats.currDelta,
+        previous: stats.prevDelta,
+        sparklineValues: stats.sparkline,
+      })
+  );
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** jsDelivr CDN statistics service preset (`jsdelivr`). */
@@ -60,9 +122,9 @@ export const JSDELIVR_SERVICE = defineService({
   },
   metricAliases: { hits: 'hm' },
   metrics: {
-    hm: createCountMetric(createJsDelivrEndpoint('month'), HITS, (stats) => stats.total, '/mo'),
-    hw: createCountMetric(createJsDelivrEndpoint('week'), HITS, (stats) => stats.total, '/wk'),
-    hy: createCountMetric(createJsDelivrEndpoint('year'), HITS, (stats) => stats.total, '/yr'),
+    hm: createJsDelivrMetric('month', '/mo'),
+    hw: createJsDelivrMetric('week', '/wk'),
+    hy: createJsDelivrMetric('year', '/yr'),
   },
   route: NPM_PACKAGE_ROUTE,
 });

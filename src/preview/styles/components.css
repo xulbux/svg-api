@@ -110,7 +110,10 @@ button.btn-secondary {
 
 .section-desc code,
 .section-title code,
-.section-subhead code {
+.section-subhead code,
+.builder-hint code,
+.stack-help-desc code,
+.stack-help-row dd code {
   padding: 1px 6px;
   border: 1px solid var(--c-border);
   border-radius: 5px;

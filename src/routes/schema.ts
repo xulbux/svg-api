@@ -27,11 +27,7 @@ import {
   BUTTON_SIZE_PRESETS,
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
-  MAX_BARS_POINTS,
   MAX_LABEL_LENGTH,
-  MAX_SPARKLINE_POINTS,
-  MAX_STEPS_COUNT,
-  MAX_STRIP_TICKS,
 } from '@/svg/renderer';
 import {
   STACK_GAP_RANGE,
@@ -159,8 +155,20 @@ function buildDotField(): BuilderField {
 }
 
 /** Build the `?special=` inline data widget field (every kind from the parser's `SPECIAL_ELEMENT_KINDS`). */
-function buildSpecialField(): BuilderField {
-  const options: BuilderOption[] = [buildDefaultOption('None')];
+function buildSpecialField(hasPresetValue = false): BuilderField {
+  const defaultDescription = hasPresetValue
+    ? 'Auto-marked widgets use live upstream data when Data is left empty.'
+    : 'Optional inline chart, gauge, or delta pill next to the badge value.';
+  const options: BuilderOption[] = hasPresetValue
+    ? [
+        { ...buildDefaultOption(), description: defaultDescription },
+        {
+          description: 'Hides any default inline widget of the selected metric.',
+          label: 'none (remove preset widget)',
+          value: 'none',
+        },
+      ]
+    : [{ ...buildDefaultOption('None'), description: defaultDescription }];
   for (const kind of SPECIAL_ELEMENT_KINDS) {
     const detail = SPECIAL_KIND_DETAILS[kind];
     const modifiers: BuilderOption[] = [];
@@ -170,11 +178,18 @@ function buildSpecialField(): BuilderField {
         modifiers.push({ label: capitalizeWord(modifier), value: modifier });
       }
     }
-    options.push({ label: detail.label, modifiers, placeholder: detail.example, value: kind });
+    options.push({
+      description: detail.description,
+      label: detail.label,
+      modifiers,
+      placeholder: detail.example,
+      value: kind,
+    });
   }
   return {
     control: 'special',
-    description: `Sparklines take 2 to ${MAX_SPARKLINE_POINTS} numbers, bars 2 to ${MAX_BARS_POINTS} numbers, steps done/total up to ${MAX_STEPS_COUNT}, strips up to ${MAX_STRIP_TICKS} ticks from 0 to 9, and bar/ring a percentage.`,
+    description: defaultDescription,
+    hasPresetValue,
     id: 'special',
     label: 'Data widget',
     options,
@@ -344,6 +359,8 @@ function buildServiceOptions(): BuilderServiceOption[] {
     const metrics: BuilderServiceMetric[] = [];
     for (const [metric, config] of Object.entries(service.metrics)) {
       metrics.push({
+        autoSpecials: config.autoSpecials,
+        defaultSpecial: config.defaultSpecial,
         label: `${metric} · ${config.defaultLabel}`,
         redirect: deriveRedirectTemplate(config, service, defaultOwner),
         value: metric,
@@ -440,7 +457,14 @@ function buildBadgeFields(): BuilderField[] {
 /** Build the service badge builder fields. */
 function buildServiceFields(): BuilderField[] {
   return [
-    { control: 'select', id: 'service', label: 'Service', options: [] },
+    {
+      control: 'select',
+      description:
+        'Services and metrics marked Auto offer automatic data widgets from live upstream data.',
+      id: 'service',
+      label: 'Service',
+      options: [],
+    },
     {
       control: 'text',
       hasDynamicRequirement: true,
@@ -466,7 +490,7 @@ function buildServiceFields(): BuilderField[] {
       true
     ),
     buildDotField(),
-    buildSpecialField(),
+    buildSpecialField(true),
     buildAnimField('pair'),
   ];
 }

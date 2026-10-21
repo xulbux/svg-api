@@ -257,6 +257,72 @@ const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
 const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
+      {
+        alt: 'npm Monthly Downloads Sparkline',
+        path: '/badge/npm/hono/dl?special=sparkline',
+        sample: {
+          downloads: [
+            { downloads: 120_000 },
+            { downloads: 145_000 },
+            { downloads: 138_000 },
+            { downloads: 172_000 },
+            { downloads: 195_000 },
+            { downloads: 210_000 },
+            { downloads: 248_000 },
+          ],
+        },
+      },
+      {
+        alt: 'jsDelivr Monthly Hits Delta',
+        path: '/badge/jsdelivr/jquery/hm?special=delta',
+        sample: {
+          dates: {
+            '2026-03-01': 50_000_000,
+            '2026-03-02': 52_000_000,
+            '2026-03-03': 61_000_000,
+            '2026-03-04': 64_000_000,
+          },
+          total: 1_600_000_000,
+        },
+      },
+      {
+        alt: 'Read the Docs Build History Strip',
+        path: '/badge/rtd/pip/build?special=strip',
+        sample: {
+          results: [
+            { state: { code: 'finished' }, success: true },
+            { state: { code: 'finished' }, success: true },
+            { state: { code: 'finished' }, success: false },
+            { state: { code: 'finished' }, success: true },
+            { state: { code: 'finished' }, success: true },
+          ],
+        },
+      },
+      {
+        alt: 'WordPress Star Histogram Bars',
+        path: '/badge/wp/akismet/rating?special=bars',
+        sample: { rating: 94, ratings: { '1': 12, '2': 5, '3': 18, '4': 64, '5': 420 } },
+      },
+      {
+        alt: 'OpenSSF Scorecard Check Strip',
+        path: '/badge/scorecard/ossf/scorecard/score?special=strip',
+        sample: {
+          checks: [{ score: 10 }, { score: 9 }, { score: 8 }, { score: 10 }, { score: 7 }],
+          score: 8.3,
+        },
+      },
+      {
+        alt: 'SonarCloud Maintainability Steps',
+        path: '/badge/sonarcloud/apache_struts/maintainability?special=steps',
+        sample: { component: { measures: [{ metric: 'sqale_rating', value: '1.0' }] } },
+      },
+    ],
+    subtitle:
+      'Pass a bare widget kind (?special=sparkline, bars, delta, bar, ring, steps, or strip) on supported metrics to populate the widget from live upstream data, ?special=none to hide a default preset widget, or ?special=<kind>:<payload> to supply custom numbers.',
+    title: 'Automatic Inline Data Widgets (?special=sparkline|bars|delta|...)',
+  },
+  {
+    items: [
       { alt: 'PyPI Version', path: '/badge/pypi/xulbux/v', sample: 'v1.4.0' },
       { alt: 'PyPI Total Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
       { alt: 'PyPI Monthly Downloads', path: '/badge/pypi/xulbux/dl', sample: '3.3k/mo' },
@@ -1226,6 +1292,13 @@ function buildServiceParamRows(): ParamTableRow[] {
       description: 'Overrides the default left-hand label text on any service badge.',
       name: '?label=',
       values: '~any string',
+    },
+    {
+      defaultVal: '~service preset',
+      description:
+        'Auto-populates an inline widget from live upstream data on supported metrics when passed without a payload (or with :pulse / :static), hides a default preset widget with none, or overrides with custom data (<kind>:<payload>).',
+      name: '?special=',
+      values: 'none | sparkline | bars | delta | bar | ring | steps | strip | <kind>:<payload>',
     },
     {
       defaultVal: '~service preset',

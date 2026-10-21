@@ -82,7 +82,7 @@ When `:owner` is omitted, it defaults to the `DEFAULT_GH_OWNER` binding (`missin
 | **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `license` (`none` without a license, `custom` when unrecognized) | `slate` (`scale`) | `github.com/xulbux/:repo` |
 | **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `last commit` | `rose` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
 | **`release`** | `/badge/gh/python-lib-xulbux/release` | `release` | `indigo` (`tag`) | `github.com/xulbux/:repo/releases` |
-| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |
+| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`; auto `bars`, `delta`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |
 
 ### Markdown Examples
 
@@ -104,4 +104,4 @@ All `/badge/gh/*` routes accept the standard badge query parameters plus `?label
 -   `?label=<text>` (override the left-hand label text on service badges)
 -   `?dot=<theme>|online|degraded|incident|offline|maintenance|beta|standby|none` (any theme color or status preset name)
 -   `?anim=sheen|auto|spin|shake|nudge|pulse|float|<left>,<right>|sheen,<mode>|sheen,<left>,<right>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `<left>,<right>` like `none,nudge` or `shake,nudge` to animate left and right icons independently, `sheen,auto` for both, or `none` to disable all animations)
--   `?special=sparkline:...|bars:...|bar:...|steps:...|ring:...|strip:...|delta:...`
+-   `?special=sparkline|bars|bar|steps|ring|strip|delta|none` (populate a supported widget automatically from live upstream data, pass `none` to hide a default preset widget, or pass `<kind>:<payload>` for custom numbers)

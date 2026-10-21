@@ -8,6 +8,8 @@ import { createCoverageService } from '@/services/metrics';
 
 /** Partial Coveralls repository payload (`coveralls.io/github/:owner/:repo.json`). */
 interface CoverallsRepoPayload {
+  /** Signed percentage point change from the previous build. */
+  coverage_change: number | null;
   /** Latest build coverage percentage. */
   covered_percent: number | null;
 }
@@ -20,6 +22,7 @@ export const COVERALLS_SERVICE = createCoverageService<CoverallsRepoPayload>({
   description: 'Latest-build test coverage of a GitHub repository (ring gauge, colored by %).',
   icon: 'coveralls',
   page: 'https://coveralls.io/github/{owner}/{target}',
+  readDelta: (repo) => repo.coverage_change,
   readPercent: (repo) => repo.covered_percent,
   title: 'Coveralls',
 });

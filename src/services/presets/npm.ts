@@ -3,21 +3,25 @@
  */
 
 import {
+  CACHE_TTL,
   NPM_PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
   isJsonObject,
-  pickFields,
 } from '@/services/endpoint';
 import {
+  SERIES_DELTA_SPECIALS,
+  bucketSeries,
+  buildSeriesSpecials,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readFiniteNumber,
   readLicenseName,
   readText,
+  sumSeries,
 } from '@/services/metrics';
-import type { MetricEndpoint } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -31,10 +35,28 @@ interface NpmLatestProjection {
   version?: string;
 }
 
-/** Partial npm Downloads API payload (`api.npmjs.org/downloads/point/:period/:pkg`). */
-interface NpmDownloadsPayload {
-  /** Total downloads in the requested period. */
-  downloads: number;
+/** Projected npm Downloads API payload (`api.npmjs.org/downloads/range/last-year/:pkg`). */
+interface NpmDownloadsProjection {
+  /** 10-bar 30-day download histogram. */
+  bars30d?: number[];
+  /** 12-month download series (30-day buckets). */
+  bars12m?: number[];
+  /** Current window sum for the `dl` delta comparison. */
+  currDl?: number;
+  /** Downloads in the last 30 days. */
+  dl?: number;
+  /** Downloads in the last 7 days. */
+  dw?: number;
+  /** Downloads in the last 365 days. */
+  dy?: number;
+  /** Prior window sum for the `dl` delta comparison. */
+  prevDl?: number;
+  /** Downloads in the prior 7-day window (days -14 to -8). */
+  prevDw?: number;
+  /** 7-day daily download series. */
+  series7d?: number[];
+  /** 15-point 30-day download series (2-day buckets). */
+  series30d?: number[];
 }
 
 /** Remaining key budget of the bounded `exports` walk. */
@@ -50,9 +72,6 @@ const MAX_EXPORTS_DEPTH = 4;
 
 /** Maximum number of `exports` keys visited (huge subpath maps stay cheap). */
 const MAX_EXPORTS_KEYS = 256;
-
-/** Projection of the npm Downloads API (only the count). */
-const DOWNLOADS_PROJECTION = pickFields<NpmDownloadsPayload>(['downloads']);
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -105,14 +124,60 @@ function projectNpmLatest(data: unknown): NpmLatestProjection | undefined {
   };
 }
 
-/** Create an npm Downloads API endpoint for a period (`last-week`, `last-month`, `last-year`). */
-function createNpmDownloadsEndpoint(period: string): MetricEndpoint<Partial<NpmDownloadsPayload>> {
-  return createEndpoint({
-    api: `https://api.npmjs.org/downloads/point/${period}/{npm}`,
-    page: 'https://www.npmjs.com/package/{npm}',
-    project: DOWNLOADS_PROJECTION,
-  });
+/** Project npm range downloads into weekly/monthly/yearly totals, deltas, and compact series. */
+function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const pointCount = readFiniteNumber(data.downloads);
+  if (pointCount !== undefined) {
+    return { dl: pointCount, dw: pointCount, dy: pointCount };
+  }
+  if (!Array.isArray(data.downloads)) {
+    return {};
+  }
+  const daily: number[] = [];
+  for (const entry of data.downloads) {
+    if (isJsonObject(entry)) {
+      daily.push(readFiniteNumber(entry.downloads) ?? 0);
+    }
+  }
+  if (daily.length === 0) {
+    return {};
+  }
+  const totalDays = daily.length;
+  const recent30d = daily.slice(-30);
+  const halfRecent = Math.floor(recent30d.length / 2);
+  let currDl: number | undefined = undefined;
+  let prevDl: number | undefined = undefined;
+  if (totalDays >= 60) {
+    currDl = sumSeries(daily, totalDays - 30);
+    prevDl = sumSeries(daily, totalDays - 60, totalDays - 30);
+  } else if (halfRecent >= 2) {
+    currDl = sumSeries(recent30d, halfRecent);
+    prevDl = sumSeries(recent30d, 0, halfRecent);
+  }
+  return {
+    bars12m: bucketSeries(daily, 12),
+    bars30d: bucketSeries(recent30d, 10),
+    currDl,
+    dl: sumSeries(daily, totalDays - 30),
+    dw: sumSeries(daily, totalDays - 7),
+    dy: sumSeries(daily),
+    prevDl,
+    prevDw: totalDays >= 14 ? sumSeries(daily, totalDays - 14, totalDays - 7) : undefined,
+    series7d: daily.slice(-7),
+    series30d: bucketSeries(recent30d, 15),
+  };
 }
+
+/** Shared npm Downloads range API endpoint (`last-year` covers `dw`, `dl`, and `dy` in one request). */
+const NPM_DOWNLOADS_ENDPOINT = createEndpoint({
+  api: 'https://api.npmjs.org/downloads/range/last-year/{npm}',
+  page: 'https://www.npmjs.com/package/{npm}',
+  project: projectNpmDownloads,
+  ttl: CACHE_TTL.daily,
+});
 
 /** npm Registry latest version metadata endpoint. */
 const NPM_LATEST_ENDPOINT = createEndpoint({
@@ -134,19 +199,43 @@ export const NPM_SERVICE = defineService({
   metricAliases: { dt: 'dy' },
   metrics: {
     dl: createDownloadsMetric(
-      createNpmDownloadsEndpoint('last-month'),
+      NPM_DOWNLOADS_ENDPOINT,
       'dl',
-      (stats) => stats.downloads
+      (stats) => stats.dl,
+      { autoSpecials: SERIES_DELTA_SPECIALS },
+      (stats) =>
+        buildSeriesSpecials({
+          barsValues: stats.bars30d,
+          current: stats.currDl,
+          previous: stats.prevDl,
+          sparklineValues: stats.series30d,
+        })
     ),
     dw: createDownloadsMetric(
-      createNpmDownloadsEndpoint('last-week'),
+      NPM_DOWNLOADS_ENDPOINT,
       'dw',
-      (stats) => stats.downloads
+      (stats) => stats.dw,
+      { autoSpecials: SERIES_DELTA_SPECIALS },
+      (stats) =>
+        buildSeriesSpecials({
+          barsValues: stats.series7d,
+          current: stats.dw,
+          previous: stats.prevDw,
+          sparklineValues: stats.series7d,
+        })
     ),
     dy: createDownloadsMetric(
-      createNpmDownloadsEndpoint('last-year'),
+      NPM_DOWNLOADS_ENDPOINT,
       'dy',
-      (stats) => stats.downloads
+      (stats) => stats.dy,
+      { autoSpecials: SERIES_DELTA_SPECIALS },
+      (stats) =>
+        buildSeriesSpecials({
+          barsValues: stats.bars12m,
+          current: stats.dl,
+          previous: stats.prevDl,
+          sparklineValues: stats.bars12m,
+        })
     ),
     license: createLicenseMetric(NPM_LATEST_ENDPOINT, (latest) => latest.license),
     types: createMetric(

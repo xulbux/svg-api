@@ -4,11 +4,14 @@
  * The group segment may be omitted for artifacts whose group equals the artifact name (e.g., `hiccup`).
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
+  SERIES_DELTA_SPECIALS,
+  buildSeriesSpecials,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readFiniteNumber,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -23,6 +26,8 @@ interface ClojarsLicense {
 interface ClojarsArtifactPayload {
   /** All-time downloads of every version. */
   downloads: number;
+  /** Per-version download counts (`{ "1.0.0": 4210, ... }`). */
+  downloads_per_version?: Record<string, number>;
   /** Latest non-snapshot release, or `null` when only snapshots exist. */
   latest_release: string | null;
   /** Latest version including snapshots. */
@@ -39,11 +44,37 @@ const CLOJARS_ENDPOINT = createEndpoint({
   page: 'https://clojars.org/{path}',
   project: pickFields<ClojarsArtifactPayload>([
     'downloads',
+    'downloads_per_version',
     'latest_release',
     'latest_version',
     'licenses',
   ]),
 });
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Read the per-version download series and latest-vs-previous release delta from `downloads_per_version`. */
+function buildClojarsDownloadSpecials(artifact: Partial<ClojarsArtifactPayload>) {
+  const map = isJsonObject(artifact.downloads_per_version)
+    ? artifact.downloads_per_version
+    : undefined;
+  const series: number[] = [];
+  if (map) {
+    for (const value of Object.values(map)) {
+      const count = readFiniteNumber(value);
+      if (count !== undefined) {
+        series.push(count);
+      }
+    }
+  }
+  const recent = series.slice(-12);
+  return buildSeriesSpecials({
+    barsValues: recent,
+    current: recent.at(-1),
+    previous: recent.length >= 2 ? recent.at(-2) : undefined,
+    sparklineValues: recent,
+  });
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -56,7 +87,13 @@ export const CLOJARS_SERVICE = defineService({
   },
   metricAliases: { dl: 'dt' },
   metrics: {
-    dt: createDownloadsMetric(CLOJARS_ENDPOINT, 'dt', (artifact) => artifact.downloads),
+    dt: createDownloadsMetric(
+      CLOJARS_ENDPOINT,
+      'dt',
+      (artifact) => artifact.downloads,
+      { autoSpecials: SERIES_DELTA_SPECIALS },
+      buildClojarsDownloadSpecials
+    ),
     license: createLicenseMetric(CLOJARS_ENDPOINT, (artifact) =>
       Array.isArray(artifact.licenses) ? artifact.licenses[0]?.name : undefined
     ),

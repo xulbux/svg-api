@@ -3,7 +3,12 @@
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
-import { createCommunityMetric, formatCurrency } from '@/services/metrics';
+import {
+  RATIO_STEPS_SPECIALS,
+  buildRatioSpecials,
+  createCommunityMetric,
+  formatCurrency,
+} from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -18,6 +23,8 @@ interface LiberapayAmount {
 
 /** Partial Liberapay public profile payload (`liberapay.com/:user/public.json`). */
 interface LiberapayPublicPayload {
+  /** Weekly funding goal, or `null` when none is set. */
+  goal: LiberapayAmount | null;
   /** Number of patrons. */
   npatrons: number;
   /** Weekly donations received, or `null` when the user hides them. */
@@ -30,7 +37,7 @@ interface LiberapayPublicPayload {
 const LIBERAPAY_ENDPOINT = createEndpoint({
   api: 'https://liberapay.com/{target}/public.json',
   page: 'https://liberapay.com/{target}',
-  project: pickFields<LiberapayPublicPayload>(['npatrons', 'receiving']),
+  project: pickFields<LiberapayPublicPayload>(['goal', 'npatrons', 'receiving']),
 });
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -39,11 +46,14 @@ const LIBERAPAY_ENDPOINT = createEndpoint({
 function transformLiberapayReceiving(
   profile: Partial<LiberapayPublicPayload>
 ): Partial<MetricResult> {
-  const { receiving } = profile;
+  const { goal, receiving } = profile;
   if (!receiving) {
     return { value: 'hidden' };
   }
-  return { value: formatCurrency(receiving.amount, receiving.currency, '/wk') };
+  return {
+    specials: buildRatioSpecials(receiving.amount, goal?.amount, true),
+    value: formatCurrency(receiving.amount, receiving.currency, '/wk'),
+  };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -63,7 +73,12 @@ export const LIBERAPAY_SERVICE = defineService({
     ),
     receives: createMetric(
       LIBERAPAY_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'liberapay', defaultLabel: 'receives' },
+      {
+        autoSpecials: RATIO_STEPS_SPECIALS,
+        defaultColor: 'emerald',
+        defaultIcon: 'liberapay',
+        defaultLabel: 'receives',
+      },
       transformLiberapayReceiving
     ),
   },

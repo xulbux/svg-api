@@ -8,7 +8,9 @@
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
+  DELTA_SPECIALS,
   INSTALLS_LABEL,
+  buildWindowDeltaSpecials,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
@@ -107,9 +109,22 @@ const CASK_ENDPOINT = createEndpoint({
 function createInstallMetrics(
   endpoint: MetricEndpoint<HomebrewProjection>
 ): Record<'dl' | 'dq' | 'dy', ServiceMetricConfig> {
+  const deltaOverrides = { ...INSTALLS_LABEL, autoSpecials: DELTA_SPECIALS };
   return {
-    dl: createDownloadsMetric(endpoint, 'dl', (payload) => payload.dl, INSTALLS_LABEL),
-    dq: createDownloadsMetric(endpoint, 'dq', (payload) => payload.dq, INSTALLS_LABEL),
+    dl: createDownloadsMetric(
+      endpoint,
+      'dl',
+      (payload) => payload.dl,
+      deltaOverrides,
+      (payload) => buildWindowDeltaSpecials(payload.dl, 30, payload.dq, 90)
+    ),
+    dq: createDownloadsMetric(
+      endpoint,
+      'dq',
+      (payload) => payload.dq,
+      deltaOverrides,
+      (payload) => buildWindowDeltaSpecials(payload.dq, 90, payload.dy, 365)
+    ),
     dy: createDownloadsMetric(endpoint, 'dy', (payload) => payload.dy, INSTALLS_LABEL),
   };
 }

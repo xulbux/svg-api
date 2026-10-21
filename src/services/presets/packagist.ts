@@ -3,7 +3,13 @@
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
-import { createDownloadsMetric, createVersionMetric, readFiniteNumber } from '@/services/metrics';
+import {
+  DELTA_SPECIALS,
+  buildWindowDeltaSpecials,
+  createDownloadsMetric,
+  createVersionMetric,
+  readFiniteNumber,
+} from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -79,7 +85,13 @@ export const PACKAGIST_SERVICE = defineService({
     title: 'Packagist',
   },
   metrics: {
-    dd: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dd', (stats) => stats.daily),
+    dd: createDownloadsMetric(
+      PACKAGIST_ENDPOINT,
+      'dd',
+      (stats) => stats.daily,
+      { autoSpecials: DELTA_SPECIALS },
+      (stats) => buildWindowDeltaSpecials(stats.daily, 1, stats.monthly, 30)
+    ),
     dl: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dl', (stats) => stats.monthly),
     dt: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dt', (stats) => stats.total),
     v: createVersionMetric(

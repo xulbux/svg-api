@@ -452,7 +452,9 @@ describe('existing service presets', () => {
 
   it('resolves unscoped and scoped npm metrics with canonical and legacy download keys', async () => {
     const requestedUrls = mockUpstream({
-      'downloads/point/last-year/@hono/node-server': { downloads: 12_400_000 },
+      'downloads/range/last-year/@hono/node-server': {
+        downloads: [{ downloads: 6_000_000 }, { downloads: 6_400_000 }],
+      },
       'registry.npmjs.org/hono/latest': {
         license: 'MIT',
         types: './dist/index.d.ts',
@@ -516,6 +518,18 @@ describe('existing service presets', () => {
 
   it('reads the crates.io default version, license, MSRV, and crate size from the compact include document (regression: 441 KB payload)', async () => {
     const requestedUrls = mockUpstream({
+      'crates.io/api/v1/crates/serde/downloads': {
+        meta: {
+          extra_downloads: [
+            { date: '2026-07-01', downloads: 100_000_000 },
+            { date: '2026-07-02', downloads: 67_688_696 },
+          ],
+        },
+        version_downloads: [
+          { date: '2026-07-01', downloads: 80_000_000 },
+          { date: '2026-07-02', downloads: 120_000_000 },
+        ],
+      },
       'crates.io/api/v1/crates/serde?include=default_version,downloads': {
         crate: {
           default_version: '1.0.229',
@@ -544,6 +558,7 @@ describe('existing service presets', () => {
     expect(await describeMetric('/badge/crates/serde/dt')).toBe('downloads: 1.6B');
     expect(requestedUrls).toEqual([
       'https://crates.io/api/v1/crates/serde?include=default_version,downloads',
+      'https://crates.io/api/v1/crates/serde/downloads',
     ]);
   });
 });
@@ -654,7 +669,9 @@ describe('new service presets', () => {
         versions: ['13.x-dev', 'dev-master', 'v13.30.0-RC1', 'v13.29.1', 'v13.29.0'],
       },
       'pub.dev/api/packages/http': { latest: { version: '1.6.0' } },
-      'pub.dev/api/packages/http/score': { grantedPoints: 150, likeCount: 8479, maxPoints: 160 },
+      'pub.dev/api/packages/http/metrics': {
+        score: { grantedPoints: 150, likeCount: 8479, maxPoints: 160 },
+      },
       'rubygems.org/api/v1/gems/rails.json': {
         downloads: 802_607_897,
         licenses: ['MIT'],
@@ -1475,10 +1492,16 @@ describe('added service presets', () => {
         Package: 'ggplot2',
         Version: '4.0.3',
       },
-      'cranlogs.r-pkg.org/downloads/total/last-month/ggplot2': [
-        { downloads: 2_099_543, package: 'ggplot2' },
+      'cranlogs.r-pkg.org/downloads/daily/last-month/empty': [],
+      'cranlogs.r-pkg.org/downloads/daily/last-month/ggplot2': [
+        {
+          downloads: [
+            { day: '2026-03-01', downloads: 1_000_000 },
+            { day: '2026-03-02', downloads: 1_099_543 },
+          ],
+          package: 'ggplot2',
+        },
       ],
-      'cranlogs.r-pkg.org/downloads/total/last-week/empty': [],
     });
     expect(await describeMetric('/badge/cran/ggplot2/v')).toBe('cran: v4.0.3');
     expect(await describeMetric('/badge/cran/ggplot2/license')).toBe('license: MIT');
@@ -1857,7 +1880,7 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
     expect(building.result).toMatchObject({ color: 'amber', value: 'building' });
     expect(await describeMetric('/badge/rtd/missing/build')).toBe('docs: not found');
     expect(buildMetricApiUrl('rtd', 'build', '', 'pip')).toBe(
-      'https://readthedocs.org/api/v3/projects/pip/versions/latest/builds/?limit=1'
+      'https://readthedocs.org/api/v3/projects/pip/versions/latest/builds/?limit=10'
     );
     expect(resolvePathRedirect('/badge/rtd/pip/build')).toBe('https://pip.readthedocs.io/');
   });
@@ -1998,27 +2021,43 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
 
   it('resolves Terraform module and provider metrics and requires the full module address', async () => {
     const requestedUrls = mockUpstream({
+      'registry.terraform.io/v2/modules/terraform-aws-modules/vpc/aws/downloads/summary': {
+        data: {
+          attributes: { month: 6_000_000, total: 222_833_090, week: 2_000_000, year: 50_700_000 },
+          type: 'module-downloads-summary',
+        },
+      },
       'registry.terraform.io/v2/modules/terraform-aws-modules/vpc/aws?include=latest-version': {
         data: { attributes: { downloads: 222_833_090, name: 'vpc' }, type: 'modules' },
         included: [{ attributes: { downloads: 2_080_011, version: '6.7.3' } }],
       },
-      'registry.terraform.io/v2/providers/hashicorp/aws': {
-        data: { attributes: { downloads: 8_078_352_231 } },
-      },
       'registry.terraform.io/v2/providers/hashicorp/aws/provider-versions/latest': {
         data: { attributes: { downloads: 7_774_806, version: '6.69.1' } },
+      },
+      'registry.terraform.io/v2/providers/hashicorp/aws?include=provider-versions': {
+        data: { attributes: { downloads: 8_078_352_231 } },
+        included: [
+          { attributes: { downloads: 1500, 'published-at': '2026-02-01T00:00:00Z' } },
+          { attributes: { downloads: 1000, 'published-at': '2026-01-01T00:00:00Z' } },
+        ],
       },
     });
     expect(await describeMetric('/badge/terraform/terraform-aws-modules/vpc/aws/v')).toBe(
       'terraform: v6.7.3'
     );
-    expect(await describeMetric('/badge/terraform/terraform-aws-modules/vpc/aws/dl')).toBe(
-      'downloads: 222.8M'
-    );
+    const tfModuleDl = await resolvePathMetric('/badge/terraform/terraform-aws-modules/vpc/aws/dl');
+    expect(tfModuleDl.result.value).toBe('222.8M');
+    expect(tfModuleDl.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
     expect(await describeMetric('/badge/tf-provider/hashicorp/aws/v')).toBe(
       'terraform provider: v6.69.1'
     );
-    expect(await describeMetric('/badge/tf-provider/hashicorp/aws/dt')).toBe('downloads: 8.1B');
+    const tfProviderDt = await resolvePathMetric('/badge/tf-provider/hashicorp/aws/dt');
+    expect(tfProviderDt.result.value).toBe('8.1B');
+    expect(tfProviderDt.result.specials?.sparkline).toEqual({
+      type: 'sparkline',
+      values: [1000, 1500],
+    });
+    expect(tfProviderDt.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
     expect(await describeMetric('/badge/tf-provider/hashicorp/missing/v')).toBe(
       'terraform provider: not found'
     );
@@ -2118,7 +2157,7 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     );
     expect(requestedUrls).toHaveLength(1);
     expect(requestedUrls[0]).toContain(
-      'metricKeys=alert_status,bugs,code_smells,coverage,duplicated_lines_density,reliability_rating,security_rating,sqale_rating,vulnerabilities'
+      'metricKeys=alert_status,bugs,code_smells,coverage,duplicated_lines_density,new_bugs,new_code_smells,new_coverage,new_duplicated_lines_density,new_vulnerabilities,quality_gate_details,reliability_rating,security_rating,sqale_rating,vulnerabilities'
     );
     const failing = await resolvePathMetric('/badge/sonarcloud/failing_project/gate');
     expect(failing.result).toMatchObject({ color: 'rose', value: 'failed' });
@@ -2385,7 +2424,10 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     });
     expect(await describeMetric('/badge/zenodo/3835582/dt')).toBe('downloads: 76k');
     expect(await describeMetric('/badge/zenodo/3835582/dl')).toBe('downloads: 76k');
-    expect(await describeMetric('/badge/zenodo/3835582/unique')).toBe('unique downloads: 34.1k');
+    const zenodoUnique = await resolvePathMetric('/badge/zenodo/3835582/unique');
+    expect(zenodoUnique.result.value).toBe('34.1k');
+    expect(zenodoUnique.result.specials?.bar).toEqual({ type: 'bar', value: 45 });
+    expect(zenodoUnique.result.specials?.ring).toEqual({ type: 'ring', value: 45 });
     expect(await describeMetric('/badge/zenodo/3835582/views')).toBe('views: 1.4k');
     expect(await describeMetric('/badge/zenodo/3835582/doi')).toBe('doi: 10.5281/zenodo.3835582');
     expect(await describeMetric('/badge/zenodo/3835582/v')).toBe('zenodo: v4.0.1');
@@ -2467,5 +2509,133 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(resolvePathRedirect('/badge/hn/pg/karma')).toBe(
       'https://news.ycombinator.com/user?id=pg'
     );
+  });
+
+  it('derives automatic inline widgets from single-request upstream series, histograms, checks, and ratios', async () => {
+    mockUpstream({
+      'api.securityscorecards.dev/projects/github.com/ossf/scorecard': {
+        checks: [{ score: 10 }, { score: 8 }, { score: 9 }, { score: -1 }],
+        score: 9,
+      },
+      'bundlephobia.com/api/size?package=react': { dependencyCount: 2, gzip: 3000, size: 10_000 },
+      'data.jsdelivr.com/v1/stats/packages/npm/hono?period=month': {
+        hits: {
+          dates: { '2026-03-01': 100, '2026-03-02': 120, '2026-03-03': 180, '2026-03-04': 220 },
+          total: 620,
+        },
+      },
+      'downloads/range/last-year/hono': {
+        downloads: [
+          { downloads: 1000 },
+          { downloads: 1200 },
+          { downloads: 1500 },
+          { downloads: 1800 },
+        ],
+      },
+      'plugins.jetbrains.com/api/plugins/8182/rating': {
+        meanRating: 4.5,
+        meanVotes: 100,
+        votes: { '1': 2, '2': 3, '3': 10, '4': 25, '5': 60 },
+      },
+      'plugins/info/1.2/?action=plugin_information&request%5Bslug%5D=akismet': {
+        rating: 90,
+        ratings: { '1': 5, '2': 10, '3': 15, '4': 30, '5': 90 },
+      },
+      'projects/pip/versions/latest/builds/': {
+        results: [
+          { state: { code: 'finished' }, success: true },
+          { state: { code: 'finished' }, success: false },
+          { state: { code: 'installing' } },
+          { state: { code: 'cancelled' }, success: false },
+        ],
+      },
+    });
+
+    const npmDl = await resolvePathMetric('/badge/npm/hono/dl');
+    expect(npmDl.result.specials?.sparkline).toEqual({
+      type: 'sparkline',
+      values: [1000, 1200, 1500, 1800],
+    });
+    expect(npmDl.result.specials?.bars).toEqual({ type: 'bars', values: [1000, 1200, 1500, 1800] });
+    expect(npmDl.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
+
+    const jsdelivr = await resolvePathMetric('/badge/jsdelivr/hono/hm');
+    expect(jsdelivr.result.specials?.sparkline).toEqual({
+      type: 'sparkline',
+      values: [100, 120, 180, 220],
+    });
+    expect(jsdelivr.result.specials?.delta).toEqual({ type: 'delta', value: '+82%' });
+
+    const rtd = await resolvePathMetric('/badge/rtd/pip/build');
+    expect(rtd.result.specials?.strip).toEqual({ states: ['3', '5', '0', '9'], type: 'strip' });
+    expect(rtd.result.specials?.steps).toEqual({ done: 1, total: 4, type: 'steps' });
+
+    const scorecard = await resolvePathMetric('/badge/scorecard/ossf/scorecard/score');
+    expect(scorecard.result.special).toEqual({ type: 'ring', value: 90 });
+    expect(scorecard.result.specials?.strip).toEqual({ states: ['9', '7', '8'], type: 'strip' });
+    expect(scorecard.result.specials?.bars).toEqual({ type: 'bars', values: [10, 8, 9] });
+
+    const wpRating = await resolvePathMetric('/badge/wp/akismet/rating');
+    expect(wpRating.result.specials?.bars).toEqual({ type: 'bars', values: [5, 10, 15, 30, 90] });
+    expect(wpRating.result.specials?.steps).toEqual({ done: 5, total: 5, type: 'steps' });
+
+    const jbRating = await resolvePathMetric('/badge/jetbrains/8182/rating');
+    expect(jbRating.result.specials?.bars).toEqual({ type: 'bars', values: [2, 3, 10, 25, 60] });
+
+    const gzip = await resolvePathMetric('/badge/bundlephobia/react/gzip');
+    expect(gzip.result.specials?.bar).toEqual({ type: 'bar', value: 30 });
+    expect(gzip.result.specials?.delta).toEqual({ type: 'delta', value: '-70%' });
+  });
+
+  it('derives automatic delta and series widgets from daily, version, and multi-window download endpoints', async () => {
+    mockUpstream({
+      'clojars.org/api/artifacts/hiccup': {
+        downloads: 5000,
+        downloads_per_version: { '1.0': 1000, '2.0': 1500 },
+        latest_version: '2.0',
+      },
+      'crates.io/api/v1/crates/serde/downloads': {
+        meta: {
+          extra_downloads: [
+            { date: '2026-07-01', downloads: 200 },
+            { date: '2026-07-02', downloads: 300 },
+          ],
+        },
+        version_downloads: [
+          { date: '2026-07-01', downloads: 800 },
+          { date: '2026-07-02', downloads: 1200 },
+        ],
+      },
+      'formulae.brew.sh/api/formula/wget.json': {
+        analytics: { install: { '30d': { wget: 1500 }, '90d': { wget: 3500 } } },
+        versions: { stable: '1.25.0' },
+      },
+      'hex.pm/api/packages/phoenix': {
+        downloads: { all: 100_000, recent: 9000, week: 1000 },
+        latest_stable_version: '1.8.0',
+      },
+      'packagist.org/packages/laravel/framework/stats.json': {
+        downloads: { daily: 1500, monthly: 30_500, total: 500_000 },
+      },
+    });
+
+    const cratesDq = await resolvePathMetric('/badge/crates/serde/dq');
+    expect(cratesDq.result.specials?.sparkline).toEqual({
+      type: 'sparkline',
+      values: [1000, 1500],
+    });
+    expect(cratesDq.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
+
+    const clojarsDt = await resolvePathMetric('/badge/clojars/hiccup/dt');
+    expect(clojarsDt.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
+
+    const brewDl = await resolvePathMetric('/badge/brew/wget/dl');
+    expect(brewDl.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
+
+    const hexDw = await resolvePathMetric('/badge/hex/phoenix/dw');
+    expect(hexDw.result.specials?.delta).toEqual({ type: 'delta', value: '+48%' });
+
+    const packagistDd = await resolvePathMetric('/badge/packagist/laravel/framework/dd');
+    expect(packagistDd.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
   });
 });

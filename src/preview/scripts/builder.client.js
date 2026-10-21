@@ -252,15 +252,25 @@
 
   /**
    * Compose a `?special=` value from the widget kind, payload, and modifier.
-   * @param {string} kind       Widget kind (`''` for none).
-   * @param {string} payload    Widget data.
-   * @param {string} modifier   Optional modifier of the kind (e.g., `static`).
+   * @param {string} kind               Widget kind (`''` for none).
+   * @param {string} payload            Widget data.
+   * @param {string} modifier           Optional modifier of the kind (e.g., `static`).
+   * @param {boolean} [isAutoAllowed]   Whether an empty payload emits an automatic widget token.
    * @returns {string}
    */
-  function composeSpecial(kind, payload, modifier) {
-    const cleanPayload = payload.trim();
-    if (!kind || !cleanPayload) {
+  function composeSpecial(kind, payload, modifier, isAutoAllowed = false) {
+    if (!kind) {
       return '';
+    }
+    if (kind === 'none') {
+      return 'none';
+    }
+    const cleanPayload = payload.trim();
+    if (!cleanPayload) {
+      if (!isAutoAllowed) {
+        return '';
+      }
+      return modifier ? `${kind}:${modifier}` : kind;
     }
     return modifier ? `${kind}:${cleanPayload}:${modifier}` : `${kind}:${cleanPayload}`;
   }
@@ -272,15 +282,33 @@
    * @returns {{ kind: string, modifier: string, payload: string }}
    */
   function splitSpecial(value, options) {
-    const colonIndex = value.indexOf(':');
-    if (colonIndex <= 0) {
+    const trimmed = value.trim();
+    if (!trimmed) {
       return { kind: '', modifier: '', payload: '' };
     }
-    const kind = value.slice(0, colonIndex).trim().toLowerCase();
-    let payload = value.slice(colonIndex + 1);
+    const lower = trimmed.toLowerCase();
+    const colonIndex = trimmed.indexOf(':');
+    if (colonIndex === -1) {
+      return findOption(options, lower)
+        ? { kind: lower, modifier: '', payload: '' }
+        : { kind: '', modifier: '', payload: '' };
+    }
+    if (colonIndex === 0) {
+      return { kind: '', modifier: '', payload: '' };
+    }
+    const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
+    const kindOption = findOption(options, kind);
+    if (!kindOption || kind === 'none') {
+      return { kind: '', modifier: '', payload: '' };
+    }
+    let payload = trimmed.slice(colonIndex + 1);
     let modifier = '';
+    const { modifiers } = kindOption;
+    const trimmedPayloadLower = payload.trim().toLowerCase();
+    if (modifiers && trimmedPayloadLower && findOption(modifiers, trimmedPayloadLower)) {
+      return { kind, modifier: trimmedPayloadLower, payload: '' };
+    }
     const lastColon = payload.lastIndexOf(':');
-    const modifiers = findOption(options, kind)?.modifiers;
     if (modifiers && lastColon !== -1) {
       const candidate = payload
         .slice(lastColon + 1)
@@ -291,7 +319,8 @@
         payload = payload.slice(0, lastColon);
       }
     }
-    return { kind, modifier, payload: payload.trim() };
+    const cleanPayload = payload.trim();
+    return { kind, modifier, payload: cleanPayload.toLowerCase() === 'auto' ? '' : cleanPayload };
   }
 
   /**
@@ -1389,8 +1418,6 @@
   const stackCategoriesPanel = document.getElementById('stack-panel-categories');
   const stackRawPanel = document.getElementById('stack-panel-raw');
   const stackRawActions = document.querySelector('[data-stack-raw-actions]');
-  const stackHelpTrigger = document.getElementById('stack-help-trigger');
-  const stackSyntaxHelp = document.getElementById('stack-syntax-help');
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
   const iconIndexUrl = picker?.dataset.indexUrl ?? '/assets/icons.json';
   const iconVersion = new URL(iconIndexUrl, globalThis.location.href).searchParams.get('v') ?? '';
@@ -1577,6 +1604,12 @@
         label.className = 'select-option-label';
         label.textContent = option.text;
         item.append(label);
+        if (option.dataset.badge) {
+          const badge = document.createElement('span');
+          badge.className = 'select-option-badge';
+          badge.textContent = option.dataset.badge;
+          item.append(badge);
+        }
         fragment.append(item);
       }
     }
@@ -1644,6 +1677,9 @@
       );
       if (option.swatch) {
         optionElement.dataset.swatch = option.swatch;
+      }
+      if (option.autoSpecials && option.autoSpecials.length > 0) {
+        optionElement.dataset.badge = 'Auto';
       }
       select.add(optionElement);
     }
@@ -1793,6 +1829,19 @@
   }
 
   /**
+   * Read the automatic inline widget kinds supported by the currently selected service metric.
+   * @returns {readonly string[]}
+   */
+  function getActiveAutoSpecials() {
+    if (schema.kind !== 'service') {
+      return [];
+    }
+    const service = findService(schema, state.service);
+    const metric = findOption(service?.metrics, state.metric ?? '');
+    return metric?.autoSpecials ?? [];
+  }
+
+  /**
    * Read the serialized value of a field from its control(s).
    * @param {BuilderField} field
    * @param {Element} fieldElement
@@ -1827,10 +1876,12 @@
         return preset === 'custom' ? readPartValue('custom').trim() : preset;
       }
       case 'special': {
+        const kind = readPartValue('kind');
         return composeSpecial(
-          readPartValue('kind'),
+          kind,
           readPartValue('payload'),
-          readPartValue('modifier')
+          readPartValue('modifier'),
+          Boolean(kind && getActiveAutoSpecials().includes(kind))
         );
       }
       default: {
@@ -1840,7 +1891,35 @@
   }
 
   /**
-   * Sync the modifier options and payload placeholder of a `special` field with its widget kind.
+   * Resolve the dynamic `.builder-hint` text of a `special` field for the selected widget kind and service metric.
+   * @param {BuilderField} field
+   * @param {string} kind
+   * @param {BuilderOption | undefined} kindOption
+   * @param {boolean} isAuto
+   * @returns {string}
+   */
+  function resolveSpecialHint(field, kind, kindOption, isAuto) {
+    const baseHint = kindOption?.description ?? field.description ?? '';
+    if (kind && kind !== 'none') {
+      return isAuto
+        ? `Uses live upstream data when Data is left empty; Manual: ${baseHint}`
+        : baseHint;
+    }
+    if (!kind && schema.kind === 'service') {
+      const service = findService(schema, state.service);
+      const metric = findOption(service?.metrics, state.metric ?? '');
+      if (metric?.defaultSpecial) {
+        return `Uses the metric's default ${metric.defaultSpecial} widget; Pick another Auto widget or enter custom Data.`;
+      }
+      if (getActiveAutoSpecials().length === 0) {
+        return 'Optional inline chart, gauge, or delta pill next to the badge value.';
+      }
+    }
+    return baseHint;
+  }
+
+  /**
+   * Sync the modifier options, payload placeholder, and dynamic hint of a `special` field with its widget kind.
    * @param {BuilderField} field
    * @param {Element} fieldElement
    * @param {string} modifier   Modifier to select.
@@ -1851,16 +1930,58 @@
     const modifiers = kindOption?.modifiers ?? [];
     const payload = getPart(fieldElement, 'payload');
     const modifierSelect = getPart(fieldElement, 'modifier');
+    const isAuto = Boolean(kind && getActiveAutoSpecials().includes(kind));
     if (payload instanceof HTMLInputElement) {
-      payload.placeholder = kindOption?.placeholder ?? '';
+      const example = kindOption?.placeholder ?? '';
+      let autoPlaceholder = example;
+      if (isAuto) {
+        autoPlaceholder = example ? `auto (or e.g., ${example})` : 'auto';
+      }
+      payload.placeholder = autoPlaceholder;
     }
     if (modifierSelect instanceof HTMLSelectElement) {
       setSelectOptions(modifierSelect, modifiers, modifier);
     }
-    fieldElement.querySelector('[data-special-part="payload"]')?.toggleAttribute('hidden', !kind);
+    const hint = fieldElement.querySelector('.builder-hint');
+    if (hint) {
+      hint.textContent = resolveSpecialHint(field, kind, kindOption, isAuto);
+    }
+    fieldElement
+      .querySelector('[data-special-part="payload"]')
+      ?.toggleAttribute('hidden', !kind || kind === 'none');
     fieldElement
       .querySelector('[data-special-part="modifier"]')
       ?.toggleAttribute('hidden', modifiers.length === 0);
+  }
+
+  /** Sync the `"Auto"` option badges, default label, and placeholder of the `special` field on the service badge builder. */
+  function syncServiceSpecialOptions() {
+    const specialField = fieldsById.get('special');
+    const specialElement = fieldElements.get('special');
+    if (!specialField || !specialElement) {
+      return;
+    }
+    const service = findService(schema, state.service);
+    const metric = findOption(service?.metrics, state.metric ?? '');
+    const autoSpecials = getActiveAutoSpecials();
+    const kindSelect = getPart(specialElement, 'kind');
+    if (kindSelect instanceof HTMLSelectElement) {
+      for (const option of kindSelect.options) {
+        if (!option.value) {
+          option.text = metric?.defaultSpecial ? `Default (${metric.defaultSpecial})` : 'Default';
+        } else if (autoSpecials.includes(option.value)) {
+          option.dataset.badge = 'Auto';
+        } else {
+          delete option.dataset.badge;
+        }
+      }
+      const wrapper = kindSelect.closest('[data-select]');
+      if (wrapper) {
+        syncSelect(wrapper);
+      }
+    }
+    const modifier = getPart(specialElement, 'modifier')?.value ?? '';
+    syncSpecialParts(specialField, specialElement, modifier);
   }
 
   /**
@@ -1924,6 +2045,7 @@
     if (metricControl instanceof HTMLSelectElement) {
       setSelectOptions(metricControl, metrics, state.metric ?? '');
     }
+    syncServiceSpecialOptions();
   }
 
   /** Show or hide conditional fields for the current state. */
@@ -2098,13 +2220,13 @@
 
   /** Write the whole state into the form. */
   function writeState() {
+    if (schema.kind === 'service') {
+      syncServiceFields();
+    }
     for (const field of schema.fields) {
       if (field.id !== 'metric') {
         writeFieldValue(field, state[field.id] ?? '');
       }
-    }
-    if (schema.kind === 'service') {
-      syncServiceFields();
     }
     syncVisibility();
   }
@@ -2598,12 +2720,24 @@
         next.focus();
       }
     });
+  }
 
-    stackSyntaxHelp?.addEventListener('toggle', (event) => {
-      if (/** @type {ToggleEvent} */ (event).newState === 'open' && stackHelpTrigger) {
-        site?.placePopover(stackSyntaxHelp, stackHelpTrigger, { align: 'end', gap: 6 });
+  /** Bind every `[data-help-popover]` trigger button to position its syntax reference popover on open. */
+  function bindHelpPopovers() {
+    for (const trigger of form?.querySelectorAll('[data-help-popover]') ?? []) {
+      if (trigger instanceof HTMLElement) {
+        const popoverId = trigger.dataset.helpPopover ?? '';
+        const align = trigger.dataset.helpAlign === 'start' ? 'start' : 'end';
+        const popover = popoverId ? document.getElementById(popoverId) : undefined;
+        if (popover instanceof HTMLElement) {
+          popover.addEventListener('toggle', (event) => {
+            if (/** @type {ToggleEvent} */ (event).newState === 'open') {
+              site?.placePopover(popover, trigger, { align, gap: 6 });
+            }
+          });
+        }
       }
-    });
+    }
   }
 
   /**
@@ -2615,6 +2749,25 @@
       syncStackCatalogFromDsl(state[field.id] ?? '');
     } else if (field.id === 'perline' && stackCategoriesPanel && !stackCategoriesPanel.hidden) {
       writeStackGroupsFromCatalog();
+    }
+  }
+
+  /**
+   * Sync dependent service and special controls when `service` or `metric` changes on `/builder/service`.
+   * @param {BuilderField} field
+   */
+  function syncServiceFieldChange(field) {
+    if (field.id === 'service') {
+      syncServiceFields();
+    } else if (field.id === 'metric') {
+      syncServiceSpecialOptions();
+    } else {
+      return;
+    }
+    const specialField = fieldsById.get('special');
+    const specialElement = fieldElements.get('special');
+    if (specialField && specialElement) {
+      state.special = readFieldValue(specialField, specialElement);
     }
   }
 
@@ -2649,9 +2802,7 @@
     }
     state[field.id] = readFieldValue(field, fieldElement);
     syncStackFieldChange(field);
-    if (field.id === 'service') {
-      syncServiceFields();
-    }
+    syncServiceFieldChange(field);
     if (visibilityControllers.has(field.id)) {
       syncVisibility();
     }
@@ -3052,6 +3203,7 @@
       }
     });
     bindSelects();
+    bindHelpPopovers();
 
     resetButton?.addEventListener('click', () => {
       if (altInput) {

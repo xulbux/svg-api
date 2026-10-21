@@ -16,6 +16,7 @@ import {
   renderUiIcon,
   serializeInlineJson,
 } from '@/preview/components';
+import { SPECIAL_KIND_DETAILS } from '@/preview/glossary';
 import { renderPageLayout } from '@/preview/layout';
 import {
   buildBuilderPath,
@@ -23,6 +24,7 @@ import {
   buildDocsPath,
   getBuilderPageMeta,
 } from '@/preview/navigation';
+import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
 import { getBuilderSchema } from '@/routes/schema';
 import { escapeXml } from '@/svg/shared';
 import type {
@@ -115,13 +117,15 @@ function buildFieldId(field: BuilderField, part?: string): string {
   return part ? `field-${field.id}-${part}` : `field-${field.id}`;
 }
 
-/** Render `<option>` elements (with optional `data-swatch` colors), selecting `selectedValue`. */
+/** Render `<option>` elements (with optional `data-swatch` colors and `data-badge="Auto"` pills), selecting `selectedValue`. */
 function renderOptionsHtml(options: readonly BuilderOption[], selectedValue: string): string {
   let optionsHtml = '';
   for (const option of options) {
     const selectedAttr = option.value === selectedValue ? ' selected' : '';
     const swatchAttr = option.swatch ? ` data-swatch="${escapeXml(option.swatch)}"` : '';
-    optionsHtml += `<option value="${escapeXml(option.value)}"${swatchAttr}${selectedAttr}>${escapeXml(option.label)}</option>`;
+    const badgeAttr =
+      option.autoSpecials && option.autoSpecials.length > 0 ? ' data-badge="Auto"' : '';
+    optionsHtml += `<option value="${escapeXml(option.value)}"${swatchAttr}${badgeAttr}${selectedAttr}>${escapeXml(option.label)}</option>`;
   }
   return optionsHtml;
 }
@@ -157,11 +161,18 @@ function renderSelectHtml(
           </div>`;
 }
 
-/** Render the service options of the service badge builder (`PyPI (pypi)`). */
+/** Render the service options of the service badge builder (`PyPI (pypi)`), marking services that support automatic inline widgets. */
 function buildServiceSelectOptions(schema: BuilderSchema): BuilderOption[] {
   const options: BuilderOption[] = [];
   for (const service of schema.services ?? []) {
-    options.push({ label: `${service.title} (${service.key})`, value: service.key });
+    const autoMetric = service.metrics.find(
+      (metric) => metric.autoSpecials !== undefined && metric.autoSpecials.length > 0
+    );
+    options.push({
+      ...(autoMetric?.autoSpecials ? { autoSpecials: autoMetric.autoSpecials } : {}),
+      label: `${service.title} (${service.key})`,
+      value: service.key,
+    });
   }
   return options;
 }
@@ -258,6 +269,36 @@ function renderAnimControlHtml(field: BuilderField): string {
         </div>`;
 }
 
+/** Render a circular `?` syntax help trigger button that opens `popoverId`. */
+function renderHelpButtonHtml(
+  buttonId: string,
+  popoverId: string,
+  label: string,
+  extraClass = '',
+  align: 'end' | 'start' = 'end'
+): string {
+  return `<button type="button" class="help-btn${extraClass}" id="${buttonId}" data-help-popover="${popoverId}" data-help-align="${align}" popovertarget="${popoverId}" aria-label="${escapeXml(label)}" title="Syntax help"><svg class="ui-icon" xmlns="http://www.w3.org/2000/svg" viewBox="3 3 18 18" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>`;
+}
+
+/** Render the syntax reference popover of a `special` field. */
+function renderSpecialHelpPopoverHtml(field: BuilderField): string {
+  let rowsHtml = '';
+  for (const kind of SPECIAL_ELEMENT_KINDS) {
+    const detail = SPECIAL_KIND_DETAILS[kind];
+    rowsHtml += `<div class="stack-help-row"><dt><code class="param-code">${escapeXml(detail.example)}</code></dt><dd>${escapeXml(detail.summary)}</dd></div>`;
+  }
+  const autoNote = field.hasPresetValue
+    ? '; Leave empty on <code>Auto</code> widgets for live data'
+    : '';
+  return `<div class="popover-panel stack-help-popover" id="special-syntax-help" popover role="dialog" aria-label="Data widget syntax reference">
+            <div class="stack-help-head">
+              <p class="stack-help-title">Data widget syntax</p>
+              <p class="stack-help-desc">Format of the <code>Data</code> field per widget kind${autoNote}.</p>
+            </div>
+            <dl class="stack-help-list">${rowsHtml}</dl>
+          </div>`;
+}
+
 /** Render the composite controls of a `special` field (widget kind, payload, and modifier). */
 function renderSpecialControlHtml(field: BuilderField): string {
   return `<div class="builder-inline">
@@ -267,7 +308,8 @@ function renderSpecialControlHtml(field: BuilderField): string {
             <input class="builder-input" id="${buildFieldId(field, 'payload')}" type="text" data-part="payload" spellcheck="false" />
           </div>
           ${renderSubSelectHtml(field, 'modifier', 'Motion', [])}
-        </div>`;
+        </div>
+        ${renderSpecialHelpPopoverHtml(field)}`;
 }
 
 /** Render the composite controls of a `size` field (named preset or custom number). */
@@ -315,7 +357,7 @@ function renderStackGroupsControlHtml(
           <div class="stack-catalog-wrap">
             <div class="stack-catalog" id="stack-catalog">
               ${categoriesHtml}
-              <p class="select-empty stack-catalog-empty" id="stack-catalog-empty" hidden>No matching technologies in the quick categories – switch to Raw DSL to insert any bundled icon.</p>
+              <p class="select-empty stack-catalog-empty" id="stack-catalog-empty" hidden>No matching technologies in the quick categories; Switch to Raw DSL to insert any bundled icon.</p>
             </div>
           </div>
           <p class="builder-hint">Switch to <strong>Raw DSL</strong> to add any icon from the full catalog or customize per-icon colors.</p>
@@ -323,12 +365,12 @@ function renderStackGroupsControlHtml(
         <div class="stack-panel" id="stack-panel-raw" data-stack-panel="raw" role="tabpanel" aria-labelledby="stack-tab-raw" hidden>
           <div class="stack-textarea-wrap">
             <textarea class="builder-input builder-textarea is-mono" id="${controlId}" rows="4" spellcheck="false"${requiredAttr}>${escapeXml(initialValue)}</textarea>
-            <button type="button" class="stack-help-btn" id="stack-help-trigger" popovertarget="stack-syntax-help" aria-label="Stack DSL syntax help" title="Syntax help"><svg class="ui-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+            ${renderHelpButtonHtml('stack-help-trigger', 'stack-syntax-help', 'Stack DSL syntax help', ' stack-help-btn')}
           </div>
           <div class="popover-panel stack-help-popover" id="stack-syntax-help" popover role="dialog" aria-label="Stack DSL syntax reference">
             <div class="stack-help-head">
               <p class="stack-help-title">Stack DSL syntax</p>
-              <p class="stack-help-desc">Comma-separated icon slugs; line breaks or <code>;</code> stack row bands.</p>
+              <p class="stack-help-desc">Comma-separated icon slugs; Line breaks or <code>;</code> stack row bands.</p>
             </div>
             <dl class="stack-help-list">
               <div class="stack-help-row"><dt><code class="param-code">rust,go,ts</code></dt><dd>Icons in the same group</dd></div>
@@ -409,6 +451,10 @@ function renderFieldHtml(field: BuilderField, schema: BuilderSchema): string {
   const labelTag = isSingleControl ? 'label' : 'span';
   const forAttr = isSingleControl ? ` for="${controlId}"` : '';
   const labelHtml = `<${labelTag} class="builder-label" id="${controlId}-label"${forAttr}><span class="builder-label-text">${escapeXml(field.label)}</span>${requiredMark}</${labelTag}>`;
+  const headingHtml =
+    field.control === 'special'
+      ? `<span class="builder-label-group">${labelHtml}${renderHelpButtonHtml('special-help-trigger', 'special-syntax-help', 'Data widget syntax help', '', 'start')}</span>`
+      : labelHtml;
   const showAttrs = field.showWhen
     ? ` data-show-field="${escapeXml(field.showWhen.field)}" data-show-values="${escapeXml(field.showWhen.values.join(' '))}"`
     : '';
@@ -419,7 +465,7 @@ function renderFieldHtml(field: BuilderField, schema: BuilderSchema): string {
     ? `<p class="builder-hint">${escapeXml(field.description)}</p>`
     : '';
   return `<div class="builder-field" data-field="${escapeXml(field.id)}" data-control="${field.control}"${showAttrs}${groupAttrs}>
-        <div class="builder-label-row">${labelHtml}${paramHtml}</div>
+        <div class="builder-label-row">${headingHtml}${paramHtml}</div>
         ${renderFieldControlHtml(field, schema)}
         ${descriptionHtml}
       </div>`;

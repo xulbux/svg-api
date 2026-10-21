@@ -6,12 +6,15 @@
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
+  FORKS,
+  ISSUES,
+  RATIO_SPECIALS,
+  STARS,
+  buildRatioSpecials,
   createCountMetric,
   createLicenseMetric,
   createScorecardMetric,
-  FORKS,
-  ISSUES,
-  STARS,
+  readScorecardCheckScores,
   toFiniteNumber,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
@@ -20,6 +23,8 @@ import type { ServiceDefinition } from '@/types';
 
 /** Projected deps.dev project payload (`api.deps.dev/v3/projects/github.com%2F:owner%2F:repo`). */
 interface DepsDevProjectProjection {
+  /** Valid OpenSSF Scorecard check scores (`0`–`10`). */
+  checks?: number[];
   /** Number of forks (`forksCount`). */
   forks?: number;
   /** Number of open issues and pull requests (`openIssuesCount`). */
@@ -39,13 +44,15 @@ function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' ? toFiniteNumber(value) : undefined;
 }
 
-/** Project a deps.dev project into its counters, license, and Scorecard score (the check details are dropped). */
+/** Project a deps.dev project into its counters, license, and Scorecard score + check scores. */
 function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
   const scorecard = isJsonObject(data.scorecard) ? data.scorecard : undefined;
+  const checks = readScorecardCheckScores(scorecard?.checks);
   return {
+    ...(checks ? { checks } : {}),
     forks: readNumber(data.forksCount),
     issues: readNumber(data.openIssuesCount),
     license: typeof data.license === 'string' && data.license ? data.license : undefined,
@@ -69,14 +76,26 @@ function createDepsDevService(): ServiceDefinition {
       title: 'deps.dev',
     },
     metrics: {
-      forks: createCountMetric(projectEndpoint, FORKS, (project) => project.forks),
+      forks: createCountMetric(
+        projectEndpoint,
+        { ...FORKS, autoSpecials: RATIO_SPECIALS },
+        (project) => project.forks,
+        '',
+        (project) => buildRatioSpecials(project.forks, project.stars)
+      ),
       issues: createCountMetric(
         projectEndpoint,
-        { ...ISSUES, defaultLabel: 'issues & PRs' },
-        (project) => project.issues
+        { ...ISSUES, autoSpecials: RATIO_SPECIALS, defaultLabel: 'issues & PRs' },
+        (project) => project.issues,
+        '',
+        (project) => buildRatioSpecials(project.issues, project.stars)
       ),
       license: createLicenseMetric(projectEndpoint, (project) => project.license),
-      score: createScorecardMetric(projectEndpoint, (project) => project.score),
+      score: createScorecardMetric(
+        projectEndpoint,
+        (project) => project.score,
+        (project) => project.checks
+      ),
       stars: createCountMetric(projectEndpoint, STARS, (project) => project.stars),
     },
     route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },

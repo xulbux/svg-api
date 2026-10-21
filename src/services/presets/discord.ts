@@ -3,7 +3,7 @@
  */
 
 import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createCommunityMetric } from '@/services/metrics';
+import { RATIO_SPECIALS, buildRatioSpecials, createCommunityMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -45,13 +45,19 @@ export const DISCORD_SERVICE = defineService({
       DISCORD_ENDPOINT,
       'members',
       'discord',
-      (invite) => invite.approximate_member_count
+      (invite) => invite.approximate_member_count,
+      (invite) =>
+        buildRatioSpecials(invite.approximate_presence_count, invite.approximate_member_count),
+      RATIO_SPECIALS
     ),
     online: createCommunityMetric(
       DISCORD_ENDPOINT,
       'online',
       'discord',
-      (invite) => invite.approximate_presence_count
+      (invite) => invite.approximate_presence_count,
+      (invite) =>
+        buildRatioSpecials(invite.approximate_presence_count, invite.approximate_member_count),
+      RATIO_SPECIALS
     ),
   },
   route: { target: { placeholder: ':invite' } },

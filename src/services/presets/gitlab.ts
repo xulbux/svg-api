@@ -4,15 +4,18 @@
 
 import { createEndpoint, defineService, pickFields, withPageSuffix } from '@/services/endpoint';
 import {
+  FORKS,
+  ISSUES,
+  LAST_COMMIT,
+  RATIO_SPECIALS,
+  RATIO_STEPS_SPECIALS,
+  STARS,
+  buildRatioSpecials,
   createCountMetric,
   createLicenseMetric,
   createRelativeDateMetric,
   createReleaseMetric,
-  FORKS,
   formatSpdxKey,
-  ISSUES,
-  LAST_COMMIT,
-  STARS,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -37,6 +40,10 @@ interface GitLabProjectPayload {
 
 /** GitLab issue counts by state. */
 interface GitLabIssueCounts {
+  /** Total issues (opened + closed). */
+  all?: number;
+  /** Number of closed issues. */
+  closed?: number;
   /** Number of open issues. */
   opened?: number;
 }
@@ -102,13 +109,22 @@ export const GITLAB_SERVICE = defineService({
   metrics: {
     forks: createCountMetric(
       withPageSuffix(PROJECT_ENDPOINT, '/-/forks'),
-      FORKS,
-      (project) => project.forks_count
+      { ...FORKS, autoSpecials: RATIO_SPECIALS },
+      (project) => project.forks_count,
+      '',
+      (project) => buildRatioSpecials(project.forks_count, project.star_count)
     ),
     issues: createCountMetric(
       ISSUES_ENDPOINT,
-      ISSUES,
-      (payload) => payload.statistics?.counts?.opened
+      { ...ISSUES, autoSpecials: RATIO_STEPS_SPECIALS },
+      (payload) => payload.statistics?.counts?.opened,
+      '',
+      (payload) =>
+        buildRatioSpecials(
+          payload.statistics?.counts?.closed,
+          payload.statistics?.counts?.all,
+          true
+        )
     ),
     license: createLicenseMetric(PROJECT_ENDPOINT, (project) =>
       formatSpdxKey(project.license?.key)

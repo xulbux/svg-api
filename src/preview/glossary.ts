@@ -3,6 +3,12 @@
  */
 
 import { SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
+import {
+  MAX_BARS_POINTS,
+  MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
+  MAX_STRIP_TICKS,
+} from '@/svg/renderer';
 import type { BadgeSpecialElement, BadgeVariant, SpecialKindDetail, VariantTier } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -14,17 +20,59 @@ export const VARIANT_TIERS: Readonly<Record<BadgeVariant, VariantTier>> = {
   3: { name: 'Tertiary', surface: 'neutral dark' },
 };
 
-/** Display labels, payload examples, and parser modifiers of the inline data widget kinds (builder and docs). */
+/** Display labels, payload examples, descriptions, and parser modifiers of the inline data widget kinds (builder and docs). */
 export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
-  bar: { example: '92', label: 'Progress bar', modifiers: ['static'] },
-  bars: { example: '3,6,4,8,5,9,7', label: 'Mini bars', modifiers: [] },
-  delta: { example: '+24%', label: 'Delta pill', modifiers: [] },
-  ring: { example: '84', label: 'Donut ring', modifiers: ['pulse'] },
-  sparkline: { example: '22,19,21,17,15,16,14', label: 'Sparkline', modifiers: [] },
-  steps: { example: '4/5', label: 'Step pills', modifiers: [] },
-  strip: { example: '9987998999', label: 'Uptime strip', modifiers: [] },
+  bar: {
+    description: 'Percentage from 0 to 100 (e.g., 92).',
+    example: '92',
+    label: 'Progress bar',
+    modifiers: ['static'],
+    summary: 'Progress bar (0 to 100%)',
+  },
+  bars: {
+    description: `2 to ${MAX_BARS_POINTS} comma-separated numbers (e.g., 3,6,4,8,5,9,7).`,
+    example: '3,6,4,8,5,9,7',
+    label: 'Mini bars',
+    modifiers: [],
+    summary: `Mini bars (2 to ${MAX_BARS_POINTS} numbers)`,
+  },
+  delta: {
+    description: 'Signed change label; + tints emerald, - tints rose (e.g., +24%).',
+    example: '+24%',
+    label: 'Delta pill',
+    modifiers: [],
+    summary: 'Delta pill (+ emerald, - rose)',
+  },
+  ring: {
+    description: 'Percentage from 0 to 100 (e.g., 84).',
+    example: '84',
+    label: 'Donut ring',
+    modifiers: ['pulse'],
+    summary: 'Donut ring (0 to 100%)',
+  },
+  sparkline: {
+    description: `2 to ${MAX_SPARKLINE_POINTS} comma-separated numbers (e.g., 22,19,21,17,15,16,14).`,
+    example: '22,19,21,17,15,16,14',
+    label: 'Sparkline',
+    modifiers: [],
+    summary: `Sparkline (2 to ${MAX_SPARKLINE_POINTS} numbers)`,
+  },
+  steps: {
+    description: `Completed/total steps up to ${MAX_STEPS_COUNT} (e.g., 4/5).`,
+    example: '4/5',
+    label: 'Step pills',
+    modifiers: [],
+    summary: `Step pills (done/total, up to ${MAX_STEPS_COUNT})`,
+  },
+  strip: {
+    description: `1 to ${MAX_STRIP_TICKS} tick states from 0 (down) to 9 (ok) (e.g., 9987998999).`,
+    example: '9987998999',
+    label: 'Uptime strip',
+    modifiers: [],
+    summary: `Uptime strip (1 to ${MAX_STRIP_TICKS} ticks, 0 to 9)`,
+  },
 };
 
 // -------------------------------------- PUBLIC API -------------------------------------

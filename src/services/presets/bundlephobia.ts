@@ -9,7 +9,13 @@ import {
   defineService,
   pickFields,
 } from '@/services/endpoint';
-import { createBytesMetric, createCountMetric } from '@/services/metrics';
+import {
+  buildRatioSpecials,
+  createBytesMetric,
+  createCountMetric,
+  formatDeltaPercent,
+} from '@/services/metrics';
+import type { BadgeSpecialKind, BadgeSpecialMap } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -25,6 +31,9 @@ interface BundlephobiaSizePayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** Automatic inline widget kinds supported by Bundlephobia size metrics (`bar`, `ring`, `delta`). */
+const SIZE_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'delta'];
+
 /** Bundlephobia size endpoint (URL-encoded package name; Sizes only change with new releases). */
 const BUNDLEPHOBIA_ENDPOINT = createEndpoint({
   api: 'https://bundlephobia.com/api/size?package={npm-id}',
@@ -32,6 +41,20 @@ const BUNDLEPHOBIA_ENDPOINT = createEndpoint({
   project: pickFields<BundlephobiaSizePayload>(['dependencyCount', 'gzip', 'size']),
   ttl: CACHE_TTL.daily,
 });
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Build `bar`, `ring`, and compression `delta` (`gzip` vs `size`) widgets. */
+function buildBundleSizeSpecials(
+  sizes: Partial<BundlephobiaSizePayload>
+): BadgeSpecialMap | undefined {
+  const ratio = buildRatioSpecials(sizes.gzip, sizes.size);
+  const delta = formatDeltaPercent(sizes.gzip, sizes.size);
+  if (!ratio && !delta) {
+    return undefined;
+  }
+  return { ...ratio, ...(delta ? { delta: { type: 'delta', value: delta } } : {}) };
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -51,13 +74,25 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
     ),
     gzip: createBytesMetric(
       BUNDLEPHOBIA_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'weight', defaultLabel: 'minzipped' },
-      (sizes) => sizes.gzip
+      {
+        autoSpecials: SIZE_SPECIALS,
+        defaultColor: 'emerald',
+        defaultIcon: 'weight',
+        defaultLabel: 'minzipped',
+      },
+      (sizes) => sizes.gzip,
+      buildBundleSizeSpecials
     ),
     min: createBytesMetric(
       BUNDLEPHOBIA_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'weight', defaultLabel: 'minified' },
-      (sizes) => sizes.size
+      {
+        autoSpecials: SIZE_SPECIALS,
+        defaultColor: 'sky',
+        defaultIcon: 'weight',
+        defaultLabel: 'minified',
+      },
+      (sizes) => sizes.size,
+      buildBundleSizeSpecials
     ),
   },
   route: NPM_PACKAGE_ROUTE,

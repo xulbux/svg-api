@@ -1091,6 +1091,7 @@ function buildMetricResult(
     label: transformed.label ?? metric.defaultLabel,
     redirectUrl,
     special: transformed.special,
+    specials: transformed.specials,
     value: transformed.value ?? 'n/a',
   };
 }

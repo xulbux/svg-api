@@ -2,6 +2,7 @@
  * Builder types – Declarative URL builder schemas embedded into the `/builder/:kind` pages and read by the builder client script.
  */
 
+import type { BadgeSpecialKind } from './badge';
 import type { BuilderKind } from './preview';
 import type { ServiceOwnerMode } from './service';
 
@@ -31,6 +32,10 @@ export type BuilderAnimScope = 'pair' | 'sheen' | 'single';
 export interface BuilderOption {
   /** Alternative (lowercase) values the parser accepts for this option; Prefilled links map them onto `value`. */
   aliases?: readonly string[];
+  /** Inline data widget kinds supported automatically from upstream data without a manual payload (`?special=<kind>`). */
+  autoSpecials?: readonly BadgeSpecialKind[];
+  /** Help text shown when this option is selected (e.g., per-widget data format hints). */
+  description?: string;
   /** Visible option label. */
   label: string;
   /** Modifier options offered while the option is selected (e.g., `:static` for `?special=bar:`), led by the default `''`. */
@@ -45,6 +50,8 @@ export interface BuilderOption {
 
 /** Metric option of a service preset. */
 export interface BuilderServiceMetric extends BuilderOption {
+  /** Default inline data widget kind rendered when `?special=` is omitted. */
+  defaultSpecial?: BadgeSpecialKind;
   /**
    * Upstream page URL template with `{owner}` and `{target}` placeholders (the effective owner falls back to
    * the service's default owner); Omitted when the upstream URL cannot be expressed as a plain template.
@@ -153,14 +160,18 @@ export interface VariantTier {
   surface: string;
 }
 
-/** Display label, payload example, and modifiers of an inline data widget kind (`?special=`). */
+/** Display label, payload example, descriptions, and modifiers of an inline data widget kind (`?special=`). */
 export interface SpecialKindDetail {
+  /** Concise payload format description shown when this widget kind is selected. */
+  description: string;
   /** Valid payload example (builder placeholder and docs value). */
   example: string;
   /** Display label. */
   label: string;
   /** Trailing `:<modifier>` tokens accepted by the parser (e.g., `'static'` for bars). */
   modifiers: readonly string[];
+  /** Compact `<dd>` summary for the builder syntax reference popover. */
+  summary: string;
 }
 
 /** Builder target of a documented SVG path (used by the "Open in Builder" preview links). */

@@ -14,6 +14,8 @@ import { getOwnValue, isIconMotionMode, isStripTickState } from '@/svg/shared';
 import type {
   AnimationMode,
   BadgeSpecialElement,
+  BadgeSpecialKind,
+  BadgeSpecialMap,
   BadgeVariant,
   DotState,
   QuoteLayout,
@@ -22,6 +24,14 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Parsed automatic `?special=<kind>[:<modifier>]` request without a manual data payload. */
+interface AutoSpecialRequest {
+  /** `true` for `:pulse`, `false` for `:static`, `undefined` when no modifier is given. */
+  hasPulse?: boolean;
+  /** Requested inline data widget kind. */
+  kind: BadgeSpecialKind;
+}
 
 /** Percentage of a `bar:` or `ring:` payload with its optional pulse modifier. */
 interface ParsedPercentage {
@@ -39,8 +49,8 @@ export const VARIANT_TOKENS: readonly BadgeVariant[] = ['1', '2', '3'];
 /** Set of valid variant identifiers (derived from `VARIANT_TOKENS`). */
 const VALID_VARIANTS: ReadonlySet<string> = new Set<string>(VARIANT_TOKENS);
 
-/** Inline data widget kinds accepted by `?special=<kind>:<payload>` in display order (also listed by the builder). */
-export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialElement['type'][] = [
+/** Inline data widget kinds accepted by `?special=<kind>[:<payload>]` in display order (also listed by the builder). */
+export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialKind[] = [
   'sparkline',
   'bars',
   'bar',
@@ -49,6 +59,9 @@ export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialElement['type'][] = [
   'strip',
   'delta',
 ];
+
+/** Set of valid inline data widget kinds (derived from `SPECIAL_ELEMENT_KINDS`). */
+const VALID_SPECIAL_KINDS: ReadonlySet<string> = new Set<string>(SPECIAL_ELEMENT_KINDS);
 
 /** Valid named size presets for buttons and quote cards in ascending size order (also listed by the docs and the builder). */
 export const SIZE_TOKENS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
@@ -231,12 +244,49 @@ function parseSpecialKindAndPayload(
       return states ? { states, type: 'strip' } : undefined;
     }
     case 'delta': {
-      return payload.length > 0 ? { type: 'delta', value: payload } : undefined;
+      return payload.length > 0 && payload.toLowerCase() !== 'auto'
+        ? { type: 'delta', value: payload }
+        : undefined;
     }
     default: {
       return undefined;
     }
   }
+}
+
+/**
+ * Parse a bare or modifier-only `?special=` value (`'sparkline'`, `'bar:static'`, `'ring:pulse'`,
+ * `'delta:auto'`, `'bar:auto:static'`) requesting automatic upstream widget data.
+ */
+function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefined {
+  const colonIndex = trimmed.indexOf(':');
+  if (colonIndex === -1) {
+    const kind = trimmed.toLowerCase();
+    return VALID_SPECIAL_KINDS.has(kind) ? { kind: kind as BadgeSpecialKind } : undefined;
+  }
+  if (colonIndex === 0) {
+    return undefined;
+  }
+  const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
+  if (!VALID_SPECIAL_KINDS.has(kind)) {
+    return undefined;
+  }
+  const rest = trimmed
+    .slice(colonIndex + 1)
+    .trim()
+    .toLowerCase();
+  if (rest === '' || rest === 'auto') {
+    return { kind: kind as BadgeSpecialKind };
+  }
+  if (kind === 'bar' || kind === 'ring') {
+    if (rest === 'pulse' || rest === ':pulse' || rest === 'auto:pulse') {
+      return { hasPulse: true, kind };
+    }
+    if (rest === 'static' || rest === ':static' || rest === 'auto:static') {
+      return { hasPulse: false, kind };
+    }
+  }
+  return undefined;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -286,6 +336,50 @@ export function parseSpecialParam(
   const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
   const payload = trimmed.slice(colonIndex + 1).trim();
   return parseSpecialKindAndPayload(kind, payload);
+}
+
+/**
+ * Resolve `?special=` query overrides, supporting manual `<kind>:<payload>` values, `'none'` to hide a
+ * preset widget, and bare `<kind>` (or `<kind>:static` / `<kind>:pulse`) to select automatic upstream
+ * widget data from a service preset.
+ * @param specialRaw       Raw `?special=` query parameter value.
+ * @param defaultSpecial   Default preset widget rendered when `?special=` is omitted.
+ * @param autoSpecials     Candidate automatic widgets derived from upstream service data.
+ * @returns Resolved `BadgeSpecialElement`, or `undefined` when none is active.
+ */
+export function resolveSpecialParam(
+  specialRaw: string | null | undefined,
+  defaultSpecial?: BadgeSpecialElement,
+  autoSpecials?: BadgeSpecialMap
+): BadgeSpecialElement | undefined {
+  const trimmed = (specialRaw ?? '').trim();
+  if (!trimmed) {
+    return defaultSpecial;
+  }
+  if (trimmed.toLowerCase() === 'none') {
+    return undefined;
+  }
+  const manual = parseSpecialParam(trimmed);
+  if (manual) {
+    return manual;
+  }
+  const autoRequest = parseAutoSpecialRequest(trimmed);
+  if (!autoRequest) {
+    return defaultSpecial;
+  }
+  const candidate =
+    (autoSpecials ? getOwnValue(autoSpecials, autoRequest.kind) : undefined) ??
+    (defaultSpecial?.type === autoRequest.kind ? defaultSpecial : undefined);
+  if (!candidate) {
+    return defaultSpecial;
+  }
+  if (
+    autoRequest.hasPulse !== undefined &&
+    (candidate.type === 'bar' || candidate.type === 'ring')
+  ) {
+    return { ...candidate, hasPulse: autoRequest.hasPulse };
+  }
+  return candidate;
 }
 
 /**

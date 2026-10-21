@@ -18,12 +18,15 @@ import {
   ISSUES,
   LAST_COMMIT,
   LICENSE,
+  SERIES_DELTA_SPECIALS,
   STARS,
+  buildSeriesSpecials,
   createCountMetric,
   createRelativeDateMetric,
   createReleaseMetric,
   formatCompactNumber,
   formatLicense,
+  sumSeries,
 } from '@/services/metrics';
 import type { Env, MetricResult } from '@/types';
 
@@ -116,26 +119,39 @@ function transformGitHubLicense(payload: Partial<GitHubRepoPayload>): Partial<Me
   return { value: spdxId && spdxId !== 'NOASSERTION' ? formatLicense(spdxId) : 'custom' };
 }
 
-/** Transform GitHub commit participation into an 8-week total and sparkline (non-numeric weeks count as `0`). */
+/** Transform GitHub commit participation into an 8-week total, sparkline, and candidate widgets (non-numeric weeks count as `0`). */
 function transformGitHubActivity(
   payload: Partial<GitHubParticipationPayload>
 ): Partial<MetricResult> {
   const allWeeks = Array.isArray(payload.all) ? payload.all : [];
-  const recentWeeks: number[] = [];
-  let totalRecent = 0;
-  for (let i = Math.max(0, allWeeks.length - ACTIVITY_WEEKS); i < allWeeks.length; i += 1) {
-    const rawCount: unknown = allWeeks[i];
-    const weekCount =
-      typeof rawCount === 'number' && Number.isFinite(rawCount) ? Math.max(0, rawCount) : 0;
-    recentWeeks.push(weekCount);
-    totalRecent += weekCount;
+  const parsedWeeks: number[] = [];
+  for (const rawCount of allWeeks) {
+    parsedWeeks.push(
+      typeof rawCount === 'number' && Number.isFinite(rawCount) ? Math.max(0, rawCount) : 0
+    );
   }
+  const recentWeeks = parsedWeeks.slice(-ACTIVITY_WEEKS);
+  const totalRecent = sumSeries(recentWeeks);
+  const prevTotal =
+    parsedWeeks.length >= ACTIVITY_WEEKS * 2
+      ? sumSeries(
+          parsedWeeks,
+          parsedWeeks.length - ACTIVITY_WEEKS * 2,
+          parsedWeeks.length - ACTIVITY_WEEKS
+        )
+      : undefined;
+  const values =
+    recentWeeks.length >= 2 ? recentWeeks : Array.from({ length: ACTIVITY_WEEKS }, () => 0);
+  const sparkline = { type: 'sparkline' as const, values };
+  const specials = buildSeriesSpecials({
+    barsValues: values,
+    current: totalRecent,
+    previous: prevTotal,
+    sparklineValues: values,
+  });
   return {
-    special: {
-      type: 'sparkline',
-      values:
-        recentWeeks.length >= 2 ? recentWeeks : Array.from({ length: ACTIVITY_WEEKS }, () => 0),
-    },
+    special: sparkline,
+    specials: { ...specials, sparkline },
     value: `${formatCompactNumber(totalRecent)}/${ACTIVITY_WEEKS}w`,
   };
 }
@@ -154,7 +170,13 @@ export const GITHUB_SERVICE = defineService({
   metrics: {
     activity: createMetric(
       PARTICIPATION_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'activity', defaultLabel: 'commits' },
+      {
+        autoSpecials: SERIES_DELTA_SPECIALS,
+        defaultColor: 'emerald',
+        defaultIcon: 'activity',
+        defaultLabel: 'commits',
+        defaultSpecial: 'sparkline',
+      },
       transformGitHubActivity
     ),
     commit: createRelativeDateMetric(
