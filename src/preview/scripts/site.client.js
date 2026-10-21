@@ -120,9 +120,9 @@
 
   /**
    * Position an open popover next to its anchor, clamped to the viewport.
-   * @param {HTMLElement} popover                Open popover element (measured for its real size).
-   * @param {Element} anchor                     Anchor element.
-   * @param {PopoverPlacementOptions} [options]
+   * @param {HTMLElement} popover    Open popover element (measured for its real size).
+   * @param {Element} anchor         Anchor element.
+   * @param {PopoverPlacementOptions} [options]   Placement options.
    */
   function placePopover(popover, anchor, options = {}) {
     activePopover = { anchor, options, popover };

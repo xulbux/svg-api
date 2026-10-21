@@ -8,6 +8,7 @@ import { listPublicServices } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
+  ENCODED_CHAOS_QUOTE,
   ENDPOINT_ROUTES,
   formatCountLowerBound,
   getIconSetCounts,
@@ -19,6 +20,7 @@ import {
   renderQuotesSectionHtml,
   renderServicesSectionHtml,
   renderStackSectionHtml,
+  STACK_EXAMPLE_GROUPS,
 } from '@/preview/catalog';
 import { renderCardsHtml, renderSectionHeader, renderUiIcon } from '@/preview/components';
 import { renderPageLayout } from '@/preview/layout';
@@ -31,7 +33,7 @@ import {
   getDocsPageMeta,
 } from '@/preview/navigation';
 import { escapeXml } from '@/svg/shared';
-import type { DocsPageSlug, DocsSectionMeta, DocsSectionSlug, ShowcaseCardConfig } from '@/types';
+import type { DocsPageSlug, DocsSectionSlug, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -43,14 +45,6 @@ interface FeatureCardItem {
   icon: string;
   /** Feature headline. */
   title: string;
-}
-
-/** Target of a previous/next pager link. */
-interface PagerLink {
-  /** Link target path. */
-  href: string;
-  /** Visible link label. */
-  label: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -81,9 +75,6 @@ const COUNT_WORDS: readonly string[] = [
   'Nine',
   'Ten',
 ];
-
-/** Pager target used before the first and after the last documentation page. */
-const HOME_PAGER_LINK: PagerLink = { href: '/', label: 'Home' };
 
 /** Quickstart overview cards displayed on the `/` homepage. */
 const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
@@ -129,12 +120,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     isCentered: true,
-    items: [
-      {
-        alt: 'Tech Stack',
-        path: '/stack/c,cpp,cs,rust,py,js,ts,java:4|vue,tailwind,unocss,threejs:2;docker,cloudflare|git,vite|figma,pr;linux,raspberrypi,markdown,latex,obsidian,n8n',
-      },
-    ],
+    items: [{ alt: 'Tech Stack', path: `/stack/${STACK_EXAMPLE_GROUPS}` }],
     subtitle:
       'Multi-group icon grids with per-group columns (:N), side-by-side groups (|), and row bands (;).',
     title: 'Grouped Tech Stacks (/stack/:groups)',
@@ -142,10 +128,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
     isCentered: true,
     items: [
-      {
-        alt: "XulbuX's Quote",
-        path: '/quote/XulbuX/Who+says+programmers+are+boring%3F+I+bring+the+humor+to+the+office+while+my+code+brings+the+chaos!?layout=vertical',
-      },
+      { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical` },
     ],
     subtitle:
       'Vertical and horizontal pull-quote cards with automatic word-wrapping and watermarks.',
@@ -169,11 +152,6 @@ function formatCountWord(count: number): string {
 /** Find the index of a documentation page in sidebar order (`-1` when unknown). */
 function findDocsPageIndex(slug: DocsPageSlug): number {
   return DOCS_PAGES.findIndex((meta) => meta.slug === slug);
-}
-
-/** Convert an optional documentation page into a pager link (falls back to the homepage). */
-function toPagerLink(page: DocsSectionMeta | undefined): PagerLink {
-  return page ? { href: buildDocsPath(page.slug), label: page.pagerLabel } : HOME_PAGER_LINK;
 }
 
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
@@ -223,15 +201,20 @@ function renderHomeFeaturesHtml(): string {
 
 /** Render the bottom navigation links between documentation pages (in sidebar order). */
 function renderDocsPager(slug: DocsPageSlug): string {
-  const leftArrow = renderUiIcon('arrow-left', 16);
-  const rightArrow = renderUiIcon('arrow-right', 16);
   const pageIndex = findDocsPageIndex(slug);
-  const prev = toPagerLink(DOCS_PAGES[pageIndex - 1]);
-  const next = toPagerLink(DOCS_PAGES[pageIndex + 1]);
+  const prev = DOCS_PAGES[pageIndex - 1];
+  const next = DOCS_PAGES[pageIndex + 1];
+  const prevHtml = prev
+    ? `<a href="${escapeXml(buildDocsPath(prev.slug))}" class="btn-secondary" rel="prev" tabindex="0">${renderUiIcon('arrow-left', 16)}${escapeXml(prev.pagerLabel)}</a>`
+    : '';
+  const nextHtml = next
+    ? `<a href="${escapeXml(buildDocsPath(next.slug))}" class="btn-primary" rel="next" tabindex="0">${escapeXml(next.pagerLabel)}${renderUiIcon('arrow-right', 16)}</a>`
+    : '';
+  const pagerClass = prev ? 'pager-row' : 'pager-row is-end';
 
-  return `<nav class="pager-row" aria-label="Documentation pages">
-    <a href="${escapeXml(prev.href)}" class="btn-secondary" rel="prev" tabindex="0">${leftArrow}${escapeXml(prev.label)}</a>
-    <a href="${escapeXml(next.href)}" class="btn-primary" rel="next" tabindex="0">${escapeXml(next.label)}${rightArrow}</a>
+  return `<nav class="${pagerClass}" aria-label="Documentation pages">
+    ${prevHtml}
+    ${nextHtml}
   </nav>`;
 }
 

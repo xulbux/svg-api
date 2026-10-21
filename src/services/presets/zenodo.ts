@@ -60,8 +60,6 @@ function projectZenodoRecord(data: unknown): ZenodoRecordProjection | undefined 
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** Zenodo record endpoint (statistics refresh daily) with record page redirect. */
 const ZENODO_ENDPOINT = createEndpoint({
   api: 'https://zenodo.org/api/records/{target}',

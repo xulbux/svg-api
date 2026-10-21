@@ -25,6 +25,7 @@ import {
 } from '@/services/fetcher';
 import {
   buildPackageVersion,
+  buildTrailingSeriesSpecials,
   createScoreMetric,
   createVersionMetric,
   formatBytes,
@@ -33,9 +34,12 @@ import {
   formatCurrency,
   formatLicense,
   formatPercent,
+  formatPointDelta,
   formatRelativeDate,
   formatSpdxKey,
   formatVersion,
+  readDateKeyedSeries,
+  readStarHistogram,
   toFiniteNumber,
 } from '@/services/metrics';
 import { resolveIcon } from '@/svg/icons';
@@ -335,6 +339,31 @@ describe('endpoint helpers', () => {
     expect(first({ results: [] })).toBeUndefined();
     expect(first({ results: [null] })).toBeUndefined();
     expect(projectFirstEntry<{ x: number }>(undefined)([{ x: 5 }])).toEqual({ x: 5 });
+  });
+
+  it('extracts date-keyed daily series, star histograms, point deltas, and trailing series widgets', () => {
+    expect(
+      readDateKeyedSeries({ '2026-03-01': 10, '2026-03-02': 20, '2026-03-03': 'invalid' })
+    ).toEqual([10, 20, 0]);
+    expect(readDateKeyedSeries(null)).toEqual([]);
+
+    expect(readStarHistogram({ '1': 1, '2': '2', '3': 0, '4': 5, '5': 10 })).toEqual([
+      1, 2, 0, 5, 10,
+    ]);
+    expect(readStarHistogram({ '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 })).toBeUndefined();
+    expect(readStarHistogram(null)).toBeUndefined();
+
+    expect(formatPointDelta(1.84)).toBe('+1.8%');
+    expect(formatPointDelta(-0.4)).toBe('-0.4%');
+    expect(formatPointDelta(0.02)).toBe('0%');
+    expect(formatPointDelta(undefined)).toBeUndefined();
+
+    expect(buildTrailingSeriesSpecials([100, 150])).toEqual({
+      bars: { type: 'bars', values: [100, 150] },
+      delta: { type: 'delta', value: '+50%' },
+      sparkline: { type: 'sparkline', values: [100, 150] },
+    });
+    expect(buildTrailingSeriesSpecials([100])).toBeUndefined();
   });
 });
 
@@ -2509,6 +2538,74 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(resolvePathRedirect('/badge/hn/pg/karma')).toBe(
       'https://news.ycombinator.com/user?id=pg'
     );
+  });
+
+  it('resolves Conda, DUB, cdnjs, CTAN, and Debian package metrics and suite/channel defaults', async () => {
+    const requestedUrls = mockUpstream({
+      'api.anaconda.org/package/bioconda/samtools': { latest_version: '1.22.1', license: 'MIT' },
+      'api.anaconda.org/package/conda-forge/numpy': {
+        latest_version: '2.4.1',
+        license: 'BSD-3-Clause',
+      },
+      'api.cdnjs.com/libraries/htmx?fields=version,license': {
+        license: 'BSD 2-Clause',
+        version: '4.0.0',
+      },
+      'code.dlang.org/api/packages/vibe-d/latest/info': {
+        info: { license: 'MIT' },
+        version: '0.10.3',
+      },
+      'code.dlang.org/api/packages/vibe-d/stats': {
+        downloads: { daily: 350, monthly: 25_000, total: 1_896_585, weekly: 9800 },
+        score: 4.99,
+      },
+      'ctan.org/json/2.0/pkg/pgf': { license: ['lppl1.3c', 'gpl2'], version: { number: '3.1.12' } },
+      'sources.debian.org/api/src/curl/': {
+        versions: [
+          { suites: ['sid'], version: '8.23.0-1' },
+          { suites: ['trixie'], version: '8.14.1-2+deb13u5' },
+        ],
+      },
+      'sources.debian.org/api/src/missing/': { error: 404 },
+    });
+
+    expect(await describeMetric('/badge/conda/numpy/v')).toBe('conda: v2.4.1');
+    expect(await describeMetric('/badge/conda/numpy/license')).toBe('license: BSD-3-Clause');
+    expect(await describeMetric('/badge/conda/bioconda/samtools/v')).toBe('conda: v1.22.1');
+    expect(resolvePathRedirect('/badge/conda/numpy/v')).toBe(
+      'https://anaconda.org/conda-forge/numpy'
+    );
+
+    expect(await describeMetric('/badge/dub/vibe-d/v')).toBe('dub: v0.10.3');
+    expect(await describeMetric('/badge/dub/vibe-d/l')).toBe('license: MIT');
+    expect(await describeMetric('/badge/dub/vibe-d/dt')).toBe('downloads: 1.9M');
+    expect(await describeMetric('/badge/dub/vibe-d/dl')).toBe('downloads: 25k/mo');
+    const dubDw = await resolvePathMetric('/badge/dub/vibe-d/dw');
+    expect(dubDw.result.value).toBe('9.8k/wk');
+    expect(dubDw.result.specials?.delta).toEqual({ type: 'delta', value: '+112%' });
+    const dubDd = await resolvePathMetric('/badge/dub/vibe-d/dd');
+    expect(dubDd.result.value).toBe('350/day');
+    expect(dubDd.result.specials?.delta).toEqual({ type: 'delta', value: '-78%' });
+    const dubScore = await resolvePathMetric('/badge/dub/vibe-d/score');
+    expect(dubScore.result).toMatchObject({ special: { type: 'ring', value: 100 }, value: '5/5' });
+    expect(resolvePathRedirect('/badge/dub/vibe-d/v')).toBe(
+      'https://code.dlang.org/packages/vibe-d'
+    );
+
+    expect(await describeMetric('/badge/cdnjs/htmx/v')).toBe('cdnjs: v4.0.0');
+    expect(await describeMetric('/badge/cdnjs/htmx/license')).toBe('license: BSD 2-Clause');
+    expect(resolvePathRedirect('/badge/cdnjs/htmx/v')).toBe('https://cdnjs.com/libraries/htmx');
+
+    expect(await describeMetric('/badge/ctan/pgf/v')).toBe('ctan: v3.1.12');
+    expect(await describeMetric('/badge/ctan/pgf/license')).toBe('license: LPPL-1.3c');
+    expect(resolvePathRedirect('/badge/ctan/pgf/v')).toBe('https://ctan.org/pkg/pgf');
+
+    expect(await describeMetric('/badge/debian/curl/v')).toBe('debian: v8.23.0-1');
+    expect(await describeMetric('/badge/debian/stable/curl/v')).toBe('debian: v8.14.1-2+deb13u5');
+    expect(await describeMetric('/badge/debian/trixie/curl/v')).toBe('debian: v8.14.1-2+deb13u5');
+    expect(await describeMetric('/badge/debian/missing/v')).toBe('debian: not found');
+    expect(resolvePathRedirect('/badge/debian/curl/v')).toBe('https://tracker.debian.org/pkg/curl');
+    expect(requestedUrls).toContain('https://api.anaconda.org/package/conda-forge/numpy');
   });
 
   it('derives automatic inline widgets from single-request upstream series, histograms, checks, and ratios', async () => {

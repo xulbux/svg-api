@@ -8,7 +8,7 @@ interface SiteClientConfig {
   drawerMediaQuery: string;
   /** `localStorage` key of the persisted preview stage background. */
   previewBgStorageKey: string;
-  /** Allowed preview stage background values (the first one is the default and removes the attribute; never empty). */
+  /** Allowed preview stage background values (the first one is the default and removes the attribute; Never empty). */
   previewBgValues: [string, ...string[]];
   /** `localStorage` key of the persisted color scheme override. */
   schemeStorageKey: string;
@@ -40,7 +40,7 @@ interface PopoverSize {
 
 /** Options of a fallback popover placement. */
 interface PopoverPlacementOptions {
-  /** Horizontal alignment with the anchor (`'start'` aligns left edges, `'end'` right edges; defaults to `'start'`). */
+  /** Horizontal alignment with the anchor (`'start'` aligns left edges, `'end'` right edges; Defaults to `'start'`). */
   align?: 'end' | 'start';
   /** Distance in pixels between anchor and popover (defaults to `8`). */
   gap?: number;

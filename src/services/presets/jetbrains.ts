@@ -2,18 +2,12 @@
  * JetBrains Marketplace service preset – IDE plugin version, total downloads, and average rating (`/badge/jetbrains/:plugin/:metric`).
  */
 
-import {
-  createEndpoint,
-  defineService,
-  isJsonObject,
-  pickFields,
-  projectFirstEntry,
-} from '@/services/endpoint';
+import { createEndpoint, defineService, pickFields, projectFirstEntry } from '@/services/endpoint';
 import {
   createDownloadsMetric,
   createRatingMetric,
   createVersionMetric,
-  readFiniteNumber,
+  readStarHistogram,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -39,9 +33,6 @@ interface JetBrainsUpdateEntry {
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Star vote keys in ascending order (`1` through `5` stars). */
-const STAR_KEYS: readonly string[] = ['1', '2', '3', '4', '5'];
 
 /** Shared JetBrains Marketplace plugin page URL template. */
 const PLUGIN_PAGE = 'https://plugins.jetbrains.com/plugin/{target}';
@@ -72,20 +63,6 @@ const UPDATES_ENDPOINT = createEndpoint({
 /** Matches a positive numeric JetBrains Marketplace plugin ID (`plugins.jetbrains.com/plugin/:id`). */
 const PLUGIN_ID_RX = /^[1-9]\d{0,11}$/;
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Read the 1-star through 5-star vote distribution from `rating.votes`. */
-function readJetBrainsVotes(rating: Partial<JetBrainsRatingPayload>): number[] | undefined {
-  if (!isJsonObject(rating.votes)) {
-    return undefined;
-  }
-  const counts: number[] = [];
-  for (const key of STAR_KEYS) {
-    counts.push(readFiniteNumber(rating.votes[key]) ?? 0);
-  }
-  return counts;
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** JetBrains Marketplace service preset (`jetbrains`). */
@@ -100,7 +77,7 @@ export const JETBRAINS_SERVICE = defineService({
     rating: createRatingMetric(
       RATING_ENDPOINT,
       (rating) => [rating.meanRating, 5],
-      readJetBrainsVotes
+      (rating) => readStarHistogram(rating.votes)
     ),
     v: createVersionMetric(
       UPDATES_ENDPOINT,

@@ -160,16 +160,12 @@ const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   },
 ];
 
-/** Multi-group tech stack DSL bands matching the full profile layout (joined with `;` on use). */
-const FULL_PROFILE_GROUP_BANDS: readonly string[] = [
-  'c,cpp,cs,rust,java,py,js,ts,php,lua,bash,powershell,html,css,sass,md:8',
-  'dotnet,vue,pinia,laravel,symfony,nodejs,threejs,tauri,unity,unreal,tailwind,wordpress:6',
-  'git,github,githubactions,vscode,visualstudio,npm,vite,cmake,linux,windows,raspberrypi,arduino:6|aws,azure,cloudflare,firebase,netlify,terraform,mysql,sqlite:4',
-  'figma,ai,blender,ps,pr,ae:3|obsidian,notion,codepen,gtk,latex,regex:3',
-];
+/** Multi-group tech stack DSL example shared by the `/` homepage and `/docs/stack` previews. */
+export const STACK_EXAMPLE_GROUPS =
+  'c,cpp,cs,rust,py,js,ts,java:4|vue,tailwind,unocss,threejs:2;docker,cloudflare|git,vite|figma,pr;linux,raspberrypi,markdown,latex,obsidian,n8n';
 
-/** URL-encoded sample quote text used across the quote card examples. */
-const ENCODED_CHAOS_QUOTE =
+/** URL-encoded sample quote text shared by the `/` homepage and `/docs/quotes` previews. */
+export const ENCODED_CHAOS_QUOTE =
   'Who+says+programmers+are+boring%3F+I+bring+the+humor+to+the+office+while+my+code+brings+the+chaos!';
 
 /** URL-encoded second sample quote text. */
@@ -232,7 +228,7 @@ const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Combine diagonal surface sheen (?anim=sheen), pulsing status dots (?dot=), icon motion (?anim=pulse|auto|...), and per-icon pairs (?anim=shake,nudge).',
+      'Combine diagonal surface sheen (?anim=sheen), pulsing status dots (?dot=), icon motion (?anim=pulse|auto|…), and per-icon pairs (?anim=shake,nudge).',
     title: 'Surface Sheen, Status Dots & Icon Motion (?anim= & ?dot=)',
   },
   {
@@ -253,7 +249,7 @@ const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
   },
 ];
 
-/** Showcase cards for the dedicated `/docs/services` page (sample values; no network access). */
+/** Showcase cards for the dedicated `/docs/services` page (sample values; No network access). */
 const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
@@ -319,7 +315,7 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Pass a bare widget kind (?special=sparkline, bars, delta, bar, ring, steps, or strip) on supported metrics to populate the widget from live upstream data, ?special=none to hide a default preset widget, or ?special=<kind>:<payload> to supply custom numbers.',
-    title: 'Automatic Inline Data Widgets (?special=sparkline|bars|delta|...)',
+    title: 'Automatic Inline Data Widgets (?special=sparkline|bars|delta|…)',
   },
   {
     items: [
@@ -355,10 +351,12 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'JSR Score', path: '/badge/jsr/std/path/score', sample: { score: 100 } },
       { alt: 'jsDelivr Monthly Hits', path: '/badge/jsdelivr/jquery/hm', sample: '1.6B/mo' },
       { alt: 'jsDelivr Yearly Hits', path: '/badge/jsdelivr/hono/hy', sample: '58.2M/yr' },
+      { alt: 'cdnjs Version', path: '/badge/cdnjs/htmx/v', sample: 'v4.0.0' },
+      { alt: 'cdnjs License', path: '/badge/cdnjs/htmx/license', sample: 'BSD-2-Clause' },
     ],
     subtitle:
-      'JSR package version and quality score ring, plus jsDelivr CDN hits for any npm package.',
-    title: 'JSR & jsDelivr (/badge/jsr/*, /badge/jsdelivr/*)',
+      'JSR package version and quality score ring, jsDelivr CDN hits for any npm package, and cdnjs library versions and licenses.',
+    title: 'JSR, jsDelivr & cdnjs (/badge/jsr/*, /badge/jsdelivr/*, /badge/cdnjs/*)',
   },
   {
     items: [
@@ -451,6 +449,12 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       { alt: 'Arch Linux Version', path: '/badge/arch/firefox/v', sample: 'v158.0-1' },
       { alt: 'Arch Linux Repository', path: '/badge/arch/firefox/repo', sample: 'extra' },
+      { alt: 'Debian Unstable Version', path: '/badge/debian/curl/v', sample: 'v8.23.0-1' },
+      {
+        alt: 'Debian Stable Version',
+        path: '/badge/debian/stable/curl/v',
+        sample: 'v8.14.1-2+deb13u5',
+      },
       { alt: 'Fedora Rawhide Version', path: '/badge/fedora/python3/v', sample: 'v3.15.0-1.fc46' },
       { alt: 'Fedora 43 Version', path: '/badge/fedora/f43/python3/v', sample: 'v3.14.8-1.fc43' },
       { alt: 'MacPorts Version', path: '/badge/macports/git/v', sample: 'v2.56.0' },
@@ -461,8 +465,9 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Official Arch Linux repository versions (amber when flagged out-of-date), Fedora branch versions (omit the branch for rawhide), and MacPorts ports.',
-    title: 'Arch Linux, Fedora & MacPorts (/badge/arch/*, /badge/fedora/*, /badge/macports/*)',
+      'Official Arch Linux repository versions (amber when flagged out-of-date), Debian suite versions (omit the suite for sid), Fedora branch versions (omit the branch for rawhide), and MacPorts ports.',
+    title:
+      'Arch Linux, Debian, Fedora & MacPorts (/badge/arch/*, /badge/debian/*, /badge/fedora/*, /badge/macports/*)',
   },
   {
     items: [
@@ -815,6 +820,20 @@ const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
+      { alt: 'Conda-Forge Version', path: '/badge/conda/numpy/v', sample: 'v2.4.1' },
+      { alt: 'Bioconda Version', path: '/badge/conda/bioconda/samtools/v', sample: 'v1.22.1' },
+      { alt: 'DUB Version', path: '/badge/dub/vibe-d/v', sample: 'v0.10.3' },
+      { alt: 'DUB Downloads', path: '/badge/dub/vibe-d/dt', sample: '1.9M' },
+      { alt: 'DUB Score', path: '/badge/dub/vibe-d/score', sample: { score: 5 } },
+      { alt: 'CTAN Version', path: '/badge/ctan/pgf/v', sample: 'v3.1.12' },
+      { alt: 'CTAN License', path: '/badge/ctan/pgf/license', sample: 'LPPL-1.3c' },
+    ],
+    subtitle:
+      'Conda packages on Anaconda Cloud (omit :channel for conda-forge), D packages on DUB (version, downloads, license, and score ring), and TeX/LaTeX packages on CTAN.',
+    title: 'Conda, DUB & CTAN (/badge/conda/*, /badge/dub/*, /badge/ctan/*)',
+  },
+  {
+    items: [
       { alt: 'Steam Players', path: '/badge/steam/730/players', sample: '982.3k' },
       { alt: 'Hacker News Karma', path: '/badge/hn/pg/karma', sample: '157.3k' },
     ],
@@ -1032,7 +1051,7 @@ function formatRange(range: NumericRange): string {
 
 /** Format the `?color=` parameter row values. */
 function formatColorValues(): string {
-  return `indigo | cyan | emerald | rose | amber | ... (${THEME_COLOR_NAMES.length} colors)`;
+  return `indigo | cyan | emerald | rose | amber | … (${THEME_COLOR_NAMES.length} colors)`;
 }
 
 /** Build a `?color=` parameter row. */
@@ -1046,7 +1065,7 @@ function buildDotParamRow(description: string): ParamTableRow {
     defaultVal: 'none',
     description: `${description} Accepts a status preset name or any theme color; none removes a preset dot.`,
     name: '?dot=',
-    values: `none | ${Object.keys(STATUS_PRESET_MAP).join(' | ')} | emerald | sky | ... (${THEME_COLOR_NAMES.length} colors)`,
+    values: `none | ${Object.keys(STATUS_PRESET_MAP).join(' | ')} | emerald | sky | … (${THEME_COLOR_NAMES.length} colors)`,
   };
 }
 
@@ -1192,7 +1211,7 @@ function buildBadgeParamRows(): ParamTableRow[] {
     ),
     buildIconQueryParamRow(
       'Leading left icon (icon=name), both left and right icons (icon=left,right), right-only icon (icon=none,right), or none.',
-      'circle-check | rocket,arrow-right | none,external-link | none | ...'
+      'circle-check | rocket,arrow-right | none,external-link | none | …'
     ),
     buildDotParamRow('Pulsing radar status dot.'),
     {
@@ -1225,7 +1244,7 @@ function buildButtonParamRows(): ParamTableRow[] {
     ),
     buildIconQueryParamRow(
       'Leading left icon (icon=name), both left and right icons (icon=left,right), or trailing right icon only (icon=none,right).',
-      'rocket | book-open,arrow-right | none,chevron-right | sparkles | ...'
+      'rocket | book-open,arrow-right | none,chevron-right | sparkles | …'
     ),
     buildDotParamRow('Leading pulsing radar status dot.'),
     buildAnimParamRow(),
@@ -1266,7 +1285,7 @@ function formatServiceDefaultValue(service: ServiceDefinition): string {
   const { owner } = service.route;
   const ownerMode = resolveServiceOwnerMode(service);
   if (!owner || ownerMode === 'none') {
-    return '~—';
+    return '~–';
   }
   if (ownerMode === 'required') {
     return `~${owner.placeholder} required`;
@@ -1304,7 +1323,7 @@ function buildServiceParamRows(): ParamTableRow[] {
       defaultVal: '~service preset',
       description:
         'All standard badge query params (?variant=, ?color=, ?icon=, ?dot=, ?anim=, ?special=) apply; An empty ?icon= keeps the preset icon.',
-      name: '?variant= / ?color= / ...',
+      name: '?variant= / ?color= / …',
       values: `${formatVariantValues()} (and ${THEME_COLOR_NAMES.length} colors)`,
     }
   );
@@ -1319,7 +1338,7 @@ function buildIconParamRows(): ParamTableRow[] {
       description:
         'Lucide stroke slug, Simple Icons slug, Devicon Plain slug, or one of the slug aliases listed below.',
       name: ':icon',
-      values: 'rocket | star | python | rust | archlinux | ...',
+      values: 'rocket | star | python | rust | archlinux | …',
     },
     buildColorParamRow(
       'indigo',
@@ -1481,12 +1500,12 @@ function buildButtonVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   ];
 }
 
-/** Build the single full-profile stack example for a stack variant. */
+/** Build the single stack example for a stack variant. */
 function buildStackVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   return [
     {
       alt: `Tech Stack (Variant ${variant})`,
-      path: `/stack/${FULL_PROFILE_GROUP_BANDS.join(';')}?variant=${variant}`,
+      path: `/stack/${STACK_EXAMPLE_GROUPS}?variant=${variant}`,
     },
   ];
 }
@@ -1509,10 +1528,10 @@ function renderVariantCardsHtml(
   return cardsHtml;
 }
 
-/** Count the icons of the full-profile stack example through the live stack DSL parser. */
-function countFullProfileIcons(): number {
+/** Count the icons of the stack showcase example through the live stack DSL parser. */
+function countStackExampleIcons(): number {
   let iconCount = 0;
-  for (const band of parseStackGroups(FULL_PROFILE_GROUP_BANDS.join(';'))) {
+  for (const band of parseStackGroups(STACK_EXAMPLE_GROUPS)) {
     for (const group of band) {
       iconCount += group.icons.length;
     }
@@ -1585,13 +1604,13 @@ function buildSharedParamRows(): ParamTableRow[] {
 function buildCachingRows(): ParamTableRow[] {
   return [
     {
-      defaultVal: '~—',
+      defaultVal: '~–',
       description: 'Deterministic SVGs; Identical URLs always render identical output.',
       name: '/badge/:label/:value, /button, /icon, /stack, /quote',
       values: formatDuration(STATIC_TTL_SECONDS),
     },
     {
-      defaultVal: '~—',
+      defaultVal: '~–',
       description: 'Status presets refresh faster so state changes propagate quickly.',
       name: '/badge/status/:state/:text',
       values: formatDuration(STATUS_TTL_SECONDS),
@@ -1599,7 +1618,7 @@ function buildCachingRows(): ParamTableRow[] {
     {
       defaultVal: formatDuration(SERVICE_ERROR_TTL_SECONDS),
       description: 'Upstream JSON is cached separately; Failed or pending lookups retry sooner.',
-      name: '/badge/:service/...',
+      name: '/badge/:service/…',
       values: formatDuration(SERVICE_TTL_SECONDS),
     },
   ];
@@ -1715,7 +1734,7 @@ export function renderIconsSectionHtml(): string {
 export function renderStackSectionHtml(): string {
   return `<section class="doc-section" id="stack">
     ${renderSectionHeader({
-      description: `Combine multiple technology groups into one SVG using \`icon@color\` for per-tile colors, \`:N\` for columns, \`|\` for side-by-side groups, and \`;\` for row bands. Every example below renders the same ${countFullProfileIcons()}-icon profile.`,
+      description: `Combine multiple technology groups into one SVG using \`icon@color\` for per-tile colors, \`:N\` for columns, \`|\` for side-by-side groups, and \`;\` for row bands. Every example below renders the same ${countStackExampleIcons()}-icon profile.`,
       routes: [
         '/stack/:groups',
         '/stack?groups=:groups',

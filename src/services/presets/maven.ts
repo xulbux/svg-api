@@ -31,8 +31,6 @@ function projectMavenArtifact(data: unknown): MavenArtifactProjection | undefine
   return { version: readText(firstDoc.latestVersion) };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** Maven Central Solr search endpoint (1 row) with Sonatype Central artifact page redirect. */
 const MAVEN_ENDPOINT = createEndpoint({
   api: 'https://search.maven.org/solrsearch/select?q=g:{owner}+AND+a:{target}&rows=1&wt=json',

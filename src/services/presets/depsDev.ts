@@ -14,8 +14,9 @@ import {
   createCountMetric,
   createLicenseMetric,
   createScorecardMetric,
+  readFiniteNumber,
   readScorecardCheckScores,
-  toFiniteNumber,
+  readText,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
 
@@ -39,11 +40,6 @@ interface DepsDevProjectProjection {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Read a finite number field. */
-function readNumber(value: unknown): number | undefined {
-  return typeof value === 'number' ? toFiniteNumber(value) : undefined;
-}
-
 /** Project a deps.dev project into its counters, license, and Scorecard score + check scores. */
 function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefined {
   if (!isJsonObject(data)) {
@@ -53,11 +49,11 @@ function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefi
   const checks = readScorecardCheckScores(scorecard?.checks);
   return {
     ...(checks ? { checks } : {}),
-    forks: readNumber(data.forksCount),
-    issues: readNumber(data.openIssuesCount),
-    license: typeof data.license === 'string' && data.license ? data.license : undefined,
-    score: readNumber(scorecard?.overallScore),
-    stars: readNumber(data.starsCount),
+    forks: readFiniteNumber(data.forksCount),
+    issues: readFiniteNumber(data.openIssuesCount),
+    license: readText(data.license),
+    score: readFiniteNumber(scorecard?.overallScore),
+    stars: readFiniteNumber(data.starsCount),
   };
 }
 

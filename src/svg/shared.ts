@@ -115,7 +115,7 @@ interface SvgDocumentOptions {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** ID of the shared dark-slate surface `<linearGradient>`. */
-export const BG_DARK_ID = 'bg-dark';
+const BG_DARK_ID = 'bg-dark';
 
 /** Font size in pixels of `22px` badge labels and values (also the default text measurement size). */
 export const BADGE_FONT_SIZE = 11;
@@ -128,7 +128,7 @@ export const BADGE_FONT_SIZE = 11;
 export const PRIMARY_FOREGROUND_OPACITY = 0.85;
 
 /** Opacity of the white split divider line on vivid primary (`variant=1`) surfaces. */
-export const PRIMARY_DIVIDER_OPACITY = 0.28;
+const PRIMARY_DIVIDER_OPACITY = 0.28;
 
 /** Ellipsis appended to truncated text. */
 export const ELLIPSIS = '…';
@@ -223,7 +223,121 @@ function renderDividerLine(lineX: number, topY: number, bottomY: number, stroke:
   return `<line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="${stroke}" stroke-width="1" />`;
 }
 
+/**
+ * Build the ID of the vertical theme `<linearGradient>` for a color (`'grad-<color>'`).
+ * @param color   Theme color token.
+ * @returns Gradient element ID.
+ */
+function buildThemeGradientId(color: ThemeColorName): string {
+  return `grad-${color}`;
+}
+
+/**
+ * Render a top-to-bottom two-stop `<linearGradient>` definition.
+ * @param id              Gradient element ID.
+ * @param topColor        Color of the top (`0%`) stop.
+ * @param bottomColor     Color of the bottom (`100%`) stop.
+ * @param topOpacity      Optional `stop-opacity` of the top stop (omitted when `undefined`).
+ * @param bottomOpacity   Optional `stop-opacity` of the bottom stop (omitted when `undefined`).
+ * @returns `<linearGradient>` SVG string.
+ */
+function renderVerticalGradientDef(
+  id: string,
+  topColor: string,
+  bottomColor: string,
+  topOpacity?: number,
+  bottomOpacity?: number
+): string {
+  const topOpacityAttr = topOpacity === undefined ? '' : ` stop-opacity="${topOpacity}"`;
+  const bottomOpacityAttr = bottomOpacity === undefined ? '' : ` stop-opacity="${bottomOpacity}"`;
+  return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${topColor}"${topOpacityAttr} /><stop offset="100%" stop-color="${bottomColor}"${bottomOpacityAttr} /></linearGradient>`;
+}
+
+/** Render the shared `<linearGradient id="bg-dark">` definition for dark-slate surfaces (built once per isolate). */
+function renderDarkBgGradientDef(): string {
+  LAZY_MARKUP.darkBgGradientDef ??= renderVerticalGradientDef(
+    BG_DARK_ID,
+    BASE_DARK.bgTop,
+    BASE_DARK.bgBottom
+  );
+  return LAZY_MARKUP.darkBgGradientDef;
+}
+
+/** Render the vertical theme `<linearGradient id="grad-<color>">` definition (from `gradStart` to `gradEnd`), memoized per color. */
+function renderThemeGradientDef(color: ThemeColorName): string {
+  let gradientDef = THEME_GRADIENT_DEF_CACHE.get(color);
+  if (gradientDef === undefined) {
+    const palette = THEMES[color];
+    gradientDef = renderVerticalGradientDef(
+      buildThemeGradientId(color),
+      palette.gradStart,
+      palette.gradEnd
+    );
+    THEME_GRADIENT_DEF_CACHE.set(color, gradientDef);
+  }
+  return gradientDef;
+}
+
+/**
+ * Build the SVG `<path>` `d` attribute for Cloudflare Kumo's upper-edge 3D highlight crescent.
+ * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
+ * highlight is `1px` thick along the top straight edge and tapers smoothly to `0px` around the
+ * top corner curve without extending down the vertical sides.
+ */
+function buildTopCrescentPath(
+  startX: number,
+  endX: number,
+  radius: number,
+  hasRoundedLeftCorner: boolean,
+  topY = 0
+): string {
+  const innerRadius = radius - 1;
+  const innerRadiusY = innerRadius - 1;
+  const rightArcStart = endX - 1 - innerRadius;
+  const rightTangentX = endX - 1;
+  const outerTopY = topY + 1;
+  const innerTopY = topY + 2;
+  const cornerEndY = outerTopY + innerRadius;
+
+  if (!hasRoundedLeftCorner) {
+    const leftEdgeX = startX + 0.5;
+    return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
+  }
+
+  const leftTangentX = startX + 1;
+  const leftArcEnd = startX + 1 + innerRadius;
+  return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
+}
+
+/** Build the SVG `<path>` `d` attribute for the left capsule of a split badge (rounded left corners, square right edge). */
+function buildLeftCapsulePath(
+  startX: number,
+  endX: number,
+  height: number,
+  radius: number,
+  topY = 0,
+  isClosed = true
+): string {
+  const bottomY = topY + height;
+  const cornerX = startX + radius;
+  return `M ${endX} ${topY} H ${cornerX} A ${radius} ${radius} 0 0 0 ${startX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 0 ${cornerX} ${bottomY} H ${endX}${isClosed ? ' Z' : ''}`;
+}
+
+/** Build the SVG `<path>` `d` attribute for the right capsule of a split badge (square left edge, rounded right corners). */
+function buildRightCapsulePath(
+  startX: number,
+  endX: number,
+  height: number,
+  radius: number,
+  topY = 0
+): string {
+  const bottomY = topY + height;
+  return `M ${startX} ${topY} H ${endX - radius} A ${radius} ${radius} 0 0 1 ${endX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 1 ${endX - radius} ${bottomY} H ${startX} Z`;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { buildThemeGradientId, renderVerticalGradientDef };
 
 /**
  * Look up an own (non-inherited) property of a lookup table by a user-supplied key.
@@ -557,68 +671,6 @@ export function resolveForegroundColor(isOnPrimary: boolean, accentColor: string
 }
 
 /**
- * Build the ID of the vertical theme `<linearGradient>` for a color (`'grad-<color>'`).
- * @param color   Theme color token.
- * @returns Gradient element ID.
- */
-export function buildThemeGradientId(color: ThemeColorName): string {
-  return `grad-${color}`;
-}
-
-/**
- * Render a top-to-bottom two-stop `<linearGradient>` definition.
- * @param id              Gradient element ID.
- * @param topColor        Color of the top (`0%`) stop.
- * @param bottomColor     Color of the bottom (`100%`) stop.
- * @param topOpacity      Optional `stop-opacity` of the top stop (omitted when `undefined`).
- * @param bottomOpacity   Optional `stop-opacity` of the bottom stop (omitted when `undefined`).
- * @returns `<linearGradient>` SVG string.
- */
-export function renderVerticalGradientDef(
-  id: string,
-  topColor: string,
-  bottomColor: string,
-  topOpacity?: number,
-  bottomOpacity?: number
-): string {
-  const topOpacityAttr = topOpacity === undefined ? '' : ` stop-opacity="${topOpacity}"`;
-  const bottomOpacityAttr = bottomOpacity === undefined ? '' : ` stop-opacity="${bottomOpacity}"`;
-  return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${topColor}"${topOpacityAttr} /><stop offset="100%" stop-color="${bottomColor}"${bottomOpacityAttr} /></linearGradient>`;
-}
-
-/**
- * Render the shared `<linearGradient id="bg-dark">` definition for dark-slate surfaces (built once per isolate).
- * @returns `<linearGradient>` SVG string.
- */
-export function renderDarkBgGradientDef(): string {
-  LAZY_MARKUP.darkBgGradientDef ??= renderVerticalGradientDef(
-    BG_DARK_ID,
-    BASE_DARK.bgTop,
-    BASE_DARK.bgBottom
-  );
-  return LAZY_MARKUP.darkBgGradientDef;
-}
-
-/**
- * Render the vertical theme `<linearGradient id="grad-<color>">` definition (from `gradStart` to `gradEnd`), memoized per color.
- * @param color   Theme color token.
- * @returns `<linearGradient>` SVG string.
- */
-export function renderThemeGradientDef(color: ThemeColorName): string {
-  let gradientDef = THEME_GRADIENT_DEF_CACHE.get(color);
-  if (gradientDef === undefined) {
-    const palette = THEMES[color];
-    gradientDef = renderVerticalGradientDef(
-      buildThemeGradientId(color),
-      palette.gradStart,
-      palette.gradEnd
-    );
-    THEME_GRADIENT_DEF_CACHE.set(color, gradientDef);
-  }
-  return gradientDef;
-}
-
-/**
  * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme
  * gradient per primary color (shared by badges, buttons, stacks, and quote cards).
  * @param hasDarkBg     Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
@@ -666,86 +718,6 @@ export function renderSweepAnimation(
   timing: Readonly<SweepTiming>
 ): string {
   return `<${element} ${targetAttrs} values="${from};${to};${to}" keyTimes="0;${timing.sweepEnd};1" calcMode="spline" keySplines="${timing.easing};0 0 1 1" dur="${timing.duration}" repeatCount="indefinite" />`;
-}
-
-/**
- * Build the SVG `<path>` `d` attribute for Cloudflare Kumo's upper-edge 3D highlight crescent.
- * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
- * highlight is `1px` thick along the top straight edge and tapers smoothly to `0px` around the
- * top corner curve without extending down the vertical sides.
- * @param startX                 Left X coordinate of the capsule or tile.
- * @param endX                   Right X coordinate of the capsule or tile.
- * @param radius                 Outer border radius in pixels.
- * @param hasRoundedLeftCorner   Whether the left edge is rounded (`true` for full pills/tiles, `false` for split right capsules).
- * @param topY                   Top Y coordinate of the capsule or tile (defaults to `0`).
- * @returns SVG `<path>` `d` attribute string.
- */
-export function buildTopCrescentPath(
-  startX: number,
-  endX: number,
-  radius: number,
-  hasRoundedLeftCorner: boolean,
-  topY = 0
-): string {
-  const innerRadius = radius - 1;
-  const innerRadiusY = innerRadius - 1;
-  const rightArcStart = endX - 1 - innerRadius;
-  const rightTangentX = endX - 1;
-  const outerTopY = topY + 1;
-  const innerTopY = topY + 2;
-  const cornerEndY = outerTopY + innerRadius;
-
-  if (!hasRoundedLeftCorner) {
-    const leftEdgeX = startX + 0.5;
-    return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
-  }
-
-  const leftTangentX = startX + 1;
-  const leftArcEnd = startX + 1 + innerRadius;
-  return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
-}
-
-/**
- * Build the SVG `<path>` `d` attribute for the left capsule of a split badge (rounded left corners, square right edge).
- * @param startX     Left X coordinate of the capsule.
- * @param endX       Right X coordinate of the capsule (the split position).
- * @param height     Capsule height in pixels.
- * @param radius     Outer corner radius in pixels.
- * @param topY       Top Y coordinate of the capsule (defaults to `0`).
- * @param isClosed   Whether to close the path along the square right edge (`false` for open border strokes; Defaults to `true`).
- * @returns SVG `<path>` `d` attribute string.
- */
-export function buildLeftCapsulePath(
-  startX: number,
-  endX: number,
-  height: number,
-  radius: number,
-  topY = 0,
-  isClosed = true
-): string {
-  const bottomY = topY + height;
-  const cornerX = startX + radius;
-  return `M ${endX} ${topY} H ${cornerX} A ${radius} ${radius} 0 0 0 ${startX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 0 ${cornerX} ${bottomY} H ${endX}${isClosed ? ' Z' : ''}`;
-}
-
-/**
- * Build the SVG `<path>` `d` attribute for the right capsule of a split badge (square left edge, rounded right corners).
- * @param startX   Left X coordinate of the capsule (the split position).
- * @param endX     Right X coordinate of the capsule.
- * @param height   Capsule height in pixels.
- * @param radius   Outer corner radius in pixels.
- * @param topY     Top Y coordinate of the capsule (defaults to `0`).
- * @returns SVG `<path>` `d` attribute string.
- */
-export function buildRightCapsulePath(
-  startX: number,
-  endX: number,
-  height: number,
-  radius: number,
-  topY = 0
-): string {
-  const bottomY = topY + height;
-  return `M ${startX} ${topY} H ${endX - radius} A ${radius} ${radius} 0 0 1 ${endX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 1 ${endX - radius} ${bottomY} H ${startX} Z`;
 }
 
 /**

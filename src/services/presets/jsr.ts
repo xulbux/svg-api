@@ -2,13 +2,8 @@
  * JSR service preset – JavaScript Registry package version and JSR quality score (`/badge/jsr/:scope/:pkg/:metric`).
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import {
-  createPercentScoreMetric,
-  createVersionMetric,
-  SCORE,
-  stripScopePrefix,
-} from '@/services/metrics';
+import { createEndpoint, defineService, pickFields, stripScopePrefix } from '@/services/endpoint';
+import { createPercentScoreMetric, createVersionMetric, SCORE } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 

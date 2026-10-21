@@ -1,5 +1,5 @@
 /**
- * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, ...) into typed render options.
+ * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, …) into typed render options.
  */
 
 import { STATUS_PRESET_MAP } from '@/config/services';

@@ -21,6 +21,7 @@ import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readText,
   toFiniteNumber,
 } from '@/services/metrics';
 import type { MetricResult, RawCount, ServiceRouteParams } from '@/types';
@@ -83,11 +84,6 @@ const PEP503_SEPARATOR_RX = /[-_.]+/g;
  */
 function normalizePyPiName(pkg: string): string {
   return pkg.replace(PEP503_SEPARATOR_RX, '-').toLowerCase();
-}
-
-/** Read a non-empty string field. */
-function readText(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
 /** Read the most specific level of the last `License ::` trove classifier (`MIT License`). */

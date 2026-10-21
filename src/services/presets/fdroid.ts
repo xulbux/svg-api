@@ -37,8 +37,6 @@ function projectFdroidPackage(data: unknown): FdroidPackageProjection | undefine
   return { version: newestVersion };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** F-Droid package endpoint with f-droid.org app page redirect. */
 const FDROID_ENDPOINT = createEndpoint({
   api: 'https://f-droid.org/api/v1/packages/{target}',

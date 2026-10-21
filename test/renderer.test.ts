@@ -43,6 +43,9 @@ const USE_HREF_RX = /<use href="#(?<id>[^"]+)"/g;
 const WATERMARK_TRANSFORM_RX =
   /<g transform="translate\((?<x>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)" fill="none" stroke="[^"]+" stroke-opacity/;
 
+/** Matches the `id` attribute of a `<clipPath>` element and captures its value. */
+const CLIP_PATH_ID_RX = /clipPath id="(?<id>[^"]+)"/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Extract the `d` attribute of the 3D top crescent of a secondary or tertiary surface. */
@@ -821,14 +824,13 @@ describe('rendering regressions', () => {
   });
 
   it('gives differently laid out stacks with equal size different sheen clip IDs (regression: duplicate IDs with different content)', () => {
-    const clipIdRx = /clipPath id="(?<id>[^"]+)"/;
     const leftHeavySvg = renderStack({ anim: 'sheen', icons: ['rust,go,ts|py'] });
     const rightHeavySvg = renderStack({ anim: 'sheen', icons: ['rust|go,ts,py'] });
     expect(leftHeavySvg).toContain('width="210" height="42"');
     expect(rightHeavySvg).toContain('width="210" height="42"');
-    const leftHeavyId = clipIdRx.exec(leftHeavySvg)?.groups?.id;
+    const leftHeavyId = CLIP_PATH_ID_RX.exec(leftHeavySvg)?.groups?.id;
     expect(leftHeavyId).toMatch(/^stack-sheen-clip-210-42-/);
-    expect(leftHeavyId).not.toBe(clipIdRx.exec(rightHeavySvg)?.groups?.id);
+    expect(leftHeavyId).not.toBe(CLIP_PATH_ID_RX.exec(rightHeavySvg)?.groups?.id);
     expect(renderStack({ anim: 'sheen', icons: ['rust,go,ts|py'] })).toContain(
       `id="${leftHeavyId}"`
     );

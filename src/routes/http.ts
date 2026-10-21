@@ -22,7 +22,7 @@ export const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * badge is opened directly): No scripts or external resources; Inline style attributes and SMIL
  * animations keep working.
  */
-export const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'";
+const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'";
 
 /** `Vary` header of service preset badges (document navigations redirect, image requests get the SVG). */
 export const SERVICE_VARY_HEADER = 'Sec-Fetch-Dest, Accept';
@@ -60,7 +60,7 @@ function stripWeakPrefix(etag: string): string {
 
 /**
  * Determine whether an incoming HTTP request is a top-level browser document navigation
- * rather than an embedded `<img src="...">` request.
+ * rather than an embedded `<img src="…">` request.
  * @param request   Incoming Fetch API `Request`.
  * @returns `true` when the request should trigger a `302` redirect if a destination URL exists.
  */

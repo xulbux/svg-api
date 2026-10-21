@@ -164,12 +164,15 @@ li {
 }
 
 pre,
-code {
+code,
+.param-table tbody th,
+.builder-textarea.is-mono,
+.icon-picker-foot {
   font-family: var(--font-mono);
   font-feature-settings:
-    'calt' 1,
-    'liga' 1;
-  font-variant-ligatures: normal;
+    'calt' 0,
+    'liga' 0;
+  font-variant-ligatures: none;
 }
 
 /* Keyboard Focus Rings */

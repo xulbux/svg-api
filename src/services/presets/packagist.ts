@@ -67,8 +67,6 @@ function projectPackagistStats(data: unknown): PackagistStatsProjection | undefi
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** Packagist statistics endpoint with package page redirect. */
 const PACKAGIST_ENDPOINT = createEndpoint({
   api: 'https://packagist.org/packages/{owner}/{target}/stats.json',

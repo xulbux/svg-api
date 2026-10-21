@@ -121,7 +121,6 @@
 }
 
 .builder-textarea.is-mono {
-  font-family: var(--font-mono);
   font-size: 0.8rem;
 }
 
@@ -854,7 +853,6 @@
   padding: 7px 12px;
   overflow: hidden;
   border-block-start: 1px solid var(--c-border);
-  font-family: var(--font-mono);
   font-size: 0.74rem;
   text-overflow: ellipsis;
   white-space: nowrap;

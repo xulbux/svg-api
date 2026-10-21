@@ -58,47 +58,68 @@ interface SnippetSet {
 
 /** Pure helpers exposed by the builder client script (`svgBuilderCore`). */
 interface BuilderCore {
+  /** Build a human-readable default alt text for the current element state. */
   buildAltText: (schema: BuilderSchema, state: BuilderState) => string;
+  /** Build the default click-through target URL for a service badge or element. */
   buildDefaultLinkTarget: (schema: BuilderSchema, state: BuilderState, url: string) => string;
+  /** Build the relative SVG request path and list of missing required fields. */
   buildPath: (schema: BuilderSchema, state: BuilderState) => { missing: string[]; path: string };
+  /** Append `anim=none` when reduced motion is enabled. */
   buildPreviewPath: (path: string, isReducedMotion: boolean) => string;
+  /** Build the shareable builder URL for the current element path and snippet options. */
   buildShareUrl: (href: string, path: string, alt: string, link: string) => string;
+  /** Build the plain-text Markdown, HTML, and URL copy snippets. */
   buildSnippets: (url: string, alt: string, link: string) => SnippetSet;
+  /** Build the syntax-highlighted token lists for the Markdown, HTML, and URL snippets. */
   buildSnippetTokens: (
     url: string,
     alt: string,
     link: string
   ) => Record<keyof SnippetSet, HighlightToken[]>;
+  /** Split a stack groups string into individual non-empty icon slugs. */
   collectStackSlugs: (groups: string) => string[];
+  /** Compose a `?anim=` query value from the sheen toggle and left/right icon motion tokens. */
   composeAnim: (hasSheen: boolean, left: string, right: string) => string;
+  /** Compose the `/stack/:icons` path segment from categorized icon groups. */
   composeCategorizedStack: (
     categoryGroups: readonly (readonly string[])[],
     isGroupedByCategory: boolean,
     rawPerLine?: string
   ) => string;
+  /** Compose a `?icon=` query value from left and right icon slugs. */
   composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
+  /** Compose a `?special=` query value from its kind, payload, and modifier. */
   composeSpecial: (
     kind: string,
     payload: string,
     modifier: string,
     isAutoAllowed?: boolean
   ) => string;
+  /** Compute the next focused grid cell index for an arrow/Home/End key press. */
   computeGridFocusIndex: (
     key: string,
     index: number,
     columns: number,
     total: number
   ) => number | undefined;
+  /** Memoize an async loader by key, evicting failed promises so retries work. */
   createAsyncCache: <T>(load: (key: string) => Promise<T>) => (key: string) => Promise<T>;
+  /** Create an icon slug resolver from the `/assets/icons.json` index. */
   createIconResolver: (
     index: IconPickerIndex,
     maxSlugLength: number
   ) => { resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined };
+  /** Decode a path segment (`_` to space, `__` to literal `_`). */
   decodeSegment: (raw: string) => string;
+  /** Encode a path segment (space to `_`, `_` to `__`, keeping readable punctuation). */
   encodeSegment: (text: string) => string;
+  /** Parse a relative SVG path and query string into a builder form state. */
   parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
+  /** Split a `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
   splitAnim: (value: string) => { hasSheen: boolean; left: string; right: string };
+  /** Split a `?icon=` query value into `[left, right]` icon slugs. */
   splitIconPair: (value: string, hasPresetIcon: boolean) => [left: string, right: string];
+  /** Split a `?special=` query value into its kind, payload, and modifier. */
   splitSpecial: (
     value: string,
     options: readonly BuilderOption[]

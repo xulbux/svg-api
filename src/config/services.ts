@@ -1,5 +1,5 @@
 /**
- * Service presets – Registry of all upstream service presets (`/badge/:service/...`) and status indicator presets (`/badge/status/:state/:text`).
+ * Service presets – Registry of all upstream service presets (`/badge/:service/…`) and status indicator presets (`/badge/status/:state/:text`).
  *
  * Each service lives in its own module under `src/services/presets/`; This registry is the single
  * source of truth for routing, fetching, and the generated `/docs/services` reference table.
@@ -11,16 +11,21 @@ import { ARTIFACT_HUB_SERVICE } from '@/services/presets/artifactHub';
 import { AUR_SERVICE } from '@/services/presets/aur';
 import { BLUESKY_SERVICE } from '@/services/presets/bluesky';
 import { BUNDLEPHOBIA_SERVICE } from '@/services/presets/bundlephobia';
+import { CDNJS_SERVICE } from '@/services/presets/cdnjs';
 import { CLOJARS_SERVICE } from '@/services/presets/clojars';
 import { COCOAPODS_SERVICE } from '@/services/presets/cocoapods';
 import { CODECOV_SERVICE } from '@/services/presets/codecov';
+import { CONDA_SERVICE } from '@/services/presets/conda';
 import { COVERALLS_SERVICE } from '@/services/presets/coveralls';
 import { CPAN_SERVICE } from '@/services/presets/cpan';
 import { CRAN_SERVICE } from '@/services/presets/cran';
 import { CRATES_SERVICE } from '@/services/presets/crates';
+import { CTAN_SERVICE } from '@/services/presets/ctan';
+import { DEBIAN_SERVICE } from '@/services/presets/debian';
 import { DEPS_DEV_SERVICE } from '@/services/presets/depsDev';
 import { DISCORD_SERVICE } from '@/services/presets/discord';
 import { DOCKER_SERVICE } from '@/services/presets/docker';
+import { DUB_SERVICE } from '@/services/presets/dub';
 import { ELM_SERVICE } from '@/services/presets/elm';
 import { FDROID_SERVICE } from '@/services/presets/fdroid';
 import { FEDORA_SERVICE } from '@/services/presets/fedora';
@@ -92,7 +97,7 @@ export const UNKNOWN_STATUS_PRESET: Readonly<StatusPreset> = {
   dot: 'slate',
 };
 
-/** External service presets keyed by their route segment (`/badge/:service/...`), sorted alphabetically. */
+/** External service presets keyed by their route segment (`/badge/:service/…`), sorted alphabetically. */
 export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   amo: AMO_SERVICE,
   arch: ARCH_SERVICE,
@@ -102,17 +107,22 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   brew: HOMEBREW_FORMULA_SERVICE,
   bundlephobia: BUNDLEPHOBIA_SERVICE,
   cask: HOMEBREW_CASK_SERVICE,
+  cdnjs: CDNJS_SERVICE,
   clojars: CLOJARS_SERVICE,
   cocoapods: COCOAPODS_SERVICE,
   codeberg: CODEBERG_SERVICE,
   codecov: CODECOV_SERVICE,
+  conda: CONDA_SERVICE,
   coveralls: COVERALLS_SERVICE,
   cpan: CPAN_SERVICE,
   cran: CRAN_SERVICE,
   crates: CRATES_SERVICE,
+  ctan: CTAN_SERVICE,
+  debian: DEBIAN_SERVICE,
   depsdev: DEPS_DEV_SERVICE,
   discord: DISCORD_SERVICE,
   docker: DOCKER_SERVICE,
+  dub: DUB_SERVICE,
   elm: ELM_SERVICE,
   fdroid: FDROID_SERVICE,
   fedora: FEDORA_SERVICE,

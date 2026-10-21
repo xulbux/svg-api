@@ -45,7 +45,7 @@
   /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
   const STATIC_ANIM_PAIR = 'anim=none';
 
-  /** Normalized `?center=` values that select the vertical quote layout (mirrors `resolveQuoteLayout`; drift-tested). */
+  /** Normalized `?center=` values that select the vertical quote layout (mirrors `resolveQuoteLayout`; Drift-tested). */
   const CENTER_FLAG_VALUES = new Set(['1', 'true', 'yes']);
 
   /** Entity replacements of characters escaped inside double-quoted HTML attribute values. */
@@ -602,7 +602,7 @@
   }
 
   /**
-   * Build a `/<prefix>/:label[/:value]` path (badges and buttons; an empty value omits its segment).
+   * Build a `/<prefix>/:label[/:value]` path (badges and buttons; An empty value omits its segment).
    * @param {string} prefix   Route prefix.
    * @param {string} label    Label segment.
    * @param {string} value    Optional value segment.
@@ -2363,8 +2363,8 @@
 
   /**
    * Validate one icon input (or the stack groups textarea) against the icon index.
-   * @param {Element} hint           `[data-validation-for]` hint element.
-   * @param {IconResolver} resolver
+   * @param {Element} hint       `[data-validation-for]` hint element.
+   * @param {IconResolver} resolver   Icon slug resolver.
    */
   function validateIconInput(hint, resolver) {
     const inputId = hint.getAttribute('data-validation-for') ?? '';

@@ -76,9 +76,18 @@ function joinNpmPackage({ owner, target }: ServiceRouteParams): string {
   return owner.startsWith('@') ? `${owner}/${target}` : `@${owner}/${target}`;
 }
 
+/**
+ * Strip an optional leading `@` from a package scope segment (npm, JSR).
+ * @param owner   Scope with or without a leading `@` (e.g., `'@std'`, `'std'`).
+ * @returns Scope without `@` (e.g., `'std'`).
+ */
+function stripScopePrefix(owner: string): string {
+  return owner.startsWith('@') ? owner.slice(1) : owner;
+}
+
 /** Encode an npm `[@scope/]pkg` path, keeping the leading `@` and `/` unencoded. */
 function encodeNpmPath({ owner, target }: ServiceRouteParams): string {
-  const scope = owner.startsWith('@') ? owner.slice(1) : owner;
+  const scope = stripScopePrefix(owner);
   return scope
     ? `@${encodeURIComponent(scope)}/${encodeURIComponent(target)}`
     : encodeURIComponent(target);
@@ -128,6 +137,11 @@ function toUrlBuilder(source: UrlSource): ServiceUrlBuilder {
   return typeof source === 'string' ? compileUrlTemplate(source) : source;
 }
 
+/** Derive an endpoint that shares the upstream API URL, TTL, and projection but redirects to another page. */
+function withPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoint<P> {
+  return { ...endpoint, buildPageUrl: toUrlBuilder(page) };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -143,6 +157,8 @@ export const NPM_PACKAGE_ROUTE: ServiceRoute = {
   owner: { isRequired: false, placeholder: ':scope' },
   target: { placeholder: ':pkg' },
 };
+
+export { stripScopePrefix };
 
 /**
  * Check whether a JSON value is a plain (non-array) object.
@@ -172,16 +188,6 @@ export function createEndpoint<P = Record<string, unknown>>(
     project: options.project,
     ttl: options.ttl ?? CACHE_TTL.default,
   };
-}
-
-/**
- * Derive an endpoint that shares the upstream API URL, TTL, and projection but redirects to another page.
- * @param endpoint   Base endpoint.
- * @param page       Page URL template or builder.
- * @returns Endpoint with the replaced page URL builder.
- */
-export function withPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoint<P> {
-  return { ...endpoint, buildPageUrl: toUrlBuilder(page) };
 }
 
 /**

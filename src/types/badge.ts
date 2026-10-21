@@ -46,7 +46,7 @@ export interface BarSpecialElement {
   value: number;
 }
 
-/** Inline vertical mini-bar histogram special element (`bars:<n1,n2,...>`). */
+/** Inline vertical mini-bar histogram special element (`bars:<n1,n2,…>`). */
 export interface BarsSpecialElement {
   /** Special element discriminant (`'bars'`). */
   type: 'bars';

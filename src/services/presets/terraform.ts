@@ -6,7 +6,7 @@ import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint
 import {
   DELTA_SPECIALS,
   SERIES_DELTA_SPECIALS,
-  buildSeriesSpecials,
+  buildTrailingSeriesSpecials,
   buildWindowDeltaSpecials,
   createDownloadsMetric,
   createVersionMetric,
@@ -171,16 +171,7 @@ function createProviderService(): ServiceDefinition {
         'dt',
         (resource) => resource.downloads,
         { autoSpecials: SERIES_DELTA_SPECIALS },
-        (resource) =>
-          buildSeriesSpecials({
-            barsValues: resource.versionDownloads,
-            current: resource.versionDownloads?.at(-1),
-            previous:
-              resource.versionDownloads && resource.versionDownloads.length >= 2
-                ? resource.versionDownloads.at(-2)
-                : undefined,
-            sparklineValues: resource.versionDownloads,
-          })
+        (resource) => buildTrailingSeriesSpecials(resource.versionDownloads)
       ),
       v: createVersionMetric(
         latestVersionEndpoint,

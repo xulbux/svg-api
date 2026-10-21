@@ -13,10 +13,10 @@ export interface EdgeCacheStub {
   cache: Cache;
   /** Cache key URLs passed to `match`, in call order. */
   matchedKeys: string[];
-  /** Cache key URLs passed to `put`, in call order. */
-  storedKeys: string[];
   /** Stored response bodies keyed by cache key URL. */
   store: Map<string, Response>;
+  /** Cache key URLs passed to `put`, in call order. */
+  storedKeys: string[];
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------

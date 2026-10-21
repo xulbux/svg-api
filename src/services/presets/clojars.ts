@@ -7,7 +7,7 @@
 import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
-  buildSeriesSpecials,
+  buildTrailingSeriesSpecials,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
@@ -26,7 +26,7 @@ interface ClojarsLicense {
 interface ClojarsArtifactPayload {
   /** All-time downloads of every version. */
   downloads: number;
-  /** Per-version download counts (`{ "1.0.0": 4210, ... }`). */
+  /** Per-version download counts (`{ "1.0.0": 4210, … }`). */
   downloads_per_version?: Record<string, number>;
   /** Latest non-snapshot release, or `null` when only snapshots exist. */
   latest_release: string | null;
@@ -68,12 +68,7 @@ function buildClojarsDownloadSpecials(artifact: Partial<ClojarsArtifactPayload>)
     }
   }
   const recent = series.slice(-12);
-  return buildSeriesSpecials({
-    barsValues: recent,
-    current: recent.at(-1),
-    previous: recent.length >= 2 ? recent.at(-2) : undefined,
-    sparklineValues: recent,
-  });
+  return buildTrailingSeriesSpecials(recent);
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------

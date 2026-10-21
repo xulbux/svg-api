@@ -193,7 +193,7 @@ const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
 const MAX_RESOLVED_ICON_CACHE_WEIGHT = 2_000_000;
 
 /** Number of icons per icon picker body page (`/assets/icons-<set>-<page>.json`). */
-export const ICON_PICKER_PAGE_SIZE = 120;
+const ICON_PICKER_PAGE_SIZE = 120;
 
 /** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
 const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
@@ -223,33 +223,33 @@ let fileIconsCleanSlugMap: Map<string, string> | undefined = undefined;
 const SLUG_SEPARATOR_RX = /[-_]/g;
 
 /** Matches hyphen, underscore, or dot characters in brand icon slugs. */
-const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+export const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
 
 /** Matches the last character before a PascalCase word boundary (a lowercase letter or digit before an uppercase letter, or an uppercase letter before a capitalized word, e.g., `AArrow`). */
 const PASCAL_BOUNDARY_RX = /[\da-z](?=[A-Z])|[A-Z](?=[A-Z][a-z])/g;
 
-/** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="...">` controls color and sheen. */
+/** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="…">` controls color and sheen. */
 const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
 
 /** Matches basic non-path SVG shape tags (`<circle>`, `<ellipse>`, `<rect>`, `<line>`, `<polyline>`, `<polygon>`). */
 const SHAPE_TAG_RX = /<(?:circle|ellipse|rect|line|polyline|polygon)\b/;
 
-/** Matches `<circle ...>` elements in SVG markup. */
+/** Matches `<circle …>` elements in SVG markup. */
 const CIRCLE_TAG_RX = /<circle\b[^>]*>/g;
 
-/** Matches `<ellipse ...>` elements in SVG markup. */
+/** Matches `<ellipse …>` elements in SVG markup. */
 const ELLIPSE_TAG_RX = /<ellipse\b[^>]*>/g;
 
-/** Matches `<rect ...>` elements in SVG markup. */
+/** Matches `<rect …>` elements in SVG markup. */
 const RECT_TAG_RX = /<rect\b[^>]*>/g;
 
-/** Matches `<line ...>` elements in SVG markup. */
+/** Matches `<line …>` elements in SVG markup. */
 const LINE_TAG_RX = /<line\b[^>]*>/g;
 
-/** Matches `<polyline ... points="...">` and `<polygon ... points="...">` elements in SVG markup. */
+/** Matches `<polyline … points="…">` and `<polygon … points="…">` elements in SVG markup. */
 const POLY_POINTS_RX = /<(?:polyline|polygon)\b[^>]*\bpoints="(?<points>[^"]+)"/g;
 
-/** Matches `d="..."` path data attributes in SVG markup. */
+/** Matches `d="…"` path data attributes in SVG markup. */
 const PATH_D_RX = /\bd="(?<d>[^"]+)"/g;
 
 /** Matches a whitespace-delimited `cx="…"` attribute. */
@@ -633,7 +633,7 @@ function applyPathCommand(
   updateBounds(bounds, pen.currentX, scale);
 }
 
-/** Parse a single SVG `<path d="...">` string and update `[minX, maxX]` bounds. */
+/** Parse a single SVG `<path d="…">` string and update `[minX, maxX]` bounds. */
 function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds): void {
   const cursor: PathCursor = { index: 0, pathData };
   const pen: PathPen = {
@@ -997,15 +997,6 @@ export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon |
 }
 
 /**
- * Resolve a fallback icon slug (Lucide-first), falling back to a plain circle so a glyph is always drawn.
- * @param fallbackSlug   Fallback icon slug (e.g., `FALLBACK_ICON_SLUG` or `STACK_FALLBACK_ICON_SLUG`).
- * @returns The resolved fallback icon data (never `undefined`).
- */
-export function resolveFallbackIcon(fallbackSlug: string): ResolvedIcon {
-  return resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
-}
-
-/**
  * Return the lazily built placeholder icon (translucent circle border + standalone `!`) used to flag
  * unknown icon slugs on standalone `/icon/:icon`, `/badge/*`, and `/button/*` elements.
  * @returns The resolved placeholder icon data (never `undefined`).
@@ -1047,7 +1038,7 @@ export function resolveIconWithFallback(
   fallbackSlug: string,
   isBrandFirst = false
 ): ResolvedIcon {
-  return resolveIcon(slug, isBrandFirst) ?? resolveFallbackIcon(fallbackSlug);
+  return resolveIcon(slug, isBrandFirst) ?? resolveIcon(fallbackSlug) ?? getCircleFallbackIcon();
 }
 
 /**

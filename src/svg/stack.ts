@@ -5,6 +5,7 @@
 import { resolveStackBrandColor } from '@/config/stack';
 import { resolveOptionalColor, THEMES } from '@/config/theme';
 import {
+  BRAND_SLUG_CLEAN_RX,
   DEFAULT_ICON_SLUG,
   MAX_ICON_SLUG_LENGTH,
   PLACEHOLDER_BORDER_OPACITY,
@@ -291,9 +292,6 @@ const SLUG_SPLIT_RX = /[,\s]+/;
 
 /** Matches a string consisting only of ASCII digits. */
 const DIGITS_ONLY_RX = /^\d+$/;
-
-/** Matches hyphen, underscore, or dot characters in brand icon slugs. */
-const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 

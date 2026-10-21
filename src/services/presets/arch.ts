@@ -15,6 +15,7 @@ import {
   buildFlaggedVersionResult,
   buildPackageVersion,
   createLicenseMetric,
+  createTextMetric,
 } from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
@@ -62,11 +63,6 @@ function transformArchVersion(info: Partial<ArchPackageInfo>): Partial<MetricRes
   );
 }
 
-/** Transform an Arch Linux package into its repository name. */
-function transformArchRepo(info: Partial<ArchPackageInfo>): Partial<MetricResult> {
-  return { value: typeof info.repo === 'string' && info.repo !== '' ? info.repo : 'n/a' };
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Arch Linux official repositories service preset (`arch`). */
@@ -79,10 +75,10 @@ export const ARCH_SERVICE = defineService({
     license: createLicenseMetric(ARCH_ENDPOINT, (info) =>
       Array.isArray(info.licenses) ? info.licenses[0] : undefined
     ),
-    repo: createMetric(
+    repo: createTextMetric(
       ARCH_ENDPOINT,
       { defaultColor: 'slate', defaultIcon: 'archlinux', defaultLabel: 'repo' },
-      transformArchRepo
+      (info) => info.repo
     ),
     v: createMetric(
       ARCH_ENDPOINT,

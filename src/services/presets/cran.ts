@@ -44,11 +44,20 @@ interface CranDownloadsProjection {
   prevDd?: number;
   /** Downloads in the preceding 7-day window. */
   prevDw?: number;
-  /** 7-day daily download series. */
-  series7d?: number[];
   /** 15-point 30-day download series. */
   series30d?: number[];
+  /** 7-day daily download series. */
+  series7d?: number[];
 }
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** crandb package endpoint with CRAN package page redirect. */
+const CRANDB_ENDPOINT = createEndpoint({
+  api: 'https://crandb.r-pkg.org/{target}',
+  page: 'https://cran.r-project.org/package={target}',
+  project: pickFields<CranPackagePayload>(['License', 'Version']),
+});
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -91,15 +100,6 @@ function projectCranDownloads(data: unknown): CranDownloadsProjection | undefine
     series30d: bucketSeries(daily, 15),
   };
 }
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** crandb package endpoint with CRAN package page redirect. */
-const CRANDB_ENDPOINT = createEndpoint({
-  api: 'https://crandb.r-pkg.org/{target}',
-  page: 'https://cran.r-project.org/package={target}',
-  project: pickFields<CranPackagePayload>(['License', 'Version']),
-});
 
 /** Shared cranlogs daily downloads endpoint (`last-month` covers `dd`, `dw`, and `dl`; Refreshed daily). */
 const CRANLOGS_ENDPOINT = createEndpoint({

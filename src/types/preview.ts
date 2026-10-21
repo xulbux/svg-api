@@ -158,7 +158,7 @@ export interface ShowcaseCardConfig {
 
 /**
  * Single row in a documentation parameter or route reference table.
- * Inside code values, ` | `, ` / `, ` to `, and `...` render as dimmed separators, and a bracketed
+ * Inside code values, ` | `, ` / `, ` to `, and `…` render as dimmed separators, and a bracketed
  * suffix (e.g., `license [l]`) renders as an alias note (`license (l)`).
  */
 export interface ParamTableRow {

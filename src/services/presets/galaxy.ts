@@ -13,7 +13,7 @@ interface GalaxyCollectionVersion {
   version?: string;
 }
 
-/** Partial Galaxy collection index payload (`galaxy.ansible.com/api/v3/.../collections/index/:ns/:name/`). */
+/** Partial Galaxy collection index payload (`galaxy.ansible.com/api/v3/…/collections/index/:ns/:name/`). */
 interface GalaxyCollectionPayload {
   /** All-time collection downloads. */
   download_count: number;

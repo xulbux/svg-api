@@ -5,7 +5,7 @@
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
-  buildSeriesSpecials,
+  buildTrailingSeriesSpecials,
   createDownloadsMetric,
   createVersionMetric,
   readFiniteNumber,
@@ -14,7 +14,7 @@ import {
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Projected NuGet search entry (`azuresearch-usnc.nuget.org/query?q=packageid:...`). */
+/** Projected NuGet search entry (`azuresearch-usnc.nuget.org/query?q=packageid:…`). */
 interface NuGetSearchProjection {
   /** All-time downloads across all versions. */
   totalDownloads?: number;
@@ -73,16 +73,7 @@ export const NUGET_SERVICE = defineService({
       'dt',
       (entry) => entry.totalDownloads,
       { autoSpecials: SERIES_DELTA_SPECIALS },
-      (entry) =>
-        buildSeriesSpecials({
-          barsValues: entry.versionDownloads,
-          current: entry.versionDownloads?.at(-1),
-          previous:
-            entry.versionDownloads && entry.versionDownloads.length >= 2
-              ? entry.versionDownloads.at(-2)
-              : undefined,
-          sparklineValues: entry.versionDownloads,
-        })
+      (entry) => buildTrailingSeriesSpecials(entry.versionDownloads)
     ),
     v: createVersionMetric(
       NUGET_ENDPOINT,

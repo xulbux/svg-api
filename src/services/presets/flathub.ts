@@ -11,6 +11,7 @@ import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  readDateKeyedSeries,
   readFiniteNumber,
   readText,
   sumSeries,
@@ -30,20 +31,20 @@ interface FlathubAppStreamProjection {
 interface FlathubStatsProjection {
   /** 10-bar 30-day install histogram. */
   bars30d?: number[];
-  /** Installs in the last 30 days. */
-  installs_last_month?: number;
   /** Installs in the last 7 days. */
   installs_last_7_days?: number;
+  /** Installs in the last 30 days. */
+  installs_last_month?: number;
   /** All-time installs. */
   installs_total?: number;
   /** Installs in the preceding 30-day window. */
   prev30d?: number;
   /** Installs in the preceding 7-day window. */
   prev7d?: number;
-  /** 7-day daily install series. */
-  series7d?: number[];
   /** 15-point 30-day install series. */
   series30d?: number[];
+  /** 7-day daily install series. */
+  series7d?: number[];
 }
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -66,12 +67,7 @@ function projectFlathubStats(data: unknown): FlathubStatsProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const daily: number[] = [];
-  if (isJsonObject(data.installs_per_day)) {
-    for (const dateKey of Object.keys(data.installs_per_day).toSorted()) {
-      daily.push(readFiniteNumber(data.installs_per_day[dateKey]) ?? 0);
-    }
-  }
+  const daily = readDateKeyedSeries(data.installs_per_day);
   const totalDays = daily.length;
   const recent30d = daily.slice(-30);
   return {
@@ -85,8 +81,6 @@ function projectFlathubStats(data: unknown): FlathubStatsProjection | undefined 
     series30d: recent30d.length >= 2 ? bucketSeries(recent30d, 15) : undefined,
   };
 }
-
-// ---------------------------------------- CONSTS ---------------------------------------
 
 /** Flathub AppStream metadata endpoint. */
 const APPSTREAM_ENDPOINT = createEndpoint({

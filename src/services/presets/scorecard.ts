@@ -30,8 +30,6 @@ function projectScorecard(data: unknown): ScorecardProjectProjection | undefined
   return { ...(checks ? { checks } : {}), score: readFiniteNumber(data.score) };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** OpenSSF Scorecard API endpoint (results refresh weekly) with Scorecard viewer redirect. */
 const SCORECARD_ENDPOINT = createEndpoint({
   api: 'https://api.securityscorecards.dev/projects/github.com/{owner}/{target}',

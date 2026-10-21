@@ -37,10 +37,10 @@ interface NpmLatestProjection {
 
 /** Projected npm Downloads API payload (`api.npmjs.org/downloads/range/last-year/:pkg`). */
 interface NpmDownloadsProjection {
-  /** 10-bar 30-day download histogram. */
-  bars30d?: number[];
   /** 12-month download series (30-day buckets). */
   bars12m?: number[];
+  /** 10-bar 30-day download histogram. */
+  bars30d?: number[];
   /** Current window sum for the `dl` delta comparison. */
   currDl?: number;
   /** Downloads in the last 30 days. */
@@ -53,10 +53,10 @@ interface NpmDownloadsProjection {
   prevDl?: number;
   /** Downloads in the prior 7-day window (days -14 to -8). */
   prevDw?: number;
-  /** 7-day daily download series. */
-  series7d?: number[];
   /** 15-point 30-day download series (2-day buckets). */
   series30d?: number[];
+  /** 7-day daily download series. */
+  series7d?: number[];
 }
 
 /** Remaining key budget of the bounded `exports` walk. */

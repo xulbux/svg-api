@@ -142,8 +142,6 @@ function projectCratesPayload(data: unknown): CratesIoProjection | undefined {
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** crates.io crate metadata endpoint (default version only) with crate page redirect. */
 const CRATES_ENDPOINT = createEndpoint({
   api: 'https://crates.io/api/v1/crates/{target}?include=default_version,downloads',

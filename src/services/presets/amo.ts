@@ -48,8 +48,6 @@ function projectAmoAddon(data: unknown): AmoAddonProjection | undefined {
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** AMO add-on endpoint (`lang=en-US` shrinks the payload from `~130 KB` to `~8 KB`) with listing redirect. */
 const AMO_ENDPOINT = createEndpoint({
   api: 'https://addons.mozilla.org/api/v5/addons/addon/{target}/?lang=en-US',

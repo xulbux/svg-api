@@ -1,5 +1,5 @@
 /**
- * Quote card renderer – Renders Kumo 3D horizontal and vertical quote cards (`svg.xul.is/quote/...`).
+ * Quote card renderer – Renders Kumo 3D horizontal and vertical quote cards (`svg.xul.is/quote/…`).
  */
 
 import { WHITE } from '@/config/palette';
@@ -141,7 +141,7 @@ interface QuoteCardContext {
 /** Card width bounds in pixels (`?width=`; The default applies to horizontal cards). */
 export const QUOTE_WIDTH_RANGE: NumericRange = { default: 560, max: 900, min: 240 };
 
-/** Default card width in pixels for vertical centered `/quote/...` cards. */
+/** Default card width in pixels for vertical centered `/quote/…` cards. */
 export const DEFAULT_VERTICAL_QUOTE_WIDTH = 380;
 
 /** Custom numeric quote font size bounds in pixels (`?size=<px>`; Defaults to the `md` preset). */
@@ -552,7 +552,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render a standalone SVG quote card (`svg.xul.is/quote/...`).
+ * Render a standalone SVG quote card (`svg.xul.is/quote/…`).
  * Supports both horizontal callout cards (`layout='horizontal'`) and vertical centered profile README
  * quote cards (`layout='vertical'`) with configurable `size` (`'sm'`, `'md'`, `'lg'`, `'xl'`, or pixel number).
  * @param options   Quote card rendering configuration (`text`, `author`, `color`, `variant`, `layout`, `size`, `width`, `anim`).

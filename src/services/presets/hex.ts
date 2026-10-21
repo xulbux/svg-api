@@ -48,8 +48,6 @@ function projectHexPackage(data: unknown): HexPackageProjection | undefined {
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** Hex.pm package endpoint with package page redirect. */
 const HEX_ENDPOINT = createEndpoint({
   api: 'https://hex.pm/api/packages/{target}',

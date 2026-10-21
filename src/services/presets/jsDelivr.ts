@@ -14,6 +14,7 @@ import {
   bucketSeries,
   buildSeriesSpecials,
   createCountMetric,
+  readDateKeyedSeries,
   readFiniteNumber,
   sumSeries,
 } from '@/services/metrics';
@@ -47,18 +48,6 @@ const HITS: MetricPresentation = {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Extract chronologically ordered daily hit counts from `hits.dates`. */
-function readDailySeries(dates: unknown): number[] {
-  if (!isJsonObject(dates)) {
-    return [];
-  }
-  const daily: number[] = [];
-  for (const dateKey of Object.keys(dates).toSorted()) {
-    daily.push(readFiniteNumber(dates[dateKey]) ?? 0);
-  }
-  return daily;
-}
-
 /** Project a jsDelivr statistics payload to its total hit count, prior period total, and bucketed series. */
 function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined {
   if (!isJsonObject(data)) {
@@ -68,7 +57,7 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   const prev = isJsonObject(hits?.prev) ? hits.prev : undefined;
   const total = readFiniteNumber(hits?.total);
   const prevTotal = readFiniteNumber(prev?.total);
-  const daily = readDailySeries(hits?.dates);
+  const daily = readDateKeyedSeries(hits?.dates);
   const mid = Math.floor(daily.length / 2);
   let currDelta = total !== undefined && prevTotal !== undefined ? total : undefined;
   let prevDelta = total !== undefined && prevTotal !== undefined ? prevTotal : undefined;

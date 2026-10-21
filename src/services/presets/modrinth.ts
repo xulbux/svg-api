@@ -67,8 +67,6 @@ function projectModrinthProject(data: unknown): ModrinthProjectProjection | unde
   };
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
 /** Modrinth project endpoint with project page redirect (`/project/` redirects to the typed page). */
 const MODRINTH_ENDPOINT = createEndpoint({
   api: 'https://api.modrinth.com/v2/project/{target}',

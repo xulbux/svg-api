@@ -12,7 +12,13 @@ import type { Font, Path, PathCommand, RenderOptions } from 'opentype.js';
 import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
 import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
 import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
-import { BADGE_FONT_SIZE, createLruCache, readLruCache, writeLruCache } from '@/svg/shared';
+import {
+  BADGE_FONT_SIZE,
+  createLruCache,
+  readLruCache,
+  roundCoord,
+  writeLruCache,
+} from '@/svg/shared';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -112,11 +118,6 @@ function resolveGeistFont(isBold: boolean, isItalic: boolean): Font {
   }
   FONT_SINGLETONS.medium ??= parseFont(geistMediumBuffer);
   return FONT_SINGLETONS.medium;
-}
-
-/** Round a numeric coordinate to at most 2 decimal places (`15` instead of `15.00`). */
-function roundCoord(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /** Serialize an array of OpenType `PathCommand` objects into a compact, NaN-free SVG `d` string. */

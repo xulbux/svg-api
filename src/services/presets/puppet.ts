@@ -34,6 +34,16 @@ interface PuppetReleaseProjection {
   version?: string;
 }
 
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Puppet Forge module endpoint (only the download and feedback counters are cached). */
+const MODULE_ENDPOINT = createEndpoint({
+  api: ({ owner, target }) =>
+    `https://forgeapi.puppet.com/v3/modules/${encodeURIComponent(owner)}-${encodeURIComponent(target)}`,
+  page: 'https://forge.puppet.com/modules/{owner}/{target}',
+  project: pickFields<PuppetModulePayload>(['downloads', 'feedback_score']),
+});
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Project the first entry of a Puppet Forge releases response to its version and license. */
@@ -46,16 +56,6 @@ function projectPuppetRelease(data: unknown): PuppetReleaseProjection | undefine
   const metadata = isJsonObject(firstEntry.metadata) ? firstEntry.metadata : undefined;
   return { license: readText(metadata?.license), version: readText(firstEntry.version) };
 }
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Puppet Forge module endpoint (only the download and feedback counters are cached). */
-const MODULE_ENDPOINT = createEndpoint({
-  api: ({ owner, target }) =>
-    `https://forgeapi.puppet.com/v3/modules/${encodeURIComponent(owner)}-${encodeURIComponent(target)}`,
-  page: 'https://forge.puppet.com/modules/{owner}/{target}',
-  project: pickFields<PuppetModulePayload>(['downloads', 'feedback_score']),
-});
 
 /** Puppet Forge newest release endpoint (an empty `results` list is not found). */
 const RELEASE_ENDPOINT = createEndpoint({

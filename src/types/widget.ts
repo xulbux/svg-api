@@ -40,11 +40,11 @@ export interface StackRenderOptions {
   variant?: BadgeVariant;
 }
 
-/** Options for rendering a dark-native quote card via `renderQuote` (`svg.xul.is/quote/...`). */
+/** Options for rendering a dark-native quote card via `renderQuote` (`svg.xul.is/quote/…`). */
 export interface QuoteRenderOptions {
   /** Optional animation mode (`'sheen'` for periodic diagonal glint sweep; Defaults to `'default'`, i.e., static). */
   anim?: AnimationMode;
-  /** Optional author attribution displayed below the quote text with an em dash (`—`; Truncated with an ellipsis to the text width). */
+  /** Optional author attribution displayed below the quote text (truncated with an ellipsis to the text width). */
   author?: string;
   /** Named Tailwind v4 theme color token for the card accent (defaults to `'indigo'`). */
   color: ThemeColorName;

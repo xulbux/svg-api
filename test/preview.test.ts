@@ -8,7 +8,7 @@ import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { getSiteAsset } from '@/preview/assets';
 import { renderBuilderHtml } from '@/preview/builder';
-import { formatCountLowerBound, getIconSetCounts } from '@/preview/catalog';
+import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/preview/catalog';
 import { renderParamTable } from '@/preview/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/preview/glossary';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/preview/navigation';
@@ -87,6 +87,7 @@ interface PopoverPlacementOptions {
 
 /** Pure helpers exposed by the site script without a DOM (`svgSiteCore`). */
 interface SiteCore {
+  /** Compute viewport-clamped popover coordinates next to an anchor rectangle. */
   computePopoverPlacement: (
     anchorRect: Readonly<Record<'bottom' | 'left' | 'right' | 'top' | 'width', number>>,
     popoverSize: Readonly<Record<'height' | 'width', number>>,
@@ -212,7 +213,7 @@ describe('documentation pages – HTML validity', () => {
         {
           defaultVal: 'round(gap × 3.25) (groupgap)',
           description: '<script>alert(1)</script>',
-          name: '?x=',
+          name: '?x= / ?y=',
           values: 'v | license [l] | 1 to 4',
         },
       ],
@@ -221,6 +222,9 @@ describe('documentation pages – HTML validity', () => {
     expect(tableHtml).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(tableHtml).not.toContain('<script>');
     expect(tableHtml).toContain('aria-label="Test &lt;parameters&gt;"');
+    expect(tableHtml).toContain(
+      '<th scope="row" role="rowheader">?x=<span class="param-sep"> / </span>?y=</th>'
+    );
     expect(tableHtml).toContain('license <span class="param-alias">(l)</span>');
     expect(tableHtml).toContain('1<span class="param-sep"> to </span>4');
     expect(tableHtml).toContain(
@@ -441,20 +445,27 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 
-  it('chains the docs pager in sidebar order from Home through every docs page back to Home', () => {
+  it('chains the docs pager in sidebar order without Home buttons at the ends', () => {
     for (const [i, page] of DOCS_PAGES.entries()) {
       const html = renderDocsHtml(page.slug);
-      const pagerHtml = html.slice(html.indexOf('<nav class="pager-row"'));
+      const pagerHtml = html.slice(html.indexOf('<nav class="pager-row'));
       const previousPage = DOCS_PAGES[i - 1];
       const nextPage = DOCS_PAGES[i + 1];
-      const previousHref = previousPage ? buildDocsPath(previousPage.slug) : '/';
-      const nextHref = nextPage ? buildDocsPath(nextPage.slug) : '/';
-      expect(pagerHtml, page.slug).toContain(
-        `<a href="${previousHref}" class="btn-secondary" rel="prev" tabindex="0">`
-      );
-      expect(pagerHtml, page.slug).toContain(
-        `<a href="${nextHref}" class="btn-primary" rel="next" tabindex="0">`
-      );
+      if (previousPage) {
+        expect(pagerHtml, page.slug).toContain(
+          `<a href="${buildDocsPath(previousPage.slug)}" class="btn-secondary" rel="prev" tabindex="0">`
+        );
+      } else {
+        expect(pagerHtml, page.slug).not.toContain('rel="prev"');
+        expect(pagerHtml, page.slug).toContain('<nav class="pager-row is-end"');
+      }
+      if (nextPage) {
+        expect(pagerHtml, page.slug).toContain(
+          `<a href="${buildDocsPath(nextPage.slug)}" class="btn-primary" rel="next" tabindex="0">`
+        );
+      } else {
+        expect(pagerHtml, page.slug).not.toContain('rel="next"');
+      }
     }
   });
 
@@ -481,6 +492,8 @@ describe('documentation pages – navigation & static assets', () => {
     const css = getSiteStylesheet();
     expect(css).toContain("--font-sans: 'Geist',");
     expect(css).toContain("--font-mono: 'JetBrains Mono NF',");
+    expect(css).toContain('font-variant-ligatures: none;');
+    expect(css).not.toContain("'liga' 1");
     expect(css).toMatch(/body \{[^}]*font-family: var\(--font-sans\);/);
     const fontNames = collectGroups(css, /url\(['"]\/assets\/(?<name>[\w-]+\.ttf)['"]\)/g, 'name');
     expect(fontNames).toEqual([
@@ -557,20 +570,30 @@ describe('documentation drift guards', () => {
     expect(iconsHtml).toContain('Per-icon pairs apply their first motion');
   });
 
-  it('documents stack query aliases, ?anim=, and the computed group gap default', () => {
+  it('documents stack query aliases, ?anim=, the computed group gap default, and shares the homepage stack example', () => {
     const stackHtml = renderDocsHtml('stack');
-    expect(stackHtml).toContain(':groups / ?groups= / ?icons= / ?i=');
-    expect(stackHtml).toContain('?gap= / ?groupgap= / ?ggap=');
+    expect(stackHtml).toContain(
+      ':groups<span class="param-sep"> / </span>?groups=<span class="param-sep"> / </span>?icons=<span class="param-sep"> / </span>?i='
+    );
+    expect(stackHtml).toContain(
+      '?gap=<span class="param-sep"> / </span>?groupgap=<span class="param-sep"> / </span>?ggap='
+    );
     expect(stackHtml).toContain(`round(gap × ${GROUP_GAP_RATIO})`);
     expect(stackHtml).toMatch(/<th scope="row" role="rowheader">\?anim=<\/th>/);
+    expect(stackHtml).toContain(
+      `<span class="hl-url">${SITE_ORIGIN}/stack/${STACK_EXAMPLE_GROUPS}</span>`
+    );
+    expect(renderHomeHtml()).toContain(
+      `<span class="hl-url">${SITE_ORIGIN}/stack/${STACK_EXAMPLE_GROUPS}</span>`
+    );
   });
 
   it('documents quote text/author aliases, layout aliases, ?anim=, and the single-segment route', () => {
     const quotesHtml = renderDocsHtml('quotes');
     for (const name of [
       '?author=',
-      '?text= / ?quote=',
-      '?layout= / ?type=',
+      '?text=<span class="param-sep"> / </span>?quote=',
+      '?layout=<span class="param-sep"> / </span>?type=',
       '?center=',
       '?anim=',
     ]) {

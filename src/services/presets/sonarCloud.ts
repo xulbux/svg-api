@@ -7,12 +7,12 @@
 
 import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
 import {
-  SCORE_SPECIALS,
   buildRatioSpecials,
   createCoverageMetric,
   formatCompactNumber,
   formatCount,
   formatPercent,
+  formatPointDelta,
   toFiniteNumber,
 } from '@/services/metrics';
 import { MAX_STRIP_TICKS } from '@/svg/renderer';
@@ -211,19 +211,15 @@ function transformQualityGate(measures: SonarMeasures): Partial<MetricResult> {
   return specials ? { ...base, specials } : base;
 }
 
-/** Format a percentage point difference between a new-code measure and overall measure. */
-function formatPercentPointDelta(
-  newValue: number | undefined,
-  overallValue: number | undefined
-): string | undefined {
-  if (newValue === undefined || overallValue === undefined) {
-    return undefined;
-  }
-  const diff = newValue - overallValue;
-  if (Math.abs(diff) < 0.05) {
-    return '0%';
-  }
-  return `${diff > 0 ? '+' : ''}${Number(diff.toFixed(1))}%`;
+/** Read the numeric difference between a new-code measure and an overall measure. */
+function readMeasureDiff(
+  measures: SonarMeasures,
+  newKey: SonarMeasureKey,
+  overallKey: SonarMeasureKey
+): number | undefined {
+  const newValue = toFiniteNumber(measures[newKey]);
+  const overallValue = toFiniteNumber(measures[overallKey]);
+  return newValue !== undefined && overallValue !== undefined ? newValue - overallValue : undefined;
 }
 
 /** Create the shared SonarCloud service preset. */
@@ -295,25 +291,12 @@ function createSonarCloudService(): ServiceDefinition {
     );
   }
 
-  const baseCoverage = createCoverageMetric(measuresEndpoint, 'sonarcloud', (measures) =>
-    toFiniteNumber(measures.coverage)
+  const coverageMetric = createCoverageMetric(
+    measuresEndpoint,
+    'sonarcloud',
+    (measures) => toFiniteNumber(measures.coverage),
+    (measures) => readMeasureDiff(measures, 'new_coverage', 'coverage')
   );
-  const coverageMetric: ServiceMetricConfig = {
-    ...baseCoverage,
-    autoSpecials: [...SCORE_SPECIALS, 'delta'],
-    transform: (rawMeasures, params) => {
-      const base = baseCoverage.transform(rawMeasures, params);
-      const measures = rawMeasures as SonarMeasures;
-      const delta = formatPercentPointDelta(
-        toFiniteNumber(measures.new_coverage),
-        toFiniteNumber(measures.coverage)
-      );
-      if (!base?.specials || !delta) {
-        return base;
-      }
-      return { ...base, specials: { ...base.specials, delta: { type: 'delta', value: delta } } };
-    },
-  };
 
   return defineService({
     docs: {
@@ -350,9 +333,8 @@ function createSonarCloudService(): ServiceDefinition {
             return { value: 'n/a' };
           }
           const clamped = Math.min(100, Math.max(0, Math.round(percent)));
-          const delta = formatPercentPointDelta(
-            toFiniteNumber(measures.new_duplicated_lines_density),
-            percent
+          const delta = formatPointDelta(
+            readMeasureDiff(measures, 'new_duplicated_lines_density', 'duplicated_lines_density')
           );
           return {
             specials: {

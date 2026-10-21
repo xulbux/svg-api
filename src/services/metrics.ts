@@ -17,6 +17,7 @@ import type {
   ScoreColorThreshold,
   ServiceDefinition,
   ServiceMetricConfig,
+  ServiceRouteParams,
   StripTickState,
   ThemeColorName,
 } from '@/types';
@@ -177,6 +178,58 @@ const COMMUNITY_KINDS: Readonly<Record<CommunityMetricKind, ThemeColorName>> = {
   votes: 'rose',
 };
 
+/** Star rating vote keys in ascending order (`1★` through `5★`). */
+const STAR_KEYS = ['1', '2', '3', '4', '5'] as const;
+
+/** Automatic inline widget kinds supported by score and coverage metrics (`ring` by default, plus `bar` and `steps`). */
+const SCORE_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
+
+/** Automatic inline widget kinds supported by OpenSSF Scorecard metrics with check breakdowns. */
+const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
+  'ring',
+  'bar',
+  'steps',
+  'strip',
+  'bars',
+  'sparkline',
+];
+
+/** Automatic inline widget kinds supported by star rating metrics (`ring`, `bar`, `steps`). */
+const RATING_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
+
+/** Automatic inline widget kinds supported by star rating metrics with a vote distribution (`bars`, `sparkline`, `ring`, `bar`, `steps`). */
+const RATING_HISTOGRAM_SPECIALS: readonly BadgeSpecialKind[] = [
+  'bars',
+  'sparkline',
+  'ring',
+  'bar',
+  'steps',
+];
+
+/** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
+const COVERAGE: MetricPresentation = {
+  autoSpecials: SCORE_SPECIALS,
+  defaultColor: 'emerald',
+  defaultIcon: 'shield-check',
+  defaultLabel: 'coverage',
+  defaultSpecial: 'ring',
+};
+
+/** Default presentation for average star rating metrics (`rating`). */
+const RATING: MetricPresentation = {
+  autoSpecials: RATING_SPECIALS,
+  defaultColor: 'amber',
+  defaultIcon: 'star',
+  defaultLabel: 'rating',
+};
+
+/** Default presentation for latest release tag metrics (`release`). */
+const RELEASE: MetricPresentation = {
+  defaultColor: 'indigo',
+  defaultIcon: 'tag',
+  defaultLabel: 'release',
+};
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a trailing `.0` in compact formatted numbers. */
@@ -264,12 +317,12 @@ function readFiniteNumber(raw: unknown): number | undefined {
 }
 
 /**
- * Read a string from an unknown JSON value.
+ * Read a non-empty string from an unknown JSON value.
  * @param raw   Raw JSON value.
- * @returns String value, or `undefined` for non-string values.
+ * @returns Non-empty string value, or `undefined` for non-string or blank values.
  */
 function readText(raw: unknown): string | undefined {
-  return typeof raw === 'string' ? raw : undefined;
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : undefined;
 }
 
 /** Build score badge properties (value plus ring gauge and bar/steps alternatives, optionally threshold-colored). */
@@ -300,34 +353,6 @@ function buildScoreResult(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Automatic inline widget kinds supported by score and coverage metrics (`ring` by default, plus `bar` and `steps`). */
-export const SCORE_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
-
-/** Automatic inline widget kinds supported by OpenSSF Scorecard metrics with check breakdowns. */
-export const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
-  'ring',
-  'bar',
-  'steps',
-  'strip',
-  'bars',
-  'sparkline',
-];
-
-/** Automatic inline widget kinds supported by star rating metrics (`ring`, `bar`, `steps`). */
-export const RATING_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
-
-/** Automatic inline widget kinds supported by star rating metrics with a vote distribution (`bars`, `sparkline`, `ring`, `bar`, `steps`). */
-export const RATING_HISTOGRAM_SPECIALS: readonly BadgeSpecialKind[] = [
-  'bars',
-  'sparkline',
-  'ring',
-  'bar',
-  'steps',
-];
-
-/** Automatic inline widget kinds supported by time-series metrics (`sparkline`, `bars`). */
-export const SERIES_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars'];
-
 /** Automatic inline widget kinds supported by time-series metrics with period-over-period delta (`sparkline`, `bars`, `delta`). */
 export const SERIES_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars', 'delta'];
 
@@ -340,15 +365,6 @@ export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
 /** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps (`bar`, `ring`, `steps`). */
 export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
 
-/** Default presentation for test coverage metrics (`coverage`), recolored by threshold. */
-export const COVERAGE: MetricPresentation = {
-  autoSpecials: SCORE_SPECIALS,
-  defaultColor: 'emerald',
-  defaultIcon: 'shield-check',
-  defaultLabel: 'coverage',
-  defaultSpecial: 'ring',
-};
-
 /** Default presentation for repository fork metrics (`forks`). */
 export const FORKS: MetricPresentation = {
   defaultColor: 'sky',
@@ -356,7 +372,7 @@ export const FORKS: MetricPresentation = {
   defaultLabel: 'forks',
 };
 
-/** Presentation override for download metrics labeled `installs` (`createDownloadsMetric(..., INSTALLS_LABEL)`). */
+/** Presentation override for download metrics labeled `installs` (`createDownloadsMetric(…, INSTALLS_LABEL)`). */
 export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'installs' };
 
 /** Default presentation for open issue metrics (`issues`). */
@@ -387,21 +403,6 @@ export const PULL_REQUESTS: MetricPresentation = {
   defaultLabel: 'pull requests',
 };
 
-/** Default presentation for average star rating metrics (`rating`). */
-export const RATING: MetricPresentation = {
-  autoSpecials: RATING_SPECIALS,
-  defaultColor: 'amber',
-  defaultIcon: 'star',
-  defaultLabel: 'rating',
-};
-
-/** Default presentation for latest release tag metrics (`release`). */
-export const RELEASE: MetricPresentation = {
-  defaultColor: 'indigo',
-  defaultIcon: 'tag',
-  defaultLabel: 'release',
-};
-
 /** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
 export const SCORE: MetricPresentation = {
   autoSpecials: SCORE_SPECIALS,
@@ -425,7 +426,7 @@ export const UPDATED: MetricPresentation = {
   defaultLabel: 'updated',
 };
 
-export { readFiniteNumber, readText };
+export { SCORE_SPECIALS, readFiniteNumber, readText };
 
 /**
  * Convert a numeric or numeric-string upstream value into a finite number.
@@ -656,41 +657,6 @@ export function formatSpdxKey(key: string | null | undefined): string | undefine
 }
 
 /**
- * Combine an optional npm scope (`owner`) and package name into a full npm package identifier.
- * @param owner   Optional scope with or without a leading `@` (e.g., `'@hono'`, `'hono'`, `''`).
- * @param pkg     Package name.
- * @returns Full package identifier (e.g., `'@hono/node-server'` or `'hono'`).
- */
-export function resolveNpmPackageName(owner: string, pkg: string): string {
-  if (!owner) {
-    return pkg;
-  }
-  return owner.startsWith('@') ? `${owner}/${pkg}` : `@${owner}/${pkg}`;
-}
-
-/**
- * Strip an optional leading `@` from a package scope segment (npm, JSR).
- * @param owner   Scope with or without a leading `@` (e.g., `'@std'`, `'std'`).
- * @returns Scope without `@` (e.g., `'std'`).
- */
-export function stripScopePrefix(owner: string): string {
-  return owner.startsWith('@') ? owner.slice(1) : owner;
-}
-
-/**
- * Build a URL path for an npm package name, encoding the scope and name individually.
- * @param owner   Optional scope with or without a leading `@` (e.g., `'@hono'`, `'hono'`, `''`).
- * @param pkg     Package name.
- * @returns URL path (e.g., `'@hono/node-server'` or `'hono'`).
- */
-export function encodeNpmPackageName(owner: string, pkg: string): string {
-  const scope = stripScopePrefix(owner);
-  return scope
-    ? `@${encodeURIComponent(scope)}/${encodeURIComponent(pkg)}`
-    : encodeURIComponent(pkg);
-}
-
-/**
  * Sum the finite numeric entries in `values` across `[start, end)`.
  * @param values   Numeric series.
  * @param start    Inclusive start index (defaults to `0`).
@@ -732,6 +698,50 @@ export function bucketSeries(values: readonly number[], bucketCount: number): nu
     buckets.push(sumSeries(values, start, end));
   }
   return buckets;
+}
+
+/**
+ * Extract a chronological numeric series from an ISO-date-keyed counts map (`{ 'YYYY-MM-DD': count }`).
+ * @param dates   Raw date-to-count JSON object (e.g., Flathub `countries`, jsDelivr `dates`).
+ * @returns Chronological daily counts (empty when `dates` is not an object).
+ */
+export function readDateKeyedSeries(dates: unknown): number[] {
+  if (!isJsonObject(dates)) {
+    return [];
+  }
+  const values: number[] = [];
+  for (const dateKey of Object.keys(dates).toSorted()) {
+    values.push(readFiniteNumber(dates[dateKey]) ?? 0);
+  }
+  return values;
+}
+
+/**
+ * Extract 1-star through 5-star vote counts from a `{ '1': n, …, '5': n }` rating breakdown object.
+ * @param rawVotes   Raw star vote breakdown object (e.g., JetBrains `votes`, WordPress `ratings`).
+ * @returns Five-element `[1★, 2★, 3★, 4★, 5★]` array, or `undefined` when missing or all zero.
+ */
+export function readStarHistogram(rawVotes: unknown): number[] | undefined {
+  if (!isJsonObject(rawVotes)) {
+    return undefined;
+  }
+  const counts: number[] = [];
+  for (const key of STAR_KEYS) {
+    counts.push(Math.max(0, toFiniteNumber(rawVotes[key] as RawCount) ?? 0));
+  }
+  return sumSeries(counts) > 0 ? counts : undefined;
+}
+
+/**
+ * Format a signed percentage-point change (`'+1.8%'`, `'-0.4%'`, `'0%'`).
+ * @param delta   Signed percentage-point difference.
+ * @returns Formatted point delta, or `undefined` when `delta` is missing or non-finite.
+ */
+export function formatPointDelta(delta: number | undefined): string | undefined {
+  if (delta === undefined || !Number.isFinite(delta)) {
+    return undefined;
+  }
+  return Math.abs(delta) < 0.05 ? '0%' : `${delta > 0 ? '+' : ''}${Number(delta.toFixed(1))}%`;
 }
 
 /**
@@ -840,6 +850,22 @@ export function buildSeriesSpecials(options: SeriesSpecialsOptions): BadgeSpecia
 }
 
 /**
+ * Build `sparkline`, `bars`, and period-over-period `delta` widgets from the trailing entries of a chronological series.
+ * @param series   Chronological numeric series (at least 2 points for widgets and trailing delta).
+ * @returns Candidate widget map, or `undefined` when `series` has fewer than 2 points.
+ */
+export function buildTrailingSeriesSpecials(
+  series: readonly number[] | undefined
+): BadgeSpecialMap | undefined {
+  return buildSeriesSpecials({
+    barsValues: series,
+    current: series?.at(-1),
+    previous: series && series.length >= 2 ? series.at(-2) : undefined,
+    sparklineValues: series,
+  });
+}
+
+/**
  * Create a metric that formats a numeric count compactly.
  * @param endpoint        Upstream endpoint.
  * @param presentation    Default color, icon, and label.
@@ -944,16 +970,16 @@ export function createBytesMetric<P>(
  * Create a metric that renders a version string with a `v` prefix for numeric versions.
  * @param endpoint       Upstream endpoint.
  * @param presentation   Default color, icon, and label.
- * @param readVersion    Reads the raw version from the projected payload.
+ * @param readVersion    Reads the raw version from the projected payload and route parameters.
  * @returns Metric rendering (e.g., `'v1.2.3'`), or `'n/a'` when the version is missing.
  */
 export function createVersionMetric<P>(
   endpoint: MetricEndpoint<P>,
   presentation: MetricPresentation,
-  readVersion: (payload: P) => string | null | undefined
+  readVersion: (payload: P, params: ServiceRouteParams) => string | null | undefined
 ): ServiceMetricConfig {
-  return createMetric(endpoint, presentation, (payload) => ({
-    value: formatVersion(readVersion(payload)),
+  return createMetric(endpoint, presentation, (payload, params) => ({
+    value: formatVersion(readVersion(payload, params)),
   }));
 }
 
@@ -1114,24 +1140,44 @@ export function createPercentScoreMetric<P>(
  * @param endpoint      Upstream endpoint.
  * @param icon          Default icon slug (e.g., `'codecov'`).
  * @param readPercent   Reads the raw coverage percentage (`0`–`100`) from the projected payload.
+ * @param readDelta     Optional reader for signed coverage percentage-point change (adds `delta` widget).
  * @returns Metric rendering (e.g., `'96.4%'`) plus ring, or `'n/a'` when missing.
  */
 export function createCoverageMetric<P>(
   endpoint: MetricEndpoint<P>,
   icon: string,
-  readPercent: (payload: P) => unknown
+  readPercent: (payload: P) => unknown,
+  readDelta?: (payload: P) => number | undefined
 ): ServiceMetricConfig {
-  return createPercentScoreMetric(
+  const base = createPercentScoreMetric(
     endpoint,
     { ...COVERAGE, defaultIcon: icon },
     readPercent,
     COVERAGE_THRESHOLDS
   );
+  if (!readDelta) {
+    return base;
+  }
+  return {
+    ...base,
+    autoSpecials: [...SCORE_SPECIALS, 'delta'],
+    transform: (rawPayload, params) => {
+      const result = base.transform(rawPayload, params);
+      const deltaText = formatPointDelta(readDelta(rawPayload as P));
+      if (!result?.specials || deltaText === undefined) {
+        return result;
+      }
+      return {
+        ...result,
+        specials: { ...result.specials, delta: { type: 'delta', value: deltaText } },
+      };
+    },
+  };
 }
 
 /**
  * Extract valid `0`–`10` check scores from an OpenSSF Scorecard `checks` array.
- * @param rawChecks   Upstream `checks` array (`[{ score: number }, ...]`).
+ * @param rawChecks   Upstream `checks` array (`[{ score: number }, …]`).
  * @returns Array of valid check scores (`0`–`10`), or `undefined` when fewer than 2 checks are present.
  */
 export function readScorecardCheckScores(rawChecks: unknown): number[] | undefined {
@@ -1232,28 +1278,12 @@ export function createCoverageService<P extends object>(
         : { delta, percent: options.readPercent(typed) };
     },
   });
-  const baseCoverage = createCoverageMetric(endpoint, options.icon, (payload) => payload.percent);
-  const coverageMetric: ServiceMetricConfig = options.readDelta
-    ? {
-        ...baseCoverage,
-        autoSpecials: [...SCORE_SPECIALS, 'delta'],
-        transform: (rawPayload, params) => {
-          const base = baseCoverage.transform(rawPayload, params);
-          const payload = rawPayload as CoveragePayload;
-          if (!base?.specials || payload.delta === undefined) {
-            return base;
-          }
-          const deltaText =
-            Math.abs(payload.delta) < 0.05
-              ? '0%'
-              : `${payload.delta > 0 ? '+' : ''}${Number(payload.delta.toFixed(1))}%`;
-          return {
-            ...base,
-            specials: { ...base.specials, delta: { type: 'delta', value: deltaText } },
-          };
-        },
-      }
-    : baseCoverage;
+  const coverageMetric = createCoverageMetric(
+    endpoint,
+    options.icon,
+    (payload) => payload.percent,
+    options.readDelta ? (payload) => payload.delta : undefined
+  );
   return defineService({
     docs: { description: options.description, title: options.title },
     metrics: { coverage: coverageMetric },

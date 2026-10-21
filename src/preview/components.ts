@@ -70,8 +70,8 @@ const DEFAULT_PARAM_TABLE_COLUMNS: ParamTableRow = {
 /** Matches comma-separated items inside a card title parenthetical. */
 const COMMA_SPLIT_RX = /,\s*/;
 
-/** Matches separator tokens (` | `, ` / `, ` to `, `...`) and bracketed alias suffixes (` [l]`) inside parameter code cells. */
-const PARAM_CODE_TOKEN_RX = /\s\|\s|\s\/\s|\sto\s|\.\.\.|\s\[[^\]]*\]/g;
+/** Matches separator tokens (` | `, ` / `, `, `, ` to `, `…`) and bracketed alias suffixes (` [l]`) inside parameter code cells. */
+const PARAM_CODE_TOKEN_RX = /\s\|\s|\s\/\s|,\s|\sto\s|…|\s\[[^\]]*\]/g;
 
 /** Matches SVG `id="…"` attributes and their `url(#…)` / `href="#…"` references for per-instance ID scoping. */
 const SVG_ID_REFERENCE_RX = /(?<prefix>\sid="|url\(#|href="#)(?<name>[^")]+)/g;
@@ -241,8 +241,8 @@ function formatCardTitleHtml(rawTitle: string): string {
   return `${prefixBadgeHtml}<span class="card-title-text">${escapeXml(remainder)}</span>${trailingPillHtml}`;
 }
 
-/** Render a `<code class="param-code">` block with dimmed, non-selectable separators and alias notes. */
-function renderCodeWithDimmedSeparators(rawCode: string): string {
+/** Format a parameter code string with dimmed, non-selectable separators and alias notes. */
+function formatCodeTokensHtml(rawCode: string): string {
   let innerHtml = '';
   let cursor = 0;
   for (const match of rawCode.matchAll(PARAM_CODE_TOKEN_RX)) {
@@ -253,8 +253,12 @@ function renderCodeWithDimmedSeparators(rawCode: string): string {
       : `<span class="param-sep">${escapeXml(token)}</span>`;
     cursor = match.index + token.length;
   }
-  innerHtml += escapeXml(rawCode.slice(cursor));
-  return `<code class="param-code">${innerHtml}</code>`;
+  return innerHtml + escapeXml(rawCode.slice(cursor));
+}
+
+/** Render a `<code class="param-code">` block with dimmed, non-selectable separators and alias notes. */
+function renderCodeWithDimmedSeparators(rawCode: string): string {
+  return `<code class="param-code">${formatCodeTokensHtml(rawCode)}</code>`;
 }
 
 /** Render a single `code` or `code (note)` segment inside a parameter table cell. */
@@ -283,6 +287,15 @@ function formatParamCellHtml(raw: string): string {
   return renderedParts.join(' <span class="param-sep">/</span> ');
 }
 
+/** Render a list of route pattern pills (`GET /badge/…`). */
+function renderRoutePills(patterns: readonly string[]): string {
+  let pillsHtml = '';
+  for (const pattern of patterns) {
+    pillsHtml += `<code class="route-pill"><span class="route-method">GET</span>${escapeXml(pattern)}</code>`;
+  }
+  return `<div class="route-pills">${pillsHtml}</div>`;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -296,7 +309,7 @@ export function serializeInlineJson(value: unknown): string {
 
 /**
  * Build the highlight tokens of a (linked) Markdown image snippet with the same escaping rules as the builder
- * client's `buildSnippetTokens` (alt text escapes `[`, `]`, `\`; destinations percent-encode space, `(`, `)`, `<`, `>`).
+ * client's `buildSnippetTokens` (alt text escapes `[`, `]`, `\`; Destinations percent-encode space, `(`, `)`, `<`, `>`).
  * @param url    Absolute image URL.
  * @param alt    Alt text.
  * @param href   Optional link target (`undefined` for an unlinked image).
@@ -450,19 +463,6 @@ export function renderCardsHtml(cards: readonly ShowcaseCardConfig[]): string {
 }
 
 /**
- * Render a list of route pattern pills (`GET /badge/...`).
- * @param patterns   Array of route path strings.
- * @returns HTML string for the route pattern pill strip.
- */
-export function renderRoutePills(patterns: readonly string[]): string {
-  let pillsHtml = '';
-  for (const pattern of patterns) {
-    pillsHtml += `<code class="route-pill"><span class="route-method">GET</span>${escapeXml(pattern)}</code>`;
-  }
-  return `<div class="route-pills">${pillsHtml}</div>`;
-}
-
-/**
  * Render a documentation section header (title, optional header action, lead paragraph, and route pills).
  * @param options   Section header options (`title`, `description`, optional `actionHtml`, `routes`, and `headingLevel`).
  * @returns HTML string for the section header.
@@ -511,7 +511,7 @@ export function renderParamTable(
   let bodyRowsHtml = '';
   for (const row of rows) {
     bodyRowsHtml += `<tr role="row">
-      <th scope="row" role="rowheader">${escapeXml(row.name)}</th>
+      <th scope="row" role="rowheader">${formatCodeTokensHtml(row.name)}</th>
       <td role="cell">${formatParamCellHtml(row.values)}</td>
       <td role="cell">${formatParamCellHtml(row.defaultVal)}</td>
       <td role="cell">${escapeXml(row.description)}</td>
