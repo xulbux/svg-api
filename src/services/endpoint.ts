@@ -31,7 +31,9 @@ type UrlSource = string | ServiceUrlBuilder;
 interface EndpointOptions<P> {
   /** Upstream JSON API URL template or builder. */
   api: UrlSource;
-  /** Leading JSON object key whose value is the only part needed (see `MetricEndpoint.leadingKey`). */
+  /** Top-level JSON object keys whose values are the only parts needed (see `MetricEndpoint.extractKeys`). */
+  extractKeys?: readonly string[];
+  /** Single top-level JSON object key whose value is the only part needed (see `MetricEndpoint.leadingKey`). */
   leadingKey?: string;
   /** Upstream error statuses reported as not found (see `MetricEndpoint.missingStatuses`). */
   missingStatuses?: readonly number[];
@@ -159,9 +161,12 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
 export function createEndpoint<P = Record<string, unknown>>(
   options: EndpointOptions<P>
 ): MetricEndpoint<P> {
+  const extractKeys =
+    options.extractKeys ?? (options.leadingKey === undefined ? undefined : [options.leadingKey]);
   return {
     buildApiUrl: toUrlBuilder(options.api),
     buildPageUrl: toUrlBuilder(options.page),
+    extractKeys,
     leadingKey: options.leadingKey,
     missingStatuses: options.missingStatuses,
     project: options.project,

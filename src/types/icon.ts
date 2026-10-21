@@ -15,7 +15,9 @@ export type IconPickerSetId = 'brands' | 'lucide';
 
 /** SVG icon markup and source type, without horizontal ink bounds. */
 export interface IconBody {
-  /** Scale factor from the icon body's native coordinate space to `24x24` (`1` for Lucide and Simple Icons, `0.1875` for Devicon Plain). */
+  /** Horizontal offset in `24x24` icon units applied before `coordScale` (`0` when omitted). */
+  coordOffsetX?: number;
+  /** Scale factor from the icon body's native coordinate space to `24x24` (`1` for Lucide and Simple Icons, `0.1875` for Devicon Plain, `0.046875` for File Icons). */
   coordScale: number;
   /** Inner SVG elements (without the outer `<svg>` wrapper). */
   innerSvg: string;

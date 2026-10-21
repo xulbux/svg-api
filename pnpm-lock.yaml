@@ -11,6 +11,9 @@ importers:
       '@iconify-json/devicon-plain':
         specifier: ^1.2.62
         version: 1.2.62
+      '@iconify-json/file-icons':
+        specifier: ^1.2.2
+        version: 1.2.2
       '@iconify-json/simple-icons':
         specifier: ^1.2.100
         version: 1.2.100
@@ -262,6 +265,9 @@ packages:
 
   '@iconify-json/devicon-plain@1.2.62':
     resolution: {integrity: sha512-3jZJ80bBym2ZOZOKvFh2NaJjzmESHmXrSd8DKOmIMV5iEEZNYFgF5eJYAvOmk7v2t4dOOAEd6jdcjkZa/QGf4w==}
+
+  '@iconify-json/file-icons@1.2.2':
+    resolution: {integrity: sha512-ajk44wYGTiu79EAyrfNHNaxZ1/2Z1xuSOAvYUT/pAPWHc+P6n9TUZP/ccnPG18kx0WMBxmkHHQ9/zkm6ENhk+Q==}
 
   '@iconify-json/simple-icons@1.2.100':
     resolution: {integrity: sha512-536pN2RCEQyy5bYwzayrs4e9egr8cmtVcbdSHLaQl/ULUsihzn1eZ0+Hhn50zgz9cbEotiynKsKQSEjFJ7qKmw==}
@@ -1766,6 +1772,10 @@ snapshots:
     optional: true
 
   '@iconify-json/devicon-plain@1.2.62':
+    dependencies:
+      '@iconify/types': 2.0.0
+
+  '@iconify-json/file-icons@1.2.2':
     dependencies:
       '@iconify/types': 2.0.0
 

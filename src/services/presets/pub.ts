@@ -53,6 +53,7 @@ function formatPubPoints(achieved: number, maximum: number): string {
 /** pub.dev package endpoint with package page redirect (only the latest version is cached). */
 const PUB_PACKAGE_ENDPOINT = createEndpoint({
   api: 'https://pub.dev/api/packages/{target}',
+  extractKeys: ['latest'],
   page: 'https://pub.dev/packages/{target}',
   project: projectPubPackage,
 });

@@ -7,6 +7,7 @@ import {
   FALLBACK_ICON_SLUG,
   ICON_SLUG_ALIASES,
   computeIconXBounds,
+  getIconPickerIndex,
   inspectResolvedIconCache,
   normalizeIconSlug,
   resolveIcon,
@@ -121,6 +122,7 @@ describe('resolveIcon', () => {
       'apachemaven',
       'jetbrains',
       'maven',
+      'twig',
     ];
 
     for (const slug of stackSlugs) {
@@ -132,6 +134,29 @@ describe('resolveIcon', () => {
     // With isBrandFirst=true, "blender" resolves to the Simple Icons 3D Blender logo rather than Lucide's kitchen blender.
     const blenderBrand = requireDefined(resolveIcon('blender', true), 'blender brand icon');
     expect(blenderBrand.type).toBe('simple');
+  });
+
+  it('resolves fallback icons from @iconify-json/file-icons (e.g., twig) while preferring Simple Icons and Devicon Plain without duplicates', () => {
+    const twigIcon = requireDefined(resolveIcon('twig', true), 'twig icon');
+    expect(twigIcon.type).toBe('simple');
+    expect(twigIcon.coordScale).toBe(0.046875);
+    expect(twigIcon.coordOffsetX).toBe(2.41);
+    expect(twigIcon.innerSvg).toContain('transform="translate(2.41, 0) scale(0.046875)"');
+    expect(resolveStackIconColor('twig')).toBe('lime');
+
+    // Icons present in Simple Icons or Devicon Plain must keep their preferred glyph rather than File Icons' 512-unit body.
+    const phpIcon = requireDefined(resolveIcon('php', true), 'php icon');
+    expect(phpIcon.coordScale).toBe(1);
+    const archIcon = requireDefined(resolveIcon('archlinux', true), 'archlinux icon');
+    expect(archIcon.coordScale).toBe(1);
+    expect(resolveIcon('arch-linux', true)?.innerSvg).toBe(archIcon.innerSvg);
+
+    // Hyphenated File Icons duplicates (`arch-linux`, `common-lisp`) are mapped as aliases instead of duplicating picker slugs.
+    const index = getIconPickerIndex();
+    expect(index.sets.brands).toContain('twig');
+    expect(index.sets.brands).toContain('archlinux');
+    expect(index.sets.brands).not.toContain('arch-linux');
+    expect(index.brandAliases['arch-linux']).toBe('archlinux');
   });
 
   it('returns undefined for unknown icon slugs and Object.prototype keys', () => {

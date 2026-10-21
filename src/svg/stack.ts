@@ -256,6 +256,7 @@ const STACK_ICON_META: Readonly<Record<string, StackIconMeta>> = {
   tauri: { color: 'amber', title: 'Tauri' },
   terraform: { color: 'violet', title: 'Terraform' },
   threedotjs: { color: 'slate', title: 'Three.js' },
+  twig: { color: 'lime', title: 'Twig' },
   typescript: { color: 'blue', title: 'TypeScript' },
   unity: { color: 'slate', title: 'Unity' },
   unrealengine: { color: 'slate', title: 'Unreal Engine' },

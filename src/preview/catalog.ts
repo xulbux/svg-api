@@ -6,10 +6,6 @@
  * the code it documents, so the documentation cannot drift from the API.
  */
 
-import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
-import { icons as simpleIconSet } from '@iconify-json/simple-icons';
-// oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; Counting them needs the whole namespace.
-import * as lucideIcons from 'lucide-static';
 import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
@@ -35,7 +31,7 @@ import {
   STATUS_TTL_SECONDS,
 } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
-import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
+import { FALLBACK_ICON_SLUG, getIconPickerIndex, ICON_SLUG_ALIASES } from '@/svg/icons';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
   QUOTE_FONT_SIZE_RANGE,
@@ -786,9 +782,10 @@ const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Cloudflare', path: '/icon/cloudflare?color=orange&size=28' },
       { alt: 'GitHub', path: '/icon/github?color=slate&size=28' },
     ],
-    subtitle: 'Simple Icons and Devicon Plain vector logos tinted with any OKLCH color.',
+    subtitle:
+      'Simple Icons, Devicon Plain, and File Icons vector logos tinted with any OKLCH color.',
     title:
-      'Brand & Technology Vector Icons (@iconify-json/simple-icons, @iconify-json/devicon-plain)',
+      'Brand & Technology Vector Icons (@iconify-json/simple-icons, @iconify-json/devicon-plain, @iconify-json/file-icons)',
   },
   {
     items: [
@@ -959,9 +956,6 @@ const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
     title: 'Live Service Badge (Linked Image)',
   },
 ];
-
-/** Memoized icon set counts (`undefined` until first computed). */
-let iconSetCountsCache: IconSetCounts | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -1541,24 +1535,12 @@ function buildCachingRows(): ParamTableRow[] {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Count (once per isolate) the distinct icons of the bundled Lucide, Simple Icons, and Devicon Plain sets.
+ * Count (once per isolate) the distinct icons of the bundled Lucide, Simple Icons, Devicon Plain, and File Icons sets.
  * @returns Distinct Lucide and brand icon counts.
  */
 export function getIconSetCounts(): IconSetCounts {
-  if (iconSetCountsCache === undefined) {
-    const lucideGlyphs = new Set<string>();
-    for (const glyph of Object.values(lucideIcons)) {
-      if (typeof glyph === 'string') {
-        lucideGlyphs.add(glyph);
-      }
-    }
-    const brandSlugs = new Set<string>(Object.keys(simpleIconSet.icons));
-    for (const slug of Object.keys(deviconPlainSet.icons)) {
-      brandSlugs.add(slug);
-    }
-    iconSetCountsCache = { brand: brandSlugs.size, lucide: lucideGlyphs.size };
-  }
-  return iconSetCountsCache;
+  const { sets } = getIconPickerIndex();
+  return { brand: sets.brands.length, lucide: sets.lucide.length };
 }
 
 /**

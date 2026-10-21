@@ -1,12 +1,20 @@
 /**
- * Icon resolver – Resolves Lucide (stroke) and Iconify brand/tech (`@iconify-json/devicon-plain` + `@iconify-json/simple-icons`) SVG paths and their exact horizontal ink bounds.
+ * Icon resolver – Resolves Lucide (stroke) and Iconify brand/tech (`@iconify-json/simple-icons`, `@iconify-json/devicon-plain`, and `@iconify-json/file-icons`) SVG paths and their exact horizontal ink bounds.
  */
 
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
+import { icons as fileIconSet } from '@iconify-json/file-icons';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 // oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; The whole namespace is the slug lookup table.
 import * as lucideIcons from 'lucide-static';
-import { createLruCache, getOwnValue, readLruCache, roundCoord, writeLruCache } from '@/svg/shared';
+import {
+  createLruCache,
+  getOwnValue,
+  readLruCache,
+  roundCoord,
+  roundScale,
+  writeLruCache,
+} from '@/svg/shared';
 import type {
   IconBody,
   IconLookup,
@@ -77,6 +85,12 @@ interface LazyIconCache {
 
 /** Scale factor normalizing `@iconify-json/devicon-plain`'s `128x128` coordinate space to `24x24` (`24 / 128 = 0.1875`). */
 const DEVICON_SCALE = 0.1875;
+
+/** Default coordinate box size of `@iconify-json/file-icons` (`512x512`). */
+const FILE_ICONS_DEFAULT_SIZE = 512;
+
+/** Scale factor normalizing `@iconify-json/file-icons`'s `512x512` coordinate space to `24x24` (`24 / 512 = 0.046875`). */
+const FILE_ICONS_SCALE = 0.046875;
 
 /**
  * Canonical brand slugs that prefer `@iconify-json/devicon-plain` over `@iconify-json/simple-icons`
@@ -188,6 +202,9 @@ const LAZY_ICONS: LazyIconCache = {};
 
 /** Memoized icon picker index (`undefined` until first built). */
 let iconPickerIndexCache: IconPickerIndex | undefined = undefined;
+
+/** Memoized cleaned-slug (`[-_.]` stripped) lookup table for `@iconify-json/file-icons` (`undefined` until first built). */
+let fileIconsCleanSlugMap: Map<string, string> | undefined = undefined;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -640,12 +657,18 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
 /**
  * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
  * Exported from the `PUBLIC API` section; Declared here because the internal icon lookups measure with it.
- * @param svgStr       Inner SVG markup of the icon body.
- * @param isStroke     Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
- * @param coordScale   Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
+ * @param svgStr         Inner SVG markup of the icon body.
+ * @param isStroke       Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
+ * @param coordScale     Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
+ * @param coordOffsetX   Horizontal offset in `24x24` units applied to the scaled coordinates (defaults to `0`).
  * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
  */
-function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): IconXBounds {
+function computeIconXBounds(
+  svgStr: string,
+  isStroke: boolean,
+  coordScale = 1,
+  coordOffsetX = 0
+): IconXBounds {
   const bounds: IconXBounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
   recordShapeBounds(svgStr, coordScale, bounds);
   for (const match of svgStr.matchAll(PATH_D_RX)) {
@@ -660,8 +683,8 @@ function computeIconXBounds(svgStr: string, isStroke: boolean, coordScale = 1): 
   }
   const strokePad = isStroke ? STROKE_BOUNDS_PAD : 0;
   return {
-    maxX: roundCoord(Math.min(24, bounds.maxX + strokePad)),
-    minX: roundCoord(Math.max(0, bounds.minX - strokePad)),
+    maxX: roundCoord(Math.min(24, bounds.maxX + coordOffsetX + strokePad)),
+    minX: roundCoord(Math.max(0, bounds.minX + coordOffsetX - strokePad)),
   };
 }
 
@@ -685,6 +708,48 @@ function extractInnerSvg(rawSvg: string): string | undefined {
     return undefined;
   }
   return rawSvg.slice(openEnd + 1, closeStart).trim();
+}
+
+/** Resolve a cleaned (`[-_.]` stripped) brand slug to its `@iconify-json/file-icons` key (built lazily on first use). */
+function resolveFileIconCleanSlug(cleanSlug: string): string | undefined {
+  if (fileIconsCleanSlugMap === undefined) {
+    fileIconsCleanSlugMap = new Map<string, string>();
+    for (const key of Object.keys(fileIconSet.icons)) {
+      fileIconsCleanSlugMap.set(key.replace(BRAND_SLUG_CLEAN_RX, ''), key);
+    }
+  }
+  return fileIconsCleanSlugMap.get(cleanSlug);
+}
+
+/** Read a `512`-unit icon body from `@iconify-json/file-icons`, scaled and centered to `24x24` (no ink bounds). */
+function getFileIconBody(slug: string): IconBody | undefined {
+  const cleanSlug = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+  const matchedKey =
+    slug in fileIconSet.icons && Object.hasOwn(fileIconSet.icons, slug)
+      ? slug
+      : resolveFileIconCleanSlug(cleanSlug);
+  const entry = matchedKey ? getOwnValue(fileIconSet.icons, matchedKey) : undefined;
+  if (!entry?.body) {
+    return undefined;
+  }
+  const width = entry.width ?? FILE_ICONS_DEFAULT_SIZE;
+  const height = entry.height ?? FILE_ICONS_DEFAULT_SIZE;
+  const boxSize = Math.max(width, height, FILE_ICONS_DEFAULT_SIZE);
+  const coordScale =
+    boxSize === FILE_ICONS_DEFAULT_SIZE ? FILE_ICONS_SCALE : roundScale(24 / boxSize);
+  const coordOffsetX = width === boxSize ? 0 : roundCoord((24 - width * coordScale) / 2);
+  const offsetY = height === boxSize ? 0 : roundCoord((24 - height * coordScale) / 2);
+  const transform =
+    coordOffsetX === 0 && offsetY === 0
+      ? `scale(${coordScale})`
+      : `translate(${coordOffsetX}, ${offsetY}) scale(${coordScale})`;
+  const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
+  return {
+    coordOffsetX,
+    coordScale,
+    innerSvg: `<g transform="${transform}">${cleanBody}</g>`,
+    type: 'simple',
+  };
 }
 
 /** Read a `128x128` icon body from `@iconify-json/devicon-plain`, normalized to `24x24` (no ink bounds). */
@@ -723,12 +788,15 @@ function getSimpleIconBody(slug: string): IconBody | undefined {
   };
 }
 
-/** Read a brand/tech icon body (Devicon Plain first for `DEVICON_PREFERRED_SLUGS`, otherwise Simple Icons first). */
+/**
+ * Read a brand/tech icon body with preferred-set deduplication:
+ * `DEVICON_PREFERRED_SLUGS` check Devicon Plain first, otherwise Simple Icons -> Devicon Plain -> File Icons.
+ */
 function getBrandIconBody(slug: string): IconBody | undefined {
   if (DEVICON_PREFERRED_SLUGS.has(slug)) {
-    return getDeviconPlainBody(slug) ?? getSimpleIconBody(slug);
+    return getDeviconPlainBody(slug) ?? getSimpleIconBody(slug) ?? getFileIconBody(slug);
   }
-  return getSimpleIconBody(slug) ?? getDeviconPlainBody(slug);
+  return getSimpleIconBody(slug) ?? getDeviconPlainBody(slug) ?? getFileIconBody(slug);
 }
 
 /** Read a UI stroke icon body from `lucide-static` (no ink bounds). */
@@ -743,13 +811,43 @@ function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
   if (!body) {
     return undefined;
   }
-  // The Devicon scale wrapper carries no geometry, so the native coordinates are measured with coordScale.
-  return { ...body, ...computeIconXBounds(body.innerSvg, body.type === 'lucide', body.coordScale) };
+  // The scale/translate wrapper carries no path geometry, so native coordinates are measured with coordScale and coordOffsetX.
+  return {
+    ...body,
+    ...computeIconXBounds(
+      body.innerSvg,
+      body.type === 'lucide',
+      body.coordScale,
+      body.coordOffsetX
+    ),
+  };
 }
 
 /** Convert a PascalCase `lucide-static` export name into its kebab-case slug (e.g., `'ArrowDown01'` -> `'arrow-down01'`). */
 function toLucideSlug(exportName: string): string {
   return exportName.replace(PASCAL_BOUNDARY_RX, '$&-').toLowerCase();
+}
+
+/**
+ * Merge a secondary brand icon set into `brandSlugs`, deduplicating by both exact and cleaned
+ * (`[-_.]`-stripped) slug so preferred sets always win and hyphenated duplicates become aliases.
+ */
+function mergeBrandIconSet(
+  slugs: readonly string[],
+  brandSlugs: Set<string>,
+  canonicalByCleanSlug: Map<string, string>,
+  brandAliases: Record<string, string>
+): void {
+  for (const slug of slugs) {
+    const cleanSlug = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+    const existingCanonical = canonicalByCleanSlug.get(cleanSlug);
+    if (existingCanonical === undefined) {
+      brandSlugs.add(slug);
+      canonicalByCleanSlug.set(cleanSlug, slug);
+    } else if (slug !== existingCanonical) {
+      brandAliases[slug] = existingCanonical;
+    }
+  }
 }
 
 /** Build (once per isolate) the icon picker index: Distinct Lucide glyphs, brand slugs, and every alias. */
@@ -770,14 +868,27 @@ function buildIconPickerIndex(): IconPickerIndex {
     }
   }
 
-  const brandSlugs = new Set<string>(Object.keys(simpleIconSet.icons));
-  for (const slug of Object.keys(deviconPlainSet.icons)) {
+  const brandSlugs = new Set<string>();
+  const canonicalByCleanSlug = new Map<string, string>();
+  for (const slug of Object.keys(simpleIconSet.icons)) {
     brandSlugs.add(slug);
+    canonicalByCleanSlug.set(slug.replace(BRAND_SLUG_CLEAN_RX, ''), slug);
   }
   const brandAliases: Record<string, string> = {};
   for (const [alias, entry] of Object.entries(simpleIconSet.aliases ?? {})) {
     brandAliases[alias] = entry.parent;
+    const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
+    if (!canonicalByCleanSlug.has(cleanAlias)) {
+      canonicalByCleanSlug.set(cleanAlias, entry.parent);
+    }
   }
+  mergeBrandIconSet(
+    Object.keys(deviconPlainSet.icons),
+    brandSlugs,
+    canonicalByCleanSlug,
+    brandAliases
+  );
+  mergeBrandIconSet(Object.keys(fileIconSet.icons), brandSlugs, canonicalByCleanSlug, brandAliases);
 
   return {
     aliases: { ...ICON_SLUG_ALIASES },

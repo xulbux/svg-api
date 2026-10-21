@@ -111,8 +111,14 @@ export interface MetricEndpoint<P = unknown> {
   /** Builds the browser redirect destination URL. */
   buildPageUrl: ServiceUrlBuilder;
   /**
-   * Leading key of the upstream JSON object whose value is the only part needed (e.g., PyPI's
-   * `info`); The body stream is cancelled as soon as that value is complete.
+   * Top-level keys of the upstream JSON object whose values are the only parts needed (e.g., PyPI's
+   * `['info']` or pub.dev's `['latest']`); Unneeded keys are skipped in `O(1)` memory while
+   * streaming, and the body stream is cancelled as soon as all listed keys are read.
+   */
+  extractKeys?: readonly string[];
+  /**
+   * Shorthand for `extractKeys: [leadingKey]` when a single top-level key holds every needed field
+   * (e.g., PyPI's `info`).
    */
   leadingKey?: string;
   /**

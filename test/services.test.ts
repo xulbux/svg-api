@@ -901,7 +901,7 @@ describe('upstream response size cap', () => {
   });
 });
 
-describe('PyPI streaming prefix reader', () => {
+describe('streaming JSON key extractor', () => {
   it('stops reading after the leading info object, even when chunks split strings and escapes', async () => {
     const info = String.raw`{"info":{"license_expression":"A\"}]\\ é","requires_python":">= 3.9","version":"2.0.0"},`;
     const chunked = createChunkedBody(info, 1, `"releases":{"x":"${'y'.repeat(65_536)}"}`, 64);
@@ -925,14 +925,28 @@ describe('PyPI streaming prefix reader', () => {
     expect(chunked.stats.isCancelled).toBe(true);
   });
 
-  it('falls back to parsing the complete body when info is not the leading key', async () => {
-    const chunked = createChunkedBody(
-      '{"last_serial":1,"info":{"version":"3.1.0"},"releases":{}}',
+  it('skips preceding keys (including multi-megabyte unwanted sections) in O(1) memory and cancels the stream once target keys are read', async () => {
+    const reordered = createChunkedBody(
+      String.raw`{"last_serial":1,"note":"skip\"me","info":{"version":"3.1.0"},"releases":{"huge":true}}`,
       4
     );
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(chunked.body));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(reordered.body));
     expect(await describeMetric('/badge/pypi/reordered/v')).toBe('pypi: v3.1.0');
-    expect(chunked.stats.isCancelled).toBe(false);
+    expect(reordered.stats.isCancelled).toBe(true);
+
+    // Even when a > 3 MB unwanted `releases` object precedes `info`, streaming skips it without hitting the 2 MB value cap.
+    const hugePreceding = `{"releases":{"blob":"${'x'.repeat(3_200_000)}"},"info":{"version":"4.2.0"},`;
+    const hugeStream = createChunkedBody(
+      hugePreceding,
+      65_536,
+      `"trailing":"${'y'.repeat(65_536)}"`,
+      16
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(hugeStream.body, { headers: { 'content-length': '4500000' } })
+    );
+    expect(await describeMetric('/badge/pypi/huge-preceding/v')).toBe('pypi: v4.2.0');
+    expect(hugeStream.stats.isCancelled).toBe(true);
   });
 
   it('reports non-object info values as not found', async () => {

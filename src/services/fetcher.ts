@@ -88,16 +88,49 @@ interface MergedHeadersEntry {
   headers: Readonly<Record<string, string>>;
 }
 
-/** Incremental scan state of the leading JSON value (string, escape, and nesting tracking). */
-interface LeadingValueScan {
-  /** Current object/array nesting depth relative to the value start. */
+/** Phase of the streaming top-level JSON object key extractor. */
+type JsonScanPhase =
+  | 'colon'
+  | 'comma-or-end'
+  | 'done'
+  | 'first-key-or-end'
+  | 'key'
+  | 'mismatch'
+  | 'next-key'
+  | 'root'
+  | 'value-container'
+  | 'value-primitive'
+  | 'value-start'
+  | 'value-string';
+
+/** Mutable state of the streaming top-level JSON object key extractor across chunks. */
+interface JsonStreamScanner {
+  /** Summed length in UTF-16 code units of all already parsed wanted values. */
+  capturedSize: number;
+  /** Current object/array nesting depth inside a `value-container`. */
   depth: number;
-  /** Whether the previous character was a backslash inside a string. */
+  /** Extracted top-level key-value pairs parsed so far. */
+  extracted: Record<string, unknown>;
+  /** Set of wanted top-level keys that have already been extracted. */
+  foundKeys: Set<string>;
+  /** Whether the current key string contains a backslash escape sequence. */
+  hasKeyEscape: boolean;
+  /** Whether the previous character inside a string was a backslash. */
   isEscaped: boolean;
-  /** Whether the scanner is inside a JSON string. */
+  /** Whether the container scanner is currently inside a JSON string literal. */
   isInString: boolean;
-  /** Next buffer index to scan. */
-  position: number;
+  /** Whether a captured value exceeded `MAX_UPSTREAM_BYTES`. */
+  isTooLarge: boolean;
+  /** Buffer accumulating the current top-level key string. */
+  keyBuffer: string;
+  /** Currently matched wanted key (`undefined` when the current key is being skipped in `O(1)` memory). */
+  matchedKey: string | undefined;
+  /** Current lexer phase. */
+  phase: JsonScanPhase;
+  /** Wanted top-level object keys. */
+  targetKeys: ReadonlySet<string>;
+  /** Buffer accumulating the JSON slice of a matched key's value (`''` while skipping unwanted keys). */
+  valueBuffer: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -125,6 +158,15 @@ const UPSTREAM_TIMEOUT = 8000;
 
 /** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
 const MAX_UPSTREAM_BYTES = 2_097_152;
+
+/**
+ * Maximum wire bytes scanned by the streaming JSON key extractor (`32 MB`): Unneeded keys are
+ * discarded in `O(1)` memory while streaming, while captured values stay capped at `MAX_UPSTREAM_BYTES`.
+ */
+const MAX_STREAM_SCAN_BYTES = 33_554_432;
+
+/** Maximum length in UTF-16 code units of a top-level JSON object key read by the streaming scanner. */
+const MAX_JSON_KEY_LENGTH = 1024;
 
 /** Maximum number of upstream outcomes kept in the in-isolate memory cache. */
 const MAX_MEMORY_CACHE_ENTRIES = 256;
@@ -155,12 +197,6 @@ const TOO_LARGE_STATUS = 413;
 
 /** Badge status of payloads that could not be projected or transformed. */
 const INVALID_DATA_STATUS = 502;
-
-/** Leading value scan result: The JSON header is incomplete, so more data is needed. */
-const LEADING_VALUE_PENDING = -1;
-
-/** Leading value scan result: The payload does not start with the expected key and an object/array value. */
-const LEADING_VALUE_MISMATCH = -2;
 
 /**
  * Global default metric aliases (alias -> canonical metric); An alias applies to every service that
@@ -436,107 +472,354 @@ function cancelBody(
   body?.cancel().catch(ignoreCancelError);
 }
 
+/** Check whether a character is RFC 8259 JSON whitespace. */
+function isJsonWhitespace(char: string): boolean {
+  return char === ' ' || char === '\n' || char === '\r' || char === '\t';
+}
+
 /** Advance past JSON whitespace starting at `index`. */
 function skipJsonWhitespace(text: string, index: number): number {
   let position = index;
-  while (position < text.length) {
-    const char = text[position];
-    if (char !== ' ' && char !== '\n' && char !== '\r' && char !== '\t') {
-      break;
-    }
+  while (position < text.length && isJsonWhitespace(text[position] ?? '')) {
     position += 1;
   }
   return position;
 }
 
-/**
- * Locate the start of the value of `key` when it is the first key of the top-level JSON object
- * (`{"key": {…}` or `{"key": […]`); `key` must not contain quotes or backslashes.
- * @param buffer   Decoded response prefix buffer.
- * @param key      Expected leading JSON object key.
- * @returns Value start index, `LEADING_VALUE_PENDING`, or `LEADING_VALUE_MISMATCH`.
- */
-function locateLeadingValue(buffer: string, key: string): number {
-  let index = skipJsonWhitespace(buffer, 0);
-  if (index >= buffer.length) {
-    return LEADING_VALUE_PENDING;
+/** Append a slice of a wanted value to `scanner.valueBuffer`, enforcing `MAX_UPSTREAM_BYTES`. */
+function appendCapturedSlice(
+  scanner: JsonStreamScanner,
+  chunk: string,
+  start: number,
+  end: number
+): boolean {
+  if (scanner.matchedKey === undefined || end <= start) {
+    return true;
   }
-  if (buffer[index] !== '{') {
-    return LEADING_VALUE_MISMATCH;
+  if (scanner.capturedSize + scanner.valueBuffer.length + (end - start) > MAX_UPSTREAM_BYTES) {
+    scanner.isTooLarge = true;
+    scanner.phase = 'mismatch';
+    return false;
   }
-  index = skipJsonWhitespace(buffer, index + 1);
-  const quotedKey = `"${key}"`;
-  const available = buffer.slice(index, index + quotedKey.length);
-  if (!quotedKey.startsWith(available)) {
-    return LEADING_VALUE_MISMATCH;
-  }
-  if (available.length < quotedKey.length) {
-    return LEADING_VALUE_PENDING;
-  }
-  index = skipJsonWhitespace(buffer, index + quotedKey.length);
-  if (index >= buffer.length) {
-    return LEADING_VALUE_PENDING;
-  }
-  if (buffer[index] !== ':') {
-    return LEADING_VALUE_MISMATCH;
-  }
-  index = skipJsonWhitespace(buffer, index + 1);
-  if (index >= buffer.length) {
-    return LEADING_VALUE_PENDING;
-  }
-  return buffer[index] === '{' || buffer[index] === '[' ? index : LEADING_VALUE_MISMATCH;
+  scanner.valueBuffer += chunk.slice(start, end);
+  return true;
 }
 
-/**
- * Continue scanning the leading object/array value (single pass, no backtracking): Tracks string,
- * escape, and nesting state across chunks.
- * @param buffer   Decoded response prefix buffer.
- * @param scan     Mutable scan state across stream chunks.
- * @returns Exclusive end index of the value, or `-1` when it is not complete yet.
- */
-function scanLeadingValueEnd(buffer: string, scan: LeadingValueScan): number {
-  for (let i = scan.position; i < buffer.length; i += 1) {
-    const char = buffer[i];
-    if (scan.isInString) {
-      if (scan.isEscaped) {
-        scan.isEscaped = false;
+/** Parse a completed wanted value (or finish a skipped value) and advance the scanner phase. */
+function finishScannedValue(scanner: JsonStreamScanner): void {
+  if (scanner.matchedKey === undefined) {
+    scanner.phase = 'comma-or-end';
+    return;
+  }
+  try {
+    scanner.extracted[scanner.matchedKey] = JSON.parse(scanner.valueBuffer) as unknown;
+    scanner.capturedSize += scanner.valueBuffer.length;
+    scanner.valueBuffer = '';
+    scanner.foundKeys.add(scanner.matchedKey);
+    scanner.matchedKey = undefined;
+    scanner.phase = scanner.foundKeys.size >= scanner.targetKeys.size ? 'done' : 'comma-or-end';
+  } catch {
+    scanner.phase = 'mismatch';
+  }
+}
+
+/** Scan a top-level JSON object key string starting at `startIndex` (after the opening quote). */
+function scanKeyString(chunk: string, startIndex: number, scanner: JsonStreamScanner): number {
+  for (let i = startIndex; i < chunk.length; i += 1) {
+    const char = chunk[i];
+    if (scanner.isEscaped) {
+      scanner.isEscaped = false;
+    } else if (char === '\\') {
+      scanner.isEscaped = true;
+      scanner.hasKeyEscape = true;
+    } else if (char === '"') {
+      scanner.keyBuffer += chunk.slice(startIndex, i);
+      if (scanner.keyBuffer.length > MAX_JSON_KEY_LENGTH) {
+        scanner.phase = 'mismatch';
+        return i + 1;
+      }
+      try {
+        const keyName = scanner.hasKeyEscape
+          ? (JSON.parse(`"${scanner.keyBuffer}"`) as string)
+          : scanner.keyBuffer;
+        scanner.matchedKey = scanner.targetKeys.has(keyName) ? keyName : undefined;
+        scanner.keyBuffer = '';
+        scanner.phase = 'colon';
+      } catch {
+        scanner.phase = 'mismatch';
+      }
+      return i + 1;
+    }
+  }
+  scanner.keyBuffer += chunk.slice(startIndex);
+  if (scanner.keyBuffer.length > MAX_JSON_KEY_LENGTH) {
+    scanner.phase = 'mismatch';
+  }
+  return chunk.length;
+}
+
+/** Scan a top-level string value (skipping in `O(1)` memory when unwanted, or capturing when wanted). */
+function scanValueString(chunk: string, startIndex: number, scanner: JsonStreamScanner): number {
+  for (let i = startIndex; i < chunk.length; i += 1) {
+    const char = chunk[i];
+    if (scanner.isEscaped) {
+      scanner.isEscaped = false;
+    } else if (char === '\\') {
+      scanner.isEscaped = true;
+    } else if (char === '"') {
+      if (appendCapturedSlice(scanner, chunk, startIndex, i + 1)) {
+        finishScannedValue(scanner);
+      }
+      return i + 1;
+    }
+  }
+  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  return chunk.length;
+}
+
+/** Scan a top-level `{…}` or `[…]` value (skipping in `O(1)` memory when unwanted, or capturing when wanted). */
+function scanValueContainer(chunk: string, startIndex: number, scanner: JsonStreamScanner): number {
+  for (let i = startIndex; i < chunk.length; i += 1) {
+    const char = chunk[i];
+    if (scanner.isInString) {
+      if (scanner.isEscaped) {
+        scanner.isEscaped = false;
       } else if (char === '\\') {
-        scan.isEscaped = true;
+        scanner.isEscaped = true;
       } else if (char === '"') {
-        scan.isInString = false;
+        scanner.isInString = false;
       }
     } else if (char === '"') {
-      scan.isInString = true;
+      scanner.isInString = true;
     } else if (char === '{' || char === '[') {
-      scan.depth += 1;
+      scanner.depth += 1;
     } else if (char === '}' || char === ']') {
-      scan.depth -= 1;
-      if (scan.depth === 0) {
-        scan.position = i + 1;
+      scanner.depth -= 1;
+      if (scanner.depth === 0) {
+        if (appendCapturedSlice(scanner, chunk, startIndex, i + 1)) {
+          finishScannedValue(scanner);
+        }
         return i + 1;
       }
     }
   }
-  scan.position = buffer.length;
-  return -1;
+  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  return chunk.length;
+}
+
+/** Scan a top-level primitive value (`true`, `false`, `null`, or number) up to its delimiter. */
+function scanValuePrimitive(chunk: string, startIndex: number, scanner: JsonStreamScanner): number {
+  for (let i = startIndex; i < chunk.length; i += 1) {
+    const char = chunk[i] ?? '';
+    if (char === ',' || char === '}' || isJsonWhitespace(char)) {
+      if (appendCapturedSlice(scanner, chunk, startIndex, i)) {
+        finishScannedValue(scanner);
+      }
+      return i;
+    }
+  }
+  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  return chunk.length;
+}
+
+/** Begin scanning a top-level value at `chunk[index]` according to its leading token. */
+function startValueScan(char: string, index: number, scanner: JsonStreamScanner): number {
+  if (char === '"') {
+    scanner.valueBuffer = scanner.matchedKey === undefined ? '' : '"';
+    scanner.isEscaped = false;
+    scanner.phase = 'value-string';
+    return index + 1;
+  }
+  if (char === '{' || char === '[') {
+    scanner.valueBuffer = scanner.matchedKey === undefined ? '' : char;
+    scanner.depth = 1;
+    scanner.isInString = false;
+    scanner.isEscaped = false;
+    scanner.phase = 'value-container';
+    return index + 1;
+  }
+  if (char === '}' || char === ']' || char === ',') {
+    scanner.phase = 'mismatch';
+    return index + 1;
+  }
+  scanner.valueBuffer = '';
+  scanner.phase = 'value-primitive';
+  return index;
+}
+
+/** Advance a structural phase (`root`, `first-key-or-end`, `comma-or-end`, `next-key`, `colon`, `value-start`) at `char`. */
+function advanceStructuralPhase(char: string, index: number, scanner: JsonStreamScanner): number {
+  switch (scanner.phase) {
+    case 'root': {
+      scanner.phase = char === '{' ? 'first-key-or-end' : 'mismatch';
+      return index + 1;
+    }
+    case 'first-key-or-end': {
+      if (char === '}') {
+        scanner.phase = 'done';
+      } else if (char === '"') {
+        scanner.hasKeyEscape = false;
+        scanner.isEscaped = false;
+        scanner.keyBuffer = '';
+        scanner.phase = 'key';
+      } else {
+        scanner.phase = 'mismatch';
+      }
+      return index + 1;
+    }
+    case 'comma-or-end': {
+      if (char === '}') {
+        scanner.phase = 'done';
+      } else if (char === ',') {
+        scanner.phase = 'next-key';
+      } else {
+        scanner.phase = 'mismatch';
+      }
+      return index + 1;
+    }
+    case 'next-key': {
+      if (char === '"') {
+        scanner.hasKeyEscape = false;
+        scanner.isEscaped = false;
+        scanner.keyBuffer = '';
+        scanner.phase = 'key';
+      } else {
+        scanner.phase = 'mismatch';
+      }
+      return index + 1;
+    }
+    case 'colon': {
+      scanner.phase = char === ':' ? 'value-start' : 'mismatch';
+      return index + 1;
+    }
+    default: {
+      return startValueScan(char, index, scanner);
+    }
+  }
+}
+
+/** Advance the streaming JSON object key extractor across a decoded chunk. */
+function advanceJsonScanner(chunk: string, scanner: JsonStreamScanner): void {
+  let index = 0;
+  while (index < chunk.length && scanner.phase !== 'done' && scanner.phase !== 'mismatch') {
+    switch (scanner.phase) {
+      case 'key': {
+        index = scanKeyString(chunk, index, scanner);
+        break;
+      }
+      case 'value-string': {
+        index = scanValueString(chunk, index, scanner);
+        break;
+      }
+      case 'value-container': {
+        index = scanValueContainer(chunk, index, scanner);
+        break;
+      }
+      case 'value-primitive': {
+        index = scanValuePrimitive(chunk, index, scanner);
+        break;
+      }
+      default: {
+        index = skipJsonWhitespace(chunk, index);
+        if (index < chunk.length) {
+          index = advanceStructuralPhase(chunk[index] ?? '', index, scanner);
+        }
+        break;
+      }
+    }
+  }
+}
+
+/** Create a fresh streaming JSON key extractor for `extractKeys`. */
+function createJsonStreamScanner(extractKeys: readonly string[]): JsonStreamScanner {
+  return {
+    capturedSize: 0,
+    depth: 0,
+    extracted: {},
+    foundKeys: new Set<string>(),
+    hasKeyEscape: false,
+    isEscaped: false,
+    isInString: false,
+    isTooLarge: false,
+    keyBuffer: '',
+    matchedKey: undefined,
+    phase: 'root',
+    targetKeys: new Set<string>(extractKeys),
+    valueBuffer: '',
+  };
+}
+
+/** Resolve the top-level JSON keys to extract while streaming (`undefined` when the full body is read). */
+function resolveExtractKeys(endpoint: MetricEndpoint): readonly string[] | undefined {
+  if (endpoint.extractKeys && endpoint.extractKeys.length > 0) {
+    return endpoint.extractKeys;
+  }
+  return endpoint.leadingKey === undefined ? undefined : [endpoint.leadingKey];
 }
 
 /**
- * Read a response body with a byte cap; With a `leadingKey`, stop reading (and cancel the stream)
- * as soon as the leading value is complete, falling back to the complete body otherwise.
+ * Stream a response body and extract only `extractKeys` from the top-level JSON object: Unneeded
+ * keys are skipped in `O(1)` memory, and the stream is cancelled as soon as all keys are read.
+ */
+async function readExtractedResponseBody(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  status: number,
+  extractKeys: readonly string[]
+): Promise<UpstreamBody> {
+  const decoder = new TextDecoder();
+  const scanner = createJsonStreamScanner(extractKeys);
+  let byteCount = 0;
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- Stream chunks can only be read sequentially.
+    const chunk = await reader.read();
+    if (chunk.done) {
+      advanceJsonScanner(decoder.decode(), scanner);
+      break;
+    }
+    byteCount += chunk.value.byteLength;
+    if (byteCount > MAX_STREAM_SCAN_BYTES) {
+      cancelBody(reader);
+      return { status: TOO_LARGE_STATUS };
+    }
+    advanceJsonScanner(decoder.decode(chunk.value, { stream: true }), scanner);
+    if (scanner.isTooLarge) {
+      cancelBody(reader);
+      return { status: TOO_LARGE_STATUS };
+    }
+    if (scanner.phase === 'done') {
+      cancelBody(reader);
+      return { data: scanner.extracted, status };
+    }
+    if (scanner.phase === 'mismatch') {
+      cancelBody(reader);
+      return { status: INVALID_DATA_STATUS };
+    }
+  }
+  if (scanner.isTooLarge) {
+    return { status: TOO_LARGE_STATUS };
+  }
+  return scanner.phase === 'done'
+    ? { data: scanner.extracted, status }
+    : { status: INVALID_DATA_STATUS };
+}
+
+/**
+ * Read a response body with a byte cap; With `extractKeys`, skip unneeded keys in `O(1)` memory
+ * and stop reading (cancelling the stream) as soon as all target keys are complete.
  */
 async function readResponseBody(
   response: Response,
-  leadingKey: string | undefined
+  extractKeys: readonly string[] | undefined
 ): Promise<UpstreamBody> {
   const { body } = response;
   if (!body) {
     return { status: response.status, text: await response.text() };
   }
   const reader = body.getReader();
+  if (extractKeys !== undefined) {
+    return readExtractedResponseBody(reader, response.status, extractKeys);
+  }
   const decoder = new TextDecoder();
-  const scan: LeadingValueScan = { depth: 0, isEscaped: false, isInString: false, position: 0 };
-  let valueStart = leadingKey === undefined ? LEADING_VALUE_MISMATCH : LEADING_VALUE_PENDING;
   let buffer = '';
   let byteCount = 0;
   for (;;) {
@@ -551,22 +834,6 @@ async function readResponseBody(
       return { status: TOO_LARGE_STATUS };
     }
     buffer += decoder.decode(chunk.value, { stream: true });
-    if (leadingKey !== undefined && valueStart === LEADING_VALUE_PENDING) {
-      valueStart = locateLeadingValue(buffer, leadingKey);
-      scan.position = Math.max(valueStart, 0);
-    }
-    const valueEnd =
-      leadingKey !== undefined && valueStart >= 0 ? scanLeadingValueEnd(buffer, scan) : -1;
-    if (leadingKey !== undefined && valueEnd >= 0) {
-      try {
-        const value = JSON.parse(buffer.slice(valueStart, valueEnd)) as unknown;
-        cancelBody(reader);
-        return { data: { [leadingKey]: value }, status: response.status };
-      } catch {
-        // Unexpected structure; Keep reading and parse the complete body instead.
-        valueStart = LEADING_VALUE_MISMATCH;
-      }
-    }
   }
   return { status: response.status, text: buffer + decoder.decode() };
 }
@@ -594,14 +861,15 @@ async function fetchUpstreamBody(
     }
     return { status: endpoint.missingStatuses?.includes(response.status) ? 404 : response.status };
   }
-  // Prefix reads (`leadingKey`) stop early, so only the streaming byte counter may reject them.
+  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early, so only the streaming byte counter may reject them.
+  const extractKeys = resolveExtractKeys(endpoint);
   const contentLength = Number(response.headers.get('content-length') ?? '0');
-  if (endpoint.leadingKey === undefined && contentLength > MAX_UPSTREAM_BYTES) {
+  if (extractKeys === undefined && contentLength > MAX_UPSTREAM_BYTES) {
     cancelBody(response.body);
     return { status: TOO_LARGE_STATUS };
   }
   try {
-    return await readResponseBody(response, endpoint.leadingKey);
+    return await readResponseBody(response, extractKeys);
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'TimeoutError';
     return { status: isTimeout ? 504 : 502 };

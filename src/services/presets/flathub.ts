@@ -57,6 +57,7 @@ function projectAppStream(data: unknown): FlathubAppStreamProjection | undefined
 /** Flathub AppStream metadata endpoint. */
 const APPSTREAM_ENDPOINT = createEndpoint({
   api: 'https://flathub.org/api/v2/appstream/{target}',
+  extractKeys: ['project_license', 'releases'],
   page: 'https://flathub.org/apps/{target}',
   project: projectAppStream,
 });
@@ -64,6 +65,7 @@ const APPSTREAM_ENDPOINT = createEndpoint({
 /** Flathub install statistics endpoint (refreshed daily). */
 const STATS_ENDPOINT = createEndpoint({
   api: 'https://flathub.org/api/v2/stats/{target}',
+  extractKeys: ['installs_last_7_days', 'installs_last_month', 'installs_total'],
   page: 'https://flathub.org/apps/{target}',
   project: pickFields<FlathubStatsPayload>([
     'installs_last_7_days',

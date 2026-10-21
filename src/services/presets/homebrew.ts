@@ -82,9 +82,13 @@ function projectHomebrewPayload(data: unknown): HomebrewProjection | undefined {
   };
 }
 
+/** Top-level Homebrew JSON keys needed for version, license, and install analytics. */
+const HOMEBREW_EXTRACT_KEYS = ['analytics', 'license', 'version', 'versions'] as const;
+
 /** Homebrew formula endpoint (analytics refresh daily). */
 const FORMULA_ENDPOINT = createEndpoint({
   api: 'https://formulae.brew.sh/api/formula/{target}.json',
+  extractKeys: HOMEBREW_EXTRACT_KEYS,
   page: 'https://formulae.brew.sh/formula/{target}',
   project: projectHomebrewPayload,
   ttl: CACHE_TTL.daily,
@@ -93,6 +97,7 @@ const FORMULA_ENDPOINT = createEndpoint({
 /** Homebrew cask endpoint (analytics refresh daily). */
 const CASK_ENDPOINT = createEndpoint({
   api: 'https://formulae.brew.sh/api/cask/{target}.json',
+  extractKeys: HOMEBREW_EXTRACT_KEYS,
   page: 'https://formulae.brew.sh/cask/{target}',
   project: projectHomebrewPayload,
   ttl: CACHE_TTL.daily,
