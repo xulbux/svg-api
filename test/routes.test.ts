@@ -926,6 +926,13 @@ describe('response headers & revalidation', () => {
     expect(matchingRes.status).toBe(304);
     expect(await matchingRes.text()).toBe('');
     expect(wildcardRes.status).toBe(304);
+
+    const fontRes = await app.request('/assets/JetBrainsMono-Regular.ttf', {}, TEST_ENV);
+    expect(fontRes.status).toBe(200);
+    expect(fontRes.headers.get('Content-Type')).toBe('font/ttf');
+    expect(fontRes.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    const fontBuffer = await fontRes.arrayBuffer();
+    expect(fontBuffer.byteLength).toBeGreaterThan(200_000);
   });
 });
 

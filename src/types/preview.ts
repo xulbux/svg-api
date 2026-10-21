@@ -31,13 +31,25 @@ export type NavPageId = 'builder' | 'docs' | 'home';
 /** Public file names of the static website assets served at `/assets/:name` (icon picker pages are resolved dynamically). */
 export type SiteAssetName = 'builder.js' | 'icons.json' | 'site.css' | 'site.js';
 
+/** Public file names of the bundled website font files served at `/assets/:name`. */
+export type SiteFontName =
+  | 'Geist-Bold.ttf'
+  | 'Geist-Medium.ttf'
+  | 'Geist-Regular.ttf'
+  | 'Geist-SemiBold.ttf'
+  | 'Geist-SemiBoldItalic.ttf'
+  | 'JetBrainsMono-Bold.ttf'
+  | 'JetBrainsMono-BoldItalic.ttf'
+  | 'JetBrainsMono-Italic.ttf'
+  | 'JetBrainsMono-Regular.ttf';
+
 /** Syntax highlighting token of a code snippet (`hl-*` class name and literal text). */
 export type HighlightToken = [className: string, text: string];
 
 /** Built static website asset. */
-export interface SiteAsset {
-  /** Asset body (CSS, JavaScript, or JSON source). */
-  body: string;
+export interface SiteAsset<TBody extends ArrayBuffer | string = string> {
+  /** Asset body (CSS, JavaScript, JSON source, or font binary). */
+  body: TBody;
   /** `Content-Type` header value. */
   contentType: string;
   /** Content hash appended to asset URLs (`?v=`). */

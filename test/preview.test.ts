@@ -478,6 +478,33 @@ describe('documentation pages – navigation & static assets', () => {
     expect(css?.body).toContain('--brand-gradient-start: #818CF8;');
     expect(getSiteAsset('__proto__')).toBeUndefined();
   });
+
+  it('serves every bundled Geist and JetBrains Mono NF @font-face binary referenced by the stylesheet', () => {
+    const css = getSiteStylesheet();
+    expect(css).toContain("--font-sans: 'Geist',");
+    expect(css).toContain("--font-mono: 'JetBrains Mono NF',");
+    expect(css).toMatch(/body \{[^}]*font-family: var\(--font-sans\);/);
+    const fontNames = collectGroups(css, /url\(['"]\/assets\/(?<name>[\w-]+\.ttf)['"]\)/g, 'name');
+    expect(fontNames).toEqual([
+      'Geist-Regular.ttf',
+      'Geist-Medium.ttf',
+      'Geist-SemiBold.ttf',
+      'Geist-SemiBoldItalic.ttf',
+      'Geist-Bold.ttf',
+      'JetBrainsMono-Regular.ttf',
+      'JetBrainsMono-Italic.ttf',
+      'JetBrainsMono-Bold.ttf',
+      'JetBrainsMono-BoldItalic.ttf',
+    ]);
+    for (const fontName of fontNames) {
+      const asset = getSiteAsset(fontName);
+      expect(asset?.contentType, fontName).toBe('font/ttf');
+      expect(asset?.body, fontName).toBeInstanceOf(ArrayBuffer);
+      expect((asset?.body as ArrayBuffer | undefined)?.byteLength, fontName).toBeGreaterThan(
+        100_000
+      );
+    }
+  });
 });
 /********************************** Docs drift guards ***********************************/
 

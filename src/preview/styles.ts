@@ -46,6 +46,10 @@ export const { 900: DARK_BG } = ISOLUX_GRAY;
 /** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand gradient (navbar brand mark and favicon). */
 export const { 400: BRAND_GRADIENT_START, 600: BRAND_GRADIENT_END } = BRAND_INDIGO;
 
+/** Preferred sans-serif font stack for UI text and headings. */
+const SANS_FONT_STACK =
+  "'Geist', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
+
 /** Preferred monospace font stack for code, route pills, and parameter names. */
 const MONO_FONT_STACK =
   "'JetBrains Mono NF', 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace";
@@ -191,6 +195,7 @@ function renderTokenCss(): string {
 :root {
   --brand-gradient-start: ${BRAND_GRADIENT_START};
   --brand-gradient-end: ${BRAND_GRADIENT_END};
+  --font-sans: ${SANS_FONT_STACK};
   --font-mono: ${MONO_FONT_STACK};
 ${renderThemeTokenBindings('light', true)}}
 

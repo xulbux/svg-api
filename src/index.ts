@@ -294,7 +294,7 @@ function handleTrailingSlashRoute(context: AppContext): Response {
   return context.redirect(`${canonicalPath}${new URL(context.req.url).search}`, 301);
 }
 
-/** Handle the versioned `/assets/:name` stylesheet, scripts, and icon picker data (immutable when `?v=` matches the deployed version). */
+/** Handle the versioned `/assets/:name` stylesheet, scripts, fonts, and icon picker data (immutable when `?v=` matches or for font binaries). */
 function handleAssetRoute(context: AppContext): Response | Promise<Response> {
   const name = context.req.param('name') ?? '';
   const asset = getSiteAsset(name);
@@ -303,10 +303,10 @@ function handleAssetRoute(context: AppContext): Response | Promise<Response> {
   }
   // The version is a content hash, so it doubles as a weak entity tag (scoped to this URL).
   const etag = `W/"${asset.version}"`;
+  const isImmutable = context.req.query('v') === asset.version || asset.contentType === 'font/ttf';
   const headers = {
     ...NOSNIFF_HEADERS,
-    'Cache-Control':
-      context.req.query('v') === asset.version ? IMMUTABLE_ASSET_CACHE_CONTROL : HTML_CACHE_CONTROL,
+    'Cache-Control': isImmutable ? IMMUTABLE_ASSET_CACHE_CONTROL : HTML_CACHE_CONTROL,
     'Content-Type': asset.contentType,
     ETag: etag,
   };
