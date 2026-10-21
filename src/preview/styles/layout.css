@@ -264,32 +264,32 @@
   rotate: 180deg;
 }
 
-/* Swatches: Options show their own background; The trigger mirrors the active one */
+/* Swatches: Options show their own checker background; The trigger mirrors the active one */
 
 .bg-swatch {
+  --swatch-bg: var(--c-bg);
+  --swatch-fg: var(--c-text-1);
+
   flex-shrink: 0;
   inline-size: 14px;
   block-size: 14px;
   border: 1px solid var(--c-border);
   border-radius: 50%;
-  background: var(--c-bg);
+  background:
+    repeating-conic-gradient(
+        color-mix(in srgb, var(--swatch-fg) 24%, transparent) 0 25%,
+        transparent 0 50%
+      )
+      0 0 / 6px 6px,
+    var(--swatch-bg);
 }
 
 .bg-swatch[data-bg='inverse'],
 :root[data-preview-bg='inverse'] .bg-swatch-current {
-  border-color: var(--c-preview-inverse-border);
-  background: var(--c-preview-inverse-bg);
-}
+  --swatch-bg: var(--c-preview-inverse-bg);
+  --swatch-fg: var(--c-bg);
 
-.bg-swatch[data-bg='checker'],
-:root[data-preview-bg='checker'] .bg-swatch-current {
-  background:
-    repeating-conic-gradient(
-        color-mix(in srgb, var(--c-text-1) 24%, transparent) 0 25%,
-        transparent 0 50%
-      )
-      0 0 / 6px 6px,
-    var(--c-bg);
+  border-color: var(--c-preview-inverse-border);
 }
 
 /* Menu Panel: Shared popover surface (`.popover-panel` in base.css) */

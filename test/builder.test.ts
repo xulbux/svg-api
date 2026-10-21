@@ -550,17 +550,17 @@ describe('builder client core', () => {
     ).toBe('build: passing');
   });
 
-  it('percent-encodes Markdown link targets and tokenizes raw URLs before HTML escaping (regression: broken snippets)', () => {
+  it('percent-encodes Markdown link targets and keeps raw & in HTML snippets (regression: broken snippets)', () => {
     const url = 'https://svg.xul.is/badge/a/b?icon=zap&color=rose';
     const snippets = core.buildSnippets(url, String.raw`a\b`, 'https://example.com/a (b)/<c>');
     expect(snippets.markdown).toBe(
       String.raw`[![a\\b](${url})](https://example.com/a%20%28b%29/%3Cc%3E)`
     );
     expect(snippets.html).toBe(
-      `<a href="https://example.com/a (b)/&lt;c&gt;"><img src="https://svg.xul.is/badge/a/b?icon=zap&amp;color=rose" alt="a\\b" /></a>`
+      `<a href="https://example.com/a (b)/&lt;c&gt;"><img src="https://svg.xul.is/badge/a/b?icon=zap&color=rose" alt="a\\b" /></a>`
     );
     const htmlTokens = core.buildSnippetTokens(url, 'x', '').html;
-    expect(htmlTokens).toContainEqual(['hl-op', '&amp;']);
+    expect(htmlTokens).toContainEqual(['hl-op', '&']);
     expect(htmlTokens).toContainEqual(['hl-key', 'color']);
   });
 

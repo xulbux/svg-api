@@ -346,23 +346,25 @@ describe('documentation pages – head metadata & client script', () => {
         headerHtml.split('role="radiogroup" aria-labelledby="bg-picker-title"').length - 1,
         page.path
       ).toBe(1);
-      expect(page.html.split('name="preview-bg" value="').length - 1, page.path).toBe(3);
+      expect(page.html.split('name="preview-bg" value="').length - 1, page.path).toBe(2);
       expect(headerHtml, page.path).toContain('popovertarget="bg-picker-menu"');
       expect(headerHtml, page.path).toContain('id="bg-picker-menu" popover');
-      for (const value of ['auto', 'inverse', 'checker']) {
+      for (const value of ['auto', 'inverse']) {
         expect(headerHtml, page.path).toContain(`name="preview-bg" value="${value}"`);
       }
+      expect(headerHtml, page.path).not.toContain('name="preview-bg" value="checker"');
     }
   });
 
-  it('inverts the preview stage and Edit chip relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
+  it('inverts the checker preview stage and Edit chip relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
     const css = getSiteStylesheet();
     expect(css).toContain('--c-preview-inverse-bg: light-dark(#101010, #FFFFFF);');
     expect(css).toContain('--c-preview-inverse-btn-bg: light-dark(#DCDCDC, #242424);');
     expect(css).toContain('--c-preview-inverse-btn-text: light-dark(#000000, #FAFAFA);');
     expect(css).toMatch(
-      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);/
+      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: light-dark\(/
     );
+    expect(css).not.toMatch(/data-preview-bg=['"]checker['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]light['"]/);
   });

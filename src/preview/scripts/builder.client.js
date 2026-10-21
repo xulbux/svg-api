@@ -47,7 +47,7 @@
 
   /** Entity replacements of characters escaped inside double-quoted HTML attribute values. */
   /** @type {Readonly<Record<string, string>>} */
-  const HTML_ENTITIES = { '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' };
+  const HTML_ENTITIES = { '"': '&quot;', '<': '&lt;', '>': '&gt;' };
 
   // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -94,7 +94,7 @@
   const MARKDOWN_DESTINATION_RX = /[ ()<>]/g;
 
   /** Matches characters escaped inside double-quoted HTML attribute values. */
-  const HTML_ATTR_RX = /[&"<>]/g;
+  const HTML_ATTR_RX = /["<>]/g;
 
   // -------------------------------------- INTERNALS --------------------------------------
 
@@ -737,7 +737,7 @@
   }
 
   /**
-   * Escape a value for a double-quoted HTML attribute (`&amp;`, `&quot;`, `&lt;`, `&gt;`).
+   * Escape a value for a double-quoted HTML attribute (`&quot;`, `&lt;`, `&gt;`).
    * @param {string} value
    * @returns {string}
    */

@@ -391,6 +391,14 @@
   cursor: pointer;
 }
 
+.swatch:hover {
+  z-index: 1;
+}
+
+.swatch:has(.swatch-input:checked) {
+  z-index: 2;
+}
+
 .swatch-dot {
   inline-size: 22px;
   block-size: 22px;

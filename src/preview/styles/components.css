@@ -308,6 +308,12 @@ button.btn-secondary {
 /* Inner Preview Stage: Inner border and non-interactable SVG previews */
 
 .preview-stage {
+  --stage-bg: var(--c-bg);
+  --stage-checker: light-dark(
+    color-mix(in srgb, var(--c-text-1) 4%, transparent),
+    color-mix(in srgb, var(--c-text-1) 5%, transparent)
+  );
+
   position: relative;
   display: flex;
   flex-wrap: wrap;
@@ -318,7 +324,9 @@ button.btn-secondary {
   overflow-x: auto;
   border: 1px solid var(--c-border);
   border-radius: 9px;
-  background: var(--c-bg);
+  background:
+    repeating-conic-gradient(var(--stage-checker) 0 25%, transparent 0 50%) 0 0 / 16px 16px,
+    var(--stage-bg);
   user-select: none;
   -webkit-user-select: none;
   transition:
@@ -329,19 +337,13 @@ button.btn-secondary {
 :root[data-preview-bg='inverse'] .preview-stage {
   --c-btn-bg: var(--c-preview-inverse-btn-bg);
   --c-btn-text: var(--c-preview-inverse-btn-text);
+  --stage-bg: var(--c-preview-inverse-bg);
+  --stage-checker: light-dark(
+    color-mix(in srgb, var(--c-bg) 5%, transparent),
+    color-mix(in srgb, var(--c-bg) 4%, transparent)
+  );
 
   border-color: var(--c-preview-inverse-border);
-  background: var(--c-preview-inverse-bg);
-}
-
-:root[data-preview-bg='checker'] .preview-stage {
-  background:
-    repeating-conic-gradient(
-        color-mix(in srgb, var(--c-text-1) 9%, transparent) 0 25%,
-        transparent 0 50%
-      )
-      0 0 / 16px 16px,
-    var(--c-bg);
 }
 
 .preview-stage.is-centered {

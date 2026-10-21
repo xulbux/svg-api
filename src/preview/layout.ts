@@ -60,7 +60,6 @@ const THEME_COLORS: Readonly<Record<'dark' | 'light', string>> = { dark: DARK_BG
 const PREVIEW_BG_OPTIONS: readonly PreviewBackgroundOption[] = [
   { label: 'Match page', value: 'auto' },
   { label: 'Inverted', value: 'inverse' },
-  { label: 'Checker', value: 'checker' },
 ];
 
 /** Memoized header HTML keyed by active navigation tab and active sidebar path. */
@@ -102,7 +101,7 @@ function renderNavLink(href: string, label: string, isActive: boolean): string {
 
 /**
  * Render (once per isolate) the header preview background picker: A compact swatch trigger that opens a
- * native popover radio group (Match page / Inverted / Checker), persisted by the client script.
+ * native popover radio group (Match page / Inverted), persisted by the client script.
  */
 function renderPreviewBgPicker(): string {
   if (previewBgPickerHtmlCache === undefined) {
