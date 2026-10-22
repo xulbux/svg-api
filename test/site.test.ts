@@ -615,6 +615,26 @@ describe('documentation drift guards', () => {
     expect(quotesHtml).toContain('<span class="route-method">GET</span>/quote/:text</code>');
   });
 
+  it('documents typing query aliases, container layouts, cursor shapes, erase modes, and the two-segment route', () => {
+    const typingHtml = renderDocsHtml('typing');
+    for (const name of [
+      ':prefix<span class="param-sep"> / </span>:lines',
+      '?lines=<span class="param-sep"> / </span>?text=',
+      '?prefix=<span class="param-sep"> / </span>?prompt=',
+      '?layout=<span class="param-sep"> / </span>?frame=<span class="param-sep"> / </span>?type=',
+      '?font=',
+      '?cursor=',
+      '?erase=<span class="param-sep"> / </span>?delete=',
+      '?align=<span class="param-sep"> / </span>?center=',
+      '?typo=',
+    ]) {
+      expect(typingHtml, name).toContain(`<th scope="row" role="rowheader">${name}</th>`);
+    }
+    expect(typingHtml).toContain(
+      '<span class="route-method">GET</span>/typing/:prefix/:lines</code>'
+    );
+  });
+
   it('computes every headline count instead of hard-coding it', () => {
     const homeHtml = renderHomeHtml();
     const iconCounts = getIconSetCounts();
@@ -625,8 +645,8 @@ describe('documentation drift guards', () => {
     expect(homeHtml).toContain(
       `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Vector Icons`
     );
-    expect(homeHtml).toContain('Five Unified Endpoints');
-    expect(homeHtml.split('<span class="route-method">GET</span>').length - 1).toBe(5);
+    expect(homeHtml).toContain('Six Unified Endpoints');
+    expect(homeHtml.split('<span class="route-method">GET</span>').length - 1).toBe(6);
     expect(renderDocsHtml('icons')).toContain(
       `${formatCountLowerBound(iconCounts.brand)} Simple Icons`
     );

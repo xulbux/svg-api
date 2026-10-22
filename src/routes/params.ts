@@ -20,6 +20,11 @@ import type {
   QuoteLayout,
   SizePreset,
   StripTickState,
+  TypingAlign,
+  TypingCursor,
+  TypingEraseMode,
+  TypingFont,
+  TypingLayout,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -87,6 +92,101 @@ const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set(['1', 'true', 'yes']);
 
 /** Normalized `?layout=` / `?type=` values that select the vertical quote layout. */
 const VERTICAL_LAYOUT_TOKENS: ReadonlySet<string> = new Set(['center', 'v', 'vertical']);
+
+/** Valid container layouts for `/typing/*` in display order (also listed by the docs and the builder). */
+export const TYPING_LAYOUT_TOKENS: readonly TypingLayout[] = [
+  'window',
+  'prompt',
+  'ide',
+  'browser',
+  'none',
+];
+
+/** Valid cursor styles for `/typing/*` in display order (also listed by the docs and the builder). */
+export const TYPING_CURSOR_TOKENS: readonly TypingCursor[] = ['bar', 'block', 'underscore'];
+
+/** Valid line erase modes for `/typing/*` in display order (also listed by the docs and the builder). */
+export const TYPING_ERASE_TOKENS: readonly TypingEraseMode[] = ['backspace', 'select', 'fade'];
+
+/** Valid font family tokens for `/typing/*` in display order (also listed by the docs and the builder). */
+export const TYPING_FONT_TOKENS: readonly TypingFont[] = ['mono', 'sans'];
+
+/** Valid horizontal alignment tokens for `/typing/*` in display order. */
+export const TYPING_ALIGN_TOKENS: readonly TypingAlign[] = ['left', 'center'];
+
+/** Alias map resolving `?layout=` / `?frame=` / `?type=` values to canonical `TypingLayout` tokens. */
+const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
+  address: 'browser',
+  ai: 'prompt',
+  app: 'window',
+  assistant: 'prompt',
+  bar: 'prompt',
+  bare: 'none',
+  browser: 'browser',
+  bubble: 'prompt',
+  chat: 'prompt',
+  code: 'ide',
+  command: 'prompt',
+  editor: 'ide',
+  ide: 'ide',
+  mac: 'window',
+  message: 'prompt',
+  minimal: 'none',
+  none: 'none',
+  omnibox: 'browser',
+  palette: 'prompt',
+  plain: 'none',
+  popup: 'prompt',
+  prompt: 'prompt',
+  raycast: 'prompt',
+  search: 'browser',
+  spotlight: 'prompt',
+  tab: 'ide',
+  terminal: 'window',
+  transparent: 'none',
+  url: 'browser',
+  window: 'window',
+  zsh: 'window',
+};
+
+/** Alias map resolving `?cursor=` values to canonical `TypingCursor` tokens. */
+const TYPING_CURSOR_MAP: Readonly<Record<string, TypingCursor>> = {
+  bar: 'bar',
+  beam: 'bar',
+  block: 'block',
+  box: 'block',
+  line: 'bar',
+  pipe: 'bar',
+  under: 'underscore',
+  underline: 'underscore',
+  underscore: 'underscore',
+};
+
+/** Alias map resolving `?erase=` / `?delete=` values to canonical `TypingEraseMode` tokens. */
+const TYPING_ERASE_MAP: Readonly<Record<string, TypingEraseMode>> = {
+  backspace: 'backspace',
+  clear: 'select',
+  del: 'backspace',
+  delete: 'backspace',
+  dissolve: 'fade',
+  fade: 'fade',
+  highlight: 'select',
+  select: 'select',
+  type: 'backspace',
+};
+
+/** Alias map resolving `?font=` values to canonical `TypingFont` tokens. */
+const TYPING_FONT_MAP: Readonly<Record<string, TypingFont>> = {
+  code: 'mono',
+  fira: 'mono',
+  geist: 'sans',
+  jetbrains: 'mono',
+  mono: 'mono',
+  monospace: 'mono',
+  proportional: 'sans',
+  sans: 'sans',
+  ui: 'sans',
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -536,4 +636,89 @@ export function resolveIconQueryParam(
     return defaultIcon;
   }
   return trimmed.startsWith(',') && defaultIcon ? `${defaultIcon}${trimmed}` : trimmed;
+}
+
+/**
+ * Resolve the typing container layout (`'window'`, `'prompt'`, `'card'`, or `'none'`) from `?layout=`, `?frame=`, or `?type=`.
+ * @param layoutParam   Raw `?layout=` query parameter value.
+ * @param frameParam    Raw `?frame=` alias query parameter value.
+ * @param typeParam     Raw `?type=` alias query parameter value.
+ * @returns Resolved `TypingLayout` (defaults to `'window'`).
+ */
+export function resolveTypingLayout(
+  layoutParam: string | null | undefined,
+  frameParam?: string | null,
+  typeParam?: string | null
+): TypingLayout {
+  const candidate =
+    normalizeQueryToken(layoutParam) ||
+    normalizeQueryToken(frameParam) ||
+    normalizeQueryToken(typeParam);
+  return getOwnValue(TYPING_LAYOUT_MAP, candidate) ?? 'window';
+}
+
+/**
+ * Resolve the typing cursor style (`'bar'`, `'block'`, or `'underscore'`) from `?cursor=`.
+ * @param cursorParam   Raw `?cursor=` query parameter value.
+ * @returns Resolved `TypingCursor` (defaults to `'bar'`).
+ */
+export function resolveTypingCursor(cursorParam: string | null | undefined): TypingCursor {
+  return getOwnValue(TYPING_CURSOR_MAP, normalizeQueryToken(cursorParam)) ?? 'bar';
+}
+
+/**
+ * Resolve the typing line erase mode (`'backspace'`, `'select'`, or `'fade'`) from `?erase=` or `?delete=`.
+ * @param eraseParam    Raw `?erase=` query parameter value.
+ * @param deleteParam   Raw `?delete=` alias query parameter value.
+ * @returns Resolved `TypingEraseMode` (defaults to `'backspace'`).
+ */
+export function resolveTypingEraseMode(
+  eraseParam: string | null | undefined,
+  deleteParam?: string | null
+): TypingEraseMode {
+  const candidate = normalizeQueryToken(eraseParam) || normalizeQueryToken(deleteParam);
+  return getOwnValue(TYPING_ERASE_MAP, candidate) ?? 'backspace';
+}
+
+/**
+ * Resolve the typing font family (`'mono'` or `'sans'`) from `?font=`.
+ * Returns `undefined` when omitted or unrecognized so `renderTyping` can apply its layout-aware default.
+ * @param fontParam   Raw `?font=` query parameter value.
+ * @returns Resolved `TypingFont`, or `undefined`.
+ */
+export function resolveTypingFont(fontParam: string | null | undefined): TypingFont | undefined {
+  return getOwnValue(TYPING_FONT_MAP, normalizeQueryToken(fontParam));
+}
+
+/**
+ * Resolve the typing text alignment (`'left'` or `'center'`) from `?align=` or `?center=`.
+ * Returns `undefined` when neither is specified so `renderTyping` can apply its layout-aware default.
+ * @param alignParam    Raw `?align=` query parameter value.
+ * @param centerParam   Raw `?center=` boolean query parameter value.
+ * @returns Resolved `TypingAlign`, or `undefined`.
+ */
+export function resolveTypingAlign(
+  alignParam: string | null | undefined,
+  centerParam?: string | null
+): TypingAlign | undefined {
+  const cleanAlign = normalizeQueryToken(alignParam);
+  if (cleanAlign === 'center' || cleanAlign === 'middle') {
+    return 'center';
+  }
+  if (cleanAlign === 'left' || cleanAlign === 'start') {
+    return 'left';
+  }
+  if (TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam))) {
+    return 'center';
+  }
+  return undefined;
+}
+
+/**
+ * Check whether an optional boolean query parameter is set to a truthy token (`'true'`, `'1'`, or `'yes'`).
+ * @param raw   Raw query parameter value.
+ * @returns `true` when `raw` is a truthy flag token.
+ */
+export function isTruthyFlagParam(raw: string | null | undefined): boolean {
+  return TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(raw));
 }

@@ -10,6 +10,7 @@ import {
   buildShareUrl,
   buildSnippetTokens,
   composeAnim,
+  composeHint,
   composeIconPair,
   composeSpecial,
   core,
@@ -18,6 +19,7 @@ import {
   parsePath,
   readState,
   splitAnim,
+  splitHint,
   splitIconPair,
   splitSize,
   splitSpecial,
@@ -30,6 +32,7 @@ import {
   syncSelects,
 } from '@/site/client/builder/select';
 import { createStackCatalogController } from '@/site/client/builder/stackCatalog';
+import { createTypingLinesController } from '@/site/client/builder/typingLines';
 import type {
   BuilderBuildResult,
   BuilderField,
@@ -70,6 +73,15 @@ function setPartValue(fieldElement: Element, part: string, value: string): void 
 function syncSizeParts(fieldElement: Element): void {
   const isCustom = getPart(fieldElement, 'preset')?.value === 'custom';
   fieldElement.querySelector('[data-size-part="custom"]')?.toggleAttribute('hidden', !isCustom);
+}
+
+/** Check the radio input matching `value` inside `fieldElement`. */
+function setRadioGroupValue(fieldElement: Element, value: string): void {
+  for (const radio of fieldElement.querySelectorAll('input[type="radio"]')) {
+    if (radio instanceof HTMLInputElement) {
+      radio.checked = radio.value === value;
+    }
+  }
 }
 
 /** Initialize the URL builder DOM when running in a browser context. */
@@ -184,6 +196,13 @@ function initBuilderDom(): void {
     stackRawPanel,
   });
 
+  const typingLinesController = createTypingLinesController({
+    addButton: document.getElementById('typing-line-add') as HTMLButtonElement | null,
+    editorElement: document.getElementById('typing-lines-editor'),
+    hiddenInput: document.getElementById('field-lines') as HTMLInputElement | null,
+    listElement: document.getElementById('typing-lines-list'),
+  });
+
   function getActiveAutoSpecials(): readonly string[] {
     if (schema.kind !== 'service') {
       return [];
@@ -210,6 +229,9 @@ function initBuilderDom(): void {
         const checked = fieldElement.querySelector('input:checked');
         return checked instanceof HTMLInputElement ? checked.value : '';
       }
+      case 'hint': {
+        return composeHint(readPartValue('icon'), readPartValue('text'));
+      }
       case 'icon': {
         return readPartValue('main').trim();
       }
@@ -228,6 +250,9 @@ function initBuilderDom(): void {
           readPartValue('modifier'),
           Boolean(kind && getActiveAutoSpecials().includes(kind))
         );
+      }
+      case 'typingLines': {
+        return typingLinesController.readValue();
       }
       default: {
         return getControl(field.id)?.value ?? '';
@@ -388,11 +413,13 @@ function initBuilderDom(): void {
         break;
       }
       case 'color': {
-        for (const radio of fieldElement.querySelectorAll('input[type="radio"]')) {
-          if (radio instanceof HTMLInputElement) {
-            radio.checked = radio.value === value;
-          }
-        }
+        setRadioGroupValue(fieldElement, value);
+        break;
+      }
+      case 'hint': {
+        const hint = splitHint(value);
+        setPartValue(fieldElement, 'icon', hint.icon);
+        setPartValue(fieldElement, 'text', hint.text);
         break;
       }
       case 'icon': {
@@ -419,6 +446,10 @@ function initBuilderDom(): void {
         syncSpecialParts(field, fieldElement, special.modifier);
         break;
       }
+      case 'typingLines': {
+        typingLinesController.syncFromValue(value);
+        break;
+      }
       default: {
         const control = getControl(field.id);
         if (control instanceof HTMLSelectElement) {
@@ -436,9 +467,41 @@ function initBuilderDom(): void {
     }
   }
 
+  function syncTypingFields(): void {
+    if (schema.kind !== 'typing') {
+      return;
+    }
+    const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
+    const isTitledLayout = effectiveLayout === 'window' || effectiveLayout === 'ide';
+    const isFrameless = effectiveLayout === 'none';
+    const isCenterableLayout = effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
+
+    fieldElements.get('title')?.toggleAttribute('hidden', !isTitledLayout);
+    fieldElements.get('hint')?.toggleAttribute('hidden', isFrameless);
+    fieldElements.get('align')?.toggleAttribute('hidden', !isCenterableLayout);
+
+    const titleControl = getControl('title');
+    if (titleControl instanceof HTMLInputElement) {
+      titleControl.placeholder =
+        effectiveLayout === 'ide' ? 'index.ts (ide default)' : 'optional (e.g., zsh)';
+    }
+    const prefixControl = getControl('prefix');
+    if (prefixControl instanceof HTMLInputElement) {
+      prefixControl.placeholder = effectiveLayout === 'window' ? '❯ (window default)' : 'optional';
+    }
+    const hintElement = fieldElements.get('hint');
+    const hintTextControl = hintElement ? getPart(hintElement, 'text') : undefined;
+    if (hintTextControl instanceof HTMLInputElement) {
+      hintTextControl.placeholder =
+        effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
+    }
+  }
+
   function writeState(): void {
     if (schema.kind === 'service') {
       syncServiceFields();
+    } else if (schema.kind === 'typing') {
+      syncTypingFields();
     }
     for (const field of schema.fields) {
       if (field.id !== 'metric') {
@@ -613,6 +676,9 @@ function initBuilderDom(): void {
     state[field.id] = readFieldValue(field, fieldElement);
     stackCatalogController?.syncStackFieldChange(field);
     syncServiceFieldChange(field);
+    if (field.id === 'layout') {
+      syncTypingFields();
+    }
     update(fieldElement);
   }
 
@@ -765,6 +831,7 @@ function initBuilderDom(): void {
   initializeState();
   bindBuilderEvents();
   stackCatalogController.bind();
+  typingLinesController.bind();
   iconPickerController.bind();
   iconPickerController.loadIndexInBackground();
 }

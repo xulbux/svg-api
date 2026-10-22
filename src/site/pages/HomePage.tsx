@@ -105,6 +105,18 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
     isCentered: true,
     items: [
+      {
+        alt: 'Typing Animation',
+        path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
+      },
+    ],
+    subtitle:
+      'Human-cadence typing animations in Kumo 3D terminal windows, command / AI prompt bars, code editors, browser bars, or frameless headlines.',
+    title: 'Typing Animations (/typing/:lines)',
+  },
+  {
+    isCentered: true,
+    items: [
       { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical` },
     ],
     subtitle:
@@ -138,7 +150,7 @@ function buildHomeFeatures(): FeatureCardItem[] {
       title: 'Zero Cold Starts',
     },
     {
-      details: `All badges, buttons, icons, stacks, and quotes share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
+      details: `All badges, buttons, icons, stacks, typing animations, and quotes share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
       icon: 'palette',
       title: 'Unified OKLCH Palette',
     },
@@ -181,16 +193,16 @@ export function HomePage(): HtmlFragment {
     <PageLayout
       activeNav="home"
       canonicalPath="/"
-      description="Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, and quote card engine for svg.xul.is."
-      title="svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack & Quote API">
+      description="Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, typing animation, and quote card engine for svg.xul.is."
+      title="svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack, Typing & Quote API">
       <section class="hero">
         <h1 class="hero-title">
           One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs & Docs
         </h1>
         <p class="hero-lead">
-          Dynamic badges, CTA buttons, icons, tech stacks, and quote cards: Every element is a plain
-          URL, composed visually in seconds and rendered at the edge; 100% free for everyone, with
-          no signup, no API keys, and no rate limits.
+          Dynamic badges, CTA buttons, icons, tech stacks, typing animations, and quote cards: Every
+          element is a plain URL, composed visually in seconds and rendered at the edge; 100% free
+          for everyone, with no signup, no API keys, and no rate limits.
         </p>
         <div class="hero-cta-row">
           <a href={builderPath} class="btn-primary" tabindex="0">

@@ -657,6 +657,23 @@ describe('Hono routes on svg.xul.is', () => {
     expect(quoteSvg).toContain('Who says programmers are boring?');
     expect(quoteSvg).toContain('— XulbuX');
     expect(quoteSvg).toContain('rotate(180 12 12)');
+
+    const typingRes = await app.request(
+      'https://svg.xul.is/typing/~%2Fdev+$/npm+test;npm+run+build?layout=ide&color=emerald&cursor=block&erase=select',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(typingRes.status).toBe(200);
+    const typingSvg = await typingRes.text();
+    expect(typingSvg).toContain('aria-label="~/dev $ npm test / npm run build"');
+
+    const typeAliasRes = await app.request(
+      'https://svg.xul.is/type/Hello+World?frame=prompt&delete=fade&font=sans&center=true&typo=1',
+      { headers: { 'Sec-Fetch-Dest': 'image' } },
+      TEST_ENV
+    );
+    expect(typeAliasRes.status).toBe(200);
+    expect(await typeAliasRes.text()).toContain('aria-label="Hello World"');
   });
 
   it('renders /badge/:label/:value with outward radar ripple dot and 10-stage strip', async () => {

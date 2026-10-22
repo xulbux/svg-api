@@ -1091,3 +1091,44 @@
   text-align: end;
   color: var(--c-text-2);
 }
+
+/* Interactive Typing Lines List Editor (`/builder/typing`) */
+
+.typing-lines-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.typing-lines-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.typing-line-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.typing-line-index {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--c-text-3);
+  background: var(--c-bg-soft);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.typing-line-remove:disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}

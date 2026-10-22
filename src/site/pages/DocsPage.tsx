@@ -17,6 +17,7 @@ import { OverviewSection } from '@/site/pages/OverviewPage';
 import { QuotesSection } from '@/site/pages/QuotesPage';
 import { ServicesSection } from '@/site/pages/ServicesPage';
 import { StackSection } from '@/site/pages/StackPage';
+import { TypingSection } from '@/site/pages/TypingPage';
 import type { DocsPageSlug, DocsSectionSlug } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -39,6 +40,7 @@ const PAGE_SECTIONS: Readonly<Record<DocsPageSlug, () => HtmlFragment>> = {
   quotes: QuotesSection,
   services: ServicesSection,
   stack: StackSection,
+  typing: TypingSection,
 };
 
 /** Memoized documentation pages keyed by slug. */
@@ -79,7 +81,7 @@ export function DocsPage(props: DocsPageProps): HtmlFragment {
 
 /**
  * Render (once per isolate) a documentation page: The Getting Started overview or a dedicated element section.
- * @param slug   Target page slug (`'overview'`, `'badges'`, `'buttons'`, `'services'`, `'icons'`, `'stack'`, `'quotes'`, `'colors'`).
+ * @param slug   Target page slug (`'overview'`, `'badges'`, `'services'`, `'buttons'`, `'icons'`, `'stack'`, `'typing'`, `'quotes'`, `'colors'`).
  * @returns Complete HTML document string.
  */
 export function renderDocsHtml(slug: DocsPageSlug = 'overview'): string {

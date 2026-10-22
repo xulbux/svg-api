@@ -14,13 +14,14 @@ export type DocsSectionSlug =
   | 'icons'
   | 'quotes'
   | 'services'
-  | 'stack';
+  | 'stack'
+  | 'typing';
 
 /** Documentation page slugs (`'overview'` is the `/docs` landing page). */
 export type DocsPageSlug = DocsSectionSlug | 'overview';
 
 /** Element kinds with a dedicated URL builder page on `/builder/:kind`. */
-export type BuilderKind = 'badge' | 'button' | 'icon' | 'quote' | 'service' | 'stack';
+export type BuilderKind = 'badge' | 'button' | 'icon' | 'quote' | 'service' | 'stack' | 'typing';
 
 /** Sidebar group identifiers shared by the documentation and builder sidebars. */
 export type SidebarGroupId = 'badges' | 'elements' | 'reference' | 'start';

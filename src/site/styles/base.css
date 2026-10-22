@@ -167,6 +167,7 @@ pre,
 code,
 .param-table tbody th,
 .builder-textarea.is-mono,
+.typing-line-index,
 .icon-picker-foot {
   font-family: var(--font-mono);
   font-feature-settings:

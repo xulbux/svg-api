@@ -85,6 +85,15 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
+      'Realistic human-cadence SVG typing animations in Kumo 3D terminal windows, command / AI prompt bars, code editors, browser bars, or frameless canvases with blinking cursors, erase transitions, and optional typos.',
+    group: 'elements',
+    navLabel: 'Typing',
+    pagerLabel: 'Typing Animations',
+    slug: 'typing',
+    title: 'Typing Animations',
+  },
+  {
+    description:
       'Auto-wrapping README quote cards in horizontal and vertical layouts with size presets, accent colors, surface tiers, and sheen.',
     group: 'elements',
     navLabel: 'Quotes',
@@ -94,7 +103,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across badges, buttons, icons, tech stacks, and quote cards.',
+      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across badges, buttons, icons, tech stacks, typing animations, and quote cards.',
     group: 'reference',
     navLabel: 'Colors',
     pagerLabel: 'Theme Colors',
@@ -147,6 +156,14 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     kind: 'stack',
     navLabel: 'Tech Stack',
     title: 'Tech Stack Builder',
+  },
+  {
+    description:
+      'Build realistic SVG typing animation URLs with container frames (window, prompt, ide, browser, none), cursor shapes, erase modes, fonts, and human keystroke cadence.',
+    group: 'elements',
+    kind: 'typing',
+    navLabel: 'Typing',
+    title: 'Typing Animation Builder',
   },
   {
     description:

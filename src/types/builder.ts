@@ -10,12 +10,13 @@ import type { BuilderKind, HighlightToken } from './site';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /**
- * Form control of a builder field. Composite controls (`anim`, `iconPair`, `size`, `special`) render
+ * Form control of a builder field. Composite controls (`anim`, `hint`, `iconPair`, `size`, `special`, `typingLines`) render
  * several inputs but always serialize to a single parameter value string.
  */
 export type BuilderControl =
   | 'anim'
   | 'color'
+  | 'hint'
   | 'icon'
   | 'iconPair'
   | 'number'
@@ -24,7 +25,8 @@ export type BuilderControl =
   | 'special'
   | 'stackGroups'
   | 'text'
-  | 'textarea';
+  | 'textarea'
+  | 'typingLines';
 
 /** Motion controls offered by an `anim` field (`pair`: Sheen + left/right motions; `single`: Sheen + one motion; `sheen`: Sheen only). */
 export type BuilderAnimScope = 'pair' | 'sheen' | 'single';

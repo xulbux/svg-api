@@ -41,3 +41,9 @@ export {
   countStackExampleIcons,
   STACK_VARIANT_DESCRIPTORS,
 } from './stack';
+export {
+  buildTypingParamRows,
+  TYPING_BEHAVIOR_CARDS,
+  TYPING_LAYOUT_CARDS,
+  TYPING_VARIANT_CARDS,
+} from './typing';

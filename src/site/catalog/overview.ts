@@ -127,33 +127,33 @@ function formatDuration(seconds: number): string {
 export function buildSharedParamRows(): ParamTableRow[] {
   return [
     {
-      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
       description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
       name: '?color=',
       values: formatColorValues(),
     },
     {
-      defaultVal: '/badge | /button | /stack | /quote',
+      defaultVal: '/badge | /button | /stack | /typing | /quote',
       description: `Visual hierarchy tier: ${formatVariantTierSummary()}.`,
       name: '?variant=',
       values: formatVariantValues(),
     },
     {
-      defaultVal: '/badge | /button',
+      defaultVal: '/badge | /button | /typing',
       description:
-        'Leading icon, a left,right pair, or a right-only icon (none,right); Any Lucide, Simple Icons, or Devicon slug.',
+        'Leading icon, a left,right pair (badges and buttons), or a right-only icon (none,right); Any Lucide, Simple Icons, or Devicon slug.',
       name: '?icon=',
       values: 'rocket | book-open,arrow-right | none,external-link',
     },
     {
-      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
       description:
-        'Surface sheen and icon motions (stacks and quote cards support sheen only); none also stops widget and dot animations.',
+        'Surface sheen and icon motions (stacks, typing containers, and quote cards support sheen and none); none also stops widget, dot, and typing animations.',
       name: '?anim=',
       values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')}`,
     },
     {
-      defaultVal: '/badge | /button | /icon | /stack | /quote',
+      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
       description:
         'Unknown query parameters are ignored per route, so tracking or cache-busting parameters never change the SVG.',
       name: '?<other>=',
@@ -171,7 +171,7 @@ export function buildCachingRows(): ParamTableRow[] {
     {
       defaultVal: '~–',
       description: 'Deterministic SVGs; Identical URLs always render identical output.',
-      name: '/badge/:label/:value, /button, /icon, /stack, /quote',
+      name: '/badge/:label/:value, /button, /icon, /stack, /typing, /quote',
       values: formatDuration(STATIC_TTL_SECONDS),
     },
     {

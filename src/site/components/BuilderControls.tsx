@@ -614,6 +614,81 @@ function renderStackGroupsControl(
   );
 }
 
+/** Render the interactive line-by-line list editor of a `typingLines` field. */
+function renderTypingLinesControl(
+  field: BuilderField,
+  controlId: string,
+  initialValue: string
+): HtmlFragment {
+  const maxLines = field.max ?? 12;
+  const maxLength = field.maxLength ?? 80;
+  const initialLines: string[] = [];
+  for (const rawLine of initialValue.split(';')) {
+    const trimmedLine = rawLine.trim();
+    if (trimmedLine && initialLines.length < maxLines) {
+      initialLines.push(trimmedLine);
+    }
+  }
+  if (initialLines.length === 0) {
+    initialLines.push('');
+  }
+  const isSingleLine = initialLines.length <= 1;
+  const rows: HtmlFragment[] = [];
+
+  for (let i = 0; i < initialLines.length; i += 1) {
+    const lineValue = initialLines[i] ?? '';
+    const lineNumber = i + 1;
+    rows.push(
+      <div class="typing-line-row" data-typing-line-row={true}>
+        <span class="typing-line-index" aria-hidden="true">
+          {lineNumber}
+        </span>
+        <input
+          class="builder-input typing-line-input"
+          type="text"
+          value={lineValue}
+          maxlength={maxLength}
+          placeholder={i === 0 ? 'e.g., Full-Stack Developer' : `Line ${lineNumber}…`}
+          aria-label={`Line ${lineNumber}`}
+          spellcheck={false}
+        />
+        <button
+          type="button"
+          class="icon-select-clear typing-line-remove"
+          data-typing-line-remove={true}
+          aria-label={`Remove line ${lineNumber}`}
+          title="Remove line"
+          disabled={isSingleLine}>
+          <UiIcon slug="x" size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      class="typing-lines-editor"
+      id="typing-lines-editor"
+      data-max-lines={maxLines}
+      data-max-length={maxLength}>
+      <input type="hidden" id={controlId} value={initialValue} />
+      <div class="typing-lines-list" id="typing-lines-list">
+        {rows}
+      </div>
+      <div class="builder-field-actions">
+        <button
+          type="button"
+          class="btn-secondary btn-small"
+          id="typing-line-add"
+          disabled={initialLines.length >= maxLines}>
+          <UiIcon slug="plus" size={14} />
+          Add line
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Render the control(s) of a builder field. */
 function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFragment {
   const controlId = buildFieldId(field);
@@ -624,6 +699,28 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
     }
     case 'color': {
       return renderColorControl(field, initialValue);
+    }
+    case 'hint': {
+      const textId = buildFieldId(field, 'text');
+      return (
+        <div class="builder-inline is-pair">
+          {renderIconSelect(field, 'icon', 'Hint icon')}
+          <div class="builder-subfield is-grow">
+            <label class="builder-sublabel" for={textId}>
+              Hint text
+            </label>
+            <input
+              class="builder-input"
+              id={textId}
+              type="text"
+              data-part="text"
+              maxlength={field.maxLength}
+              placeholder={field.placeholder}
+              spellcheck={false}
+            />
+          </div>
+        </div>
+      );
     }
     case 'icon': {
       return renderIconSelect(field, 'main');
@@ -680,6 +777,9 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
           {initialValue}
         </textarea>
       );
+    }
+    case 'typingLines': {
+      return renderTypingLinesControl(field, controlId, initialValue);
     }
     default: {
       return (

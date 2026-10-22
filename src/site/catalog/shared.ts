@@ -29,12 +29,13 @@ export interface VariantDescriptor {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`). */
+/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`, `/type/*` is an alias of `/typing/*`). */
 export const ENDPOINT_ROUTES: readonly string[] = [
   '/badge/*',
   '/button/*',
   '/icon/*',
   '/stack/*',
+  '/typing/*',
   '/quote/*',
 ];
 

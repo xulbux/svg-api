@@ -5,10 +5,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeCenteredBaselineY,
+  layoutTextGlyphs,
   measureTextAdvance,
   measureTextWidth,
   measureTextWidthUncached,
   renderTextPathMarkup,
+  resolveCharGlyph,
 } from '@/svg/measure';
 import {
   clearLruCache,
@@ -125,6 +127,47 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
     });
     expect(longPath).toContain('d="M');
     expect(measureTextWidth(longText)).toBe(measureTextWidthUncached(longText, 11));
+  });
+
+  it('lays out per-character glyphs in JetBrains Mono and Geist Sans and falls back to JetBrains Mono for technical symbols', () => {
+    expect(layoutTextGlyphs('', 16, false, 'mono')).toEqual({ glyphs: [], totalAdvance: 0 });
+
+    const monoLayout = layoutTextGlyphs('iiiWWW', 16, false, 'mono');
+    expect(monoLayout.glyphs).toHaveLength(6);
+    // In a monospace font, narrow and wide letters have identical advance widths.
+    expect(monoLayout.glyphs[0]?.advance).toBe(monoLayout.glyphs[5]?.advance);
+    expect(monoLayout.glyphs[0]?.pathData).toMatch(/^M[\d.-]+ [\d.-]+/);
+
+    const sansLayout = layoutTextGlyphs('iiiWWW', 16, false, 'sans');
+    expect(sansLayout.glyphs[0]?.advance).toBeLessThan(sansLayout.glyphs[5]?.advance ?? 0);
+
+    // Technical prompt/keycap symbols (`❯`, `⌘`, `⏎`) fall back to JetBrains Mono when missing in Geist Sans.
+    for (const symbol of ['❯', '⌘', '⏎']) {
+      const resolvedSans = resolveCharGlyph(symbol, 16, true, 'sans');
+      const resolvedMono = resolveCharGlyph(symbol, 16, true, 'mono');
+      expect(resolvedSans.pathData.length, symbol).toBeGreaterThan(10);
+      expect(resolvedSans.pathData).toBe(resolvedMono.pathData);
+
+      const sansPathMarkup = renderTextPathMarkup(symbol, {
+        anchorX: 10,
+        baselineY: 20,
+        fill: '#ffffff',
+        font: 'sans',
+        fontSize: 16,
+        isBold: true,
+        isUncached: true,
+      });
+      const monoPathMarkup = renderTextPathMarkup(symbol, {
+        anchorX: 10,
+        baselineY: 20,
+        fill: '#ffffff',
+        font: 'mono',
+        fontSize: 16,
+        isBold: true,
+        isUncached: true,
+      });
+      expect(sansPathMarkup, symbol).toBe(monoPathMarkup);
+    }
   });
 });
 

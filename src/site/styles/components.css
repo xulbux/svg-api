@@ -473,7 +473,7 @@ details.code-drawer[open] .drawer-chevron {
   margin-block-start: 10px;
   overflow: hidden;
   border: 1px solid var(--c-border);
-  border-radius: var(--radius-md);
+  border-radius: 9px;
   color: var(--c-text-1);
   background: var(--c-bg);
 }
@@ -481,13 +481,13 @@ details.code-drawer[open] .drawer-chevron {
 .scroll-btn,
 .copy-btn {
   position: absolute;
-  inset-block-start: 6px;
+  inset-block-start: 5px;
   z-index: 2;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--c-divider) 85%, transparent);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--c-text-2);
   background: color-mix(in srgb, var(--c-bg-soft) 76%, transparent);
   backdrop-filter: blur(8px);
@@ -513,15 +513,15 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .scroll-btn-left {
-  inset-inline-start: 6px;
+  inset-inline-start: 5px;
 }
 
 .scroll-btn-right {
-  inset-inline-start: 28px;
+  inset-inline-start: 27px;
 }
 
 .copy-btn {
-  inset-inline-end: 6px;
+  inset-inline-end: 5px;
   display: inline-flex;
   inline-size: 30px;
   block-size: 30px;

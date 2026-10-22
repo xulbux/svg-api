@@ -38,6 +38,7 @@ const BUILDER_DOCS_SLUGS = {
   quote: 'quotes',
   service: 'services',
   stack: 'stack',
+  typing: 'typing',
 } as const satisfies Readonly<Record<BuilderKind, string>>;
 
 /** Memoized builder pages keyed by element kind. */

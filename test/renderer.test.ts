@@ -18,12 +18,23 @@ import {
 } from '@/svg/renderer';
 import { escapeXml, prepareDisplayText, sliceAtCodePoint } from '@/svg/shared';
 import { resolveStackIconColor, STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
+import {
+  MAX_TYPING_LINES,
+  renderTyping,
+  TYPING_DURATION_RANGE,
+  TYPING_FONT_SIZE_RANGE,
+  TYPING_PAUSE_RANGE,
+  TYPING_WIDTH_RANGE,
+} from '@/svg/typing';
 import type {
   AnimationMode,
   BadgeSpecialElement,
   BadgeVariant,
   SizePreset,
   StripTickState,
+  TypingCursor,
+  TypingEraseMode,
+  TypingLayout,
 } from '@/types';
 import { extractAriaLabel } from './helpers';
 
@@ -1410,6 +1421,219 @@ describe('documentation drift guards', () => {
     const stackHtml = renderDocsHtml('stack');
     expect(stackHtml).toContain(
       `${STACK_GROUP_GAP_RANGE.min}<span class="param-sep"> to </span>${STACK_GROUP_GAP_RANGE.max}`
+    );
+    const typingHtml = renderDocsHtml('typing');
+    for (const range of [
+      TYPING_FONT_SIZE_RANGE,
+      TYPING_DURATION_RANGE,
+      TYPING_PAUSE_RANGE,
+      TYPING_WIDTH_RANGE,
+    ]) {
+      expect(typingHtml).toContain(`${range.min}<span class="param-sep"> to </span>${range.max}`);
+    }
+  });
+});
+
+describe('renderTyping', () => {
+  it('renders all 5 container layouts, 3 variants, and 3 cursor shapes with deduplicated <defs> glyph outlines', () => {
+    const layouts: readonly TypingLayout[] = ['window', 'prompt', 'ide', 'browser', 'none'];
+    for (const layout of layouts) {
+      const svg = renderTyping({
+        color: 'indigo',
+        hint: 'utf8',
+        layout,
+        lines: 'Passionate Coder;Creative Technologist',
+        title: 'zsh',
+      });
+      expect(svg, layout).toContain('role="img"');
+      expect(svg, layout).not.toContain('NaN');
+      expect(svg, layout).toMatch(/<path id="type-g-[\da-z]+" d="M/);
+      expect(svg, layout).toMatch(/<use href="#type-g-[\da-z]+"/);
+      if (layout !== 'none') {
+        expect(svg, layout).toContain('fill="rgba(9,10,15,0.62)"');
+      }
+    }
+
+    // `window` and `ide` render the header hint badge as a fully rounded pill (`height="18" rx="9"`).
+    const windowSvg = renderTyping({
+      color: 'indigo',
+      hint: 'utf8',
+      layout: 'window',
+      lines: 'Hello',
+    });
+    expect(windowSvg.split('<circle cx="').length - 1).toBe(3);
+    expect(windowSvg).toContain('height="18" rx="9" fill="rgba(9,10,15,0.62)"');
+
+    // Without `?icon=`, no icon or squircle box is rendered on any layout; With `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`.
+    const barePromptSvg = renderTyping({ color: 'cyan', layout: 'prompt', lines: 'Search' });
+    expect(barePromptSvg).not.toContain('scale(');
+    expect(barePromptSvg).not.toContain('width="28" height="28"');
+    const iconPromptSvg = renderTyping({
+      color: 'cyan',
+      icon: 'sparkles',
+      layout: 'prompt',
+      lines: 'Search',
+    });
+    expect(iconPromptSvg).toContain('<rect x="10" y="10" width="28" height="28" rx="8"');
+    const promptIconTransform =
+      /translate\((?<x>[\d.]+), (?<y>[\d.]+)\) scale\((?<scale>[\d.]+)\)/.exec(
+        iconPromptSvg
+      )?.groups;
+    const sparklesData = resolveIcon('sparkles');
+    expect(promptIconTransform).toBeDefined();
+    expect(sparklesData).toBeDefined();
+    const promptIconCenterX =
+      Number(promptIconTransform?.x) +
+      (((sparklesData?.minX ?? 0) + (sparklesData?.maxX ?? 0)) / 2) *
+        Number(promptIconTransform?.scale);
+    expect(promptIconCenterX).toBeCloseTo(24, 1);
+    expect(Number(promptIconTransform?.y)).toBe(16);
+
+    // `browser` renders the omnibox hint badge without a border stroke; `browser` and `ide` ignore `align: 'center'`.
+    const browserSvg = renderTyping({
+      align: 'center',
+      color: 'sky',
+      hint: 'utf8',
+      layout: 'browser',
+      lines: 'svg.xul.is',
+    });
+    expect(browserSvg).toContain('height="22" rx="5" fill="rgba(9,10,15,0.62)" />');
+    expect(browserSvg).toBe(
+      renderTyping({
+        align: 'left',
+        color: 'sky',
+        hint: 'utf8',
+        layout: 'browser',
+        lines: 'svg.xul.is',
+      })
+    );
+
+    const ideSvg = renderTyping({
+      align: 'center',
+      color: 'emerald',
+      icon: 'ts',
+      layout: 'ide',
+      lines: 'const x = 1;',
+    });
+    expect(ideSvg).toContain('<g opacity="0.42">');
+    expect(ideSvg).toBe(
+      renderTyping({
+        align: 'left',
+        color: 'emerald',
+        icon: 'ts',
+        layout: 'ide',
+        lines: 'const x = 1;',
+      })
+    );
+
+    const noneSvg = renderTyping({ color: 'indigo', layout: 'none', lines: 'Bare' });
+    expect(noneSvg).not.toContain('url(#bg-dark)');
+    expect(noneSvg).not.toContain('url(#grad-');
+
+    const variants: readonly BadgeVariant[] = ['1', '2', '3'];
+    for (const variant of variants) {
+      const svg = renderTyping({ color: 'emerald', hint: 'utf8', lines: 'Line A;Line B', variant });
+      expect(svg, variant).not.toContain('NaN');
+      if (variant === '1') {
+        expect(svg).toContain('fill="rgba(0,0,0,0.11)"');
+      }
+    }
+
+    const cursors: readonly TypingCursor[] = ['bar', 'block', 'underscore'];
+    for (const cursor of cursors) {
+      const svg = renderTyping({ color: 'sky', cursor, lines: 'Cursor test' });
+      expect(svg, cursor).toContain('attributeName="x"');
+    }
+  });
+
+  it('renders icon-only, icon + text, and wide monospace keycap hints without overflowing', () => {
+    const iconOnlyHintSvg = renderTyping({
+      color: 'indigo',
+      hint: 'icon:corner-down-left',
+      layout: 'prompt',
+      lines: 'Prompt test',
+    });
+    const iconAndTextHintSvg = renderTyping({
+      color: 'indigo',
+      hint: 'icon:command K',
+      layout: 'prompt',
+      lines: 'Prompt test',
+    });
+    expect(iconOnlyHintSvg).toContain('stroke-linecap="round"');
+    expect(iconAndTextHintSvg).toContain('stroke-linecap="round"');
+    expect(iconAndTextHintSvg.length).toBeGreaterThan(iconOnlyHintSvg.length);
+
+    // Wide monospace keycap text (`testttttttttt`, where `'t'` is much wider in JetBrains Mono than in Geist Sans)
+    // must measure with the monospace font so the keycap `<rect>` contains the text without overflowing.
+    for (const wideHint of ['testttttttttt', 'icon:corner-down-left testttttttttt']) {
+      const wideHintSvg = renderTyping({
+        color: 'indigo',
+        hint: wideHint,
+        layout: 'prompt',
+        lines: 'Prompt test',
+      });
+      const keycapMatch =
+        /<rect x="(?<rectX>[\d.]+)" y="(?<rectY>[\d.]+)" width="(?<rectWidth>[\d.]+)" height="23"/.exec(
+          wideHintSvg
+        );
+      const keycapRightEdge =
+        Number(keycapMatch?.groups?.rectX ?? 0) + Number(keycapMatch?.groups?.rectWidth ?? 0);
+      expect(measureMaxTextInkX(wideHintSvg), wideHint).toBeLessThan(keycapRightEdge - 4);
+    }
+  });
+
+  it('supports backspace, select, and fade erase modes, sparse human typos, and static anim=none mode', () => {
+    const eraseModes: readonly TypingEraseMode[] = ['backspace', 'select', 'fade'];
+    for (const erase of eraseModes) {
+      const svg = renderTyping({
+        align: 'center',
+        color: 'violet',
+        erase,
+        lines: 'Short;Much longer centered line',
+      });
+      expect(svg, erase).not.toContain('NaN');
+      if (erase === 'select') {
+        expect(svg).toContain('fill-opacity="0.28" opacity="0"');
+      }
+    }
+
+    const withoutTypo = renderTyping({
+      color: 'amber',
+      hasTypo: false,
+      lines: 'Building resilient systems;Crafting delightful interfaces;Shipping edge workers',
+    });
+    const withTypo = renderTyping({
+      color: 'amber',
+      hasTypo: true,
+      lines: 'Building resilient systems;Crafting delightful interfaces;Shipping edge workers',
+    });
+    // Across 3 lines, only 1 line receives a simulated typo (not every single line).
+    expect(withTypo.split('<use href="#type-g-')).toHaveLength(
+      withoutTypo.split('<use href="#type-g-').length + 1
+    );
+
+    const staticSvg = renderTyping({
+      anim: 'none',
+      color: 'indigo',
+      lines: 'Static line;Second line',
+    });
+    expect(staticSvg).not.toContain('<animate');
+    expect(staticSvg).toContain('<use href="#type-g-');
+  });
+
+  it('truncates overlong lines with an ellipsis and caps line counts at MAX_TYPING_LINES', () => {
+    const narrowSvg = renderTyping({
+      color: 'rose',
+      lines: 'An extraordinarily long line that exceeds a narrow two hundred pixel container width',
+      width: 200,
+    });
+    expect(narrowSvg).toContain('width="200"');
+    expect(narrowSvg).not.toContain('NaN');
+
+    const cappedLines = Array.from({ length: MAX_TYPING_LINES }, (_val, index) => `Line ${index}`);
+    const extraLines = [...cappedLines, 'Overflow 1', 'Overflow 2'];
+    expect(renderTyping({ color: 'indigo', lines: extraLines })).toBe(
+      renderTyping({ color: 'indigo', lines: cappedLines })
     );
   });
 });

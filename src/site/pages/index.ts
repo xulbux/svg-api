@@ -14,3 +14,4 @@ export { OverviewSection, renderOverviewSectionHtml } from './OverviewPage';
 export { QuotesSection, renderQuotesSectionHtml } from './QuotesPage';
 export { ServicesSection, renderServicesSectionHtml } from './ServicesPage';
 export { StackSection, renderStackSectionHtml } from './StackPage';
+export { TypingSection, renderTypingSectionHtml } from './TypingPage';

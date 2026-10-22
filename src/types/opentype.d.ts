@@ -48,6 +48,16 @@ declare module 'opentype.js' {
     tracking?: number;
   }
 
+  /** Single OpenType glyph with advance width and outline builder. */
+  export interface Glyph {
+    /** Horizontal advance width in font design units. */
+    advanceWidth?: number;
+    /** Build a vector `Path` for this glyph positioned at `(originX, baselineY)` at `fontSize`. */
+    getPath: (originX?: number, baselineY?: number, fontSize?: number) => Path;
+    /** Glyph index in the font (`0` is `.notdef`). */
+    index: number;
+  }
+
   /** Subset of the OpenType `OS/2` table used for vertical text metrics. */
   export interface FontOs2Table {
     /** Cap height in font design units. */
@@ -56,8 +66,10 @@ declare module 'opentype.js' {
     sxHeight?: number;
   }
 
-  /** Parsed OpenType tables used by the text measurement (`os2`). */
+  /** Parsed OpenType tables used by the text measurement (`gsub`, `os2`). */
   export interface FontTables {
+    /** Optional `GSUB` glyph substitution table. */
+    gsub?: unknown;
     /** `OS/2` table with cap and x-height metrics. */
     os2?: FontOs2Table;
   }
@@ -66,10 +78,14 @@ declare module 'opentype.js' {
   export interface Font {
     /** Typographic ascender in font design units. */
     ascender: number;
+    /** Look up the OpenType `Glyph` for a single character (falls back to glyph `0` when missing). */
+    charToGlyph: (char: string) => Glyph;
     /** Typographic descender in font design units. */
     descender: number;
     /** Compute total horizontal advance width of `text` at `fontSize`. */
     getAdvanceWidth: (text: string, fontSize?: number, options?: RenderOptions) => number;
+    /** Look up the horizontal pair kerning adjustment in font design units between two glyphs. */
+    getKerningValue: (leftGlyph: Glyph, rightGlyph: Glyph) => number;
     /** Build a vector `Path` for `text` positioned at `(originX, baselineY)` at `fontSize`. */
     getPath: (
       text: string,

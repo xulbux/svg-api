@@ -63,6 +63,9 @@ const LINE_BREAK_RX = /\s*\n\s*/g;
 /** Matches remaining whitespace in the stack groups textarea. */
 const WHITESPACE_RX = /\s+/g;
 
+/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in `?hint=`. */
+const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /**
@@ -159,6 +162,15 @@ function readState(state: BuilderState, id: string): string {
  */
 function normalizeStackGroups(value: string): string {
   return value.trim().replace(LINE_BREAK_RX, ';').replace(WHITESPACE_RX, '');
+}
+
+/**
+ * Normalize the typing lines textarea into the `;`-separated `/typing` DSL (line breaks become `;`).
+ * @param value   Raw textarea value.
+ * @returns Normalized `;`-separated lines string.
+ */
+function normalizeTypingLinesInput(value: string): string {
+  return value.trim().replace(LINE_BREAK_RX, ';');
 }
 
 /** Format a candidate horizontal `/stack` band of category groups within `maxBandCols`, or `undefined` when it overflows. */
@@ -328,18 +340,44 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
       const groups = encodeSegment(normalizeStackGroups(readState(state, 'groups')));
       return groups ? `/stack/${groups}` : '/stack';
     }
+    case 'typing': {
+      const prefix = readState(state, 'prefix');
+      const lines = encodeSegment(normalizeTypingLinesInput(readState(state, 'lines')));
+      if (prefix) {
+        return `/typing/${encodeSegment(prefix)}/${lines}`;
+      }
+      return lines ? `/typing/${lines}` : '/typing';
+    }
     default: {
       return '/';
     }
   }
 }
 
+/** Check whether a typing builder field applies to the currently selected container layout. */
+function isTypingFieldActiveForLayout(fieldId: string, layoutValue: string): boolean {
+  const effectiveLayout = layoutValue.trim().toLowerCase() || 'window';
+  if (fieldId === 'title') {
+    return effectiveLayout === 'window' || effectiveLayout === 'ide';
+  }
+  if (fieldId === 'hint') {
+    return effectiveLayout !== 'none';
+  }
+  if (fieldId === 'align') {
+    return effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
+  }
+  return true;
+}
+
 /** Build the query string of every non-empty query parameter field. */
 function buildQuery(schema: BuilderSchema, state: BuilderState): string {
   const pairs: string[] = [];
+  const typingLayout = schema.kind === 'typing' ? readState(state, 'layout') : '';
   for (const field of schema.fields) {
     const value = (state[field.id] ?? '').trim();
-    if (field.param && value) {
+    const isFieldActive =
+      schema.kind !== 'typing' || isTypingFieldActiveForLayout(field.id, typingLayout);
+    if (field.param && value && isFieldActive) {
       pairs.push(`${field.param}=${encodeSegment(value)}`);
     }
   }
@@ -470,6 +508,21 @@ const PATH_PARSERS: Readonly<
     state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
     return prefix === 'stack' && segments.length <= 1;
   },
+  typing(state, { prefix, query, segments }, schema) {
+    const hasPrefixSegment = segments.length === 2;
+    state.prefix = hasPrefixSegment
+      ? (segments[0] ?? '')
+      : readSegmentFallback(schema, query, 'prefix');
+    state.lines =
+      (hasPrefixSegment ? segments[1] : segments[0]) || readSegmentFallback(schema, query, 'lines');
+    const alignField = findField(schema, 'align');
+    const alignNames = alignField?.param ? [alignField.param, ...(alignField.aliases ?? [])] : [];
+    const center = (query.get('center') ?? '').trim().toLowerCase();
+    if (!readQueryParam(query, alignNames).trim() && CENTER_FLAG_VALUES.has(center)) {
+      state.align = 'center';
+    }
+    return (prefix === 'typing' || prefix === 'type') && segments.length <= 2;
+  },
 };
 
 /** Join non-empty parts with a separator. */
@@ -559,6 +612,44 @@ export function splitIconPair(
   const left = value.slice(0, commaIndex).trim();
   const right = value.slice(commaIndex + 1).trim();
   return [left === 'none' && !hasPresetIcon ? '' : left, right];
+}
+
+/**
+ * Compose a `?hint=` value from an optional icon slug and optional label text (`icon:<slug>[ <text>]` or `<text>`).
+ * @param icon   Icon slug (`''` for none).
+ * @param text   Hint label text (`''` for none).
+ * @returns Serialized `?hint=` value.
+ */
+export function composeHint(icon: string, text: string): string {
+  const cleanIcon = icon.trim();
+  const cleanText = text.trim();
+  if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
+    return cleanText;
+  }
+  return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
+}
+
+/**
+ * Split a `?hint=` value into its optional icon slug and label text.
+ * @param value   Serialized `?hint=` value.
+ * @returns `{ icon, text }` parts.
+ */
+export function splitHint(value: string): { icon: string; text: string } {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'none') {
+    return { icon: '', text: '' };
+  }
+  if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
+    const rest = trimmed.slice(5).trim();
+    if (!rest) {
+      return { icon: '', text: '' };
+    }
+    const match = HINT_ICON_REST_RX.exec(rest);
+    const icon = (match?.groups?.slug ?? '').trim();
+    const text = (match?.groups?.text ?? '').trim();
+    return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
+  }
+  return { icon: '', text: trimmed };
 }
 
 /**
@@ -891,6 +982,10 @@ export function buildAltText(schema: BuilderSchema, state: BuilderState): string
           ' '
         )
       );
+    }
+    case 'typing': {
+      const firstLine = normalizeTypingLinesInput(readState(state, 'lines')).split(';')[0]?.trim();
+      return firstLine || 'Typing Animation';
     }
     default: {
       return 'Tech Stack';

@@ -3,20 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, icon, tech stack, and quote card engine for svg.xul.is.",
-  "author": {
-    "name": "XulbuX",
-    "email": "hi@xul.is"
-  },
-  "maintainers": [
-    "XulbuX <hi@xul.is>"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/xulbux/svg-api"
-  },
-  "bugs": {
-    "url": "https://github.com/xulbux/svg-api/issues"
-  },
+  "author": { "name": "XulbuX", "email": "hi@xul.is" },
+  "maintainers": ["XulbuX <hi@xul.is>"],
+  "repository": { "type": "git", "url": "https://github.com/xulbux/svg-api" },
+  "bugs": { "url": "https://github.com/xulbux/svg-api/issues" },
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -33,10 +23,8 @@
     "test:watch": "pnpm run build:client && vitest",
     "type-check": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.client.json"
   },
-  "engines": {
-    "node": ">=26"
-  },
-  "packageManager": "pnpm@11.24.0",
+  "engines": { "node": ">=26" },
+  "packageManager": "pnpm@12.15.0",
   "dependencies": {
     "@iconify-json/devicon-plain": "^1.2.62",
     "@iconify-json/file-icons": "^1.2.2",

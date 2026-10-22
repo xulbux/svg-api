@@ -1,5 +1,5 @@
 /**
- * SVG route dispatcher – Maps `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, and `/quote/*` URLs onto the SSOT renderers.
+ * SVG route dispatcher – Maps `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/typing/*`, `/type/*`, and `/quote/*` URLs onto the SSOT renderers.
  *
  * Shared by the Worker router (`src/index.ts`) and the documentation previews (`src/site/`), so
  * every documented Markdown snippet is rendered by exactly the same parsing path as a live request.
@@ -12,6 +12,7 @@ import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
   decodeSegment,
+  isTruthyFlagParam,
   parseOptionalNumber,
   parsePerLineList,
   resolveAnimationMode,
@@ -20,6 +21,11 @@ import {
   resolveQuoteLayout,
   resolveSizeToken,
   resolveSpecialParam,
+  resolveTypingAlign,
+  resolveTypingCursor,
+  resolveTypingEraseMode,
+  resolveTypingFont,
+  resolveTypingLayout,
   resolveVariant,
 } from '@/routes/params';
 import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
@@ -27,6 +33,7 @@ import { renderQuote } from '@/svg/quote';
 import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
 import { parseStackGroups, renderStack } from '@/svg/stack';
+import { renderTyping } from '@/svg/typing';
 import type {
   BadgeSpecialElement,
   BadgeSpecialMap,
@@ -119,6 +126,34 @@ const STACK_QUERY_PARAMS: readonly string[] = [
   'perline',
   'size',
   'variant',
+];
+
+/** Query parameters read by `/typing/*` and `/type/*` routes, sorted. */
+const TYPING_QUERY_PARAMS: readonly string[] = [
+  'align',
+  'anim',
+  'center',
+  'color',
+  'cursor',
+  'delete',
+  'duration',
+  'erase',
+  'font',
+  'frame',
+  'hint',
+  'icon',
+  'layout',
+  'lines',
+  'pause',
+  'prefix',
+  'prompt',
+  'size',
+  'text',
+  'title',
+  'type',
+  'typo',
+  'variant',
+  'width',
 ];
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -296,6 +331,35 @@ function resolveQuoteRoute(segments: readonly string[], query: URLSearchParams):
   );
 }
 
+/** Resolve a `/typing/:prefix/:lines`, `/typing/:lines`, `/type/*`, or `/typing?lines=` typing animation. */
+function resolveTypingRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
+  const hasPrefixSegment = segments.length === 2;
+  const pathLines = hasPrefixSegment ? segments[1] : segments[0];
+  const queryPrefix = query.get('prefix') || query.get('prompt');
+  return buildStaticMatch(() =>
+    renderTyping({
+      align: resolveTypingAlign(query.get('align'), query.get('center')),
+      anim: resolveAnimationMode(query.get('anim')),
+      color: resolveColor(query.get('color')),
+      cursor: resolveTypingCursor(query.get('cursor')),
+      duration: parseOptionalNumber(query.get('duration')),
+      erase: resolveTypingEraseMode(query.get('erase'), query.get('delete')),
+      font: resolveTypingFont(query.get('font')),
+      hasTypo: isTruthyFlagParam(query.get('typo')),
+      hint: query.get('hint') ?? undefined,
+      icon: resolveIconQueryParam(query.get('icon')),
+      layout: resolveTypingLayout(query.get('layout'), query.get('frame'), query.get('type')),
+      lines: pathLines || query.get('lines') || query.get('text') || '',
+      pause: parseOptionalNumber(query.get('pause')),
+      prefix: (hasPrefixSegment ? segments[0] : queryPrefix) ?? undefined,
+      size: resolveSizeToken(query.get('size')),
+      title: query.get('title') ?? undefined,
+      variant: resolveVariant(query.get('variant'), '3'),
+      width: parseOptionalNumber(query.get('width')),
+    })
+  );
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** SVG route table sorted by prefix: The single source of the Hono registrations, the dispatcher, and the edge cache keys. */
@@ -311,6 +375,13 @@ export const SVG_ROUTES: readonly SvgRouteDefinition[] = [
   { maxSegments: 1, prefix: 'icon', queryParams: ICON_QUERY_PARAMS, resolve: resolveIconRoute },
   { maxSegments: 2, prefix: 'quote', queryParams: QUOTE_QUERY_PARAMS, resolve: resolveQuoteRoute },
   { maxSegments: 1, prefix: 'stack', queryParams: STACK_QUERY_PARAMS, resolve: resolveStackRoute },
+  { maxSegments: 2, prefix: 'type', queryParams: TYPING_QUERY_PARAMS, resolve: resolveTypingRoute },
+  {
+    maxSegments: 2,
+    prefix: 'typing',
+    queryParams: TYPING_QUERY_PARAMS,
+    resolve: resolveTypingRoute,
+  },
 ];
 
 /**

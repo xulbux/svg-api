@@ -9,12 +9,23 @@ import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   decodeSegment,
   ICON_MOTION_TOKENS,
+  isTruthyFlagParam,
   parseSpecialParam,
   resolveAnimationMode,
   resolveDotState,
   resolveQuoteLayout,
+  resolveTypingAlign,
+  resolveTypingCursor,
+  resolveTypingEraseMode,
+  resolveTypingFont,
+  resolveTypingLayout,
   resolveVariant,
   SPECIAL_ELEMENT_KINDS,
+  TYPING_ALIGN_TOKENS,
+  TYPING_CURSOR_TOKENS,
+  TYPING_ERASE_TOKENS,
+  TYPING_FONT_TOKENS,
+  TYPING_LAYOUT_TOKENS,
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { getBuilderSchema, resolveBuilderTarget } from '@/routes/schema';
@@ -85,6 +96,8 @@ interface BuilderCore {
     isGroupedByCategory: boolean,
     rawPerLine?: string
   ) => string;
+  /** Compose a `?hint=` query value from an optional icon slug and label text. */
+  composeHint: (icon: string, text: string) => string;
   /** Compose a `?icon=` query value from left and right icon slugs. */
   composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
   /** Compose a `?special=` query value from its kind, payload, and modifier. */
@@ -116,6 +129,8 @@ interface BuilderCore {
   parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
   /** Split a `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
   splitAnim: (value: string) => { hasSheen: boolean; left: string; right: string };
+  /** Split a `?hint=` query value into its optional icon slug and label text. */
+  splitHint: (value: string) => { icon: string; text: string };
   /** Split a `?icon=` query value into `[left, right]` icon slugs. */
   splitIconPair: (value: string, hasPresetIcon: boolean) => [left: string, right: string];
   /** Split a `?special=` query value into its kind, payload, and modifier. */
@@ -294,6 +309,76 @@ describe('builder schemas', () => {
       const expected = resolveQuoteLayout(undefined, undefined, center);
       expect(parsed?.layout || 'horizontal', center).toBe(expected);
     }
+  });
+
+  it('declares typing option tokens and aliases that match the parser (drift guard)', () => {
+    const typing = getBuilderSchema('typing');
+    expect(collectOptionValues(typing, 'layout')).toEqual(['', ...TYPING_LAYOUT_TOKENS]);
+    expect(collectOptionValues(typing, 'font')).toEqual(['', ...TYPING_FONT_TOKENS]);
+    expect(collectOptionValues(typing, 'cursor')).toEqual(['', ...TYPING_CURSOR_TOKENS]);
+    expect(collectOptionValues(typing, 'erase')).toEqual(['', ...TYPING_ERASE_TOKENS]);
+    expect(collectOptionValues(typing, 'align')).toEqual(['', ...TYPING_ALIGN_TOKENS]);
+
+    const resolvers: readonly {
+      fieldName: string;
+      resolve: (alias: string) => string | undefined;
+    }[] = [
+      { fieldName: 'layout', resolve: resolveTypingLayout },
+      { fieldName: 'font', resolve: resolveTypingFont },
+      { fieldName: 'cursor', resolve: resolveTypingCursor },
+      { fieldName: 'erase', resolve: resolveTypingEraseMode },
+      { fieldName: 'align', resolve: resolveTypingAlign },
+      { fieldName: 'typo', resolve: (alias) => (isTruthyFlagParam(alias) ? 'true' : '') },
+    ];
+
+    for (const { fieldName, resolve } of resolvers) {
+      for (const option of findField(typing, fieldName).options ?? []) {
+        for (const alias of option.aliases ?? []) {
+          expect(resolve(alias), `${fieldName}:${alias}`).toBe(option.value);
+        }
+      }
+    }
+
+    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`.
+    expect(
+      core.buildPath(typing, {
+        align: 'center',
+        hint: 'utf8',
+        layout: 'window',
+        lines: 'Hi',
+        title: 'zsh',
+      }).path
+    ).toBe('/typing/Hi?layout=window&align=center&title=zsh&hint=utf8');
+    expect(
+      core.buildPath(typing, {
+        align: 'center',
+        hint: 'utf8',
+        layout: 'prompt',
+        lines: 'Hi',
+        title: 'zsh',
+      }).path
+    ).toBe('/typing/Hi?layout=prompt&align=center&hint=utf8');
+    expect(
+      core.buildPath(typing, {
+        align: 'center',
+        hint: 'utf8',
+        layout: 'browser',
+        lines: 'Hi',
+        title: 'zsh',
+      }).path
+    ).toBe('/typing/Hi?layout=browser&hint=utf8');
+    expect(
+      core.buildPath(typing, {
+        align: 'center',
+        hint: 'utf8',
+        layout: 'ide',
+        lines: 'Hi',
+        title: 'index.ts',
+      }).path
+    ).toBe('/typing/Hi?layout=ide&title=index.ts&hint=utf8');
+    expect(
+      core.buildPath(typing, { hint: 'utf8', layout: 'none', lines: 'Hi', title: 'zsh' }).path
+    ).toBe('/typing/Hi?layout=none');
   });
 
   it('derives upstream redirect templates for most service metrics', () => {
@@ -1157,6 +1242,32 @@ describe('builder pages & "Open in Builder" links', () => {
       }
     }
     expect(seenSlugs.size).toBeGreaterThan(350);
+  });
+
+  it('renders the interactive line-by-line list editor on /builder/typing', () => {
+    const html = renderBuilderHtml('typing');
+    expect(html).toContain('data-field="lines" data-control="typingLines"');
+    expect(html).toContain('id="typing-lines-editor" data-max-lines="12" data-max-length="80"');
+    expect(html).toContain(
+      '<input type="hidden" id="field-lines" value="Full-Stack Developer;Design-Driven Engineering;Edge Systems Architect" />'
+    );
+    expect(html).toContain('id="typing-lines-list"');
+    expect(html).toContain('value="Full-Stack Developer" maxlength="80"');
+    expect(html).toContain('value="Design-Driven Engineering" maxlength="80"');
+    expect(html).toContain('value="Edge Systems Architect" maxlength="80"');
+    expect(html).toContain('id="typing-line-add"');
+    expect(html).toContain('data-field="hint" data-control="hint"');
+    expect(html).toContain('id="field-hint-icon" data-part="icon"');
+    expect(html).toContain('id="field-hint-text" type="text" data-part="text"');
+    expect(core.composeHint('corner-down-left', '')).toBe('icon:corner-down-left');
+    expect(core.composeHint('command', 'K')).toBe('icon:command K');
+    expect(core.composeHint('', 'utf8')).toBe('utf8');
+    expect(core.splitHint('icon:command K')).toEqual({ icon: 'command', text: 'K' });
+    expect(core.splitHint('icon:corner-down-left')).toEqual({ icon: 'corner-down-left', text: '' });
+    expect(core.splitHint('utf8')).toEqual({ icon: '', text: 'utf8' });
+    expect(builderScript).toContain('createTypingLinesController(');
+    expect(builderScript).toContain('typingLinesController.syncFromValue(value)');
+    expect(builderScript).toContain('typingLinesController.readValue()');
   });
 
   it('links every docs preview to a builder whose prefill renders the identical SVG', () => {

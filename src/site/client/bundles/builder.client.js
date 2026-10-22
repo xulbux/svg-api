@@ -113,6 +113,7 @@
   var COLUMN_SUFFIX_RX = /(?<=.):\d+$/;
   var LINE_BREAK_RX = /\s*\n\s*/g;
   var WHITESPACE_RX = /\s+/g;
+  var HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
   function encodeSegment(text) {
     return encodeURIComponent(text)
       .replace(ESCAPED_SPACE_RX, '+')
@@ -156,6 +157,9 @@
   }
   function normalizeStackGroups(value) {
     return value.trim().replace(LINE_BREAK_RX, ';').replace(WHITESPACE_RX, '');
+  }
+  function normalizeTypingLinesInput(value) {
+    return value.trim().replace(LINE_BREAK_RX, ';');
   }
   function formatStackBand(bandGroups, maxBandCols = MAX_STACK_BAND_COLUMNS) {
     let bandRows = 1;
@@ -308,16 +312,40 @@
         const groups = encodeSegment(normalizeStackGroups(readState(state, 'groups')));
         return groups ? `/stack/${groups}` : '/stack';
       }
+      case 'typing': {
+        const prefix = readState(state, 'prefix');
+        const lines = encodeSegment(normalizeTypingLinesInput(readState(state, 'lines')));
+        if (prefix) {
+          return `/typing/${encodeSegment(prefix)}/${lines}`;
+        }
+        return lines ? `/typing/${lines}` : '/typing';
+      }
       default: {
         return '/';
       }
     }
   }
+  function isTypingFieldActiveForLayout(fieldId, layoutValue) {
+    const effectiveLayout = layoutValue.trim().toLowerCase() || 'window';
+    if (fieldId === 'title') {
+      return effectiveLayout === 'window' || effectiveLayout === 'ide';
+    }
+    if (fieldId === 'hint') {
+      return effectiveLayout !== 'none';
+    }
+    if (fieldId === 'align') {
+      return effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
+    }
+    return true;
+  }
   function buildQuery(schema, state) {
     const pairs = [];
+    const typingLayout = schema.kind === 'typing' ? readState(state, 'layout') : '';
     for (const field of schema.fields) {
       const value = (state[field.id] ?? '').trim();
-      if (field.param && value) {
+      const isFieldActive =
+        schema.kind !== 'typing' || isTypingFieldActiveForLayout(field.id, typingLayout);
+      if (field.param && value && isFieldActive) {
         pairs.push(`${field.param}=${encodeSegment(value)}`);
       }
     }
@@ -435,6 +463,22 @@
       state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
       return prefix === 'stack' && segments.length <= 1;
     },
+    typing(state, { prefix, query, segments }, schema) {
+      const hasPrefixSegment = segments.length === 2;
+      state.prefix = hasPrefixSegment
+        ? (segments[0] ?? '')
+        : readSegmentFallback(schema, query, 'prefix');
+      state.lines =
+        (hasPrefixSegment ? segments[1] : segments[0]) ||
+        readSegmentFallback(schema, query, 'lines');
+      const alignField = findField(schema, 'align');
+      const alignNames = alignField?.param ? [alignField.param, ...(alignField.aliases ?? [])] : [];
+      const center = (query.get('center') ?? '').trim().toLowerCase();
+      if (!readQueryParam(query, alignNames).trim() && CENTER_FLAG_VALUES.has(center)) {
+        state.align = 'center';
+      }
+      return (prefix === 'typing' || prefix === 'type') && segments.length <= 2;
+    },
   };
   function joinNonEmpty(parts, separator) {
     let joined = '';
@@ -488,6 +532,31 @@
     const left = value.slice(0, commaIndex).trim();
     const right = value.slice(commaIndex + 1).trim();
     return [left === 'none' && !hasPresetIcon ? '' : left, right];
+  }
+  function composeHint(icon, text) {
+    const cleanIcon = icon.trim();
+    const cleanText = text.trim();
+    if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
+      return cleanText;
+    }
+    return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
+  }
+  function splitHint(value) {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'none') {
+      return { icon: '', text: '' };
+    }
+    if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
+      const rest = trimmed.slice(5).trim();
+      if (!rest) {
+        return { icon: '', text: '' };
+      }
+      const match = HINT_ICON_REST_RX.exec(rest);
+      const icon = (match?.groups?.slug ?? '').trim();
+      const text = (match?.groups?.text ?? '').trim();
+      return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
+    }
+    return { icon: '', text: trimmed };
   }
   function composeAnim(hasSheen, left, right) {
     const tokens = hasSheen ? ['sheen'] : [];
@@ -715,6 +784,12 @@
           )
         );
       }
+      case 'typing': {
+        const firstLine = normalizeTypingLinesInput(readState(state, 'lines'))
+          .split(';')[0]
+          ?.trim();
+        return firstLine || 'Typing Animation';
+      }
       default: {
         return 'Tech Stack';
       }
@@ -862,6 +937,7 @@
     collectStackSlugs,
     composeAnim,
     composeCategorizedStack,
+    composeHint,
     composeIconPair,
     composeSpecial,
     computeGridFocusIndex,
@@ -871,6 +947,7 @@
     encodeSegment,
     parsePath,
     splitAnim,
+    splitHint,
     splitIconPair,
     splitSize,
     splitSpecial,
@@ -1971,6 +2048,251 @@
     };
   }
 
+  // src/site/client/builder/typingLines.ts
+  var LINE_SPLIT_RX = /[\r\n;]+/;
+  var MULTI_LINE_PASTE_RX = /[\r\n;]/;
+  var SEMICOLON_RX = /;/g;
+  function focusRowInput(row, hasCaretAtEnd = false) {
+    const input = row?.querySelector('.typing-line-input');
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      if (hasCaretAtEnd) {
+        const endOffset = input.value.length;
+        input.setSelectionRange(endOffset, endOffset);
+      }
+    }
+  }
+  function createTypingLinesController(options) {
+    const { addButton, editorElement, hiddenInput, listElement } = options;
+    const maxLines = Number(editorElement?.dataset.maxLines) || 12;
+    const maxLength = Number(editorElement?.dataset.maxLength) || 80;
+    const firstRow = listElement?.querySelector('[data-typing-line-row]');
+    const rowTemplate = firstRow instanceof HTMLElement ? firstRow.cloneNode(true) : undefined;
+    function getRows() {
+      if (!listElement) {
+        return [];
+      }
+      const rows = [];
+      for (const element of listElement.querySelectorAll('[data-typing-line-row]')) {
+        if (element instanceof HTMLElement) {
+          rows.push(element);
+        }
+      }
+      return rows;
+    }
+    function createRow(lineValue) {
+      if (!rowTemplate) {
+        return undefined;
+      }
+      const row = rowTemplate.cloneNode(true);
+      const input = row.querySelector('.typing-line-input');
+      if (input instanceof HTMLInputElement) {
+        input.value = lineValue.replace(SEMICOLON_RX, ' ').slice(0, maxLength);
+      }
+      return row;
+    }
+    function refreshRowMetadata() {
+      const rows = getRows();
+      const isSingleRow = rows.length <= 1;
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        if (row) {
+          const lineNumber = i + 1;
+          const indexBadge = row.querySelector('.typing-line-index');
+          if (indexBadge) {
+            indexBadge.textContent = String(lineNumber);
+          }
+          const input = row.querySelector('.typing-line-input');
+          if (input instanceof HTMLInputElement) {
+            input.placeholder = i === 0 ? 'e.g., Full-Stack Developer' : `Line ${lineNumber}…`;
+            input.setAttribute('aria-label', `Line ${lineNumber}`);
+          }
+          const removeButton = row.querySelector('[data-typing-line-remove]');
+          if (removeButton instanceof HTMLButtonElement) {
+            removeButton.disabled = isSingleRow;
+            removeButton.setAttribute('aria-label', `Remove line ${lineNumber}`);
+          }
+        }
+      }
+      if (addButton) {
+        addButton.disabled = rows.length >= maxLines;
+      }
+    }
+    function readValue() {
+      if (!listElement) {
+        return hiddenInput?.value ?? '';
+      }
+      const nonEmptyLines = [];
+      for (const input of listElement.querySelectorAll('.typing-line-input')) {
+        if (input instanceof HTMLInputElement) {
+          if (input.value.includes(';')) {
+            input.value = input.value.replace(SEMICOLON_RX, ' ');
+          }
+          const trimmedLine = input.value.trim();
+          if (trimmedLine) {
+            nonEmptyLines.push(trimmedLine);
+          }
+        }
+      }
+      const serialized = nonEmptyLines.join(';');
+      if (hiddenInput) {
+        hiddenInput.value = serialized;
+      }
+      return serialized;
+    }
+    function notifyChange() {
+      readValue();
+      hiddenInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    function syncFromValue(rawValue) {
+      if (!listElement || !rowTemplate) {
+        return;
+      }
+      const parsedLines = [];
+      for (const segment of rawValue.split(LINE_SPLIT_RX)) {
+        const trimmedLine = segment.trim();
+        if (trimmedLine && parsedLines.length < maxLines) {
+          parsedLines.push(trimmedLine);
+        }
+      }
+      if (parsedLines.length === 0) {
+        parsedLines.push('');
+      }
+      const fragment = document.createDocumentFragment();
+      for (const lineText of parsedLines) {
+        const row = createRow(lineText);
+        if (row) {
+          fragment.append(row);
+        }
+      }
+      listElement.replaceChildren(fragment);
+      refreshRowMetadata();
+      readValue();
+    }
+    function handleKeydown(event) {
+      const input =
+        event.target instanceof HTMLInputElement &&
+        event.target.classList.contains('typing-line-input')
+          ? event.target
+          : undefined;
+      const row = input?.closest('[data-typing-line-row]');
+      if (!input || !row) {
+        return;
+      }
+      const rows = getRows();
+      const rowIndex = rows.indexOf(row);
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (rows.length < maxLines) {
+          const newRow = createRow('');
+          if (newRow) {
+            row.after(newRow);
+            refreshRowMetadata();
+            focusRowInput(newRow);
+          }
+        } else if (rowIndex + 1 < rows.length) {
+          focusRowInput(rows[rowIndex + 1]);
+        }
+      } else if (event.key === 'Backspace' && input.value === '' && rows.length > 1) {
+        event.preventDefault();
+        row.remove();
+        refreshRowMetadata();
+        const remainingRows = getRows();
+        focusRowInput(remainingRows[Math.max(0, rowIndex - 1)], true);
+        notifyChange();
+      } else if (event.key === 'ArrowUp' && rowIndex > 0) {
+        event.preventDefault();
+        focusRowInput(rows[rowIndex - 1], true);
+      } else if (event.key === 'ArrowDown' && rowIndex + 1 < rows.length) {
+        event.preventDefault();
+        focusRowInput(rows[rowIndex + 1], true);
+      }
+    }
+    function handlePaste(event) {
+      const input =
+        event.target instanceof HTMLInputElement &&
+        event.target.classList.contains('typing-line-input')
+          ? event.target
+          : undefined;
+      const row = input?.closest('[data-typing-line-row]');
+      const pastedText = event.clipboardData?.getData('text') ?? '';
+      if (!input || !row || !MULTI_LINE_PASTE_RX.test(pastedText)) {
+        return;
+      }
+      const pastedLines = [];
+      for (const part of pastedText.split(LINE_SPLIT_RX)) {
+        const trimmedLine = part.trim();
+        if (trimmedLine) {
+          pastedLines.push(trimmedLine);
+        }
+      }
+      if (pastedLines.length <= 1) {
+        return;
+      }
+      event.preventDefault();
+      input.value = (pastedLines[0] ?? '').slice(0, maxLength);
+      let anchorRow = row;
+      let currentRowCount = getRows().length;
+      for (let i = 1; i < pastedLines.length && currentRowCount < maxLines; i += 1) {
+        const nextRow = createRow(pastedLines[i] ?? '');
+        if (nextRow) {
+          anchorRow.after(nextRow);
+          anchorRow = nextRow;
+          currentRowCount += 1;
+        }
+      }
+      refreshRowMetadata();
+      focusRowInput(anchorRow, true);
+      notifyChange();
+    }
+    function bind() {
+      if (!listElement || !rowTemplate) {
+        return;
+      }
+      addButton?.addEventListener('click', () => {
+        const rows = getRows();
+        if (rows.length >= maxLines) {
+          return;
+        }
+        const newRow = createRow('');
+        if (newRow) {
+          listElement.append(newRow);
+          refreshRowMetadata();
+          focusRowInput(newRow);
+        }
+      });
+      listElement.addEventListener('click', (event) => {
+        const removeButton =
+          event.target instanceof Element
+            ? event.target.closest('[data-typing-line-remove]')
+            : undefined;
+        const row = removeButton?.closest('[data-typing-line-row]');
+        if (!row) {
+          return;
+        }
+        const rows = getRows();
+        if (rows.length <= 1) {
+          const singleInput = row.querySelector('.typing-line-input');
+          if (singleInput instanceof HTMLInputElement) {
+            singleInput.value = '';
+            singleInput.focus();
+            notifyChange();
+          }
+          return;
+        }
+        const rowIndex = rows.indexOf(row);
+        row.remove();
+        refreshRowMetadata();
+        const remainingRows = getRows();
+        focusRowInput(remainingRows[Math.min(rowIndex, remainingRows.length - 1)]);
+        notifyChange();
+      });
+      listElement.addEventListener('keydown', (event) => handleKeydown(event));
+      listElement.addEventListener('paste', (event) => handlePaste(event));
+    }
+    return { bind, readValue, syncFromValue };
+  }
+
   // src/site/client/builder/index.ts
   var PREVIEW_DEBOUNCE_MS = 180;
   function getPart(fieldElement, part) {
@@ -1986,6 +2308,13 @@
   function syncSizeParts(fieldElement) {
     const isCustom = getPart(fieldElement, 'preset')?.value === 'custom';
     fieldElement.querySelector('[data-size-part="custom"]')?.toggleAttribute('hidden', !isCustom);
+  }
+  function setRadioGroupValue(fieldElement, value) {
+    for (const radio of fieldElement.querySelectorAll('input[type="radio"]')) {
+      if (radio instanceof HTMLInputElement) {
+        radio.checked = radio.value === value;
+      }
+    }
   }
   function initBuilderDom() {
     const site = globalThis.svgSite;
@@ -2085,6 +2414,12 @@
       stackRawActions,
       stackRawPanel,
     });
+    const typingLinesController = createTypingLinesController({
+      addButton: document.getElementById('typing-line-add'),
+      editorElement: document.getElementById('typing-lines-editor'),
+      hiddenInput: document.getElementById('field-lines'),
+      listElement: document.getElementById('typing-lines-list'),
+    });
     function getActiveAutoSpecials() {
       if (schema.kind !== 'service') {
         return [];
@@ -2110,6 +2445,9 @@
           const checked = fieldElement.querySelector('input:checked');
           return checked instanceof HTMLInputElement ? checked.value : '';
         }
+        case 'hint': {
+          return composeHint(readPartValue('icon'), readPartValue('text'));
+        }
         case 'icon': {
           return readPartValue('main').trim();
         }
@@ -2128,6 +2466,9 @@
             readPartValue('modifier'),
             Boolean(kind && getActiveAutoSpecials().includes(kind))
           );
+        }
+        case 'typingLines': {
+          return typingLinesController.readValue();
         }
         default: {
           return getControl(field.id)?.value ?? '';
@@ -2270,11 +2611,13 @@
           break;
         }
         case 'color': {
-          for (const radio of fieldElement.querySelectorAll('input[type="radio"]')) {
-            if (radio instanceof HTMLInputElement) {
-              radio.checked = radio.value === value;
-            }
-          }
+          setRadioGroupValue(fieldElement, value);
+          break;
+        }
+        case 'hint': {
+          const hint = splitHint(value);
+          setPartValue(fieldElement, 'icon', hint.icon);
+          setPartValue(fieldElement, 'text', hint.text);
           break;
         }
         case 'icon': {
@@ -2301,6 +2644,10 @@
           syncSpecialParts(field, fieldElement, special.modifier);
           break;
         }
+        case 'typingLines': {
+          typingLinesController.syncFromValue(value);
+          break;
+        }
         default: {
           const control = getControl(field.id);
           if (control instanceof HTMLSelectElement) {
@@ -2317,9 +2664,39 @@
         }
       }
     }
+    function syncTypingFields() {
+      if (schema.kind !== 'typing') {
+        return;
+      }
+      const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
+      const isTitledLayout = effectiveLayout === 'window' || effectiveLayout === 'ide';
+      const isFrameless = effectiveLayout === 'none';
+      const isCenterableLayout = effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
+      fieldElements.get('title')?.toggleAttribute('hidden', !isTitledLayout);
+      fieldElements.get('hint')?.toggleAttribute('hidden', isFrameless);
+      fieldElements.get('align')?.toggleAttribute('hidden', !isCenterableLayout);
+      const titleControl = getControl('title');
+      if (titleControl instanceof HTMLInputElement) {
+        titleControl.placeholder =
+          effectiveLayout === 'ide' ? 'index.ts (ide default)' : 'optional (e.g., zsh)';
+      }
+      const prefixControl = getControl('prefix');
+      if (prefixControl instanceof HTMLInputElement) {
+        prefixControl.placeholder =
+          effectiveLayout === 'window' ? '❯ (window default)' : 'optional';
+      }
+      const hintElement = fieldElements.get('hint');
+      const hintTextControl = hintElement ? getPart(hintElement, 'text') : undefined;
+      if (hintTextControl instanceof HTMLInputElement) {
+        hintTextControl.placeholder =
+          effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
+      }
+    }
     function writeState() {
       if (schema.kind === 'service') {
         syncServiceFields();
+      } else if (schema.kind === 'typing') {
+        syncTypingFields();
       }
       for (const field of schema.fields) {
         if (field.id !== 'metric') {
@@ -2483,6 +2860,9 @@
       state[field.id] = readFieldValue(field, fieldElement);
       stackCatalogController?.syncStackFieldChange(field);
       syncServiceFieldChange(field);
+      if (field.id === 'layout') {
+        syncTypingFields();
+      }
       update(fieldElement);
     }
     function selectTab(tab) {
@@ -2623,6 +3003,7 @@
     initializeState();
     bindBuilderEvents();
     stackCatalogController.bind();
+    typingLinesController.bind();
     iconPickerController.bind();
     iconPickerController.loadIndexInBackground();
   }

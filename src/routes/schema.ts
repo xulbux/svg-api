@@ -10,7 +10,16 @@
 import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
-import { ICON_MOTION_TOKENS, SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
+import {
+  ICON_MOTION_TOKENS,
+  SPECIAL_ELEMENT_KINDS,
+  TYPING_ALIGN_TOKENS,
+  TYPING_CURSOR_TOKENS,
+  TYPING_ERASE_TOKENS,
+  TYPING_FONT_TOKENS,
+  TYPING_LAYOUT_TOKENS,
+  VARIANT_TOKENS,
+} from '@/routes/params';
 import { resolveSvgRoute } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/site/glossary';
@@ -35,6 +44,15 @@ import {
   STACK_PER_LINE_RANGE,
   STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
+import {
+  MAX_TYPING_LINE_LENGTH,
+  MAX_TYPING_LINES,
+  TYPING_DURATION_RANGE,
+  TYPING_FONT_SIZE_RANGE,
+  TYPING_PAUSE_RANGE,
+  TYPING_SIZE_MAP,
+  TYPING_WIDTH_RANGE,
+} from '@/svg/typing';
 import type {
   BuilderAnimScope,
   BuilderField,
@@ -67,6 +85,10 @@ const EXAMPLE_STACK_GROUPS = 'js,ts,html,css|react,vue,tailwind';
 /** Example quote text the quote card builder starts with. */
 const EXAMPLE_QUOTE_TEXT =
   'Your quote goes here. Long quotes wrap onto multiple lines automatically.';
+
+/** Example `;`-separated lines the typing animation builder starts with. */
+const EXAMPLE_TYPING_LINES =
+  'Full-Stack Developer;Design-Driven Engineering;Edge Systems Architect';
 
 /** Owner placeholder of upstream redirect templates. */
 const REDIRECT_OWNER_PLACEHOLDER = '{owner}';
@@ -548,9 +570,9 @@ function buildQuoteFields(): BuilderField[] {
       id: 'layout',
       label: 'Layout',
       options: [
-        buildDefaultOption('Default (horizontal)'),
-        { label: 'Horizontal (left accent bar)', value: 'horizontal' },
-        { aliases: ['center', 'v'], label: 'Vertical (centered watermarks)', value: 'vertical' },
+        buildDefaultOption(),
+        { label: 'Horizontal', value: 'horizontal' },
+        { aliases: ['center', 'v'], label: 'Vertical', value: 'vertical' },
       ],
       param: 'layout',
     },
@@ -563,6 +585,186 @@ function buildQuoteFields(): BuilderField[] {
     buildColorField(),
     buildNumberField('width', 'Width (px)', QUOTE_WIDTH_RANGE, {
       description: `Defaults to ${QUOTE_WIDTH_RANGE.default}px (horizontal) or ${DEFAULT_VERTICAL_QUOTE_WIDTH}px (vertical) and grows with text sizes above the layout's default.`,
+      placeholder: 'auto',
+    }),
+    buildAnimField('sheen'),
+  ];
+}
+
+/** Build the typing animation builder fields (`aliases` of path segment fields list their query fallbacks). */
+function buildTypingFields(): BuilderField[] {
+  const layoutLabels: Readonly<Record<(typeof TYPING_LAYOUT_TOKENS)[number], string>> = {
+    browser: 'Browser',
+    ide: 'IDE',
+    none: 'None',
+    prompt: 'Prompt',
+    window: 'Window',
+  };
+  const layoutAliases: Readonly<Record<(typeof TYPING_LAYOUT_TOKENS)[number], readonly string[]>> =
+    {
+      browser: ['address', 'omnibox', 'search', 'url'],
+      ide: ['code', 'editor', 'tab'],
+      none: ['bare', 'minimal', 'plain', 'transparent'],
+      prompt: [
+        'ai',
+        'assistant',
+        'bar',
+        'bubble',
+        'chat',
+        'command',
+        'message',
+        'palette',
+        'popup',
+        'raycast',
+        'spotlight',
+      ],
+      window: ['app', 'mac', 'terminal', 'zsh'],
+    };
+  const layoutOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const token of TYPING_LAYOUT_TOKENS) {
+    layoutOptions.push({
+      aliases: [...layoutAliases[token]],
+      label: layoutLabels[token],
+      value: token,
+    });
+  }
+
+  const fontAliases: Readonly<Record<(typeof TYPING_FONT_TOKENS)[number], readonly string[]>> = {
+    mono: ['code', 'fira', 'jetbrains', 'monospace'],
+    sans: ['geist', 'proportional', 'ui'],
+  };
+  const fontOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const token of TYPING_FONT_TOKENS) {
+    fontOptions.push({
+      aliases: [...fontAliases[token]],
+      label: capitalizeWord(token),
+      value: token,
+    });
+  }
+
+  const cursorAliases: Readonly<Record<(typeof TYPING_CURSOR_TOKENS)[number], readonly string[]>> =
+    { bar: ['beam', 'line', 'pipe'], block: ['box'], underscore: ['under', 'underline'] };
+  const cursorOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const token of TYPING_CURSOR_TOKENS) {
+    cursorOptions.push({
+      aliases: [...cursorAliases[token]],
+      label: capitalizeWord(token),
+      value: token,
+    });
+  }
+
+  const eraseAliases: Readonly<Record<(typeof TYPING_ERASE_TOKENS)[number], readonly string[]>> = {
+    backspace: ['del', 'delete', 'type'],
+    fade: ['dissolve'],
+    select: ['clear', 'highlight'],
+  };
+  const eraseOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const token of TYPING_ERASE_TOKENS) {
+    eraseOptions.push({
+      aliases: [...eraseAliases[token]],
+      label: capitalizeWord(token),
+      value: token,
+    });
+  }
+
+  const alignOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const token of TYPING_ALIGN_TOKENS) {
+    alignOptions.push({
+      aliases: token === 'center' ? ['middle'] : ['start'],
+      label: capitalizeWord(token),
+      value: token,
+    });
+  }
+
+  return [
+    {
+      aliases: ['prefix', 'prompt'],
+      control: 'text',
+      description:
+        'Static prompt text before the typed lines (pass none to hide the default prompt).',
+      id: 'prefix',
+      label: 'Prefix',
+      maxLength: MAX_LABEL_LENGTH,
+      placeholder: '❯ (window default)',
+    },
+    {
+      aliases: ['lines', 'text'],
+      control: 'typingLines',
+      id: 'lines',
+      isRequired: true,
+      label: 'Typed lines',
+      max: MAX_TYPING_LINES,
+      maxLength: MAX_TYPING_LINE_LENGTH,
+    },
+    {
+      aliases: ['frame', 'type'],
+      control: 'select',
+      id: 'layout',
+      label: 'Layout',
+      options: layoutOptions,
+      param: 'layout',
+    },
+    buildVariantField(),
+    buildColorField(),
+    { control: 'select', id: 'font', label: 'Font', options: fontOptions, param: 'font' },
+    buildSizePresetField(
+      TYPING_SIZE_MAP,
+      TYPING_FONT_SIZE_RANGE,
+      'Typography preset or custom font size in pixels.'
+    ),
+    { control: 'select', id: 'cursor', label: 'Cursor', options: cursorOptions, param: 'cursor' },
+    {
+      aliases: ['delete'],
+      control: 'select',
+      id: 'erase',
+      label: 'Erase mode',
+      options: eraseOptions,
+      param: 'erase',
+    },
+    { control: 'select', id: 'align', label: 'Alignment', options: alignOptions, param: 'align' },
+    {
+      control: 'select',
+      description:
+        'Simulates an occasional QWERTY neighbor key slip + immediate backspace correction.',
+      id: 'typo',
+      label: 'Human typo',
+      options: [
+        { aliases: ['0', 'false', 'no'], label: 'Off', value: '' },
+        { aliases: ['1', 'yes'], label: 'Enabled', value: 'true' },
+      ],
+      param: 'typo',
+    },
+    {
+      control: 'icon',
+      description:
+        'Optional icon (header bar on window, file tab on ide, squircle badge on prompt, or omnibox on browser).',
+      id: 'icon',
+      label: 'Icon',
+      param: 'icon',
+      placeholder: 'none',
+    },
+    {
+      control: 'text',
+      description: 'Optional header bar title on window or active tab filename on ide.',
+      id: 'title',
+      label: 'Window / tab title',
+      maxLength: MAX_LABEL_LENGTH,
+      param: 'title',
+      placeholder: 'optional (e.g., zsh)',
+    },
+    {
+      control: 'hint',
+      description: 'Optional icon and/or label inside the header pill or 3D keycap badge.',
+      id: 'hint',
+      label: 'Keycap / hint',
+      maxLength: 24,
+      param: 'hint',
+      placeholder: 'optional (e.g., UTF-8)',
+    },
+    buildNumberField('duration', 'Typing speed (ms)', TYPING_DURATION_RANGE),
+    buildNumberField('pause', 'Hold pause (ms)', TYPING_PAUSE_RANGE),
+    buildNumberField('width', 'Width (px)', TYPING_WIDTH_RANGE, {
+      description: 'Auto-fits the longest line when left empty.',
       placeholder: 'auto',
     }),
     buildAnimField('sheen'),
@@ -617,6 +819,13 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
         fields: buildStackFields(),
         initialState: { groups: EXAMPLE_STACK_GROUPS },
         isBrandFirst: true,
+      };
+    }
+    case 'typing': {
+      return {
+        ...base,
+        fields: buildTypingFields(),
+        initialState: { lines: EXAMPLE_TYPING_LINES },
       };
     }
     default: {
@@ -676,6 +885,11 @@ export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
       case 'quote':
       case 'stack': {
         kind = prefix;
+        break;
+      }
+      case 'type':
+      case 'typing': {
+        kind = 'typing';
         break;
       }
       default: {
