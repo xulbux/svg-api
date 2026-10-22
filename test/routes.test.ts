@@ -623,7 +623,7 @@ describe('Hono routes on svg.xul.is', () => {
     expect(iconRes.status).toBe(200);
     expect(iconRes.headers.get('Content-Type')).toContain('image/svg+xml');
     const iconSvg = await iconRes.text();
-    expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -5 30 30"');
+    expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
     expect(iconSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
     expect(iconSvg).toContain('stroke-width="2.5"');
   });

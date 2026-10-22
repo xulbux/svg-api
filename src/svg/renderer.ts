@@ -1772,8 +1772,7 @@ export function renderButton(options: ButtonRenderOptions): string {
 
 /**
  * Render a standalone SVG icon string (`svg.xul.is/icon/:icon`).
- * Uses a padded `-3 -5 30 30` viewBox so the glyph sits slightly lower for optical baseline alignment
- * next to inline Markdown text while rotation, scale, and translation micro-animations never clip.
+ * Uses a padded `-3 -3 30 30` viewBox so rotation, scale, and translation micro-animations never clip.
  * Unknown slugs draw `FALLBACK_ICON_SLUG` and are labeled `unknown icon: <slug>`.
  * @param options   Standalone icon rendering configuration (`icon`, `color`, `size`, `strokeWidth`, `anim`).
  * @returns Complete, self-contained `<svg>` markup string.
@@ -1810,7 +1809,7 @@ export function renderIcon(options: IconRenderOptions): string {
     defs: sheenDef,
     height: size,
     paintAttrs: renderIconPaintAttrs(iconData.type, iconColor, strokeWidth),
-    viewBox: '-3 -5 30 30',
+    viewBox: '-3 -3 30 30',
     width: size,
   });
 }

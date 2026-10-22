@@ -490,13 +490,13 @@ describe('renderIcon', () => {
       size: 16,
       strokeWidth: 2.5,
     });
-    expect(lucideSvg).toContain('width="16" height="16" viewBox="-3 -5 30 30"');
+    expect(lucideSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
     expect(lucideSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
     expect(lucideSvg).toContain('stroke-width="2.5"');
     expect(lucideSvg).not.toContain('<animateTransform');
 
     const simpleSvg = renderIcon({ color: 'cyan', icon: 'archlinux', size: 28 });
-    expect(simpleSvg).toContain('width="28" height="28" viewBox="-3 -5 30 30"');
+    expect(simpleSvg).toContain('width="28" height="28" viewBox="-3 -3 30 30"');
     expect(simpleSvg).toContain(`fill="${THEMES.cyan.iconColor}"`);
     expect(simpleSvg).not.toContain('stroke-width=');
 
