@@ -1317,6 +1317,30 @@ function resolveHintBadgePaint(
   };
 }
 
+/**
+ * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent (vertical mirror of `buildTopCrescentPath` in `src/svg/shared.ts`).
+ * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
+ * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
+ * bottom corner curves without extending up the vertical sides.
+ */
+function buildBottomCrescentPath(
+  startX: number,
+  endX: number,
+  radius: number,
+  bottomY: number
+): string {
+  const innerRadius = roundCoord(radius - 1);
+  const innerRadiusY = roundCoord(innerRadius - 1);
+  const leftTangentX = roundCoord(startX + 1);
+  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
+  const rightArcStart = roundCoord(endX - 1 - innerRadius);
+  const rightTangentX = roundCoord(endX - 1);
+  const outerBottomY = roundCoord(bottomY - 1);
+  const innerBottomY = roundCoord(bottomY - 2);
+  const cornerStartY = roundCoord(outerBottomY - innerRadius);
+  return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
+}
+
 /** Render the trailing hint badge: rounded pill in header (`window`/`ide`), borderless well badge in `browser`, or 3D keycap in `prompt`. */
 function renderHintBadge(options: {
   hint: ResolvedTypingHint | undefined;
@@ -1411,13 +1435,25 @@ function renderHintBadge(options: {
     };
   }
 
-  // `layout === 'prompt'`: recessed 3D keycap with border and bottom bevel line.
+  // `layout === 'prompt'`: recessed 3D keycap with Kumo lower-edge crescent and outer border ring.
   const keycapHeight = Math.round(23 * scale);
-  const keycapRadius = Math.max(4, Math.round(5.5 * scale));
+  const keycapRadius = Math.max(5, Math.round(6 * scale));
   const inset = roundCoord((bodyHeight - keycapHeight) / 2);
   const keycapX = roundCoord(width - inset - badgeWidth);
-  const bevelY = roundCoord(inset + keycapHeight - 1.5);
-  const bevelStroke = styleTokens.isOnPrimary ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.07)';
+  const bottomCrescentPath = buildBottomCrescentPath(
+    keycapX,
+    keycapX + badgeWidth,
+    keycapRadius,
+    inset + keycapHeight
+  );
+  const crescentFill = !styleTokens.isOnPrimary && variant === '2' ? palette.borderColor : WHITE;
+  let crescentOpacity = '0.065';
+  if (styleTokens.isOnPrimary) {
+    crescentOpacity = '0.14';
+  } else if (variant === '2') {
+    crescentOpacity = '0.45';
+  }
+  const ringGeometry = `x="${roundCoord(keycapX + 0.5)}" y="${roundCoord(inset + 0.5)}" width="${roundCoord(badgeWidth - 1)}" height="${roundCoord(keycapHeight - 1)}" rx="${roundCoord(keycapRadius - 0.5)}"`;
   const innerMarkup = renderHintBadgeInner({
     ...baseInnerOptions,
     badgeHeight: keycapHeight,
@@ -1426,10 +1462,9 @@ function renderHintBadge(options: {
     verticalNudge: -0.5,
   });
   const markup =
-    `<rect x="${keycapX}" y="${inset}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />` +
-    `<line x1="${roundCoord(keycapX + 3)}" y1="${bevelY}" x2="${roundCoord(keycapX + badgeWidth - 3)}" y2="${bevelY}" stroke="${bevelStroke}" stroke-width="1" stroke-linecap="round" />${
-      innerMarkup
-    }`;
+    `<rect x="${keycapX}" y="${inset}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />` +
+    `<path d="${bottomCrescentPath}" fill="${crescentFill}" fill-opacity="${crescentOpacity}" />` +
+    `<rect ${ringGeometry} stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
 
   return {
     markup,
