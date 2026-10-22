@@ -33,6 +33,9 @@ importers:
       '@types/node':
         specifier: ^26.6.5
         version: 26.6.5
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       markdownlint-cli2:
         specifier: 0.23.3
         version: 0.23.3(supports-color@10.2.2)

@@ -1,5 +1,5 @@
 /**
- * Route tests – Worker routes, readable query DSL, special element parser, documentation pages, edge cache, and route regressions (`src/index.ts`, `src/routes/`, `src/preview/`, `src/config/`).
+ * Route tests – Worker routes, readable query DSL, special element parser, documentation pages, edge cache, and route regressions (`src/index.ts`, `src/routes/`, `src/site/`, `src/config/`).
  */
 
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
@@ -239,12 +239,13 @@ describe('route parameter parsers', () => {
     expect(resolveIconQueryParam('')).toBeUndefined();
   });
 
-  it('resolves dot states from status presets and theme colors and rejects prototype keys', () => {
-    expect(resolveDotState('online')).toBe('green');
+  it('resolves dot states from theme colors and rejects prototype keys', () => {
+    expect(resolveDotState('green')).toBe('green');
     expect(resolveDotState(' EMERALD ')).toBe('emerald');
     expect(resolveDotState('none', 'green')).toBeUndefined();
     expect(resolveDotState('', 'sky')).toBe('sky');
     expect(resolveDotState('constructor', 'sky')).toBe('sky');
+    expect(resolveDotState('online')).toBeUndefined();
     expect(resolveDotState('bogus')).toBeUndefined();
   });
 
@@ -658,9 +659,9 @@ describe('Hono routes on svg.xul.is', () => {
     expect(quoteSvg).toContain('rotate(180 12 12)');
   });
 
-  it('renders /badge/status/:state/:text preset with outward radar ripple dot and 10-stage strip', async () => {
+  it('renders /badge/:label/:value with outward radar ripple dot and 10-stage strip', async () => {
     const response = await app.request(
-      '/badge/status/online/API+Online?special=strip:99994999',
+      '/badge/Status/API+Online?dot=green&color=emerald&variant=2&special=strip:99994999',
       {},
       TEST_ENV
     );
@@ -731,7 +732,6 @@ describe('route parsing regressions', () => {
     const paths = [
       '/icon/constructor',
       '/stack/constructor,toString',
-      '/badge/status/constructor/x',
       '/badge/a/b?color=constructor&dot=toString&icon=hasOwnProperty&anim=auto',
       '/button/a?size=constructor',
       '/quote/a?size=toString',
@@ -746,7 +746,15 @@ describe('route parsing regressions', () => {
   });
 
   it('returns 404 for paths that match no SVG route', async () => {
-    const paths = ['/badge/a/b/c', '/badge/a/b/c/d/e', '/icon/a/b', '/icon', '/stack/a/b', '/nope'];
+    const paths = [
+      '/badge/a/b/c',
+      '/badge/a/b/c/d/e',
+      '/icon/a/b',
+      '/icon',
+      '/icon/',
+      '/stack/a/b',
+      '/nope',
+    ];
     const responses = await requestAll(paths, TEST_ENV);
     for (const [i, response] of responses.entries()) {
       expect(response.status, paths[i]).toBe(404);
@@ -809,13 +817,6 @@ describe('route parsing regressions', () => {
     expect(renderSvgPath(`${stackPath}?perline=8,4`)).not.toBe(holeSvg);
   });
 
-  it('falls back to a neutral slate status for unknown states (regression: /badge/status/typo/x claimed online)', () => {
-    const unknownSvg = renderSvgPath('/badge/status/typo/x');
-    expect(unknownSvg).toBe(renderSvgPath('/badge/status/standby/x'));
-    expect(unknownSvg).not.toBe(renderSvgPath('/badge/status/online/x'));
-    expect(renderSvgPath('/badge/status/ONLINE/x')).toBe(renderSvgPath('/badge/status/online/x'));
-  });
-
   it('falls through empty quote layout aliases (regression: ?layout=&type=vertical rendered horizontally)', () => {
     const verticalSvg = renderSvgPath('/quote/Hello?layout=vertical');
     expect(renderSvgPath('/quote/Hello?layout=&type=vertical')).toBe(verticalSvg);
@@ -863,6 +864,12 @@ describe('SVG route table & edge cache keys', () => {
     expect(
       resolveSvgRequest(new URL('/badge/npm/hono/v?label=x&foo=1&anim=none', SITE_ORIGIN))?.cacheKey
     ).toBe(`${SITE_ORIGIN}/badge/npm/hono/v?anim=none&label=x`);
+    expect(resolveSvgRequest(new URL('/badge/?icon=github', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/badge?icon=github`
+    );
+    expect(resolveSvgRequest(new URL('/badge/a/b/', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/badge/a/b`
+    );
   });
 
   it('ignores unrecognized query parameters when rendering, so the cache key determines the SVG', () => {
@@ -889,7 +896,6 @@ describe('response headers & revalidation', () => {
   it('sends CORS, CSP, nosniff, and per-route Cache-Control headers on every SVG route kind', async () => {
     const cases: readonly (readonly [path: string, sharedMaxAge: number])[] = [
       ['/badge/a/b', 3600],
-      ['/badge/status/online/up', 300],
       ['/button/Go', 3600],
       ['/btn/Go', 3600],
       ['/icon/zap', 3600],

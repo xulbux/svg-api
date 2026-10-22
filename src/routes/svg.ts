@@ -1,13 +1,13 @@
 /**
  * SVG route dispatcher – Maps `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, and `/quote/*` URLs onto the SSOT renderers.
  *
- * Shared by the Worker router (`src/index.ts`) and the documentation previews (`src/preview/`), so
+ * Shared by the Worker router (`src/index.ts`) and the documentation previews (`src/site/`), so
  * every documented Markdown snippet is rendered by exactly the same parsing path as a live request.
  * The `SVG_ROUTES` table is the single source of the route prefixes, their segment limits, and the
  * query parameters each route reads (which also form its normalized edge cache key).
  */
 
-import { SERVICES_CONFIG, STATUS_PRESET_MAP, UNKNOWN_STATUS_PRESET } from '@/config/services';
+import { SERVICES_CONFIG } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
@@ -68,16 +68,13 @@ interface RouteBadgeDefaults {
 /** Shared edge cache TTL in seconds for static SVG routes. */
 export const STATIC_TTL_SECONDS = 3600;
 
-/** Shared edge cache TTL in seconds for status preset badges. */
-export const STATUS_TTL_SECONDS = 300;
-
 /** Shared edge cache TTL in seconds for successfully resolved service preset badges. */
 export const SERVICE_TTL_SECONDS = 600;
 
 /** Shared edge cache TTL in seconds for failed, pending, or invalid service preset badges. */
 export const SERVICE_ERROR_TTL_SECONDS = 60;
 
-/** Query parameters read by `/badge/*` routes (static, status, and service preset badges), sorted. */
+/** Query parameters read by `/badge/*` routes (static and service preset badges), sorted. */
 const BADGE_QUERY_PARAMS: readonly string[] = [
   'anim',
   'color',
@@ -89,7 +86,7 @@ const BADGE_QUERY_PARAMS: readonly string[] = [
 ];
 
 /** Query parameters read by `/button/*` and `/btn/*` routes, sorted. */
-const BUTTON_QUERY_PARAMS: readonly string[] = ['anim', 'color', 'dot', 'icon', 'size', 'variant'];
+const BUTTON_QUERY_PARAMS: readonly string[] = ['anim', 'color', 'icon', 'size', 'variant'];
 
 /** Query parameters read by `/icon/*` routes, sorted. */
 const ICON_QUERY_PARAMS: readonly string[] = ['anim', 'color', 'size', 'stroke'];
@@ -134,13 +131,13 @@ function buildStaticMatch(
   return { kind: 'static', render, ttl };
 }
 
-/** Decode the raw path parts after the route prefix (dropping one trailing empty segment, e.g., `/badge/a/b/`). */
+/** Decode the raw path parts after the route prefix (dropping one trailing empty segment, e.g., `/badge/a/b/` or `/badge/`). */
 function decodeRouteSegments(pathParts: readonly string[]): string[] {
   const segments: string[] = [];
   for (const rawSegment of pathParts.slice(2)) {
     segments.push(decodeSegment(rawSegment));
   }
-  if (segments.length > 1 && segments.at(-1) === '') {
+  if (segments.at(-1) === '') {
     segments.pop();
   }
   return segments;
@@ -177,7 +174,7 @@ function renderBadgeFromQuery(
   });
 }
 
-/** Dispatch `/badge/*` segments onto static, status preset, or service preset badges. */
+/** Dispatch `/badge/*` segments onto static or service preset badges. */
 function resolveBadgeRoute(
   segments: readonly string[],
   query: URLSearchParams
@@ -188,27 +185,6 @@ function resolveBadgeRoute(
   if (segments.length <= 2) {
     return buildStaticMatch(() =>
       renderBadgeFromQuery(query, { label: first, value: second, variant: '1' }, false)
-    );
-  }
-
-  if (segments.length === 3 && firstLower === 'status') {
-    // Unknown states get a neutral slate dot instead of claiming `online`.
-    const preset =
-      getOwnValue(STATUS_PRESET_MAP, (second ?? '').toLowerCase()) ?? UNKNOWN_STATUS_PRESET;
-    return buildStaticMatch(
-      () =>
-        renderBadgeFromQuery(
-          query,
-          {
-            color: preset.color,
-            dot: preset.dot,
-            label: preset.defaultLabel,
-            value: third,
-            variant: '2',
-          },
-          false
-        ),
-      STATUS_TTL_SECONDS
     );
   }
 
@@ -252,7 +228,6 @@ function resolveButtonRoute(segments: readonly string[], query: URLSearchParams)
     renderButton({
       anim: resolveAnimationMode(query.get('anim')),
       color: resolveColor(query.get('color')),
-      dot: resolveDotState(query.get('dot')),
       icon: resolveIconQueryParam(query.get('icon')),
       label,
       size: resolveSizeToken(query.get('size')),
@@ -374,8 +349,12 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
   if (!match) {
     return undefined;
   }
+  const pathname =
+    url.pathname.length > 1 && url.pathname.endsWith('/')
+      ? url.pathname.slice(0, -1)
+      : url.pathname;
   const queryString = query.toString();
-  return { cacheKey: `${url.origin}${url.pathname}${queryString ? `?${queryString}` : ''}`, match };
+  return { cacheKey: `${url.origin}${pathname}${queryString ? `?${queryString}` : ''}`, match };
 }
 
 /**

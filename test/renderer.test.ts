@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
-import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
 import { renderSvgPath } from '@/routes/svg';
+import { renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import { resolveIcon } from '@/svg/icons';
 import { renderQuote } from '@/svg/quote';
 import {
@@ -1332,6 +1332,66 @@ describe('rendering regressions', () => {
     expect(buttonSvg).toContain(redStroke);
     expect(buttonSvg).toContain('<circle cx="12" cy="12" r="10" stroke-opacity="0.45" />');
     expect(buttonSvg).toContain(`<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}"`);
+  });
+
+  it('splits only the status dot into the dark left cap on primary label-only badges while keeping icons with the label and leaving secondary/tertiary unsplit', () => {
+    // Primary (`variant=1`) label-only badge with left icon + dot (`[ • | ⚡ Test ]`):
+    // Only the dot sits in the 25px dark left cap; `zap` and `Test` stay together on the primary right cap in white.
+    const primaryLabelWithIconAndDot = renderBadge({
+      color: 'amber',
+      dot: 'green',
+      icon: 'zap',
+      label: 'Test',
+      variant: '1',
+    });
+    expect(primaryLabelWithIconAndDot).toContain('fill="url(#bg-dark)"');
+    expect(primaryLabelWithIconAndDot).toContain('fill="url(#grad-amber)"');
+    expect(primaryLabelWithIconAndDot).toContain(`fill="${DOT_COLORS.green}"`);
+    expect(primaryLabelWithIconAndDot).toContain('M 25 0 H');
+    expect(primaryLabelWithIconAndDot).toContain(
+      'stroke="#FFFFFF" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"'
+    );
+    expect(primaryLabelWithIconAndDot).not.toContain(`stroke="${THEMES.amber.iconColor}"`);
+    expect(extractAriaLabel(primaryLabelWithIconAndDot)).toBe('Test');
+
+    // Secondary (`variant=2`) and Tertiary (`variant=3`) label-only badges with a dot stay unsplit (no divider) and keep label text colors.
+    const secondaryLabelWithDot = renderBadge({
+      color: 'emerald',
+      dot: 'emerald',
+      label: 'Label',
+      variant: '2',
+    });
+    expect(secondaryLabelWithDot).not.toContain('<line ');
+    expect(secondaryLabelWithDot).toContain(`fill="${BASE_DARK.textPrimary}" />`);
+    expect(secondaryLabelWithDot).not.toContain(`fill="${THEMES.emerald.accentText}" />`);
+
+    const tertiaryLabelWithDot = renderBadge({
+      color: 'emerald',
+      dot: 'emerald',
+      label: 'Label',
+      variant: '3',
+    });
+    expect(tertiaryLabelWithDot).not.toContain('<line ');
+    expect(tertiaryLabelWithDot).toContain(`fill="${BASE_DARK.textMuted}" />`);
+    expect(tertiaryLabelWithDot).not.toContain(`fill="${THEMES.emerald.accentText}" />`);
+
+    // Value-only badge (`/badge//Value?icon=zap&dot=green`) keeps both `[ • ⚡ ]` in the dark left cap (`leftWidth > 25`, colored icon).
+    const valueOnlyWithIconAndDot = renderBadge({
+      color: 'amber',
+      dot: 'green',
+      icon: 'zap',
+      label: '',
+      value: 'Value',
+      variant: '1',
+    });
+    expect(valueOnlyWithIconAndDot).toContain(`stroke="${THEMES.amber.iconColor}"`);
+
+    // Dot-only badge with no text or icons on `variant=1` uses the dark carbon surface instead of the primary gradient.
+    const dotOnlyPrimaryBadge = renderBadge({ color: 'sky', dot: 'sky', label: '', variant: '1' });
+    const dotOnlyTertiaryBadge = renderBadge({ color: 'sky', dot: 'sky', label: '', variant: '3' });
+    expect(dotOnlyPrimaryBadge).toBe(dotOnlyTertiaryBadge);
+    expect(dotOnlyPrimaryBadge).toContain(`fill="${DOT_COLORS.sky}"`);
+    expect(dotOnlyPrimaryBadge).not.toContain('url(#grad-sky)');
   });
 });
 

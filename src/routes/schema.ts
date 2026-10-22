@@ -1,19 +1,19 @@
 /**
  * Builder schema – Declarative URL builder schemas for every element kind, generated from the constants the route parser and renderers use.
  *
- * Every option list (variants, colors, status presets, motions, widget kinds, size presets), numeric
+ * Every option list (variants, colors, motions, widget kinds, size presets), numeric
  * range, and service preset is read from the code that parses or renders it, so the builder cannot
  * offer a value the API rejects. The schemas are embedded into the `/builder/:kind` pages and read by
- * the builder client script (`src/preview/scripts/builder.client.js`).
+ * the builder client script (`src/site/client/bundles/builder.client.js`).
  */
 
-import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
+import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
 import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
-import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/preview/glossary';
 import { ICON_MOTION_TOKENS, SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
 import { resolveSvgRoute } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
+import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/site/glossary';
 import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
   DEFAULT_VERTICAL_QUOTE_WIDTH,
@@ -135,19 +135,9 @@ function buildIconPairField(description: string, hasPresetValue = false): Builde
   };
 }
 
-/** Build the `?dot=` status dot field (status presets and theme colors, plus `none` to remove a preset dot). */
+/** Build the `?dot=` status dot field (theme colors, with `None` as the default). */
 function buildDotField(): BuilderField {
-  const options: BuilderOption[] = [
-    buildDefaultOption(),
-    { label: 'none (remove preset dot)', value: 'none' },
-  ];
-  for (const [state, preset] of Object.entries(STATUS_PRESET_MAP)) {
-    options.push({
-      label: `${state} (status preset)`,
-      swatch: DOT_COLORS[preset.dot],
-      value: state,
-    });
-  }
+  const options: BuilderOption[] = [{ aliases: ['none'], label: 'None', value: '' }];
   for (const colorName of THEME_COLOR_NAMES) {
     options.push({ label: colorName, swatch: DOT_COLORS[colorName], value: colorName });
   }
@@ -265,15 +255,6 @@ function buildSizePresetField(
     placeholder: String(range.default),
     step: 1,
   };
-}
-
-/** Build the status preset options of the badge builder. */
-function buildStatusOptions(): BuilderOption[] {
-  const options: BuilderOption[] = [];
-  for (const state of Object.keys(STATUS_PRESET_MAP)) {
-    options.push({ label: capitalizeWord(state), value: state });
-  }
-  return options;
 }
 
 /** Build the owner segment placeholder of a service preset (default owner, optional, or required). */
@@ -394,20 +375,9 @@ function getPublicServiceKeys(): ReadonlySet<string> {
   return publicServiceKeysCache;
 }
 
-/** Build the badge builder fields (static and status presets share one builder). */
+/** Build the badge builder fields. */
 function buildBadgeFields(): BuilderField[] {
-  const staticOnly = { field: 'type', values: ['static'] };
-  const statusOnly = { field: 'type', values: ['status'] };
   return [
-    {
-      control: 'select',
-      id: 'type',
-      label: 'Badge type',
-      options: [
-        { label: 'Static badge (/badge/:label/:value)', value: 'static' },
-        { label: 'Status preset (/badge/status/:state/:text)', value: 'status' },
-      ],
-    },
     {
       control: 'text',
       description: 'Leave empty for an icon + value badge.',
@@ -415,7 +385,6 @@ function buildBadgeFields(): BuilderField[] {
       label: 'Label',
       maxLength: MAX_LABEL_LENGTH,
       placeholder: 'Build',
-      showWhen: staticOnly,
     },
     {
       control: 'text',
@@ -424,24 +393,6 @@ function buildBadgeFields(): BuilderField[] {
       label: 'Value',
       maxLength: MAX_LABEL_LENGTH,
       placeholder: 'Passing',
-      showWhen: staticOnly,
-    },
-    {
-      control: 'select',
-      description: 'Sets the label, color, and pulsing radar dot.',
-      id: 'state',
-      label: 'Status',
-      options: buildStatusOptions(),
-      showWhen: statusOnly,
-    },
-    {
-      control: 'text',
-      id: 'text',
-      isRequired: true,
-      label: 'Status text',
-      maxLength: MAX_LABEL_LENGTH,
-      placeholder: 'Operational',
-      showWhen: statusOnly,
     },
     buildVariantField(),
     buildColorField(),
@@ -525,7 +476,6 @@ function buildButtonFields(): BuilderField[] {
     ),
     buildColorField(),
     buildIconPairField('Leading icon, trailing icon, or both.'),
-    buildDotField(),
     buildAnimField('pair'),
   ];
 }
@@ -632,15 +582,7 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
       return {
         ...base,
         fields: buildBadgeFields(),
-        initialState: {
-          color: 'emerald',
-          icon: 'circle-check',
-          label: 'Build',
-          state: 'online',
-          text: 'Operational',
-          type: 'static',
-          value: 'Passing',
-        },
+        initialState: { color: 'emerald', icon: 'circle-check', label: 'Build', value: 'Passing' },
       };
     }
     case 'button': {

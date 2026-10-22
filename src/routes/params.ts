@@ -2,7 +2,6 @@
  * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, …) into typed render options.
  */
 
-import { STATUS_PRESET_MAP } from '@/config/services';
 import { isThemeColorName } from '@/config/theme';
 import {
   MAX_BARS_POINTS,
@@ -447,8 +446,8 @@ export function resolveAnimationMode(
 }
 
 /**
- * Resolve a raw `?dot=` query parameter (color name or status preset name like `'online'`, `'maintenance'`).
- * @param input      Raw `?dot=` query parameter value (`'none'` removes a preset dot).
+ * Resolve a raw `?dot=` query parameter to a valid theme color name (`'none'` removes a preset dot).
+ * @param input      Raw `?dot=` query parameter value.
  * @param fallback   Default dot state when `input` is omitted or unknown.
  * @returns Resolved `DotState`, or `undefined` for no dot.
  */
@@ -462,10 +461,6 @@ export function resolveDotState(
   }
   if (clean === 'none') {
     return undefined;
-  }
-  const preset = getOwnValue(STATUS_PRESET_MAP, clean);
-  if (preset) {
-    return preset.dot;
   }
   return isThemeColorName(clean) ? clean : fallback;
 }

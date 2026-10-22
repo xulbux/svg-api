@@ -3,7 +3,7 @@
  *
  * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for the raw grays, `dist/isolux-pro-*.json` for the
  * resolved syntax colors), shared by the SVG renderers (`src/config/theme.ts`) and the documentation
- * website (`src/preview/styles.ts`). The 22 Tailwind v4 accent scales behind `?color=` are generated
+ * website (`src/site/styles/`). The 22 Tailwind v4 accent scales behind `?color=` are generated
  * from their OKLCH seeds in `src/config/theme.ts`.
  */
 

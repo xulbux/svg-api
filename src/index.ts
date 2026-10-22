@@ -6,11 +6,6 @@ import type { Context, Next } from 'hono';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { DEFAULT_ENV, FALLBACK_REDIRECT_URL } from '@/config/site';
-import { getSiteAsset } from '@/preview/assets';
-import { renderBuilderHtml } from '@/preview/builder';
-import { renderFaviconSvg } from '@/preview/layout';
-import { buildBuilderPath, DEFAULT_BUILDER_KIND, isBuilderKind } from '@/preview/navigation';
-import { isDocsSectionSlug, renderDocsHtml, renderHomeHtml } from '@/preview/page';
 import {
   buildSvgResponse,
   computeEtag,
@@ -33,6 +28,10 @@ import {
 } from '@/routes/svg';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
 import { resolveServiceMetric, resolveServiceRedirectUrl } from '@/services/fetcher';
+import { getSiteAsset } from '@/site/assets';
+import { renderFaviconSvg } from '@/site/components';
+import { buildBuilderPath, DEFAULT_BUILDER_KIND, isBuilderKind } from '@/site/navigation';
+import { isDocsSectionSlug, renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------

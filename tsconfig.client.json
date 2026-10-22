@@ -1,8 +1,7 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "checkJs": true,
     "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -10,10 +9,14 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "paths": { "@/*": ["./src/*"] },
     "skipLibCheck": true,
     "strict": true,
     "target": "ES2023",
-    "types": []
+    "types": [],
+    "verbatimModuleSyntax": true
   },
-  "include": ["src/preview/scripts/*.client.js", "src/preview/scripts/*.d.ts"]
+  "include": ["src/site/client/**/*.ts", "src/site/shared/**/*.ts"]
 }

@@ -3,8 +3,9 @@
  */
 
 import type { BadgeSpecialKind } from './badge';
-import type { BuilderKind } from './preview';
+import type { IconPickerSetId } from './icon';
 import type { ServiceOwnerMode } from './service';
+import type { BuilderKind, HighlightToken } from './site';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -59,14 +60,6 @@ export interface BuilderServiceMetric extends BuilderOption {
   redirect?: string;
 }
 
-/** Condition under which a builder field is shown (all other fields are always shown). */
-export interface BuilderFieldCondition {
-  /** ID of the field whose value controls the visibility. */
-  field: string;
-  /** Values of `field` that show this field. */
-  values: readonly string[];
-}
-
 /** Single builder form field. */
 export interface BuilderField {
   /** Query parameter aliases accepted when prefilling from an existing URL (e.g., `['type']` for `?layout=`). */
@@ -99,8 +92,6 @@ export interface BuilderField {
   param?: string;
   /** Placeholder text (usually the effective default). */
   placeholder?: string;
-  /** Visibility condition. */
-  showWhen?: BuilderFieldCondition;
   /** Numeric step (`number` and `size` fields). */
   step?: number;
 }
@@ -200,4 +191,50 @@ export interface StackCategory {
   items: readonly StackCategoryItem[];
   /** Visible category heading (e.g., `'Languages'`). */
   title: string;
+}
+
+/** Builder form state mapping field IDs to their serialized values. */
+export type BuilderState = Record<string, string>;
+
+/** Result of building a root-relative SVG URL from a builder state. */
+export interface BuilderBuildResult {
+  /** Labels of required fields that are still empty. */
+  missing: string[];
+  /** Root-relative SVG path with an optional query string. */
+  path: string;
+}
+
+/** Plain-text snippets produced for each output format tab. */
+export interface SnippetSet {
+  /** HTML `<img>` (or linked `<a><img /></a>`) snippet. */
+  html: string;
+  /** Markdown image (or linked image) snippet. */
+  markdown: string;
+  /** Plain absolute SVG URL. */
+  url: string;
+}
+
+/** Syntax-highlighted token lists keyed by snippet format. */
+export type SnippetTokenSet = Record<keyof SnippetSet, HighlightToken[]>;
+
+/** Resolved icon set and canonical slug in the icon picker. */
+export interface IconMatch {
+  /** Icon set (`'lucide'` or `'brands'`). */
+  set: IconPickerSetId;
+  /** Canonical icon slug within `set`. */
+  slug: string;
+}
+
+/** Resolved icon set, canonical slug, and body page number (`icons-<set>-<page>.json`). */
+export interface IconLocation extends IconMatch {
+  /** Zero-based icon body page index. */
+  page: number;
+}
+
+/** Client-side icon slug resolver built from `/assets/icons.json`. */
+export interface IconResolver {
+  /** Locate the icon set, canonical slug, and body page of `slug`, or `undefined` when unknown. */
+  locate: (slug: string, isBrandFirst: boolean) => IconLocation | undefined;
+  /** Resolve the icon set of `slug` (`'none'` when empty/`none`, `undefined` when unknown). */
+  resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined;
 }

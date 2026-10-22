@@ -157,8 +157,6 @@ export interface ButtonRenderOptions {
   anim?: AnimationMode;
   /** Named theme color token. */
   color: ThemeColorName;
-  /** Optional pulsing status indicator state. */
-  dot?: DotState;
   /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
   icon?: string;
   /** Primary button label text (truncated with an ellipsis beyond `128` characters). */

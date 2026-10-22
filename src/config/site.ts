@@ -2,7 +2,7 @@
  * Site configuration – Public origin, fallback redirect destination, and default Worker environment bindings.
  *
  * Shared by the Worker router (`src/index.ts`), the route dispatcher (`src/routes/svg.ts`), the
- * upstream service fetcher (`src/services/`), and the documentation pages (`src/preview/`).
+ * upstream service fetcher (`src/services/`), and the documentation pages (`src/site/`).
  */
 
 import type { Env } from '@/types';

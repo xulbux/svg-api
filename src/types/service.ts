@@ -70,16 +70,6 @@ export interface MetricResult {
   value?: string;
 }
 
-/** Status preset mapping entry for `/badge/status/:state/:text`. */
-export interface StatusPreset {
-  /** Default theme color for this status state. */
-  color: ThemeColorName;
-  /** Default left-hand label text. */
-  defaultLabel: string;
-  /** Pulsing status dot color state. */
-  dot: DotState;
-}
-
 /** Validated path segments of a service preset route, passed to URL builders and transforms. */
 export interface ServiceRouteParams {
   /** Effective owner segment (explicit or default; `''` when the route has none). */

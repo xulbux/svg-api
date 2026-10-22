@@ -1,5 +1,5 @@
 /**
- * Service presets – Registry of all upstream service presets (`/badge/:service/…`) and status indicator presets (`/badge/status/:state/:text`).
+ * Service presets – Registry of all upstream service presets (`/badge/:service/…`).
  *
  * Each service lives in its own module under `src/services/presets/`; This registry is the single
  * source of truth for routing, fetching, and the generated `/docs/services` reference table.
@@ -69,33 +69,9 @@ import { TERRAFORM_MODULE_SERVICE, TERRAFORM_PROVIDER_SERVICE } from '@/services
 import { THUNDERSTORE_SERVICE } from '@/services/presets/thunderstore';
 import { WORDPRESS_PLUGIN_SERVICE, WORDPRESS_THEME_SERVICE } from '@/services/presets/wordpress';
 import { ZENODO_SERVICE } from '@/services/presets/zenodo';
-import type { ServiceDefinition, ServiceOwnerMode, StatusPreset } from '@/types';
+import type { ServiceDefinition, ServiceOwnerMode } from '@/types';
 
 // -------------------------------------- PUBLIC API -------------------------------------
-
-/**
- * Declarative status dot mapping.
- * Maps canonical status preset names to their dot state, default label, and theme color.
- */
-export const STATUS_PRESET_MAP: Readonly<Record<string, StatusPreset>> = {
-  beta: { color: 'violet', defaultLabel: 'Status', dot: 'violet' },
-  degraded: { color: 'amber', defaultLabel: 'Status', dot: 'amber' },
-  incident: { color: 'orange', defaultLabel: 'Status', dot: 'orange' },
-  maintenance: { color: 'sky', defaultLabel: 'Status', dot: 'sky' },
-  offline: { color: 'rose', defaultLabel: 'Status', dot: 'red' },
-  online: { color: 'emerald', defaultLabel: 'Status', dot: 'green' },
-  standby: { color: 'slate', defaultLabel: 'Status', dot: 'slate' },
-};
-
-/**
- * Neutral fallback preset for unknown `/badge/status/:state/:text` states (a slate dot instead of
- * claiming `online`); Deliberately not part of `STATUS_PRESET_MAP`, so it is no `?dot=` alias.
- */
-export const UNKNOWN_STATUS_PRESET: Readonly<StatusPreset> = {
-  color: 'slate',
-  defaultLabel: 'Status',
-  dot: 'slate',
-};
 
 /** External service presets keyed by their route segment (`/badge/:service/…`), sorted alphabetically. */
 export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {

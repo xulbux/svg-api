@@ -10,7 +10,14 @@
   },
   "env": { "builtin": true, "serviceworker": true },
   "globals": { "caches": "readonly" },
-  "ignorePatterns": [".wrangler/**", "dist/**", "*.md", "package.json", "wrangler.jsonc"],
+  "ignorePatterns": [
+    ".wrangler/**",
+    "dist/**",
+    "src/site/client/bundles/**",
+    "*.md",
+    "package.json",
+    "wrangler.jsonc"
+  ],
   "plugins": ["eslint", "import", "oxc", "typescript", "unicorn"],
   "rules": {
     "capitalized-comments": "off",
@@ -67,11 +74,12 @@
     "unicorn/number-literal-case": "off"
   },
   "overrides": [
-    { "env": { "browser": true, "serviceworker": false }, "files": ["src/preview/scripts/**"] },
+    { "env": { "browser": true, "serviceworker": false }, "files": ["src/site/client/**"] },
+    { "files": ["src/site/jsx/jsx-*runtime.ts"], "rules": { "unicorn/filename-case": "off" } },
     { "files": ["src/index.ts", "*.config.*"], "rules": { "import/no-default-export": "off" } },
     {
       "env": { "node": true, "serviceworker": false },
-      "files": ["test/**", "*.config.*"],
+      "files": ["scripts/**", "test/**", "*.config.*"],
       "rules": { "import/no-nodejs-modules": "off" }
     },
     {

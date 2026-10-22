@@ -81,6 +81,8 @@ interface CapsuleLayoutInput {
   gap: number;
   /** Whether a status dot is rendered. */
   hasDot: boolean;
+  /** Whether a single-segment capsule with a status dot places only the dot in the left compartment and `[leftIcon, label, rightIcon]` in the right compartment. */
+  isDotAloneInLeftCap?: boolean;
   /** Measured label ink width in pixels. */
   labelWidth: number;
   /** Measured leading icon width in pixels. */
@@ -101,6 +103,8 @@ interface CapsuleLayoutInput {
 interface CapsuleLayout {
   /** Center X coordinate of the pulsing status dot. */
   dotCx: number;
+  /** Whether only the status dot occupies the left compartment while `[leftIcon, label, rightIcon]` sit in the right compartment. */
+  isDotOnlyLeft: boolean;
   /** Whether the capsule is split into both a left and a right compartment. */
   isSplit: boolean;
   /** Center X coordinate of the left-side label text. */
@@ -1461,13 +1465,52 @@ function packCompartment(
 }
 
 /**
+ * Build the split capsule layout when a primary single-segment badge places only its status dot in the
+ * dark left compartment and keeps `[leftIcon, label, rightIcon]` together in the primary right compartment.
+ */
+function buildDotSplitLayout(
+  rightContentPack: PackedCompartment,
+  labelWidth: number,
+  padX: number
+): CapsuleLayout {
+  const [, leftIconX = 0, labelX = 0, trailingIconX = 0] = rightContentPack.offsets;
+  const leftWidth = padX * 2 + DOT_SLOT_WIDTH;
+  const rightWidth = rightContentPack.width;
+  return {
+    dotCx: roundCoord(padX + DOT_SLOT_WIDTH / 2),
+    isDotOnlyLeft: true,
+    isSplit: true,
+    labelCenterX: roundCoord(leftWidth + labelX + labelWidth / 2),
+    leftIconX: roundCoord(leftWidth + leftIconX),
+    leftWidth,
+    rightIconX: roundCoord(leftWidth + trailingIconX),
+    rightWidth,
+    specialX: leftWidth + padX,
+    totalWidth: leftWidth + rightWidth,
+    valueCenterX: leftWidth + padX,
+  };
+}
+
+/**
  * Compute horizontal compartment widths and coordinate offsets for a badge or button.
  * The left compartment packs `[dot, leftIcon, label, rightIcon]` (the trailing icon moves right when a
  * right compartment exists), and the right compartment packs `[special, value, rightIcon]`.
+ * When `isDotAloneInLeftCap` is set on a single-segment capsule with a status dot, only `dot` is packed
+ * into the dark left compartment while `[leftIcon, label, rightIcon]` stay together in the right compartment.
  */
 function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
   const { gap, labelWidth, padX, rightIconWidth, specialWidth, valueWidth } = input;
   const hasRightCompartment = valueWidth > 0 || specialWidth > 0;
+  if (input.isDotAloneInLeftCap && input.hasDot && !hasRightCompartment) {
+    const rightContentPack = packCompartment(
+      [0, input.leftIconWidth, labelWidth, rightIconWidth],
+      gap,
+      padX
+    );
+    if (rightContentPack.width > 0) {
+      return buildDotSplitLayout(rightContentPack, labelWidth, padX);
+    }
+  }
 
   const leftPack = packCompartment(
     [
@@ -1494,6 +1537,7 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
   const rightWidth = rightPack.width;
   return {
     dotCx: roundCoord(dotX + DOT_SLOT_WIDTH / 2),
+    isDotOnlyLeft: false,
     isSplit: leftWidth > 0 && rightWidth > 0,
     labelCenterX: roundCoord(labelX + labelWidth / 2),
     leftIconX,
@@ -1631,9 +1675,11 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const special = sanitizeSpecialElement(options.special);
   const icons = resolveIconPair(options.icon);
   const specialWidth = measureSpecialElementWidth(special, fontSize);
+  const hasDot = isRenderableDot(options.dot);
   const layout = computeCapsuleLayout({
     gap: 6,
-    hasDot: isRenderableDot(options.dot),
+    hasDot,
+    isDotAloneInLeftCap: variant === '1',
     labelWidth: measureTextWidth(labelText, fontSize, false),
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
     minLeftWidth: 0,
@@ -1643,7 +1689,9 @@ export function renderBadge(options: BadgeRenderOptions): string {
     valueWidth: measureTextWidth(valueText, fontSize, true),
   });
 
-  const isOnPrimary = variant === '1';
+  // A dot-only badge with no text or right compartment also uses the dark carbon surface so status dots never sit on a primary gradient.
+  const surfaceVariant: BadgeVariant = hasDot && !layout.isSplit && variant === '1' ? '3' : variant;
+  const isOnPrimary = surfaceVariant === '1';
   const specialElement = renderSpecialElement(special, {
     animMode,
     color,
@@ -1659,18 +1707,18 @@ export function renderBadge(options: BadgeRenderOptions): string {
     dot: options.dot,
     icons,
     isLabelBold: false,
-    isLeftOnPrimary: isOnPrimary && !layout.isSplit,
+    isLeftOnPrimary: isOnPrimary && (!layout.isSplit || layout.isDotOnlyLeft),
     isRightOnPrimary: isOnPrimary,
     labelText,
     layout,
     metrics,
     palette,
     specialMarkup: specialElement.markup,
-    valueColor: resolveValueColor(variant, palette),
+    valueColor: resolveValueColor(surfaceVariant, palette),
     valueText,
-    variant,
+    variant: surfaceVariant,
   });
-  const surface = renderBadgeSurface({ color, height, layout, radius, variant });
+  const surface = renderBadgeSurface({ color, height, layout, radius, variant: surfaceVariant });
   const sheen = renderSheenOverlay({ animMode, height, radius, width: layout.totalWidth });
   const surfaceDefs = renderSurfaceGradientDefs(
     !isOnPrimary || layout.isSplit,
@@ -1696,7 +1744,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
 /**
  * Render a CTA button SVG string (`svg.xul.is/button/*` and `svg.xul.is/btn/*`) from `ButtonRenderOptions`.
  * Supports size presets (`sm`, `md`, `lg`, `xl` or custom pixel height), unified `icon` (`'left'`, `'left,right'`, `'none,right'`),
- * status `dot`, optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
+ * optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
  * @param options   Button rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -1712,7 +1760,7 @@ export function renderButton(options: ButtonRenderOptions): string {
   const icons = resolveIconPair(options.icon);
   const layout = computeCapsuleLayout({
     gap: Math.max(6, Math.round(height * 0.24)),
-    hasDot: isRenderableDot(options.dot),
+    hasDot: false,
     labelWidth: measureTextWidth(labelText, fontSize, true),
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
     minLeftWidth: padX * 2,
@@ -1725,7 +1773,7 @@ export function renderButton(options: ButtonRenderOptions): string {
   const isPrimary = variant === '1';
   const body = renderCapsuleBody({
     animMode,
-    dot: options.dot,
+    dot: undefined,
     icons,
     isLabelBold: true,
     isLeftOnPrimary: isPrimary,
@@ -1756,7 +1804,7 @@ export function renderButton(options: ButtonRenderOptions): string {
 
   return renderSvgDocument({
     ariaLabel: buildAriaLabel({
-      dot: options.dot,
+      dot: undefined,
       fallbackName: 'button',
       icons,
       labelText,

@@ -20,16 +20,17 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "check": "pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
+    "build:client": "node scripts/buildClient.mjs && oxfmt src/site/client/bundles/*.client.js",
+    "check": "pnpm run build:client && pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
+    "deploy": "pnpm run build:client && wrangler deploy",
+    "dev": "pnpm run build:client && wrangler dev",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",
     "lint": "oxlint --fix",
     "lint:check": "oxlint",
     "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#.wrangler\"",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "pnpm run build:client && vitest run",
+    "test:watch": "pnpm run build:client && vitest",
     "type-check": "tsc -p tsconfig.json && tsc -p tsconfig.worker.json && tsc -p tsconfig.client.json"
   },
   "engines": {
@@ -47,6 +48,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261015.1",
     "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
     "markdownlint-cli2": "0.23.3",
     "oxfmt": "^0.73.0",
     "oxlint": "^1.88.0",

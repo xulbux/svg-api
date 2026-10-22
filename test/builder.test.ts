@@ -1,17 +1,11 @@
 /**
- * URL builder tests – Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution), icon picker assets, and "Open in Builder" links, verified against the Worker's route parser (`src/routes/schema.ts`, `src/preview/builder.ts`, `src/preview/scripts/builder.client.js`).
+ * URL builder tests – Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution), icon picker assets, and "Open in Builder" links, verified against the Worker's route parser (`src/routes/schema.ts`, `src/site/pages/BuilderPage.tsx`, `src/site/client/bundles/builder.client.js`).
  */
 
 import { describe, expect, it } from 'vitest';
-import { listPublicServices, resolveServiceOwnerMode, STATUS_PRESET_MAP } from '@/config/services';
+import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
 import { STACK_CATEGORIES } from '@/config/stack';
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { getSiteAsset } from '@/preview/assets';
-import { renderBuilderHtml } from '@/preview/builder';
-import { buildMarkdownSnippetTokens } from '@/preview/components';
-import { BUILDER_PAGES, DOCS_PAGES } from '@/preview/navigation';
-import { renderDocsHtml, renderHomeHtml } from '@/preview/page';
-import builderScript from '@/preview/scripts/builder.client.js';
 import {
   decodeSegment,
   ICON_MOTION_TOKENS,
@@ -25,6 +19,11 @@ import {
 } from '@/routes/params';
 import { getBuilderSchema, resolveBuilderTarget } from '@/routes/schema';
 import { renderSvgPath, resolveSvgPathRedirectUrl, resolveSvgRoute } from '@/routes/svg';
+import { getSiteAsset } from '@/site/assets';
+import builderScript from '@/site/client/bundles/builder.client.js';
+import { BUILDER_PAGES, DOCS_PAGES } from '@/site/navigation';
+import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
+import { buildMarkdownSnippetTokens } from '@/site/shared';
 import {
   getIconPickerIndex,
   ICON_SLUG_ALIASES,
@@ -216,7 +215,7 @@ describe('builder schemas', () => {
     const badge = getBuilderSchema('badge');
     expect(collectOptionValues(badge, 'variant')).toEqual(['', ...VARIANT_TOKENS]);
     expect(collectOptionValues(badge, 'color')).toEqual(['', ...THEME_COLOR_NAMES]);
-    expect(collectOptionValues(badge, 'state')).toEqual(Object.keys(STATUS_PRESET_MAP));
+    expect(collectOptionValues(badge, 'dot')).toEqual(['', ...THEME_COLOR_NAMES]);
     expect(collectOptionValues(badge, 'special')).toEqual(['', ...SPECIAL_ELEMENT_KINDS]);
     expect(collectOptionValues(badge, 'anim')).toEqual([
       '',
@@ -351,15 +350,10 @@ describe('builder client core', () => {
 
   it('round-trips prefill parsing: parse(build(state)) rebuilds the identical URL', () => {
     const states: [BuilderKind, BuilderState][] = [
-      ['badge', { color: 'amber', icon: 'zap', label: '', type: 'static', value: '100%' }],
-      [
-        'badge',
-        { dot: 'none', state: 'maintenance', text: 'until 18:00', type: 'status', variant: '3' },
-      ],
-      [
-        'badge',
-        { anim: 'sheen,none,nudge', label: 'C++ (beta)', special: 'ring:84:pulse', type: 'static' },
-      ],
+      ['badge', { color: 'amber', icon: 'zap', label: '', value: '', variant: '3' }],
+      ['badge', { color: 'amber', icon: 'zap', label: '', value: '100%' }],
+      ['badge', { dot: 'sky', label: 'Status', value: 'until 18:00', variant: '3' }],
+      ['badge', { anim: 'sheen,none,nudge', label: 'C++ (beta)', special: 'ring:84:pulse' }],
       ['button', { icon: 'none,arrow-right', label: 'Read the docs', size: '40', value: 'v2' }],
       ['icon', { anim: 'sheen,spin', icon: 'archlinux', size: '64', stroke: '1.5' }],
       ['stack', { groupgap: '30', groups: 'c,cpp:2|rust\npy,ts', perline: '8,6' }],
@@ -375,6 +369,20 @@ describe('builder client core', () => {
       expect(core.buildPath(schema, parsed ?? {}).path, path).toBe(path);
       expect(resolveSvgRoute(new URL(path, schema.origin)), path).toBeDefined();
     }
+    const badgeSchema = getBuilderSchema('badge');
+    const iconOnlyPath = core.buildPath(badgeSchema, {
+      color: 'amber',
+      icon: 'zap',
+      label: '',
+      value: '',
+      variant: '3',
+    }).path;
+    expect(iconOnlyPath).toBe('/badge?variant=3&color=amber&icon=zap');
+    expect(
+      core
+        .buildSnippetTokens(`${badgeSchema.origin}${iconOnlyPath}`, 'Badge', '')
+        .url.some(([className]) => className === 'hl-path')
+    ).toBe(false);
   });
 
   it('builds the exact service request the Worker parses (owners, multi-segment targets, metrics)', () => {
@@ -401,25 +409,21 @@ describe('builder client core', () => {
     }
   });
 
-  it('reports empty required fields instead of building a broken route (regression guard: empty status text)', () => {
+  it('reports empty required fields instead of building a broken route', () => {
     const badge = getBuilderSchema('badge');
-    expect(core.buildPath(badge, { state: 'online', text: '', type: 'status' }).missing).toEqual([
-      'Status text',
-    ]);
-    expect(core.buildPath(badge, { label: '', type: 'static', value: '' }).missing).toEqual([]);
+    expect(core.buildPath(badge, { label: '', value: '' }).missing).toEqual([]);
+    expect(core.buildPath(getBuilderSchema('button'), { label: '' }).missing).toEqual(['Label']);
     expect(core.buildPath(getBuilderSchema('quote'), { text: ' ' }).missing).toEqual(['Quote']);
   });
 
   it('rejects paths that belong to another builder or that the Worker rejects (regression: prefix case, extra service segments)', () => {
     const service = getBuilderSchema('service');
     expect(core.parsePath(getBuilderSchema('icon'), '/badge/build/passing')).toBeUndefined();
+    expect(core.parsePath(getBuilderSchema('icon'), '/icon')).toBeUndefined();
+    expect(core.parsePath(getBuilderSchema('icon'), '/icon/')).toBeUndefined();
     expect(core.parsePath(service, '/badge/build/passing')).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('badge'), '/badge/a/b/c')).toBeUndefined();
-    expect(core.parsePath(getBuilderSchema('badge'), '/badge/status/online/up')).toMatchObject({
-      state: 'online',
-      text: 'up',
-      type: 'status',
-    });
+    expect(core.parsePath(getBuilderSchema('badge'), '/badge/status/online/up')).toBeUndefined();
     // The Worker's route prefixes are case-sensitive.
     expect(resolveSvgRoute(new URL('https://svg.xul.is/Badge/build/passing'))).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('badge'), '/Badge/build/passing')).toBeUndefined();
@@ -464,8 +468,9 @@ describe('builder client core', () => {
 
   it('prefills option values case-insensitively and maps unknown values to the default (regression: Emerald dropped)', () => {
     const badge = getBuilderSchema('badge');
-    const path = '/badge/build/passing?color=Emerald&variant=2&dot=ONLINE&anim=Sheen';
-    expect(core.parsePath(badge, path)).toMatchObject({ color: 'emerald', dot: 'online' });
+    const path = '/badge/build/passing?color=Emerald&variant=2&dot=GREEN&anim=Sheen';
+    expect(core.parsePath(badge, path)).toMatchObject({ color: 'emerald', dot: 'green' });
+    expect(core.parsePath(badge, '/badge/a/b?dot=none')?.dot).toBe('');
     expect(core.parsePath(badge, '/badge/a/b?color=notacolor')?.color).toBe('');
     expect(core.parsePath(getBuilderSchema('button'), '/button/Go?size=bogus')?.size).toBe('');
     expect(core.parsePath(getBuilderSchema('icon'), '/icon/rocket?size=bogus')?.size).toBe('');
@@ -794,13 +799,9 @@ describe('builder client core', () => {
     expect(linked.html).toBe(
       `<a href="https://xul.is"><img src="${url}" alt="a &quot;quoted&quot; &lt;alt&gt;" /></a>`
     );
-    expect(
-      core.buildAltText(getBuilderSchema('badge'), {
-        label: 'build',
-        type: 'static',
-        value: 'passing',
-      })
-    ).toBe('build: passing');
+    expect(core.buildAltText(getBuilderSchema('badge'), { label: 'build', value: 'passing' })).toBe(
+      'build: passing'
+    );
   });
 
   it('percent-encodes Markdown link targets and keeps raw & in HTML snippets (regression: broken snippets)', () => {
@@ -893,9 +894,9 @@ describe('builder client core', () => {
         const schema = getBuilderSchema(kind);
         return core.buildPath(schema, { ...schema.initialState, anim: 'sheen' }).path;
       }),
-      '/badge/kv/84%25?special=ring:84:pulse&dot=online&anim=sheen,spin',
+      '/badge/kv/84%25?special=ring:84:pulse&dot=green&anim=sheen,spin',
       '/badge/coverage/92%25?special=bar:92&icon=loader&anim=spin',
-      '/button/Go?dot=online&anim=sheen,pulse,nudge',
+      '/button/Go?icon=heart,arrow-right&anim=sheen,pulse,nudge',
     ];
     for (const path of animatedPaths) {
       const previewPath = core.buildPreviewPath(path, true);
@@ -903,7 +904,7 @@ describe('builder client core', () => {
       expect(renderSvgPath(previewPath), previewPath).not.toMatch(SMIL_ANIMATION_RX);
       expect(core.buildPreviewPath(path, false)).toBe(path);
     }
-    expect(renderSvgPath('/button/Go?dot=online&anim=sheen,pulse,nudge')).toMatch(
+    expect(renderSvgPath('/button/Go?icon=heart,arrow-right&anim=sheen,pulse,nudge')).toMatch(
       SMIL_ANIMATION_RX
     );
     expect(core.buildPreviewPath('', true)).toBe('');
@@ -1175,7 +1176,7 @@ describe('builder pages & "Open in Builder" links', () => {
 
   it('resolves builder targets per route family and skips owner-restricted or invalid paths', () => {
     expect(resolveBuilderTarget('/badge/build/passing')?.kind).toBe('badge');
-    expect(resolveBuilderTarget('/badge/status/online/up')?.kind).toBe('badge');
+    expect(resolveBuilderTarget('/badge/status/online/up')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/pypi/xulbux/v')?.kind).toBe('service');
     expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
     expect(resolveBuilderTarget('/badge/gh/svg-api/stars')).toBeUndefined();

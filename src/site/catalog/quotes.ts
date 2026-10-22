@@ -1,0 +1,153 @@
+/**
+ * Quotes documentation catalog – Vertical and horizontal quote card showcase configs and parameter reference rows for `/docs/quotes`.
+ */
+
+import { SIZE_TOKENS } from '@/routes/params';
+import {
+  buildColorParamRow,
+  buildSheenAnimParamRow,
+  buildVariantParamRow,
+  ENCODED_CHAOS_QUOTE,
+  formatRange,
+} from '@/site/catalog/shared';
+import {
+  DEFAULT_VERTICAL_QUOTE_WIDTH,
+  QUOTE_FONT_SIZE_RANGE,
+  QUOTE_SIZE_MAP,
+  QUOTE_WIDTH_RANGE,
+} from '@/svg/quote';
+import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** URL-encoded second sample quote text. */
+const ENCODED_EDGE_QUOTE =
+  'Always+creating+more+cool+stuff+for+you%2C+with+balanced+OKLCH+colors+and+zero+cold+starts+at+the+edge.';
+
+/** Vertical layout showcase cards for the dedicated `/docs/quotes` page. */
+export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: "XulbuX's Quote",
+        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=1&color=blue`,
+      },
+    ],
+    subtitle: 'Primary brand gradient card in vertical layout with quote watermarks.',
+    title: 'variant=1 · Vertical Primary Brand Quote',
+  },
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: "XulbuX's Quote",
+        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=2`,
+      },
+    ],
+    subtitle: 'Secondary tinted dark card with glowing indigo border (Default).',
+    title: 'variant=2 · Vertical Secondary Tinted Quote (Default)',
+  },
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: "XulbuX's Quote",
+        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=3&color=cyan`,
+      },
+    ],
+    subtitle: 'Tertiary neutral dark card with subtle border and cyan watermarks.',
+    title: 'variant=3 · Vertical Tertiary Neutral Quote',
+  },
+];
+
+/** Horizontal layout showcase cards for the dedicated `/docs/quotes` page. */
+export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
+  {
+    items: [{ alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=1` }],
+    subtitle: 'Horizontal layout with left accent bar and primary gradient fill.',
+    title: 'variant=1 · Horizontal Primary Brand Quote',
+  },
+  {
+    items: [
+      { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=2&color=cyan` },
+    ],
+    subtitle: 'Horizontal layout with glowing cyan border and left accent bar.',
+    title: 'variant=2 · Horizontal Secondary Tinted Quote (Default)',
+  },
+  {
+    items: [
+      {
+        alt: "XulbuX's Quote",
+        path: `/quote/${ENCODED_EDGE_QUOTE}?author=XulbuX&variant=3&anim=sheen`,
+      },
+    ],
+    subtitle:
+      'Single-segment /quote/:text form with ?author=, a neutral dark surface, and a diagonal sheen (?anim=sheen).',
+    title: 'variant=3 · Horizontal Tertiary Neutral Quote',
+  },
+];
+
+// -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Build the parameter reference rows for `/quote/*` routes.
+ * @returns Parameter table rows.
+ */
+export function buildQuoteParamRows(): ParamTableRow[] {
+  return [
+    {
+      defaultVal: '~required',
+      description:
+        'Author attribution and quote body text (+ or %20 for spaces); The single-segment form reads the author from ?author=.',
+      name: ':author / :text',
+      values: '/quote/XulbuX/Your+quote+here | /quote/Your+quote+here',
+    },
+    {
+      defaultVal: '~none',
+      description: 'Author attribution for the single-segment /quote/:text and /quote?text= forms.',
+      name: '?author=',
+      values: '~any string',
+    },
+    {
+      defaultVal: '~none',
+      description:
+        'Quote body text when no path segment is given (e.g., /quote?text=Hi&author=XulbuX).',
+      name: '?text= / ?quote=',
+      values: '~any string',
+    },
+    buildVariantParamRow('2', 'Surface tier'),
+    {
+      defaultVal: 'horizontal',
+      description:
+        'Layout mode: horizontal (left accent bar) or vertical (centered watermarks); center and v are vertical aliases, and ?type= is an alias of ?layout= (an empty ?layout= falls through to ?type=).',
+      name: '?layout= / ?type=',
+      values: 'horizontal | vertical | center | v',
+    },
+    {
+      defaultVal: '~false',
+      description:
+        'Shorthand for the vertical layout; Only read when ?layout= and ?type= are empty.',
+      name: '?center=',
+      values: 'true | 1 | yes',
+    },
+    {
+      defaultVal: `md (${QUOTE_SIZE_MAP.md}px) / lg (${QUOTE_SIZE_MAP.lg}px, vertical)`,
+      description: 'Typography scale preset or custom pixel size.',
+      name: '?size=',
+      values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(QUOTE_FONT_SIZE_RANGE)}`,
+    },
+    buildColorParamRow(
+      'indigo',
+      'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
+    ),
+    {
+      defaultVal: `${QUOTE_WIDTH_RANGE.default} (horizontal) / ${DEFAULT_VERTICAL_QUOTE_WIDTH} (vertical)`,
+      description:
+        "Card width in pixels; The default grows proportionally with text sizes above the layout's default size, and the height adapts to the wrapped lines.",
+      name: '?width=',
+      values: formatRange(QUOTE_WIDTH_RANGE),
+    },
+    buildSheenAnimParamRow('Diagonal sheen sweep across the card surface, or none.'),
+  ];
+}
