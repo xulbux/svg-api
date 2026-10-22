@@ -36,7 +36,7 @@ export const ISOLUX_UI = {
   /** Strong border (inputs, hovered controls). */
   borderStrong: { dark: ISOLUX_GRAY[500], light: '#D3D3D3' },
   /** Small bubbles and toggles. */
-  bubble: { dark: ISOLUX_GRAY[700], light: '#F2F2F2' },
+  bubble: { dark: ISOLUX_GRAY[700], light: '#F0F0F0' },
   /** Neutral primary button fill (Isolux uses no accent for buttons). */
   button: { dark: '#DCDCDC', light: ISOLUX_GRAY[700] },
   /** Translucent border of primary buttons. */
@@ -58,22 +58,24 @@ export const ISOLUX_UI = {
   /** Raised surfaces (widgets, inputs, inlay hints). */
   raised: { dark: ISOLUX_GRAY[800], light: '#F2F2F2' },
   /** Translucent fill of selected list items, tabs, and options. */
-  selected: { dark: '#FAFAFA1A', light: '#00000017' },
+  selected: { dark: '#FAFAFA1A', light: '#0000000D' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
 /** Isolux Pro syntax colors (resolved `token.*` colors) as dark / light pairs. */
 export const ISOLUX_SYNTAX = {
-  /** Numbers, enum members, CSS values. */
-  constant: { dark: '#D5ACFF', light: '#8A0BE5' },
-  /** Markdown link texts, image alts, and titles. */
-  label: { dark: '#BECBFF', light: '#4131CE' },
-  /** Operators and symbolic markers. */
+  /** Numbers, enum members, CSS values (`token.string.escape` / `token.string.label`). */
+  constant: { dark: '#BECBFF', light: '#4131CE' },
+  /** Functions and methods (`token.function`). */
+  function: { dark: '#7CEEE3', light: '#2B7676' },
+  /** Markdown link texts, image alts, and titles (`token.annotation` / `token.namespace`). */
+  label: { dark: ISOLUX_GRAY[200], light: ISOLUX_GRAY[500] },
+  /** Operators and symbolic markers (`token.operator`). */
   operator: { dark: '#FFA4AA', light: '#C5002B' },
-  /** Properties, fields, and keys. */
+  /** Properties, fields, and keys (`token.property`). */
   property: { dark: '#BCFFF7', light: '#214A4B' },
-  /** Punctuation. */
+  /** Punctuation (`token.punctuation`). */
   punctuation: { dark: ISOLUX_GRAY[300], light: ISOLUX_GRAY[400] },
-  /** Strings and URLs. */
+  /** Strings and URLs (`token.string`). */
   string: { dark: '#909FFF', light: '#4F48EC' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 

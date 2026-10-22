@@ -207,6 +207,8 @@ const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
   dm: 'dl',
   l: 'license',
   'last-commit': 'commit',
+  pr: 'prs',
+  'pull-requests': 'prs',
   pulls: 'prs',
   version: 'v',
 };

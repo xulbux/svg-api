@@ -72,8 +72,13 @@ const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
 /** Valid per-icon motion tokens for `?anim=`, sorted alphabetically (also listed by the docs; Defined once in `src/svg/shared.ts`). */
 export { ICON_MOTION_TOKENS } from '@/svg/shared';
 
-/** Maximum number of comma/whitespace-separated `?anim=` tokens (`sheen,<left>,<right>`). */
-const MAX_ANIMATION_TOKENS = 3;
+/** Shorthand aliases mapped to their canonical per-icon motion tokens. */
+const ICON_MOTION_ALIASES: Readonly<Record<string, string>> = {
+  grow: 'breathe',
+  scale: 'breathe',
+  'spin-smooth': 'whirl',
+  twirl: 'turn',
+};
 
 /** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
 const MAX_ANIMATION_INPUT_LENGTH = 64;
@@ -103,11 +108,6 @@ const TRAILING_PERCENT_RX = /%$/;
 /** Trim and lower-case a raw query parameter value (`''` when missing). */
 function normalizeQueryToken(raw: string | null | undefined): string {
   return (raw ?? '').trim().toLowerCase();
-}
-
-/** Check whether an optional `?anim=` token is a valid per-icon motion token. */
-function isIconMotionToken(token: string | undefined): token is string {
-  return token !== undefined && isIconMotionMode(token);
 }
 
 /** Parse a trimmed, comma-separated list of numbers (at least `minPoints`, at most `maxPoints`). */
@@ -399,7 +399,7 @@ export function resolveVariant(
 
 /**
  * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
- * Supports single modes (`sheen`, `auto`, `spin`, `shake`, `nudge`, `pulse`, `float`, `none`),
+ * Supports single modes (`sheen`, `auto`, `breathe`, `float`, `nudge`, `pulse`, `shake`, `spin`, `turn`, `whirl`, `none`),
  * per-icon pairs (`none,nudge`, `shake,nudge`), and combined sheen (`sheen,auto`, `sheen,none,nudge`).
  * @param input      Raw `?anim=` query parameter value.
  * @param fallback   Default animation mode when `input` is omitted or invalid.
@@ -414,21 +414,20 @@ export function resolveAnimationMode(
     return fallback;
   }
   let hasSheen = false;
-  let tokenCount = 0;
   const motionTokens: string[] = [];
   for (const token of normalized.split(LIST_SEPARATOR_RX)) {
     if (token.length > 0) {
-      tokenCount += 1;
-      if (tokenCount > MAX_ANIMATION_TOKENS) {
-        return fallback;
-      }
       if (token === 'sheen') {
         if (hasSheen) {
           return fallback;
         }
         hasSheen = true;
       } else {
-        motionTokens.push(token);
+        const motion = getOwnValue(ICON_MOTION_ALIASES, token) ?? token;
+        if (!isIconMotionMode(motion) || motionTokens.length >= 2) {
+          return fallback;
+        }
+        motionTokens.push(motion);
       }
     }
   }
@@ -436,22 +435,15 @@ export function resolveAnimationMode(
   if (motionTokens.length === 0) {
     return hasSheen ? 'sheen' : fallback;
   }
-  const [firstMotion, secondMotion] = motionTokens;
-  if (motionTokens.length === 1 && isIconMotionToken(firstMotion)) {
-    if (hasSheen && (firstMotion === 'none' || firstMotion === 'default')) {
-      return 'sheen';
-    }
-    return (hasSheen ? `sheen,${firstMotion}` : firstMotion) as AnimationMode;
-  }
   if (
-    motionTokens.length === 2 &&
-    isIconMotionToken(firstMotion) &&
-    isIconMotionToken(secondMotion)
+    hasSheen &&
+    motionTokens.length === 1 &&
+    (motionTokens[0] === 'none' || motionTokens[0] === 'default')
   ) {
-    const pair = `${firstMotion},${secondMotion}`;
-    return (hasSheen ? `sheen,${pair}` : pair) as AnimationMode;
+    return 'sheen';
   }
-  return fallback;
+  const joined = motionTokens.join(',');
+  return (hasSheen ? `sheen,${joined}` : joined) as AnimationMode;
 }
 
 /**

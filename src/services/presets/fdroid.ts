@@ -55,7 +55,7 @@ export const FDROID_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       FDROID_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'fdroid', defaultLabel: 'f-droid' },
+      { defaultColor: 'blue', defaultIcon: 'fdroid', defaultLabel: 'F-Droid' },
       (pkg) => pkg.version
     ),
   },

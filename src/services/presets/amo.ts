@@ -70,12 +70,12 @@ export const AMO_SERVICE = defineService({
     rating: createRatingMetric(AMO_ENDPOINT, (addon) => [addon.rating, 5]),
     users: createCountMetric(
       AMO_ENDPOINT,
-      { defaultColor: 'indigo', defaultIcon: 'users', defaultLabel: 'users' },
+      { defaultColor: 'indigo', defaultIcon: 'users', defaultLabel: 'Users' },
       (addon) => addon.dailyUsers
     ),
     v: createVersionMetric(
       AMO_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'firefoxbrowser', defaultLabel: 'firefox' },
+      { defaultColor: 'orange', defaultIcon: 'firefoxbrowser', defaultLabel: 'Firefox' },
       (addon) => addon.version
     ),
   },

@@ -116,12 +116,12 @@ export const CPAN_SERVICE = defineService({
     license: createLicenseMetric(CPAN_ENDPOINT, readCpanLicense),
     updated: createRelativeDateMetric(
       CPAN_ENDPOINT,
-      { defaultColor: 'violet', defaultIcon: 'calendar-clock', defaultLabel: 'last release' },
+      { defaultColor: 'violet', defaultIcon: 'calendar-clock', defaultLabel: 'Last Release' },
       readCpanReleaseDate
     ),
     v: createVersionMetric(
       CPAN_ENDPOINT,
-      { defaultColor: 'indigo', defaultIcon: 'perl', defaultLabel: 'cpan' },
+      { defaultColor: 'indigo', defaultIcon: 'perl', defaultLabel: 'CPAN' },
       (release) => release.version
     ),
   },

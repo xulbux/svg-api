@@ -200,7 +200,7 @@ export const READ_THE_DOCS_SERVICE = defineService({
         autoSpecials: RTD_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'readthedocs',
-        defaultLabel: 'docs',
+        defaultLabel: 'Docs',
       },
       transformReadTheDocsBuild
     ),

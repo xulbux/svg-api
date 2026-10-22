@@ -55,7 +55,7 @@ export const OPEN_VSX_SERVICE = defineService({
     rating: createRatingMetric(OPEN_VSX_ENDPOINT, (extension) => [extension.averageRating, 5]),
     v: createVersionMetric(
       OPEN_VSX_ENDPOINT,
-      { defaultColor: 'indigo', defaultIcon: 'puzzle', defaultLabel: 'open vsx' },
+      { defaultColor: 'indigo', defaultIcon: 'puzzle', defaultLabel: 'Open VSX' },
       (extension) => extension.version
     ),
   },

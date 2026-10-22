@@ -126,12 +126,12 @@ export const PUB_SERVICE = defineService({
     likes: createCommunityMetric(PUB_SCORE_ENDPOINT, 'likes', 'dart', (score) => score.likeCount),
     points: createScoreMetric(
       PUB_SCORE_ENDPOINT,
-      { ...SCORE, defaultLabel: 'pub points' },
+      { ...SCORE, defaultLabel: 'Pub Points' },
       (score) => [score.grantedPoints, score.maxPoints]
     ),
     v: createVersionMetric(
       PUB_PACKAGE_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'dart', defaultLabel: 'pub' },
+      { defaultColor: 'sky', defaultIcon: 'dart', defaultLabel: 'Pub' },
       (pkg) => pkg.version
     ),
   },

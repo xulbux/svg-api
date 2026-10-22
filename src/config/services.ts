@@ -78,13 +78,13 @@ import type { ServiceDefinition, ServiceOwnerMode, StatusPreset } from '@/types'
  * Maps canonical status preset names to their dot state, default label, and theme color.
  */
 export const STATUS_PRESET_MAP: Readonly<Record<string, StatusPreset>> = {
-  beta: { color: 'violet', defaultLabel: 'status', dot: 'violet' },
-  degraded: { color: 'amber', defaultLabel: 'status', dot: 'amber' },
-  incident: { color: 'orange', defaultLabel: 'status', dot: 'orange' },
-  maintenance: { color: 'sky', defaultLabel: 'status', dot: 'sky' },
-  offline: { color: 'rose', defaultLabel: 'status', dot: 'red' },
-  online: { color: 'emerald', defaultLabel: 'status', dot: 'green' },
-  standby: { color: 'slate', defaultLabel: 'status', dot: 'slate' },
+  beta: { color: 'violet', defaultLabel: 'Status', dot: 'violet' },
+  degraded: { color: 'amber', defaultLabel: 'Status', dot: 'amber' },
+  incident: { color: 'orange', defaultLabel: 'Status', dot: 'orange' },
+  maintenance: { color: 'sky', defaultLabel: 'Status', dot: 'sky' },
+  offline: { color: 'rose', defaultLabel: 'Status', dot: 'red' },
+  online: { color: 'emerald', defaultLabel: 'Status', dot: 'green' },
+  standby: { color: 'slate', defaultLabel: 'Status', dot: 'slate' },
 };
 
 /**
@@ -93,7 +93,7 @@ export const STATUS_PRESET_MAP: Readonly<Record<string, StatusPreset>> = {
  */
 export const UNKNOWN_STATUS_PRESET: Readonly<StatusPreset> = {
   color: 'slate',
-  defaultLabel: 'status',
+  defaultLabel: 'Status',
   dot: 'slate',
 };
 

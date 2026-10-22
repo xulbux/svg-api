@@ -113,6 +113,13 @@ describe('resolveColor', () => {
     expect(resolveAnimationMode('shake')).toBe('shake');
     expect(resolveAnimationMode('nudge')).toBe('nudge');
     expect(resolveAnimationMode('pulse')).toBe('pulse');
+    expect(resolveAnimationMode('breathe')).toBe('breathe');
+    expect(resolveAnimationMode('grow')).toBe('breathe');
+    expect(resolveAnimationMode('scale')).toBe('breathe');
+    expect(resolveAnimationMode('turn')).toBe('turn');
+    expect(resolveAnimationMode('twirl')).toBe('turn');
+    expect(resolveAnimationMode('whirl')).toBe('whirl');
+    expect(resolveAnimationMode('spin-smooth')).toBe('whirl');
     expect(resolveAnimationMode('float')).toBe('float');
     expect(resolveAnimationMode('sheen,auto')).toBe('sheen,auto');
     expect(resolveAnimationMode('shake,sheen')).toBe('sheen,shake');
@@ -427,7 +434,7 @@ describe('Hono routes on svg.xul.is', () => {
     const body = await badgesRes.text();
     expect(body).toContain('View Markdown');
     expect(body).toContain(
-      '<span class="hl-p">![</span><span class="hl-alt">build</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge/build/passing</span>'
+      '<span class="hl-p">![</span><span class="hl-alt">Build</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge</span><span class="hl-path">/Build/Passing</span>'
     );
 
     const buttonsRes = await app.request('/docs/buttons', {}, TEST_ENV);
@@ -439,7 +446,7 @@ describe('Hono routes on svg.xul.is', () => {
     const servicesBody = await servicesRes.text();
     expect(servicesBody).toContain('Live Service Badges');
     expect(servicesBody).toContain(
-      '<span class="hl-p">![</span><span class="hl-alt">PyPI Version</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge/pypi/xulbux/v</span><span class="hl-p">)</span>'
+      '<span class="hl-p">![</span><span class="hl-alt">PyPI Version</span><span class="hl-p">](</span><span class="hl-url">https://svg.xul.is/badge</span><span class="hl-path">/pypi/xulbux/v</span><span class="hl-p">)</span>'
     );
 
     const sectionRes = await app.request('/docs/stack', {}, TEST_ENV);
@@ -616,7 +623,7 @@ describe('Hono routes on svg.xul.is', () => {
     expect(iconRes.status).toBe(200);
     expect(iconRes.headers.get('Content-Type')).toContain('image/svg+xml');
     const iconSvg = await iconRes.text();
-    expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
+    expect(iconSvg).toContain('width="16" height="16" viewBox="-3 -5 30 30"');
     expect(iconSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
     expect(iconSvg).toContain('stroke-width="2.5"');
   });

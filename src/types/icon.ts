@@ -57,6 +57,8 @@ export interface IconPickerIndex {
   brandAliases: Record<string, string>;
   /** Alternative Lucide export names mapped to the slug listed in `sets.lucide`. */
   lucideAliases: Record<string, string>;
+  /** Space-separated lowercase search tags keyed by Lucide slug (from `lucide-static/tags.json`). */
+  lucideTags: Record<string, string>;
   /** Number of icons per body page (`/assets/icons-<set>-<page>.json`). */
   pageSize: number;
   /** Slugs per set in page order. */

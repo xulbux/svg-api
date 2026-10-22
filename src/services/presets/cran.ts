@@ -162,7 +162,7 @@ export const CRAN_SERVICE = defineService({
     ),
     v: createVersionMetric(
       CRANDB_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'r', defaultLabel: 'cran' },
+      { defaultColor: 'blue', defaultIcon: 'r', defaultLabel: 'CRAN' },
       (pkg) => pkg.Version
     ),
   },

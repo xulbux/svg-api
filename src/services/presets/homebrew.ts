@@ -43,7 +43,7 @@ interface HomebrewProjection {
 const HOMEBREW_VERSION: MetricPresentation = {
   defaultColor: 'amber',
   defaultIcon: 'homebrew',
-  defaultLabel: 'homebrew',
+  defaultLabel: 'Homebrew',
 };
 
 /** Docs note on the install metric keys. */
@@ -156,7 +156,7 @@ export const HOMEBREW_CASK_SERVICE = defineService({
     ...createInstallMetrics(CASK_ENDPOINT),
     v: createVersionMetric(
       CASK_ENDPOINT,
-      { ...HOMEBREW_VERSION, defaultLabel: 'homebrew cask' },
+      { ...HOMEBREW_VERSION, defaultLabel: 'Homebrew Cask' },
       (cask) => cask.version
     ),
   },

@@ -79,12 +79,12 @@ export const PUPPET_SERVICE = defineService({
     license: createLicenseMetric(RELEASE_ENDPOINT, (release) => release.license),
     score: createPercentScoreMetric(
       MODULE_ENDPOINT,
-      { ...SCORE, defaultLabel: 'puppet score' },
+      { ...SCORE, defaultLabel: 'Puppet Score' },
       (module) => module.feedback_score
     ),
     v: createVersionMetric(
       RELEASE_ENDPOINT,
-      { defaultColor: 'amber', defaultIcon: 'puppet', defaultLabel: 'puppet forge' },
+      { defaultColor: 'amber', defaultIcon: 'puppet', defaultLabel: 'Puppet Forge' },
       (release) => release.version
     ),
   },

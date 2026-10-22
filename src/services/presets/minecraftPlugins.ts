@@ -127,7 +127,7 @@ export const SPIGOT_SERVICE = defineService({
     ]),
     v: createVersionMetric(
       SPIGET_VERSION_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'spigotmc', defaultLabel: 'spigot' },
+      { defaultColor: 'orange', defaultIcon: 'spigotmc', defaultLabel: 'Spigot' },
       (version) => version.name
     ),
   },
@@ -144,7 +144,7 @@ export const HANGAR_SERVICE = defineService({
     stars: createCountMetric(HANGAR_PROJECT_ENDPOINT, STARS, (project) => project.stars),
     watchers: createCountMetric(
       HANGAR_PROJECT_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'eye', defaultLabel: 'watchers' },
+      { defaultColor: 'sky', defaultIcon: 'eye', defaultLabel: 'Watchers' },
       (project) => project.watchers
     ),
   },

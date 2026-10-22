@@ -49,7 +49,7 @@ export const MAVEN_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       MAVEN_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'apachemaven', defaultLabel: 'maven' },
+      { defaultColor: 'orange', defaultIcon: 'apachemaven', defaultLabel: 'Maven' },
       (artifact) => artifact.version
     ),
   },

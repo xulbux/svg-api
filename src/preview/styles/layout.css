@@ -346,7 +346,6 @@
   margin: 0;
   padding: 28px 20px 40px clamp(16px, 3.5vw, 32px);
   overflow-y: auto;
-  overscroll-behavior: contain;
   border: none;
   border-inline-end: 1px solid var(--c-divider);
   color: var(--c-text-1);
@@ -430,6 +429,7 @@
     inline-size: min(300px, 86vw);
     block-size: 100dvh;
     padding: 24px 22px 40px;
+    overscroll-behavior: contain;
     background: color-mix(in srgb, var(--c-bg) 82%, transparent);
     box-shadow: var(--c-shadow-dialog);
     backdrop-filter: blur(16px);

@@ -48,8 +48,8 @@ interface SnippetFormat {
 
 /** Icon set tab of the icon picker. */
 interface IconPickerTab {
-  /** Tab value (`'all'` or an icon set). */
-  id: IconPickerSetId | 'all';
+  /** Icon set identifier (`'lucide'` or `'brands'`). */
+  id: IconPickerSetId;
   /** Visible tab label. */
   label: string;
 }
@@ -65,7 +65,6 @@ const SNIPPET_FORMATS: readonly SnippetFormat[] = [
 
 /** Icon set tabs of the icon picker in display order (the first one is selected initially). */
 const ICON_PICKER_TABS: readonly IconPickerTab[] = [
-  { id: 'all', label: 'All' },
   { id: 'lucide', label: 'Lucide' },
   { id: 'brands', label: 'Brands' },
 ];
@@ -477,7 +476,7 @@ function renderIconPickerHtml(): string {
     let tabsHtml = '';
     for (const [i, tab] of ICON_PICKER_TABS.entries()) {
       const checkedAttr = i === 0 ? ' checked' : '';
-      tabsHtml += `<label class="icon-picker-tab"><input type="radio" name="icon-picker-set" value="${tab.id}"${checkedAttr} /><span>${tab.label}</span></label>`;
+      tabsHtml += `<label class="icon-picker-tab"><input type="radio" name="icon-picker-set" value="${tab.id}"${checkedAttr} /><span data-picker-tab-label="${tab.id}" data-label="${tab.label}">${tab.label}</span></label>`;
     }
     let glyphTemplatesHtml = '';
     for (const [set, paintAttrs] of Object.entries(GLYPH_PAINT_ATTRS)) {

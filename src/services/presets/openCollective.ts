@@ -58,7 +58,7 @@ export const OPEN_COLLECTIVE_SERVICE = defineService({
     ),
     budget: createMetric(
       OPEN_COLLECTIVE_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'opencollective', defaultLabel: 'budget' },
+      { defaultColor: 'emerald', defaultIcon: 'opencollective', defaultLabel: 'Budget' },
       transformOpenCollectiveBudget
     ),
   },

@@ -145,14 +145,14 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
     buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
     buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),
-    // Isolux Pro Markdown roles: punctuation, operators, alt text (label), URLs and link targets (string), query keys and values.
+    // Isolux Pro Markdown roles: punctuation, path segments (lifted string indigo), alt text and link targets (label), URLs (string), query keys (function cyan), and query values (property cyan).
     buildColorToken('hl-p', ISOLUX_SYNTAX.punctuation),
-    buildColorToken('hl-op', ISOLUX_SYNTAX.operator),
+    buildColorToken('hl-path', ISOLUX_SYNTAX.constant),
     buildColorToken('hl-alt', ISOLUX_SYNTAX.label),
     buildColorToken('hl-url', ISOLUX_SYNTAX.string),
-    buildColorToken('hl-key', ISOLUX_SYNTAX.property),
-    buildColorToken('hl-val', ISOLUX_SYNTAX.constant),
-    buildColorToken('hl-href', ISOLUX_SYNTAX.string),
+    buildColorToken('hl-key', ISOLUX_SYNTAX.function),
+    buildColorToken('hl-val', ISOLUX_SYNTAX.property),
+    buildColorToken('hl-href', ISOLUX_SYNTAX.label),
     // Elevation shadows and theme switch state (non-color tokens, so they never go through `light-dark()`).
     {
       dark: '0 0 3px rgb(0 0 0 / 0.65)',

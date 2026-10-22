@@ -490,13 +490,13 @@ describe('renderIcon', () => {
       size: 16,
       strokeWidth: 2.5,
     });
-    expect(lucideSvg).toContain('width="16" height="16" viewBox="-3 -3 30 30"');
+    expect(lucideSvg).toContain('width="16" height="16" viewBox="-3 -5 30 30"');
     expect(lucideSvg).toContain(`stroke="${THEMES.violet.iconColor}"`);
     expect(lucideSvg).toContain('stroke-width="2.5"');
     expect(lucideSvg).not.toContain('<animateTransform');
 
     const simpleSvg = renderIcon({ color: 'cyan', icon: 'archlinux', size: 28 });
-    expect(simpleSvg).toContain('width="28" height="28" viewBox="-3 -3 30 30"');
+    expect(simpleSvg).toContain('width="28" height="28" viewBox="-3 -5 30 30"');
     expect(simpleSvg).toContain(`fill="${THEMES.cyan.iconColor}"`);
     expect(simpleSvg).not.toContain('stroke-width=');
 
@@ -525,11 +525,26 @@ describe('renderIcon', () => {
     expect(pulseIconSvg).toContain('type="scale" values="1;1;1.18;0.96;1.14;1;1"');
 
     const floatIconSvg = renderIcon({ anim: 'auto', color: 'emerald', icon: 'package' });
-    expect(floatIconSvg).toContain('type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0"');
+    expect(floatIconSvg).toContain(
+      'type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
+    );
 
     const animatedIconSvg = renderIcon({ anim: 'auto', color: 'teal', icon: 'refresh-cw' });
     expect(animatedIconSvg).toContain('width="24" height="24"');
     expect(animatedIconSvg).toContain('type="rotate" from="0 12 12" to="360 12 12"');
+
+    const turnIconSvg = renderIcon({ anim: 'turn', color: 'cyan', icon: 'compass' });
+    expect(turnIconSvg).toContain('type="rotate" values="0 12 12;0 12 12;360 12 12"');
+
+    const whirlIconSvg = renderIcon({ anim: 'whirl', color: 'indigo', icon: 'orbit' });
+    expect(whirlIconSvg).toContain(
+      'type="rotate" values="0 12 12;360 12 12" keyTimes="0;1" calcMode="spline" keySplines="0.42 0.15 0.58 0.85"'
+    );
+
+    const breatheIconSvg = renderIcon({ anim: 'breathe', color: 'orange', icon: 'flame' });
+    expect(breatheIconSvg).toContain(
+      'type="scale" values="1;1.14;1;0.92;1" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
+    );
 
     const clampedIconSvg = renderIcon({
       color: 'amber',

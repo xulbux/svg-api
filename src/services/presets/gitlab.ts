@@ -137,7 +137,7 @@ export const GITLAB_SERVICE = defineService({
     ),
     updated: createRelativeDateMetric(
       withPageSuffix(PROJECT_ENDPOINT, '/-/activity'),
-      { ...LAST_COMMIT, defaultLabel: 'last activity' },
+      { ...LAST_COMMIT, defaultLabel: 'Last Activity' },
       (project) => project.last_activity_at
     ),
   },

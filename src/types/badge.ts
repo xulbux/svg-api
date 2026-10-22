@@ -9,19 +9,22 @@ import type { BadgeVariant, DotState, SizePreset, ThemeColorName } from './theme
 /** Single icon micro-animation token. */
 export type IconMotionMode =
   | 'auto'
+  | 'breathe'
   | 'default'
   | 'float'
   | 'none'
   | 'nudge'
   | 'pulse'
   | 'shake'
-  | 'spin';
+  | 'spin'
+  | 'turn'
+  | 'whirl';
 
 /**
  * Micro-animation mode for icons, status dots, and specular sheen.
  * - `'default'`: Status dots and progress bars animate; Icons and surfaces remain static (default when `?anim=` is omitted).
  * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
- * - `'auto' | 'spin' | 'shake' | 'nudge' | 'pulse' | 'float'`: Enables contextual or explicit icon micro-animation.
+ * - `'auto' | 'breathe' | 'float' | 'nudge' | 'pulse' | 'shake' | 'spin' | 'turn' | 'whirl'`: Enables contextual or explicit icon micro-animation.
  * - `'<left>,<right>'` (e.g., `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
  * - `'sheen,<mode>'` or `'sheen,<left>,<right>'`: Combines surface sheen with single or per-icon animations.
  * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.

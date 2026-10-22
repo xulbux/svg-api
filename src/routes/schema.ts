@@ -414,7 +414,7 @@ function buildBadgeFields(): BuilderField[] {
       id: 'label',
       label: 'Label',
       maxLength: MAX_LABEL_LENGTH,
-      placeholder: 'build',
+      placeholder: 'Build',
       showWhen: staticOnly,
     },
     {
@@ -423,7 +423,7 @@ function buildBadgeFields(): BuilderField[] {
       id: 'value',
       label: 'Value',
       maxLength: MAX_LABEL_LENGTH,
-      placeholder: 'passing',
+      placeholder: 'Passing',
       showWhen: staticOnly,
     },
     {
@@ -440,7 +440,7 @@ function buildBadgeFields(): BuilderField[] {
       isRequired: true,
       label: 'Status text',
       maxLength: MAX_LABEL_LENGTH,
-      placeholder: 'operational',
+      placeholder: 'Operational',
       showWhen: statusOnly,
     },
     buildVariantField(),
@@ -635,11 +635,11 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
         initialState: {
           color: 'emerald',
           icon: 'circle-check',
-          label: 'build',
+          label: 'Build',
           state: 'online',
-          text: 'operational',
+          text: 'Operational',
           type: 'static',
-          value: 'passing',
+          value: 'Passing',
         },
       };
     }

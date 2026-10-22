@@ -632,8 +632,8 @@ details.code-drawer[open] .drawer-chevron {
   color: var(--c-hl-p);
 }
 
-.hl-op {
-  color: var(--c-hl-op);
+.hl-path {
+  color: var(--c-hl-path);
 }
 
 .hl-alt {

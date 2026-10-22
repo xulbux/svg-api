@@ -136,6 +136,7 @@ export const ELLIPSIS = '…';
 /** Valid per-icon motion tokens inside an `AnimationMode`, sorted alphabetically (everything except the `'sheen'` surface token). */
 export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
   'auto',
+  'breathe',
   'default',
   'float',
   'none',
@@ -143,6 +144,8 @@ export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
   'pulse',
   'shake',
   'spin',
+  'turn',
+  'whirl',
 ];
 
 /** Timing of the diagonal surface sheen sweep (also the base timing of the standalone icon sheen). */

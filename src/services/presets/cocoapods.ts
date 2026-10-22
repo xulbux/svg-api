@@ -36,7 +36,7 @@ export const COCOAPODS_SERVICE = defineService({
     license: createLicenseMetric(COCOAPODS_ENDPOINT, (spec) => readLicenseName(spec.license)),
     v: createVersionMetric(
       COCOAPODS_ENDPOINT,
-      { defaultColor: 'rose', defaultIcon: 'cocoapods', defaultLabel: 'pod' },
+      { defaultColor: 'rose', defaultIcon: 'cocoapods', defaultLabel: 'Pod' },
       (spec) => spec.version
     ),
   },

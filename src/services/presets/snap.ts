@@ -104,7 +104,7 @@ export const SNAP_SERVICE = defineService({
     license: createLicenseMetric(SNAP_ENDPOINT, (info) => info.license),
     v: createVersionMetric(
       SNAP_ENDPOINT,
-      { defaultColor: 'teal', defaultIcon: 'snapcraft', defaultLabel: 'snapcraft' },
+      { defaultColor: 'teal', defaultIcon: 'snapcraft', defaultLabel: 'Snapcraft' },
       (info) => info.version
     ),
   },

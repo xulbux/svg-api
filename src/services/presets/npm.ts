@@ -240,7 +240,7 @@ export const NPM_SERVICE = defineService({
     license: createLicenseMetric(NPM_LATEST_ENDPOINT, (latest) => latest.license),
     types: createMetric(
       NPM_LATEST_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'ts', defaultLabel: 'types' },
+      { defaultColor: 'blue', defaultIcon: 'ts', defaultLabel: 'Types' },
       (latest) => ({ value: latest.hasTypes ? 'included' : 'none' })
     ),
     v: createVersionMetric(

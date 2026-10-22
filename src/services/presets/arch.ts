@@ -77,12 +77,12 @@ export const ARCH_SERVICE = defineService({
     ),
     repo: createTextMetric(
       ARCH_ENDPOINT,
-      { defaultColor: 'slate', defaultIcon: 'archlinux', defaultLabel: 'repo' },
+      { defaultColor: 'slate', defaultIcon: 'archlinux', defaultLabel: 'Repo' },
       (info) => info.repo
     ),
     v: createMetric(
       ARCH_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'archlinux', defaultLabel: 'arch linux' },
+      { defaultColor: 'sky', defaultIcon: 'archlinux', defaultLabel: 'Arch Linux' },
       transformArchVersion
     ),
   },

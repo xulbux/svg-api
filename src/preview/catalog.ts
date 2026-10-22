@@ -83,8 +83,8 @@ interface VariantDescriptor {
 interface UrlAnatomyPart {
   /** Syntax highlighting class (`hl-*`). */
   className: string;
-  /** Legend label. */
-  label: string;
+  /** Optional legend label (omitted on repeated roles in the URL). */
+  label?: string;
   /** Literal URL text. */
   text: string;
 }
@@ -172,15 +172,15 @@ export const ENCODED_CHAOS_QUOTE =
 const ENCODED_EDGE_QUOTE =
   'Always+creating+more+cool+stuff+for+you%2C+with+balanced+OKLCH+colors+and+zero+cold+starts+at+the+edge.';
 
-/** URL-encoded sample status texts for the status preset showcase (presets without a sample show their name). */
+/** URL-encoded sample status texts for the status preset showcase (presets without a sample show their capitalized name). */
 const STATUS_SAMPLE_TEXTS: Readonly<Record<string, string>> = {
-  beta: 'v3+engine',
-  degraded: '180ms+latency',
-  incident: 'queue+load+94%25',
-  maintenance: 'scheduled',
-  offline: 'unreachable',
-  online: 'operational',
-  standby: 'warm+spare',
+  beta: 'v3+Engine',
+  degraded: '180ms+Latency',
+  incident: 'Queue+Load+94%25',
+  maintenance: 'Scheduled',
+  offline: 'Unreachable',
+  online: 'Operational',
+  standby: 'Warm+Spare',
 };
 
 /** Showcase cards for the dedicated `/docs/buttons` page. */
@@ -876,12 +876,15 @@ const ICON_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       { alt: 'Sheen', path: '/icon/sparkles?color=amber&size=28&anim=sheen' },
       { alt: 'Auto Motion', path: '/icon/loader?color=sky&size=28&anim=auto' },
+      { alt: 'Turn', path: '/icon/compass?color=cyan&size=28&anim=turn' },
+      { alt: 'Whirl', path: '/icon/orbit?color=indigo&size=28&anim=whirl' },
+      { alt: 'Breathe', path: '/icon/flame?color=orange&size=28&anim=breathe' },
       { alt: 'Pulse', path: '/icon/heart?color=rose&size=28&anim=pulse' },
       { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
       { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
     ],
     subtitle:
-      'Sheen, icon motion, and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.',
+      'Sheen, icon motion (auto/spin/whirl/turn/shake/nudge/pulse/breathe/float), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.',
     title: 'Animations & Fallback (?anim=)',
   },
 ];
@@ -954,38 +957,41 @@ const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
 const URL_ANATOMY_PARTS: readonly UrlAnatomyPart[] = [
   { className: 'hl-p', label: 'Origin', text: SITE_ORIGIN },
   { className: 'hl-url', label: 'Endpoint', text: '/badge' },
-  { className: 'hl-alt', label: 'Path segments', text: '/build+status/passing' },
-  { className: 'hl-key', label: 'Query parameters', text: '?icon=circle-check&color=emerald' },
+  { className: 'hl-path', label: 'Path segments', text: '/Build+Status/Passing' },
+  { className: 'hl-key', label: 'Query keys', text: '?icon=' },
+  { className: 'hl-val', label: 'Query values', text: 'circle-check' },
+  { className: 'hl-key', text: '&color=' },
+  { className: 'hl-val', text: 'emerald' },
 ];
 
 /** Path segment encoding rules (every example is a working, documented path). */
 const SEGMENT_ENCODING_ROWS: readonly ParamTableRow[] = [
   {
-    defaultVal: '/badge/build+status/passing',
+    defaultVal: '/badge/Build+Status/Passing',
     description: 'Both forms decode to a space inside a path segment.',
     name: 'Space',
     values: '+ / %20',
   },
   {
-    defaultVal: '/badge/language/C%2B%2B',
+    defaultVal: '/badge/Language/C%2B%2B',
     description: 'A raw + would decode to a space.',
     name: '+',
     values: '%2B',
   },
   {
-    defaultVal: '/badge/coverage/99%25',
+    defaultVal: '/badge/Coverage/99%25',
     description: 'Percent signs start escape sequences, so they must be escaped themselves.',
     name: '%',
     values: '%25',
   },
   {
-    defaultVal: '/badge/requests/2.4M%2Fd',
+    defaultVal: '/badge/Requests/2.4M%2Fd',
     description: 'A raw / would start a new path segment.',
     name: '/',
     values: '%2F',
   },
   {
-    defaultVal: '/badge/question/why%3F',
+    defaultVal: '/badge/Question/Why%3F',
     description:
       'Raw ? and # end the path; A raw & inside a query value starts the next parameter.',
     name: '? / # / &',
@@ -1028,7 +1034,7 @@ const CACHING_COLUMNS: ParamTableRow = {
 const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
-      { alt: 'Build Status', path: '/badge/build+status/passing?icon=circle-check&color=emerald' },
+      { alt: 'Build Status', path: '/badge/Build+Status/Passing?icon=circle-check&color=emerald' },
     ],
     subtitle:
       'Paste the Markdown image snippet into any README; GitHub proxies and caches the SVG through its image CDN.',
@@ -1104,12 +1110,13 @@ function buildSheenAnimParamRow(description: string): ParamTableRow {
 function buildStatusPresetItems(): ShowcaseItem[] {
   const items: ShowcaseItem[] = [];
   for (const state of Object.keys(STATUS_PRESET_MAP)) {
+    const capitalizedState = capitalizeWord(state);
     items.push({
-      alt: `Status ${capitalizeWord(state)}`,
-      path: `/badge/status/${state}/${getOwnValue(STATUS_SAMPLE_TEXTS, state) ?? state}`,
+      alt: `Status ${capitalizedState}`,
+      path: `/badge/status/${state}/${getOwnValue(STATUS_SAMPLE_TEXTS, state) ?? capitalizedState}`,
     });
   }
-  items.push({ alt: 'Status Unknown', path: '/badge/status/unknown/falls+back+to+neutral' });
+  items.push({ alt: 'Status Unknown', path: '/badge/status/unknown/Falls+Back+to+Neutral' });
   return items;
 }
 
@@ -1120,23 +1127,23 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
       items: [
         {
           alt: 'Sparkline Widget',
-          path: '/badge/latency/14ms?icon=activity&special=sparkline:22,19,21,17,15,16,14',
+          path: '/badge/Latency/14ms?icon=activity&special=sparkline:22,19,21,17,15,16,14',
         },
         {
           alt: 'Bars Widget',
-          path: '/badge/requests/1.8k%2Fs?icon=layers&color=indigo&special=bars:3,6,5,8,7,9,6',
+          path: '/badge/Requests/1.8k%2Fs?icon=layers&color=indigo&special=bars:3,6,5,8,7,9,6',
         },
         {
           alt: 'Progress Bar Widget',
-          path: '/badge/coverage/92%25?icon=shield-check&color=emerald&special=bar:92',
+          path: '/badge/Coverage/92%25?icon=shield-check&color=emerald&special=bar:92',
         },
         {
           alt: 'Steps Widget',
-          path: '/badge/onboarding/4%2F5?icon=circle-check&color=teal&special=steps:4/5',
+          path: '/badge/Onboarding/4%2F5?icon=circle-check&color=teal&special=steps:4/5',
         },
         {
           alt: 'Donut Ring Widget',
-          path: '/badge/kv+quota/84%25?icon=cpu&color=sky&special=ring:84:pulse',
+          path: '/badge/KV+Quota/84%25?icon=cpu&color=sky&special=ring:84:pulse',
         },
         {
           alt: 'Uptime Strip Widget',
@@ -1144,7 +1151,7 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Delta Trend Pill',
-          path: '/badge/requests/2.4M%2Fd?icon=trending-up&color=violet&special=delta:%2B38%25',
+          path: '/badge/Requests/2.4M%2Fd?icon=trending-up&color=violet&special=delta:%2B38%25',
         },
       ],
       subtitle:
@@ -1159,12 +1166,12 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
     },
     {
       items: [
-        { alt: 'Single-Part Tag', path: '/badge/xulbux?icon=sparkles' },
-        { alt: 'Secondary Tag', path: '/badge/verified?icon=shield-check&color=emerald&variant=2' },
+        { alt: 'Single-Part Tag', path: '/badge/XulbuX?icon=sparkles' },
+        { alt: 'Secondary Tag', path: '/badge/Verified?icon=shield-check&color=emerald&variant=2' },
         { alt: 'Compact Icon + Value', path: '/badge//100%25?icon=zap&color=amber' },
-        { alt: 'Dual-Icon Badge', path: '/badge/docs/read?icon=book-open,arrow-right&color=sky' },
-        { alt: 'Icon-Only Pill', path: '/badge/?icon=github&color=violet' },
-        { alt: 'No-Icon Badge', path: '/badge/platform/linux?color=rose' },
+        { alt: 'Dual-Icon Badge', path: '/badge/Docs/Read?icon=book-open,arrow-right&color=sky' },
+        { alt: 'No-Icon Badge', path: '/badge/Platform/Linux?color=rose' },
+        { alt: 'Icon-Only Pill', path: '/badge/?icon=github&color=neutral&variant=3' },
       ],
       subtitle:
         'Omit label or value segments, or set both left and right icons via ?icon=left,right.',
@@ -1179,16 +1186,31 @@ function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Icon Spin',
-          path: '/badge/build/running?icon=loader&color=sky&variant=2&anim=spin',
+          path: '/badge/Build/Running?icon=loader&color=sky&variant=2&anim=spin',
         },
         {
           alt: 'Icon Pulse',
-          path: '/badge/sponsor/heart?icon=heart&color=rose&variant=2&anim=pulse',
+          path: '/badge/Sponsor/Heart?icon=heart&color=rose&variant=2&anim=pulse',
         },
-        { alt: 'Icon Nudge', path: '/badge/next/step?icon=arrow-right&color=emerald&anim=nudge' },
+        {
+          alt: 'Icon Nudge',
+          path: '/badge/Next/Step?icon=none,arrow-right&color=emerald&variant=2&anim=none,nudge',
+        },
+        {
+          alt: 'Icon Turn',
+          path: '/badge/Sync/Active?icon=refresh-cw&color=cyan&variant=3&anim=turn',
+        },
+        {
+          alt: 'Icon Whirl',
+          path: '/badge/Orbit/Active?icon=orbit&color=indigo&variant=3&anim=whirl',
+        },
+        {
+          alt: 'Icon Breathe',
+          path: '/badge/Aura/Glow?icon=flame&color=orange&variant=3&anim=breathe',
+        },
       ],
       subtitle:
-        'Surface sheen, icon motion presets (auto/spin/shake/nudge/pulse/float), or combined sheen,auto via ?anim=.',
+        'Surface sheen, icon motion presets (auto/spin/whirl/turn/shake/nudge/pulse/breathe/float), or combined sheen,auto via ?anim=.',
       title: 'SVG Micro-Animations (?anim=)',
     },
   ];
@@ -1467,15 +1489,15 @@ function buildQuoteParamRows(): ParamTableRow[] {
 /** Build the 4 static badge items for a `22px` badge variant (`1`, `2`, `3`). */
 function buildBadgeVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   return [
-    { alt: 'build', path: `/badge/build/passing?icon=circle-check&variant=${variant}` },
-    { alt: 'arch', path: `/badge/arch/hyprland?icon=archlinux&color=cyan&variant=${variant}` },
+    { alt: 'Build', path: `/badge/Build/Passing?icon=circle-check&variant=${variant}` },
+    { alt: 'Arch', path: `/badge/Arch/Hyprland?icon=archlinux&color=cyan&variant=${variant}` },
     {
-      alt: 'runtime',
-      path: `/badge/runtime/cloudflare?icon=cloudflare&color=emerald&variant=${variant}`,
+      alt: 'Runtime',
+      path: `/badge/Runtime/Cloudflare?icon=cloudflare&color=emerald&variant=${variant}`,
     },
     {
-      alt: 'security',
-      path: `/badge/security/verified?icon=shield-check&color=rose&variant=${variant}`,
+      alt: 'Security',
+      path: `/badge/Security/Verified?icon=shield-check&color=rose&variant=${variant}`,
     },
   ];
 }
@@ -1553,7 +1575,9 @@ function renderUrlAnatomyHtml(): string {
   let legendHtml = '';
   for (const part of URL_ANATOMY_PARTS) {
     urlHtml += `<span class="${part.className}">${escapeXml(part.text)}</span>`;
-    legendHtml += `<li class="anatomy-legend-item"><span class="anatomy-swatch ${part.className}" aria-hidden="true"></span>${escapeXml(part.label)}</li>`;
+    if (part.label) {
+      legendHtml += `<li class="anatomy-legend-item"><span class="anatomy-swatch ${part.className}" aria-hidden="true"></span>${escapeXml(part.label)}</li>`;
+    }
   }
   return `<figure class="anatomy">
       <code class="anatomy-url">${urlHtml}</code>
@@ -1777,11 +1801,11 @@ export function renderColorsSectionHtml(): string {
   for (const colorName of THEME_COLOR_NAMES) {
     primaryItems.push({
       alt: `${colorName} primary`,
-      path: `/badge/color/${colorName}?icon=sparkles&color=${colorName}&variant=1`,
+      path: `/badge/Color/${colorName}?icon=sparkles&color=${colorName}&variant=1`,
     });
     secondaryItems.push({
       alt: `${colorName} secondary`,
-      path: `/badge/theme/${colorName}?icon=sparkles&color=${colorName}&variant=2`,
+      path: `/badge/Theme/${colorName}?icon=sparkles&color=${colorName}&variant=2`,
     });
   }
   const colorCount = THEME_COLOR_NAMES.length;

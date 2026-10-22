@@ -42,13 +42,13 @@ export const ARTIFACT_HUB_SERVICE = defineService({
   metrics: {
     app: createVersionMetric(
       ARTIFACT_HUB_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'box', defaultLabel: 'app version' },
+      { defaultColor: 'sky', defaultIcon: 'box', defaultLabel: 'App Version' },
       (summary) => summary.app_version
     ),
     stars: createCountMetric(ARTIFACT_HUB_ENDPOINT, STARS, (summary) => summary.stars),
     v: createVersionMetric(
       ARTIFACT_HUB_ENDPOINT,
-      { defaultColor: 'teal', defaultIcon: 'artifacthub', defaultLabel: 'artifact hub' },
+      { defaultColor: 'teal', defaultIcon: 'artifacthub', defaultLabel: 'Artifact Hub' },
       (summary) => summary.version
     ),
   },

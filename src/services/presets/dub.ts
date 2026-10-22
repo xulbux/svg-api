@@ -117,12 +117,12 @@ export const DUB_SERVICE = defineService({
     license: createLicenseMetric(DUB_INFO_ENDPOINT, (pkg) => pkg.license),
     score: createScoreMetric(
       DUB_STATS_ENDPOINT,
-      { ...SCORE, defaultLabel: 'dub score' },
+      { ...SCORE, defaultLabel: 'DUB Score' },
       (stats) => [stats.score, MAX_DUB_SCORE]
     ),
     v: createVersionMetric(
       DUB_INFO_ENDPOINT,
-      { defaultColor: 'rose', defaultIcon: 'd', defaultLabel: 'dub' },
+      { defaultColor: 'rose', defaultIcon: 'd', defaultLabel: 'DUB' },
       (pkg) => pkg.version
     ),
   },

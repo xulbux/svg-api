@@ -87,7 +87,7 @@ export const DEBIAN_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       DEBIAN_ENDPOINT,
-      { defaultColor: 'rose', defaultIcon: 'debian', defaultLabel: 'debian' },
+      { defaultColor: 'rose', defaultIcon: 'debian', defaultLabel: 'Debian' },
       (source, params) => readDebianSuiteVersion(source, params.owner)
     ),
   },

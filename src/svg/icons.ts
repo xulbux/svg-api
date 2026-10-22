@@ -7,6 +7,7 @@ import { icons as fileIconSet } from '@iconify-json/file-icons';
 import { icons as simpleIconSet } from '@iconify-json/simple-icons';
 // oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; The whole namespace is the slug lookup table.
 import * as lucideIcons from 'lucide-static';
+import lucideTagMap from 'lucide-static/tags.json';
 import {
   createLruCache,
   getOwnValue,
@@ -861,11 +862,29 @@ function mergeBrandIconSet(
   }
 }
 
-/** Build (once per isolate) the icon picker index: Distinct Lucide glyphs, brand slugs, and every alias. */
+/** Build (once per isolate) the icon picker index: Distinct Lucide glyphs, brand slugs, search tags, and every alias. */
 function buildIconPickerIndex(): IconPickerIndex {
   const primaryByGlyph = new Map<string, string>();
   const lucideSlugs: string[] = [];
   const lucideAliases: Record<string, string> = {};
+  const lucideTags: Record<string, string> = {};
+
+  for (const [slug, tagList] of Object.entries(lucideTagMap)) {
+    const glyph = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
+    if (typeof glyph === 'string') {
+      const primarySlug = primaryByGlyph.get(glyph);
+      if (primarySlug === undefined) {
+        primaryByGlyph.set(glyph, slug);
+        lucideSlugs.push(slug);
+        if (tagList.length > 0) {
+          lucideTags[slug] = tagList.join(' ').toLowerCase();
+        }
+      } else {
+        lucideAliases[slug] = primarySlug;
+      }
+    }
+  }
+
   for (const [exportName, glyph] of Object.entries(LUCIDE_ICON_MAP)) {
     const slug = toLucideSlug(exportName);
     if (typeof glyph === 'string' && capitalizeSlugParts(slug, '') === exportName) {
@@ -873,7 +892,7 @@ function buildIconPickerIndex(): IconPickerIndex {
       if (primarySlug === undefined) {
         primaryByGlyph.set(glyph, slug);
         lucideSlugs.push(slug);
-      } else {
+      } else if (slug !== primarySlug) {
         lucideAliases[slug] = primarySlug;
       }
     }
@@ -885,6 +904,7 @@ function buildIconPickerIndex(): IconPickerIndex {
     brandSlugs.add(slug);
     canonicalByCleanSlug.set(slug.replace(BRAND_SLUG_CLEAN_RX, ''), slug);
   }
+
   const brandAliases: Record<string, string> = {};
   for (const [alias, entry] of Object.entries(simpleIconSet.aliases ?? {})) {
     brandAliases[alias] = entry.parent;
@@ -893,6 +913,7 @@ function buildIconPickerIndex(): IconPickerIndex {
       canonicalByCleanSlug.set(cleanAlias, entry.parent);
     }
   }
+
   mergeBrandIconSet(
     Object.keys(deviconPlainSet.icons),
     brandSlugs,
@@ -905,6 +926,7 @@ function buildIconPickerIndex(): IconPickerIndex {
     aliases: { ...ICON_SLUG_ALIASES },
     brandAliases,
     lucideAliases,
+    lucideTags,
     pageSize: ICON_PICKER_PAGE_SIZE,
     sets: { brands: [...brandSlugs].toSorted(), lucide: lucideSlugs },
   };

@@ -81,7 +81,7 @@ export const JETBRAINS_SERVICE = defineService({
     ),
     v: createVersionMetric(
       UPDATES_ENDPOINT,
-      { defaultColor: 'rose', defaultIcon: 'jetbrains', defaultLabel: 'jetbrains' },
+      { defaultColor: 'rose', defaultIcon: 'jetbrains', defaultLabel: 'JetBrains' },
       (update) => update.version
     ),
   },

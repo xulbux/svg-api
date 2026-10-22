@@ -1010,37 +1010,42 @@
   }
 
   /**
-   * Split a URL into highlight tokens (base, `?`, keys, `=`, values, `&`); Same algorithm as `tokenizeUrl` in
-   * `src/preview/components.ts` (guarded by a parity test).
+   * Split a URL into highlight tokens (origin + endpoint, path segments, `?key=` / `&key=`, values); Same algorithm
+   * as `tokenizeUrl` in `src/preview/components.ts` (guarded by a parity test).
    * @param {string} url   Raw (unescaped) URL.
    * @returns {HighlightToken[]}
    */
   function tokenizeUrl(url) {
     const queryIndex = url.indexOf('?');
-    if (queryIndex === -1) {
-      return [['hl-url', url]];
-    }
+    const base = queryIndex === -1 ? url : url.slice(0, queryIndex);
+    const schemeEnd = base.indexOf('://');
+    const endpointSlash = schemeEnd === -1 ? base.indexOf('/') : base.indexOf('/', schemeEnd + 3);
+    const pathSlash = endpointSlash === -1 ? -1 : base.indexOf('/', endpointSlash + 1);
     /** @type {HighlightToken[]} */
-    const tokens = [
-      ['hl-url', url.slice(0, queryIndex)],
-      ['hl-op', '?'],
-    ];
+    const tokens =
+      pathSlash === -1
+        ? [['hl-url', base]]
+        : [
+            ['hl-url', base.slice(0, pathSlash)],
+            ['hl-path', base.slice(pathSlash)],
+          ];
+    if (queryIndex === -1) {
+      return tokens;
+    }
     for (const [i, pair] of url
       .slice(queryIndex + 1)
       .split('&')
       .entries()) {
-      if (i > 0) {
-        tokens.push(['hl-op', '&']);
-      }
+      const prefix = i === 0 ? '?' : '&';
       const equalsIndex = pair.indexOf('=');
       if (equalsIndex === -1) {
-        tokens.push(['hl-key', pair]);
+        tokens.push(['hl-key', `${prefix}${pair}`]);
       } else {
-        tokens.push(
-          ['hl-key', pair.slice(0, equalsIndex)],
-          ['hl-op', '='],
-          ['hl-val', pair.slice(equalsIndex + 1)]
-        );
+        tokens.push(['hl-key', `${prefix}${pair.slice(0, equalsIndex + 1)}`]);
+        const value = pair.slice(equalsIndex + 1);
+        if (value) {
+          tokens.push(['hl-val', value]);
+        }
       }
     }
     return tokens;
@@ -2827,43 +2832,136 @@
   }
 
   /**
-   * Compute the filtered icon picker matches for the active set tab and search query (prefix matches first).
+   * Check whether every whitespace-separated word of `tokens` appears in `haystack`.
+   * @param {string} haystack
+   * @param {readonly string[]} tokens
+   * @returns {boolean}
+   */
+  function hasAllQueryTokens(haystack, tokens) {
+    for (const token of tokens) {
+      if (!haystack.includes(token)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Collect target icon slugs whose alias matches every token of `queryTokens`.
+   * @param {Readonly<Record<string, string>>} aliasMap
+   * @param {readonly string[]} queryTokens
+   * @param {Set<string>} targetSet
+   */
+  function collectMatchingAliasTargets(aliasMap, queryTokens, targetSet) {
+    for (const [alias, primary] of Object.entries(aliasMap)) {
+      if (hasAllQueryTokens(alias, queryTokens)) {
+        targetSet.add(primary);
+      }
+    }
+  }
+
+  /**
+   * Update the icon picker tab labels with live match counts when searching, or restore plain labels when empty.
+   * @param {Record<IconPickerSetId, number> | undefined} counts
+   */
+  function updatePickerTabLabels(counts) {
+    for (const labelSpan of picker?.querySelectorAll('[data-picker-tab-label]') ?? []) {
+      if (labelSpan instanceof HTMLElement) {
+        const setId = labelSpan.dataset.pickerTabLabel;
+        const baseLabel = labelSpan.dataset.label ?? '';
+        labelSpan.textContent =
+          counts && (setId === 'lucide' || setId === 'brands')
+            ? `${baseLabel} (${counts[setId].toLocaleString('en-US')})`
+            : baseLabel;
+      }
+    }
+  }
+
+  /**
+   * Compute the filtered icon picker matches for a single icon set and search query
+   * (prefix slug matches first, then substring/alias matches, then Lucide tag matches).
+   * @param {IconPickerIndex} index
+   * @param {Record<IconPickerSetId, string[]>} catalog
+   * @param {IconPickerSetId} set
+   * @param {string} query
+   * @param {string[]} queryTokens
+   * @param {Set<string>} setAliasHits
+   * @returns {IconMatch[]}
+   */
+  function computeSetMatches(index, catalog, set, query, queryTokens, setAliasHits) {
+    /** @type {IconMatch[]} */
+    const prefixMatches = [];
+    /** @type {IconMatch[]} */
+    const substringMatches = [];
+    /** @type {IconMatch[]} */
+    const tagMatches = [];
+    for (const slug of catalog[set]) {
+      if (slug.startsWith(query)) {
+        prefixMatches.push({ set, slug });
+      } else if (hasAllQueryTokens(slug, queryTokens) || setAliasHits.has(slug)) {
+        substringMatches.push({ set, slug });
+      } else if (set === 'lucide') {
+        const tags = index.lucideTags[slug];
+        if (tags && hasAllQueryTokens(`${slug} ${tags}`, queryTokens)) {
+          tagMatches.push({ set, slug });
+        }
+      }
+    }
+    prefixMatches.push(...substringMatches, ...tagMatches);
+    return prefixMatches;
+  }
+
+  /**
+   * Compute the filtered icon picker matches for the active set tab and search query
+   * (prefix slug matches first, then substring/alias matches, then Lucide tag matches).
    * @param {IconPickerIndex} index
    * @param {Record<IconPickerSetId, string[]>} catalog
    * @returns {IconMatch[]}
    */
   function computePickerMatches(index, catalog) {
     const checkedTab = picker?.querySelector('input[name="icon-picker-set"]:checked');
-    const tab = checkedTab instanceof HTMLInputElement ? checkedTab.value : 'all';
+    /** @type {IconPickerSetId} */
+    const activeSet =
+      checkedTab instanceof HTMLInputElement && checkedTab.value === 'brands' ? 'brands' : 'lucide';
     const query = (pickerSearch?.value ?? '').trim().toLowerCase();
-    /** @type {IconPickerSetId[]} */
-    const sets = tab === 'lucide' || tab === 'brands' ? [tab] : ['lucide', 'brands'];
+    if (!query) {
+      updatePickerTabLabels(undefined);
+      /** @type {IconMatch[]} */
+      const allMatches = [];
+      for (const slug of catalog[activeSet]) {
+        allMatches.push({ set: activeSet, slug });
+      }
+      return allMatches;
+    }
+
+    const queryTokens = query.split(WHITESPACE_RX);
     /** @type {Set<string>} */
-    const aliasHits = new Set();
-    if (query) {
-      for (const [alias, primary] of Object.entries(index.lucideAliases)) {
-        if (alias.includes(query)) {
-          aliasHits.add(primary);
-        }
-      }
-    }
-    /** @type {IconMatch[]} */
-    const matches = [];
-    /** @type {IconMatch[]} */
-    const otherMatches = [];
-    for (const set of sets) {
-      for (const slug of catalog[set]) {
-        if (!query || slug.startsWith(query)) {
-          matches.push({ set, slug });
-        } else if (slug.includes(query) || (set === 'lucide' && aliasHits.has(slug))) {
-          otherMatches.push({ set, slug });
-        }
-      }
-    }
-    for (const match of otherMatches) {
-      matches.push(match);
-    }
-    return matches;
+    const lucideAliasHits = new Set();
+    /** @type {Set<string>} */
+    const brandAliasHits = new Set();
+    collectMatchingAliasTargets(index.lucideAliases, queryTokens, lucideAliasHits);
+    collectMatchingAliasTargets(index.brandAliases, queryTokens, brandAliasHits);
+    collectMatchingAliasTargets(index.aliases, queryTokens, lucideAliasHits);
+    collectMatchingAliasTargets(index.aliases, queryTokens, brandAliasHits);
+
+    const lucideMatches = computeSetMatches(
+      index,
+      catalog,
+      'lucide',
+      query,
+      queryTokens,
+      lucideAliasHits
+    );
+    const brandMatches = computeSetMatches(
+      index,
+      catalog,
+      'brands',
+      query,
+      queryTokens,
+      brandAliasHits
+    );
+    updatePickerTabLabels({ brands: brandMatches.length, lucide: lucideMatches.length });
+    return activeSet === 'brands' ? brandMatches : lucideMatches;
   }
 
   /**
@@ -3232,6 +3330,22 @@
     pickerNoneButton?.toggleAttribute('hidden', button.dataset.iconNone !== 'true');
   }
 
+  /**
+   * Auto-select the icon picker tab (`lucide` or `brands`) matching the target field's current icon
+   * or the builder's default icon set (`brands` when `schema.isBrandFirst` is true, `lucide` otherwise).
+   */
+  function syncPickerTabForTarget() {
+    const currentSlug =
+      !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
+    const targetSet =
+      iconResolver?.locate(currentSlug, schema.isBrandFirst)?.set ??
+      (schema.isBrandFirst ? 'brands' : 'lucide');
+    const tabInput = picker?.querySelector(`input[name="icon-picker-set"][value="${targetSet}"]`);
+    if (tabInput instanceof HTMLInputElement) {
+      tabInput.checked = true;
+    }
+  }
+
   /** Prepare the opened picker: Position it, reset the search, and render it (loading the index first if needed). */
   function openPicker() {
     if (picker && pickerTrigger) {
@@ -3241,6 +3355,7 @@
       pickerSearch.value = '';
       pickerSearch.focus();
     }
+    syncPickerTabForTarget();
     if (iconIndex) {
       renderPicker(true);
       return;
@@ -3254,6 +3369,7 @@
         validateIcons(form ?? document);
         flushPendingStackChips();
         if (picker && site?.isPopoverOpen(picker)) {
+          syncPickerTabForTarget();
           renderPicker(true);
         }
       },

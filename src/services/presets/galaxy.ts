@@ -43,7 +43,7 @@ export const GALAXY_SERVICE = defineService({
     dt: createDownloadsMetric(GALAXY_ENDPOINT, 'dt', (collection) => collection.download_count),
     v: createVersionMetric(
       GALAXY_ENDPOINT,
-      { defaultColor: 'slate', defaultIcon: 'ansible', defaultLabel: 'galaxy' },
+      { defaultColor: 'slate', defaultIcon: 'ansible', defaultLabel: 'Galaxy' },
       (collection) => collection.highest_version?.version
     ),
   },

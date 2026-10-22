@@ -34,12 +34,12 @@ export const JSR_SERVICE = defineService({
   metrics: {
     score: createPercentScoreMetric(
       JSR_ENDPOINT,
-      { ...SCORE, defaultLabel: 'jsr score' },
+      { ...SCORE, defaultLabel: 'JSR Score' },
       (pkg) => pkg.score
     ),
     v: createVersionMetric(
       JSR_ENDPOINT,
-      { defaultColor: 'yellow', defaultIcon: 'jsr', defaultLabel: 'jsr' },
+      { defaultColor: 'yellow', defaultIcon: 'jsr', defaultLabel: 'JSR' },
       (pkg) => pkg.latestVersion
     ),
   },

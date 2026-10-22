@@ -30,7 +30,7 @@ export const HACKAGE_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       HACKAGE_ENDPOINT,
-      { defaultColor: 'violet', defaultIcon: 'haskell', defaultLabel: 'hackage' },
+      { defaultColor: 'violet', defaultIcon: 'haskell', defaultLabel: 'Hackage' },
       (preferred) => {
         const versions = preferred['normal-version'];
         return Array.isArray(versions) ? versions[0] : undefined;

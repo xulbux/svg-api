@@ -18,6 +18,7 @@ import {
   ISSUES,
   LAST_COMMIT,
   LICENSE,
+  PULL_REQUESTS,
   SERIES_DELTA_SPECIALS,
   STARS,
   buildSeriesSpecials,
@@ -44,12 +45,16 @@ interface GitHubRepoPayload {
   forks_count: number;
   /** Repository license metadata (`null` without a detected license). */
   license: GitHubLicense | null;
-  /** Number of open issues and pull requests. */
-  open_issues_count: number;
   /** ISO 8601 timestamp of the most recent git push. */
   pushed_at: string;
   /** Number of repository stargazers. */
   stargazers_count: number;
+}
+
+/** Partial GitHub issue / pull request search payload (`api.github.com/search/issues`). */
+interface GitHubSearchCountPayload {
+  /** Total number of matching issues or pull requests. */
+  total_count: number;
 }
 
 /** Partial GitHub latest release API payload. */
@@ -76,10 +81,27 @@ const REPO_ENDPOINT = createEndpoint({
   project: pickFields<GitHubRepoPayload>([
     'forks_count',
     'license',
-    'open_issues_count',
     'pushed_at',
     'stargazers_count',
   ]),
+});
+
+/** GitHub open issues count endpoint (excludes pull requests via `type:issue`). */
+const ISSUES_ENDPOINT = createEndpoint({
+  api: 'https://api.github.com/search/issues?q=repo:{owner}/{target}+type:issue+state:open&per_page=1',
+  leadingKey: 'total_count',
+  missingStatuses: [422],
+  page: 'https://github.com/{owner}/{target}/issues',
+  project: pickFields<GitHubSearchCountPayload>(['total_count']),
+});
+
+/** GitHub open pull requests count endpoint (`type:pr`). */
+const PRS_ENDPOINT = createEndpoint({
+  api: 'https://api.github.com/search/issues?q=repo:{owner}/{target}+type:pr+state:open&per_page=1',
+  leadingKey: 'total_count',
+  missingStatuses: [422],
+  page: 'https://github.com/{owner}/{target}/pulls',
+  project: pickFields<GitHubSearchCountPayload>(['total_count']),
 });
 
 /** GitHub latest release endpoint. */
@@ -164,7 +186,7 @@ export const GITHUB_SERVICE = defineService({
   buildHeaders: buildGitHubHeaders,
   docs: {
     description:
-      'Repository stars, forks, open issues & PRs, license, last commit, release, and activity.',
+      'Repository stars, forks, open issues, open pull requests, license, last commit, release, and activity.',
     title: 'GitHub',
   },
   metrics: {
@@ -174,7 +196,7 @@ export const GITHUB_SERVICE = defineService({
         autoSpecials: SERIES_DELTA_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'activity',
-        defaultLabel: 'commits',
+        defaultLabel: 'Commits',
         defaultSpecial: 'sparkline',
       },
       transformGitHubActivity
@@ -189,14 +211,10 @@ export const GITHUB_SERVICE = defineService({
       FORKS,
       (repo) => repo.forks_count
     ),
-    // GitHub's `open_issues_count` includes open pull requests.
-    issues: createCountMetric(
-      withPageSuffix(REPO_ENDPOINT, '/issues'),
-      { ...ISSUES, defaultLabel: 'issues & PRs' },
-      (repo) => repo.open_issues_count
-    ),
+    issues: createCountMetric(ISSUES_ENDPOINT, ISSUES, (payload) => payload.total_count),
     // The repository root renders any license file (`LICENSE.md`, `COPYING`, …).
     license: createMetric(REPO_ENDPOINT, LICENSE, transformGitHubLicense),
+    prs: createCountMetric(PRS_ENDPOINT, PULL_REQUESTS, (payload) => payload.total_count),
     release: createReleaseMetric(RELEASE_ENDPOINT, (release) => release.tag_name),
     stars: createCountMetric(
       withPageSuffix(REPO_ENDPOINT, '/stargazers'),

@@ -186,12 +186,12 @@ export const CRATES_SERVICE = defineService({
     license: createLicenseMetric(CRATES_ENDPOINT, (crate) => crate.license),
     msrv: createVersionMetric(
       CRATES_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'rust', defaultLabel: 'msrv' },
+      { defaultColor: 'orange', defaultIcon: 'rust', defaultLabel: 'MSRV' },
       (crate) => crate.msrv
     ),
     size: createBytesMetric(
       CRATES_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'weight', defaultLabel: 'crate size' },
+      { defaultColor: 'sky', defaultIcon: 'weight', defaultLabel: 'Crate Size' },
       (crate) => crate.size
     ),
     v: createVersionMetric(

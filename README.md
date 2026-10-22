@@ -31,7 +31,7 @@ pnpm run dev
 
 1.  Create `src/services/presets/<service>.ts` exporting a service built with `defineService()` (`src/services/endpoint.ts`): `docs` metadata, a `route` descriptor (optional or required `owner` segment with an optional `resolveDefault`, and the `target` placeholder), and `metrics` built with the typed factories in `src/services/metrics.ts` (`createVersionMetric`, `createLicenseMetric`, `createDownloadsMetric`, `createCommunityMetric`, `createCountMetric`, `createPercentScoreMetric`, …). Metric keys are type-checked, so `metricAliases` can only point at existing metrics.
 2.  Declare upstream endpoints with `createEndpoint()`: URL templates (`{owner}`, `{target}`, `{path}` = `[owner/]target`, `{id}` = fully encoded `owner%2Ftarget`, `{npm}` = `[@owner/]target`, `{npm-id}` = `[@owner%2F]target`) encode every placeholder with `encodeURIComponent()` per path segment, a `ttl` from `CACHE_TTL` (`default`, `slow`, `daily`), and a `project` function (e.g., `pickFields`, `projectFirstEntry`) so only the few fields a badge needs are kept in the in-isolate and edge caches.
-3.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, global metric aliases (`l`, `dm`, `version`, `last-commit`, `pulls`, `cov`), and the `/docs/services` reference table pick it up automatically.
+3.  Register it in `SERVICES_CONFIG` (`src/config/services.ts`). Routing, validation, caching, global metric aliases (`l`, `dm`, `version`, `last-commit`, `pr`, `pulls`, `pull-requests`, `cov`), and the `/docs/services` reference table pick it up automatically.
 4.  Add a showcase card to `SERVICE_PRESET_CARDS` (`src/preview/catalog.ts`) and transform tests to `test/services.test.ts`. The service badge builder lists every public preset automatically.
 
 Download metrics use canonical keys with one shared suffix and color table: `dd` (last day, `/day`), `dw` (last week, `/wk`), `dl` (last month, `/mo`), `dq` (last 90 days, `/90d`), `dy` (last year, `/yr`), and `dt` (all-time, no suffix). Community counts (`followers`, `likes`, `members`, `online`, `players`, `posts`, `votes`, `backers`, `patrons`) share one label and color table as well, while the service brand icon identifies the platform.
@@ -70,19 +70,20 @@ https://svg.xul.is/badge/gh/:repo/:metric
 https://svg.xul.is/badge/gh/xulbux/:repo/:metric
 ```
 
-When `:owner` is omitted, it defaults to the `DEFAULT_GH_OWNER` binding (`missing owner` when the binding is unset). Opening any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, the repository root, `commits`, `releases`, or `graphs/commit-activity`) without fetching any metrics.
+When `:owner` is omitted, it defaults to the `DEFAULT_GH_OWNER` binding (`missing owner` when the binding is unset). Opening any `/badge/gh/*` badge in a browser (`Sec-Fetch-Dest: document`) redirects to the corresponding GitHub repository page (`stargazers`, `network/members`, `issues`, `pulls`, the repository root, `commits`, `releases`, or `graphs/commit-activity`) without fetching any metrics.
 
 ### Available `:metric` Presets
 
 | Metric | Route Example | Default Label | Default Color & Icon | Default Redirect Target |
 | :--- | :--- | :--- | :--- | :--- |
-| **`stars`** | `/badge/gh/python-lib-xulbux/stars` | `stars` | `amber` (`star`) | `github.com/xulbux/:repo/stargazers` |
-| **`forks`** | `/badge/gh/python-lib-xulbux/forks` | `forks` | `sky` (`git-fork`) | `github.com/xulbux/:repo/network/members` |
-| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `issues & PRs` (GitHub counts open pull requests as issues) | `rose` (`circle-dot`) | `github.com/xulbux/:repo/issues` |
-| **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `license` (`none` without a license, `custom` when unrecognized) | `slate` (`scale`) | `github.com/xulbux/:repo` |
-| **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `last commit` | `rose` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
-| **`release`** | `/badge/gh/python-lib-xulbux/release` | `release` | `indigo` (`tag`) | `github.com/xulbux/:repo/releases` |
-| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `commits` | `emerald` (`activity` + 8-week `sparkline`; auto `bars`, `delta`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |
+| **`stars`** | `/badge/gh/python-lib-xulbux/stars` | `Stars` | `amber` (`star`) | `github.com/xulbux/:repo/stargazers` |
+| **`forks`** | `/badge/gh/python-lib-xulbux/forks` | `Forks` | `sky` (`git-fork`) | `github.com/xulbux/:repo/network/members` |
+| **`issues`** | `/badge/gh/python-lib-xulbux/issues` | `Issues` | `rose` (`circle-dot`) | `github.com/xulbux/:repo/issues` |
+| **`prs`** or **`pr`**, **`pulls`**, **`pull-requests`** | `/badge/gh/python-lib-xulbux/prs` | `Pull Requests` | `violet` (`git-pull-request`) | `github.com/xulbux/:repo/pulls` |
+| **`license`** or **`l`** | `/badge/gh/python-lib-xulbux/license` | `License` (`none` without a license, `custom` when unrecognized) | `slate` (`scale`) | `github.com/xulbux/:repo` |
+| **`commit`** or **`last-commit`** | `/badge/gh/python-lib-xulbux/commit` | `Last Commit` | `rose` (`git-commit-horizontal`) | `github.com/xulbux/:repo/commits` |
+| **`release`** | `/badge/gh/python-lib-xulbux/release` | `Release` | `indigo` (`tag`) | `github.com/xulbux/:repo/releases` |
+| **`activity`** | `/badge/gh/python-lib-xulbux/activity` | `Commits` | `emerald` (`activity` + 8-week `sparkline`; auto `bars`, `delta`; `computing` while GitHub generates stats) | `github.com/xulbux/:repo/graphs/commit-activity` |
 
 ### Markdown Examples
 
@@ -103,5 +104,5 @@ All `/badge/gh/*` routes accept the standard badge query parameters plus `?label
 -   `?icon=<slug>|<left>,<right>|none,<right>|none` (override the default left icon, add both left and right icons, or show only a right icon)
 -   `?label=<text>` (override the left-hand label text on service badges)
 -   `?dot=<theme>|online|degraded|incident|offline|maintenance|beta|standby|none` (any theme color or status preset name)
--   `?anim=sheen|auto|spin|shake|nudge|pulse|float|<left>,<right>|sheen,<mode>|sheen,<left>,<right>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `<left>,<right>` like `none,nudge` or `shake,nudge` to animate left and right icons independently, `sheen,auto` for both, or `none` to disable all animations)
+-   `?anim=sheen|auto|spin|whirl|turn|shake|nudge|pulse|breathe|float|<left>,<right>|sheen,<mode>|sheen,<left>,<right>|none` (defaults to static icons/surfaces; pass `sheen` for surface sweep only, `auto` or a specific motion for icon animation, `<left>,<right>` like `none,nudge` or `shake,nudge` to animate left and right icons independently, `sheen,auto` for both, or `none` to disable all animations)
 -   `?special=sparkline|bars|bar|steps|ring|strip|delta|none` (populate a supported widget automatically from live upstream data, pass `none` to hide a default preset widget, or pass `<kind>:<payload>` for custom numbers)

@@ -52,7 +52,7 @@ export const CONDA_SERVICE = defineService({
     license: createLicenseMetric(CONDA_ENDPOINT, (pkg) => pkg.license),
     v: createVersionMetric(
       CONDA_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'condaforge', defaultLabel: 'conda' },
+      { defaultColor: 'emerald', defaultIcon: 'condaforge', defaultLabel: 'Conda' },
       (pkg) => pkg.latest_version
     ),
   },

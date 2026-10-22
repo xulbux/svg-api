@@ -48,7 +48,7 @@ const MODULE_ADDRESS_SEGMENTS = 3;
 const TERRAFORM_VERSION: MetricPresentation = {
   defaultColor: 'violet',
   defaultIcon: 'terraform',
-  defaultLabel: 'terraform',
+  defaultLabel: 'Terraform',
 };
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -175,7 +175,7 @@ function createProviderService(): ServiceDefinition {
       ),
       v: createVersionMetric(
         latestVersionEndpoint,
-        { ...TERRAFORM_VERSION, defaultLabel: 'terraform provider' },
+        { ...TERRAFORM_VERSION, defaultLabel: 'Terraform Provider' },
         (resource) => resource.version
       ),
     },

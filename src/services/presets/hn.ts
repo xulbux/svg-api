@@ -38,7 +38,7 @@ export const HACKER_NEWS_SERVICE = defineService({
   metrics: {
     karma: createCountMetric(
       HN_KARMA_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'ycombinator', defaultLabel: 'karma' },
+      { defaultColor: 'orange', defaultIcon: 'ycombinator', defaultLabel: 'Karma' },
       (payload) => payload.karma
     ),
   },

@@ -94,7 +94,7 @@ export const PACKAGIST_SERVICE = defineService({
     dt: createDownloadsMetric(PACKAGIST_ENDPOINT, 'dt', (stats) => stats.total),
     v: createVersionMetric(
       PACKAGIST_ENDPOINT,
-      { defaultColor: 'orange', defaultIcon: 'packagist', defaultLabel: 'packagist' },
+      { defaultColor: 'orange', defaultIcon: 'packagist', defaultLabel: 'Packagist' },
       (stats) => stats.version
     ),
   },

@@ -51,7 +51,7 @@ export const FEDORA_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       FEDORA_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'fedora', defaultLabel: 'fedora' },
+      { defaultColor: 'blue', defaultIcon: 'fedora', defaultLabel: 'Fedora' },
       (pkg) => buildPackageVersion(pkg.epoch, pkg.version, pkg.release)
     ),
   },

@@ -553,9 +553,11 @@ describe('documentation drift guards', () => {
   it('documents and showcases every status preset, the unknown-state fallback, and all ?dot= values', () => {
     const badgesHtml = renderDocsHtml('badges');
     for (const state of Object.keys(STATUS_PRESET_MAP)) {
-      expect(badgesHtml, state).toContain(`${SITE_ORIGIN}/badge/status/${state}/`);
+      expect(badgesHtml, state).toContain(
+        `<span class="hl-url">${SITE_ORIGIN}/badge</span><span class="hl-path">/status/${state}/`
+      );
     }
-    expect(badgesHtml).toContain('unknown states render a neutral slate dot');
+    expect(badgesHtml).toContain('Unknown states render a neutral slate dot');
     expect(badgesHtml).toContain(`(${THEME_COLOR_NAMES.length} colors)`);
     expect(badgesHtml).toContain('Accepts a status preset name or any theme color');
   });
@@ -594,10 +596,10 @@ describe('documentation drift guards', () => {
     expect(stackHtml).toContain(`round(gap × ${GROUP_GAP_RATIO})`);
     expect(stackHtml).toMatch(/<th scope="row" role="rowheader">\?anim=<\/th>/);
     expect(stackHtml).toContain(
-      `<span class="hl-url">${SITE_ORIGIN}/stack/${STACK_EXAMPLE_GROUPS}</span>`
+      `<span class="hl-url">${SITE_ORIGIN}/stack</span><span class="hl-path">/${STACK_EXAMPLE_GROUPS}</span>`
     );
     expect(renderHomeHtml()).toContain(
-      `<span class="hl-url">${SITE_ORIGIN}/stack/${STACK_EXAMPLE_GROUPS}</span>`
+      `<span class="hl-url">${SITE_ORIGIN}/stack</span><span class="hl-path">/${STACK_EXAMPLE_GROUPS}</span>`
     );
   });
 
@@ -814,9 +816,13 @@ describe('site stylesheet', () => {
     }
   });
 
-  it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-op for syntax highlighting', () => {
+  it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-path for syntax highlighting', () => {
     const css = getSiteStylesheet();
     expect(css).toContain('--c-danger: light-dark(#C5002B, #FF6467);');
+    expect(css).toContain('--c-hl-path: light-dark(#4131CE, #BECBFF);');
+    expect(css).toContain('--c-hl-key: light-dark(#2B7676, #7CEEE3);');
+    expect(css).toContain('--c-hl-val: light-dark(#214A4B, #BCFFF7);');
+    expect(css).toContain('--c-hl-href: light-dark(#3D3D3D, #C2C2C2);');
     expect(css).not.toContain('--c-warning');
     expect(css).toMatch(
       /\.copy-btn\.is-failed,\s*\.btn-secondary\.is-failed \{[^}]*color: var\(--c-danger\);/
@@ -826,8 +832,8 @@ describe('site stylesheet', () => {
     expect(css).toMatch(
       /\.icon-input\.is-invalid \.icon-select-trigger,\s*\.builder-field:is\(\.is-invalid, \.is-missing\) :is\(\.builder-input, \.stack-catalog-wrap\) \{\s*border-color: var\(--c-danger\);/
     );
-    expect(css.split('var(--c-hl-op)').length - 1).toBe(1);
-    expect(css).toMatch(/\.hl-op \{\s*color: var\(--c-hl-op\);/);
+    expect(css.split('var(--c-hl-path)').length - 1).toBe(1);
+    expect(css).toMatch(/\.hl-path \{\s*color: var\(--c-hl-path\);/);
   });
 
   it('turns the 3-column card grid into an .is-3col modifier and styles native disabled scroll buttons', () => {

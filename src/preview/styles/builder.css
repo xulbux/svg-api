@@ -565,7 +565,6 @@
   inset-block-start: calc(var(--header-height) + 20px);
   max-block-size: calc(100dvh - var(--header-height) - 40px);
   overflow-y: auto;
-  overscroll-behavior: contain;
   scrollbar-width: thin;
 }
 
@@ -900,7 +899,6 @@
   max-block-size: 380px;
   padding: 12px 10px;
   overflow-y: auto;
-  overscroll-behavior: contain;
   scrollbar-width: thin;
   -webkit-mask-image: linear-gradient(
     to bottom,

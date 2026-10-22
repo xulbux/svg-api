@@ -77,7 +77,7 @@ export const NUGET_SERVICE = defineService({
     ),
     v: createVersionMetric(
       NUGET_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'nuget', defaultLabel: 'nuget' },
+      { defaultColor: 'blue', defaultIcon: 'nuget', defaultLabel: 'NuGet' },
       (entry) => entry.version
     ),
   },

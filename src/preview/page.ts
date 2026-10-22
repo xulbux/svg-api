@@ -80,19 +80,19 @@ const COUNT_WORDS: readonly string[] = [
 const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
-      { alt: 'Status Online', path: '/badge/status/online/operational' },
+      { alt: 'Status Online', path: '/badge/status/online/Operational' },
       { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
       {
         alt: 'Coverage',
-        path: '/badge/coverage/99.4%25?icon=shield-check&color=emerald&variant=2&special=bar:99.4',
+        path: '/badge/Coverage/99.4%25?icon=shield-check&color=emerald&variant=2&special=bar:99.4',
       },
       {
         alt: 'Edge Latency',
-        path: '/badge/latency/11ms?icon=zap&color=cyan&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
+        path: '/badge/Latency/11ms?icon=zap&color=cyan&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
       },
       {
         alt: 'Uptime',
-        path: '/badge/uptime/99.98%25?icon=activity&color=violet&variant=3&special=strip:9998997999',
+        path: '/badge/Uptime/99.98%25?icon=activity&color=violet&variant=3&special=strip:9998997999',
       },
       {
         alt: 'Explore Docs',

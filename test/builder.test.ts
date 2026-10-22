@@ -813,8 +813,9 @@ describe('builder client core', () => {
       `<a href="https://example.com/a (b)/&lt;c&gt;"><img src="https://svg.xul.is/badge/a/b?icon=zap&color=rose" alt="a\\b" /></a>`
     );
     const htmlTokens = core.buildSnippetTokens(url, 'x', '').html;
-    expect(htmlTokens).toContainEqual(['hl-op', '&']);
-    expect(htmlTokens).toContainEqual(['hl-key', 'color']);
+    expect(htmlTokens).toContainEqual(['hl-path', '/a/b']);
+    expect(htmlTokens).toContainEqual(['hl-key', '&color=']);
+    expect(htmlTokens).toContainEqual(['hl-val', 'rose']);
   });
 
   it('builds the same Markdown tokens as the docs code drawers (parity with components.ts)', () => {
@@ -985,6 +986,9 @@ describe('icon picker index & assets', () => {
     const index = JSON.parse(indexAsset?.body ?? '{}') as IconPickerIndex;
     expect(index.sets.lucide.length).toBeGreaterThan(1000);
     expect(index.sets.brands.length).toBeGreaterThan(1000);
+    expect(index.lucideTags.cog).toContain('settings');
+    expect(index.lucideTags['sliders-horizontal']).toContain('settings');
+    expect(index.lucideTags.wrench).toContain('settings');
     for (const set of ['lucide', 'brands'] as const) {
       const pageCount = Math.ceil(index.sets[set].length / index.pageSize);
       const lastPage = getSiteAsset(`icons-${set}-${pageCount - 1}.json`);
@@ -1099,7 +1103,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(builderScript).not.toMatch(/innerHeight - 420|innerWidth - 380/);
   });
 
-  it('renders the icon picker glyph templates with the UI icon paint attributes', () => {
+  it('renders the icon picker glyph templates and separate Lucide and Brands tabs without an All tab', () => {
     const html = renderBuilderHtml('stack');
     expect(html).toContain(
       '<svg data-set="lucide" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>'
@@ -1107,6 +1111,15 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toContain(
       '<svg data-set="brands" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"></svg>'
     );
+    expect(html).toContain(
+      '<span data-picker-tab-label="lucide" data-label="Lucide">Lucide</span>'
+    );
+    expect(html).toContain(
+      '<span data-picker-tab-label="brands" data-label="Brands">Brands</span>'
+    );
+    expect(html).not.toContain('name="icon-picker-set" value="all"');
+    expect(builderScript).toContain('updatePickerTabLabels(');
+    expect(builderScript).toContain('syncPickerTabForTarget(');
     expect(builderScript).not.toContain("'stroke-linecap'");
   });
 

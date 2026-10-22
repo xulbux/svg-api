@@ -81,7 +81,7 @@ export const ZENODO_SERVICE = defineService({
   metrics: {
     doi: createTextMetric(
       ZENODO_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'zenodo', defaultLabel: 'doi' },
+      { defaultColor: 'sky', defaultIcon: 'zenodo', defaultLabel: 'DOI' },
       (record) => record.doi
     ),
     dt: createDownloadsMetric(ZENODO_ENDPOINT, 'dt', (record) => record.downloads),
@@ -90,17 +90,17 @@ export const ZENODO_SERVICE = defineService({
       ZENODO_ENDPOINT,
       'dt',
       (record) => record.uniqueDownloads,
-      { autoSpecials: RATIO_SPECIALS, defaultLabel: 'unique downloads' },
+      { autoSpecials: RATIO_SPECIALS, defaultLabel: 'Unique Downloads' },
       (record) => buildRatioSpecials(record.uniqueDownloads, record.downloads)
     ),
     v: createVersionMetric(
       ZENODO_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'zenodo', defaultLabel: 'zenodo' },
+      { defaultColor: 'blue', defaultIcon: 'zenodo', defaultLabel: 'Zenodo' },
       (record) => record.version
     ),
     views: createCountMetric(
       ZENODO_ENDPOINT,
-      { defaultColor: 'violet', defaultIcon: 'eye', defaultLabel: 'views' },
+      { defaultColor: 'violet', defaultIcon: 'eye', defaultLabel: 'Views' },
       (record) => record.views
     ),
   },

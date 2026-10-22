@@ -841,6 +841,12 @@ function wrapIconWithAnimation(
     case 'spin': {
       return `<g><animateTransform attributeName="transform" type="rotate" from="0 ${ICON_CENTER} ${ICON_CENTER}" to="360 ${ICON_CENTER} ${ICON_CENTER}" dur="3s" repeatCount="indefinite" />${innerSvg}</g>`;
     }
+    case 'whirl': {
+      return `<g><animateTransform attributeName="transform" type="rotate" values="0 ${ICON_CENTER} ${ICON_CENTER};360 ${ICON_CENTER} ${ICON_CENTER}" keyTimes="0;1" calcMode="spline" keySplines="0.42 0.15 0.58 0.85" dur="2.2s" repeatCount="indefinite" />${innerSvg}</g>`;
+    }
+    case 'turn': {
+      return `<g><animateTransform attributeName="transform" type="rotate" values="0 ${ICON_CENTER} ${ICON_CENTER};0 ${ICON_CENTER} ${ICON_CENTER};360 ${ICON_CENTER} ${ICON_CENTER}" keyTimes="0;0.58;1" calcMode="spline" keySplines="0 0 1 1;0.42 0 0.2 1" dur="3s" repeatCount="indefinite" />${innerSvg}</g>`;
+    }
     case 'shake': {
       return wrapCenteredAnimation(
         innerSvg,
@@ -857,8 +863,14 @@ function wrapIconWithAnimation(
         '<animateTransform attributeName="transform" type="scale" values="1;1;1.18;0.96;1.14;1;1" keyTimes="0;0.58;0.68;0.76;0.84;0.94;1" dur="2.6s" repeatCount="indefinite" />'
       );
     }
+    case 'breathe': {
+      return wrapCenteredAnimation(
+        innerSvg,
+        '<animateTransform attributeName="transform" type="scale" values="1;1.14;1;0.92;1" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="3.4s" repeatCount="indefinite" />'
+      );
+    }
     case 'float': {
-      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.28;0.55;0.80;1" dur="3.4s" repeatCount="indefinite" />${innerSvg}</g>`;
+      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="3.4s" repeatCount="indefinite" />${innerSvg}</g>`;
     }
     default: {
       return innerSvg;
@@ -1760,9 +1772,9 @@ export function renderButton(options: ButtonRenderOptions): string {
 
 /**
  * Render a standalone SVG icon string (`svg.xul.is/icon/:icon`).
- * Uses a padded `-3 -3 30 30` viewBox centered at `(12, 12)` so rotation, scale, and translation
- * micro-animations never clip on any of the four sides. Unknown slugs draw `FALLBACK_ICON_SLUG`
- * and are labeled `unknown icon: <slug>`.
+ * Uses a padded `-3 -5 30 30` viewBox so the glyph sits slightly lower for optical baseline alignment
+ * next to inline Markdown text while rotation, scale, and translation micro-animations never clip.
+ * Unknown slugs draw `FALLBACK_ICON_SLUG` and are labeled `unknown icon: <slug>`.
  * @param options   Standalone icon rendering configuration (`icon`, `color`, `size`, `strokeWidth`, `anim`).
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -1798,7 +1810,7 @@ export function renderIcon(options: IconRenderOptions): string {
     defs: sheenDef,
     height: size,
     paintAttrs: renderIconPaintAttrs(iconData.type, iconColor, strokeWidth),
-    viewBox: '-3 -3 30 30',
+    viewBox: '-3 -5 30 30',
     width: size,
   });
 }

@@ -104,7 +104,7 @@ function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefin
       ),
       updated: createRelativeDateMetric(
         withPageSuffix(repoEndpoint, '/activity'),
-        { ...LAST_COMMIT, defaultLabel: 'last activity' },
+        { ...LAST_COMMIT, defaultLabel: 'Last Activity' },
         (repo) => repo.updated_at
       ),
     },

@@ -213,12 +213,12 @@ export const PYPI_SERVICE = defineService({
     license: createLicenseMetric(PYPI_ENDPOINT, (info) => info.license),
     py: createMetric(
       PYPI_ENDPOINT,
-      { defaultColor: 'amber', defaultIcon: 'python', defaultLabel: 'python' },
+      { defaultColor: 'amber', defaultIcon: 'python', defaultLabel: 'Python' },
       transformPyPiPythonVersion
     ),
     v: createVersionMetric(
       PYPI_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'pypi', defaultLabel: 'pypi' },
+      { defaultColor: 'sky', defaultIcon: 'pypi', defaultLabel: 'PyPI' },
       (info) => info.version
     ),
   },

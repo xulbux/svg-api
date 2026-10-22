@@ -37,7 +37,7 @@ export const MACPORTS_SERVICE = defineService({
     license: createLicenseMetric(MACPORTS_ENDPOINT, (port) => port.license),
     v: createVersionMetric(
       MACPORTS_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'macports', defaultLabel: 'macports' },
+      { defaultColor: 'blue', defaultIcon: 'macports', defaultLabel: 'MacPorts' },
       (port) => port.version
     ),
   },

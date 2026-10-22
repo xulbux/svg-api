@@ -130,34 +130,39 @@ function renderAnchorLink(targetId: string, label: string): string {
 }
 
 /**
- * Split a URL into highlight tokens (base, `?`, keys, `=`, values, `&`); Same algorithm as `tokenizeUrl` in the
- * builder client (`src/preview/scripts/builder.client.js`), guarded by a parity test.
+ * Split a URL into highlight tokens (origin + endpoint, path segments, `?key=` / `&key=`, values); Same algorithm
+ * as `tokenizeUrl` in the builder client (`src/preview/scripts/builder.client.js`), guarded by a parity test.
  */
 function tokenizeUrl(url: string): HighlightToken[] {
   const queryIndex = url.indexOf('?');
+  const base = queryIndex === -1 ? url : url.slice(0, queryIndex);
+  const schemeEnd = base.indexOf('://');
+  const endpointSlash = schemeEnd === -1 ? base.indexOf('/') : base.indexOf('/', schemeEnd + 3);
+  const pathSlash = endpointSlash === -1 ? -1 : base.indexOf('/', endpointSlash + 1);
+  const tokens: HighlightToken[] =
+    pathSlash === -1
+      ? [['hl-url', base]]
+      : [
+          ['hl-url', base.slice(0, pathSlash)],
+          ['hl-path', base.slice(pathSlash)],
+        ];
   if (queryIndex === -1) {
-    return [['hl-url', url]];
+    return tokens;
   }
-  const tokens: HighlightToken[] = [
-    ['hl-url', url.slice(0, queryIndex)],
-    ['hl-op', '?'],
-  ];
   for (const [i, pair] of url
     .slice(queryIndex + 1)
     .split('&')
     .entries()) {
-    if (i > 0) {
-      tokens.push(['hl-op', '&']);
-    }
+    const prefix = i === 0 ? '?' : '&';
     const equalsIndex = pair.indexOf('=');
     if (equalsIndex === -1) {
-      tokens.push(['hl-key', pair]);
+      tokens.push(['hl-key', `${prefix}${pair}`]);
     } else {
-      tokens.push(
-        ['hl-key', pair.slice(0, equalsIndex)],
-        ['hl-op', '='],
-        ['hl-val', pair.slice(equalsIndex + 1)]
-      );
+      tokens.push(['hl-key', `${prefix}${pair.slice(0, equalsIndex + 1)}`]);
+      const value = pair.slice(equalsIndex + 1);
+      if (value) {
+        tokens.push(['hl-val', value]);
+      }
     }
   }
   return tokens;

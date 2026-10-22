@@ -43,7 +43,7 @@ const HITS: MetricPresentation = {
   autoSpecials: SERIES_DELTA_SPECIALS,
   defaultColor: 'orange',
   defaultIcon: 'jsdelivr',
-  defaultLabel: 'jsdelivr',
+  defaultLabel: 'jsDelivr',
 };
 
 // -------------------------------------- INTERNALS --------------------------------------

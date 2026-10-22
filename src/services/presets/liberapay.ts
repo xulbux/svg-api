@@ -77,7 +77,7 @@ export const LIBERAPAY_SERVICE = defineService({
         autoSpecials: RATIO_STEPS_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'liberapay',
-        defaultLabel: 'receives',
+        defaultLabel: 'Receives',
       },
       transformLiberapayReceiving
     ),

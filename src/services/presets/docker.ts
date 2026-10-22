@@ -52,12 +52,12 @@ export const DOCKER_SERVICE = defineService({
   metrics: {
     pulls: createCountMetric(
       DOCKER_HUB_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'docker', defaultLabel: 'docker pulls' },
+      { defaultColor: 'sky', defaultIcon: 'docker', defaultLabel: 'Docker Pulls' },
       (repo) => repo.pull_count
     ),
     stars: createCountMetric(
       DOCKER_HUB_ENDPOINT,
-      { ...STARS, defaultLabel: 'docker stars' },
+      { ...STARS, defaultLabel: 'Docker Stars' },
       (repo) => repo.star_count
     ),
     updated: createRelativeDateMetric(DOCKER_HUB_ENDPOINT, UPDATED, (repo) => repo.last_updated),

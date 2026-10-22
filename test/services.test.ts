@@ -307,7 +307,9 @@ describe('service registry integrity', () => {
     const colorsByKind = new Map<string, string>();
     for (const [service, metric, icon] of communityMetrics) {
       const config = getServiceMetric(service, metric);
-      expect(config.defaultLabel, `${service}/${metric}`).toBe(metric);
+      expect(config.defaultLabel, `${service}/${metric}`).toBe(
+        `${(metric[0] ?? '').toUpperCase()}${metric.slice(1)}`
+      );
       expect(config.defaultIcon, `${service}/${metric}`).toBe(icon);
       const kindColor = colorsByKind.get(metric) ?? config.defaultColor;
       colorsByKind.set(metric, kindColor);
@@ -378,17 +380,26 @@ describe('existing service presets', () => {
         stargazers_count: 1420,
       },
       '/repos/xulbux/color-tracr/releases/latest': { tag_name: 'v2.1.0' },
+      'search/issues?q=repo:xulbux/color-tracr+type:issue+state:open': { total_count: 5 },
+      'search/issues?q=repo:xulbux/color-tracr+type:pr+state:open': { total_count: 2 },
     });
 
-    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('stars: 1.4k');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/commit')).toBe('last commit: today');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('Stars: 1.4k');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/commit')).toBe('Last Commit: today');
     expect(await requestAriaLabel('/badge/gh/xulbux/color-tracr/last-commit')).toBe(
-      'last commit: today'
+      'Last Commit: today'
     );
-    expect(await requestAriaLabel('/badge/gh/color-tracr/license')).toBe('license: MIT');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/release')).toBe('release: v2.1.0');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/issues')).toBe('issues &amp; PRs: 7');
-    expect(requestedUrls).toHaveLength(2);
+    expect(await requestAriaLabel('/badge/gh/color-tracr/license')).toBe('License: MIT');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/release')).toBe('Release: v2.1.0');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/issues')).toBe('Issues: 5');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/prs')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/pr')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/pulls')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/pull-requests')).toBe('Pull Requests: 2');
+    expect(resolvePathRedirect('/badge/gh/color-tracr/prs')).toBe(
+      'https://github.com/xulbux/color-tracr/pulls'
+    );
+    expect(requestedUrls).toHaveLength(4);
   });
 
   it('reports missing GitHub licenses as none and unrecognized ones as custom (regression: license null showed custom)', async () => {
@@ -396,8 +407,8 @@ describe('existing service presets', () => {
       '/repos/xulbux/no-license': { license: null },
       '/repos/xulbux/odd-license': { license: { spdx_id: 'NOASSERTION' } },
     });
-    expect(await describeMetric('/badge/gh/no-license/license')).toBe('license: none');
-    expect(await describeMetric('/badge/gh/odd-license/l')).toBe('license: custom');
+    expect(await describeMetric('/badge/gh/no-license/license')).toBe('License: none');
+    expect(await describeMetric('/badge/gh/odd-license/l')).toBe('License: custom');
     expect(resolvePathRedirect('/badge/gh/no-license/license')).toBe(
       'https://github.com/xulbux/no-license'
     );
@@ -429,7 +440,7 @@ describe('existing service presets', () => {
   it('shows "computing" while GitHub statistics are still being generated (HTTP 202)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 202 }));
     const badge = await requestBadge('/badge/gh/color-tracr/activity');
-    expect(badge.ariaLabel).toBe('commits: computing');
+    expect(badge.ariaLabel).toBe('Commits: computing');
   });
 
   it('resolves PyPI metrics and queries ClickPy with the PEP 503 normalized name over 30 full days', async () => {
@@ -438,9 +449,9 @@ describe('existing service presets', () => {
       'sql-clickhouse': { row_1: { last_month: '3333', total: '86808' } },
     });
 
-    expect(await requestAriaLabel('/badge/pypi/xulbux/v')).toBe('pypi: v1.4.0');
-    expect(await requestAriaLabel('/badge/pypi/xulbux/py')).toBe('python: any');
-    expect(await requestAriaLabel('/badge/pypi/xulbux/l')).toBe('license: MIT');
+    expect(await requestAriaLabel('/badge/pypi/xulbux/v')).toBe('PyPI: v1.4.0');
+    expect(await requestAriaLabel('/badge/pypi/xulbux/py')).toBe('Python: any');
+    expect(await requestAriaLabel('/badge/pypi/xulbux/l')).toBe('License: MIT');
     expect(await requestAriaLabel('/badge/pypi/xulbux/dt?label=total+downloads')).toBe(
       'total downloads: 86.8k'
     );
@@ -473,9 +484,9 @@ describe('existing service presets', () => {
         },
       },
     });
-    expect(await describeMetric('/badge/pypi/classic/license')).toBe('license: MIT License');
+    expect(await describeMetric('/badge/pypi/classic/license')).toBe('License: MIT License');
     expect(await describeMetric('/badge/pypi/full-text/license')).toBe(
-      'license: Apache Software License'
+      'License: Apache Software License'
     );
   });
 
@@ -492,9 +503,9 @@ describe('existing service presets', () => {
     });
     expect(await requestAriaLabel('/badge/npm/hono/v')).toBe('npm: v4.13.13');
     expect(await requestAriaLabel('/badge/npm/hono/version')).toBe('npm: v4.13.13');
-    expect(await requestAriaLabel('/badge/npm/hono/types')).toBe('types: included');
-    expect(await requestAriaLabel('/badge/npm/@hono/node-server/dy')).toBe('downloads: 12.4M/yr');
-    expect(await requestAriaLabel('/badge/npm/@hono/node-server/dt')).toBe('downloads: 12.4M/yr');
+    expect(await requestAriaLabel('/badge/npm/hono/types')).toBe('Types: included');
+    expect(await requestAriaLabel('/badge/npm/@hono/node-server/dy')).toBe('Downloads: 12.4M/yr');
+    expect(await requestAriaLabel('/badge/npm/@hono/node-server/dt')).toBe('Downloads: 12.4M/yr');
     expect(requestedUrls).toHaveLength(2);
   });
 
@@ -509,10 +520,10 @@ describe('existing service presets', () => {
       'registry.npmjs.org/fallback/latest': { exports: { '.': ['./a.js', { types: './a.d.ts' }] } },
       'registry.npmjs.org/untyped/latest': { exports: './index.js' },
     });
-    expect(await describeMetric('/badge/npm/exports-types/types')).toBe('types: included');
-    expect(await describeMetric('/badge/npm/fallback/types')).toBe('types: included');
-    expect(await describeMetric('/badge/npm/untyped/types')).toBe('types: none');
-    expect(await describeMetric('/badge/npm/deep/types')).toBe('types: none');
+    expect(await describeMetric('/badge/npm/exports-types/types')).toBe('Types: included');
+    expect(await describeMetric('/badge/npm/fallback/types')).toBe('Types: included');
+    expect(await describeMetric('/badge/npm/untyped/types')).toBe('Types: none');
+    expect(await describeMetric('/badge/npm/deep/types')).toBe('Types: none');
   });
 
   it('resolves Open VSX, crates.io, and Docker Hub metrics (Open VSX requires a namespace)', async () => {
@@ -530,12 +541,12 @@ describe('existing service presets', () => {
         version: '1.2.3',
       },
     });
-    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/v')).toBe('open vsx: v1.2.3');
-    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/rating')).toBe('rating: unrated');
-    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/license')).toBe('license: MIT');
+    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/v')).toBe('Open VSX: v1.2.3');
+    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/rating')).toBe('Rating: unrated');
+    expect(await requestAriaLabel('/badge/ovsx/xulbux/color-tracr/license')).toBe('License: MIT');
     expect(await requestAriaLabel('/badge/crates/serde/v')).toBe('crates.io: v1.0.215');
-    expect(await requestAriaLabel('/badge/docker/nginx/dl')).toBe('docker pulls: 1.2B');
-    expect(await requestAriaLabel('/badge/docker/nginx/updated')).toBe('updated: today');
+    expect(await requestAriaLabel('/badge/docker/nginx/dl')).toBe('Docker Pulls: 1.2B');
+    expect(await requestAriaLabel('/badge/docker/nginx/updated')).toBe('Updated: today');
     expect(requestedUrls).toHaveLength(3);
   });
 
@@ -578,13 +589,13 @@ describe('existing service presets', () => {
       },
     });
     expect(await describeMetric('/badge/crates/serde/v')).toBe('crates.io: v1.0.229');
-    expect(await describeMetric('/badge/crates/serde/license')).toBe('license: MIT OR Apache-2.0');
-    expect(await describeMetric('/badge/crates/serde/msrv')).toBe('msrv: v1.56');
-    expect(await describeMetric('/badge/crates/serde/rust')).toBe('msrv: v1.56');
-    expect(await describeMetric('/badge/crates/serde/size')).toBe('crate size: 79 kB');
-    expect(await describeMetric('/badge/crates/serde/dq')).toBe('downloads: 367.7M/90d');
-    expect(await describeMetric('/badge/crates/serde/dl')).toBe('downloads: 367.7M/90d');
-    expect(await describeMetric('/badge/crates/serde/dt')).toBe('downloads: 1.6B');
+    expect(await describeMetric('/badge/crates/serde/license')).toBe('License: MIT OR Apache-2.0');
+    expect(await describeMetric('/badge/crates/serde/msrv')).toBe('MSRV: v1.56');
+    expect(await describeMetric('/badge/crates/serde/rust')).toBe('MSRV: v1.56');
+    expect(await describeMetric('/badge/crates/serde/size')).toBe('Crate Size: 79 kB');
+    expect(await describeMetric('/badge/crates/serde/dq')).toBe('Downloads: 367.7M/90d');
+    expect(await describeMetric('/badge/crates/serde/dl')).toBe('Downloads: 367.7M/90d');
+    expect(await describeMetric('/badge/crates/serde/dt')).toBe('Downloads: 1.6B');
     expect(requestedUrls).toEqual([
       'https://crates.io/api/v1/crates/serde?include=default_version,downloads',
       'https://crates.io/api/v1/crates/serde/downloads',
@@ -608,12 +619,12 @@ describe('new service presets', () => {
         ],
       },
     });
-    expect(await requestAriaLabel('/badge/aur/yay/v')).toBe('aur: v13.0.1-1');
-    expect(await requestAriaLabel('/badge/aur/yay/votes')).toBe('votes: 2.6k');
-    expect(await requestAriaLabel('/badge/aur/yay/popularity')).toBe('popularity: 18.66');
-    expect(await requestAriaLabel('/badge/aur/yay/license')).toBe('license: GPL-3.0-or-later');
-    expect(await requestAriaLabel('/badge/aur/stale/v')).toBe('aur: v1.0-1 (outdated)');
-    expect(await requestAriaLabel('/badge/aur/missing/v')).toBe('aur: not found');
+    expect(await requestAriaLabel('/badge/aur/yay/v')).toBe('AUR: v13.0.1-1');
+    expect(await requestAriaLabel('/badge/aur/yay/votes')).toBe('Votes: 2.6k');
+    expect(await requestAriaLabel('/badge/aur/yay/popularity')).toBe('Popularity: 18.66');
+    expect(await requestAriaLabel('/badge/aur/yay/license')).toBe('License: GPL-3.0-or-later');
+    expect(await requestAriaLabel('/badge/aur/stale/v')).toBe('AUR: v1.0-1 (outdated)');
+    expect(await requestAriaLabel('/badge/aur/missing/v')).toBe('AUR: not found');
   });
 
   it('resolves Codeberg and GitLab repository metrics for any owner', async () => {
@@ -629,19 +640,19 @@ describe('new service presets', () => {
         star_count: 2579,
       },
     });
-    expect(await requestAriaLabel('/badge/codeberg/forgejo/forgejo/stars')).toBe('stars: 5.7k');
-    expect(await requestAriaLabel('/badge/codeberg/forgejo/forgejo/issues')).toBe('issues: 1.6k');
+    expect(await requestAriaLabel('/badge/codeberg/forgejo/forgejo/stars')).toBe('Stars: 5.7k');
+    expect(await requestAriaLabel('/badge/codeberg/forgejo/forgejo/issues')).toBe('Issues: 1.6k');
     expect(await requestAriaLabel('/badge/codeberg/forgejo/forgejo/commit')).toBe(
-      'last activity: today'
+      'Last Activity: today'
     );
     expect(await requestAriaLabel('/badge/gitlab/gitlab-org/gitlab-runner/stars')).toBe(
-      'stars: 2.6k'
+      'Stars: 2.6k'
     );
     expect(await requestAriaLabel('/badge/gitlab/gitlab-org/gitlab-runner/license')).toBe(
-      'license: Apache-2.0'
+      'License: Apache-2.0'
     );
     expect(await requestAriaLabel('/badge/gitlab/gitlab-org/gitlab-runner/release')).toBe(
-      'release: v19.5.0'
+      'Release: v19.5.0'
     );
     expect(requestedUrls).toHaveLength(3);
     expect(await requestAriaLabel('/badge/codeberg/forgejo/stars')).toBe('codeberg: missing owner');
@@ -653,7 +664,7 @@ describe('new service presets', () => {
         statistics: { counts: { all: 6394, closed: 4281, opened: 2113 } },
       },
     });
-    expect(await describeMetric('/badge/gitlab/inkscape/inkscape/issues')).toBe('issues: 2.1k');
+    expect(await describeMetric('/badge/gitlab/inkscape/inkscape/issues')).toBe('Issues: 2.1k');
     expect(requestedUrls).toEqual([
       'https://gitlab.com/api/v4/projects/inkscape%2Finkscape/issues_statistics?scope=all',
     ]);
@@ -667,7 +678,7 @@ describe('new service presets', () => {
       'gitlab.com/api/v4/projects/gitlab-org%2Fcharts%2Fgitlab-runner?': { star_count: 512 },
     });
     expect(await describeMetric('/badge/gitlab/gitlab-org/charts/gitlab-runner/stars')).toBe(
-      'stars: 512'
+      'Stars: 512'
     );
     expect(requestedUrls).toEqual([
       'https://gitlab.com/api/v4/projects/gitlab-org%2Fcharts%2Fgitlab-runner?license=true',
@@ -708,25 +719,25 @@ describe('new service presets', () => {
         version_created_at: new Date().toISOString(),
       },
     });
-    expect(await requestAriaLabel('/badge/hex/phoenix/v')).toBe('hex: v1.8.15');
-    expect(await requestAriaLabel('/badge/hex/phoenix/dq')).toBe('downloads: 5.6M/90d');
-    expect(await requestAriaLabel('/badge/hex/phoenix/dl')).toBe('downloads: 5.6M/90d');
-    expect(await requestAriaLabel('/badge/pub/http/v')).toBe('pub: v1.6.0');
-    expect(await requestAriaLabel('/badge/pub/http/likes')).toBe('likes: 8.5k');
+    expect(await requestAriaLabel('/badge/hex/phoenix/v')).toBe('Hex: v1.8.15');
+    expect(await requestAriaLabel('/badge/hex/phoenix/dq')).toBe('Downloads: 5.6M/90d');
+    expect(await requestAriaLabel('/badge/hex/phoenix/dl')).toBe('Downloads: 5.6M/90d');
+    expect(await requestAriaLabel('/badge/pub/http/v')).toBe('Pub: v1.6.0');
+    expect(await requestAriaLabel('/badge/pub/http/likes')).toBe('Likes: 8.5k');
     const pointsBadge = await requestBadge('/badge/pub/http/points');
-    expect(pointsBadge.ariaLabel).toBe('pub points: 94% 150/160');
+    expect(pointsBadge.ariaLabel).toBe('Pub Points: 94% 150/160');
     expect(pointsBadge.svg).toContain('stroke-dasharray="26.57 28.27"');
-    expect(await requestAriaLabel('/badge/gem/rails/v')).toBe('gem: v8.1.4');
-    expect(await requestAriaLabel('/badge/gem/rails/dt')).toBe('downloads: 802.6M');
-    expect(await requestAriaLabel('/badge/gem/rails/updated')).toBe('updated: today');
-    expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/v')).toBe('nuget: v13.0.4');
-    expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/dt')).toBe('downloads: 9.3B');
-    expect(await requestAriaLabel('/badge/nuget/Missing/v')).toBe('nuget: not found');
+    expect(await requestAriaLabel('/badge/gem/rails/v')).toBe('Gem: v8.1.4');
+    expect(await requestAriaLabel('/badge/gem/rails/dt')).toBe('Downloads: 802.6M');
+    expect(await requestAriaLabel('/badge/gem/rails/updated')).toBe('Updated: today');
+    expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/v')).toBe('NuGet: v13.0.4');
+    expect(await requestAriaLabel('/badge/nuget/Newtonsoft.Json/dt')).toBe('Downloads: 9.3B');
+    expect(await requestAriaLabel('/badge/nuget/Missing/v')).toBe('NuGet: not found');
     expect(await requestAriaLabel('/badge/packagist/laravel/framework/v')).toBe(
-      'packagist: v13.29.1'
+      'Packagist: v13.29.1'
     );
     expect(await requestAriaLabel('/badge/packagist/laravel/framework/dd')).toBe(
-      'downloads: 432.9k/day'
+      'Downloads: 432.9k/day'
     );
   });
 
@@ -737,12 +748,12 @@ describe('new service presets', () => {
       'packagist.org/packages/acme/patch-word/stats.json': { versions: ['3.0.0-patch1', null] },
       'packagist.org/packages/acme/patched/stats.json': { versions: ['2.1.0-p1', '2.1.0'] },
     });
-    expect(await describeMetric('/badge/packagist/acme/patched/v')).toBe('packagist: v2.1.0-p1');
+    expect(await describeMetric('/badge/packagist/acme/patched/v')).toBe('Packagist: v2.1.0-p1');
     expect(await describeMetric('/badge/packagist/acme/patch-word/v')).toBe(
-      'packagist: v3.0.0-patch1'
+      'Packagist: v3.0.0-patch1'
     );
-    expect(await describeMetric('/badge/packagist/acme/beta/v')).toBe('packagist: v1.9.0');
-    expect(await describeMetric('/badge/packagist/acme/dev-only/v')).toBe('packagist: dev-main');
+    expect(await describeMetric('/badge/packagist/acme/beta/v')).toBe('Packagist: v1.9.0');
+    expect(await describeMetric('/badge/packagist/acme/dev-only/v')).toBe('Packagist: dev-main');
   });
 
   it('resolves JSR and jsDelivr metrics (with optional @ scopes)', async () => {
@@ -752,11 +763,11 @@ describe('new service presets', () => {
         hits: { total: 1_585_106_437 },
       },
     });
-    expect(await requestAriaLabel('/badge/jsr/@std/path/v')).toBe('jsr: v1.1.6');
+    expect(await requestAriaLabel('/badge/jsr/@std/path/v')).toBe('JSR: v1.1.6');
     const scoreBadge = await requestBadge('/badge/jsr/std/path/score');
-    expect(scoreBadge.ariaLabel).toBe('jsr score: 94%');
+    expect(scoreBadge.ariaLabel).toBe('JSR Score: 94%');
     expect(scoreBadge.svg).toContain('stroke-dasharray="26.57 28.27"');
-    expect(await requestAriaLabel('/badge/jsdelivr/jquery/hits')).toBe('jsdelivr: 1.6B/mo');
+    expect(await requestAriaLabel('/badge/jsdelivr/jquery/hits')).toBe('jsDelivr: 1.6B/mo');
     expect(requestedUrls).toHaveLength(2);
   });
 });
@@ -847,7 +858,7 @@ describe('upstream error handling', () => {
       return Promise.resolve(new Response('', { status: 403 }));
     });
     expect(await requestAriaLabel('/badge/npm/throttled/v')).toBe('npm: rate limited');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('stars: rate limited');
+    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('Stars: rate limited');
     expect(await requestAriaLabel('/badge/crates/serde/v')).toBe('crates.io: rate limited');
     expect(await requestAriaLabel('/badge/npm/forbidden/v')).toBe('npm: api error');
   });
@@ -902,8 +913,8 @@ describe('upstream error handling', () => {
         suggestedVersionCode: 9,
       },
     });
-    expect(await describeMetric('/badge/fdroid/org.example.nulls/v')).toBe('f-droid: v7.0');
-    expect(await describeMetric('/badge/snap/nulls/v')).toBe('snapcraft: v2.0');
+    expect(await describeMetric('/badge/fdroid/org.example.nulls/v')).toBe('F-Droid: v7.0');
+    expect(await describeMetric('/badge/snap/nulls/v')).toBe('Snapcraft: v2.0');
   });
 });
 
@@ -943,7 +954,7 @@ describe('upstream response size cap', () => {
         Promise.resolve(Response.json({ license: 'MIT', padding, version: '1.0.0' }))
       );
     expect(await describeMetric('/badge/npm/large/v')).toBe('npm: v1.0.0');
-    expect(await describeMetric('/badge/npm/large/license')).toBe('license: MIT');
+    expect(await describeMetric('/badge/npm/large/license')).toBe('License: MIT');
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 });
@@ -953,9 +964,9 @@ describe('streaming JSON key extractor', () => {
     const info = String.raw`{"info":{"license_expression":"A\"}]\\ é","requires_python":">= 3.9","version":"2.0.0"},`;
     const chunked = createChunkedBody(info, 1, `"releases":{"x":"${'y'.repeat(65_536)}"}`, 64);
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(chunked.body));
-    expect(await describeMetric('/badge/pypi/streamed/v')).toBe('pypi: v2.0.0');
-    expect(await describeMetric('/badge/pypi/streamed/license')).toBe(String.raw`license: A"}]\ é`);
-    expect(await describeMetric('/badge/pypi/streamed/py')).toBe('python: >=3.9');
+    expect(await describeMetric('/badge/pypi/streamed/v')).toBe('PyPI: v2.0.0');
+    expect(await describeMetric('/badge/pypi/streamed/license')).toBe(String.raw`License: A"}]\ é`);
+    expect(await describeMetric('/badge/pypi/streamed/py')).toBe('Python: >=3.9');
     expect(chunked.stats.isCancelled).toBe(true);
     expect(chunked.stats.pulledChunks).toBeLessThanOrEqual(
       new TextEncoder().encode(info).length + 1
@@ -968,7 +979,7 @@ describe('streaming JSON key extractor', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(chunked.body, { headers: { 'content-length': '3305356' } })
     );
-    expect(await describeMetric('/badge/pypi/boto3/v')).toBe('pypi: v1.43.114');
+    expect(await describeMetric('/badge/pypi/boto3/v')).toBe('PyPI: v1.43.114');
     expect(chunked.stats.isCancelled).toBe(true);
   });
 
@@ -978,7 +989,7 @@ describe('streaming JSON key extractor', () => {
       4
     );
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(reordered.body));
-    expect(await describeMetric('/badge/pypi/reordered/v')).toBe('pypi: v3.1.0');
+    expect(await describeMetric('/badge/pypi/reordered/v')).toBe('PyPI: v3.1.0');
     expect(reordered.stats.isCancelled).toBe(true);
 
     // Even when a > 3 MB unwanted `releases` object precedes `info`, streaming skips it without hitting the 2 MB value cap.
@@ -992,13 +1003,13 @@ describe('streaming JSON key extractor', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(hugeStream.body, { headers: { 'content-length': '4500000' } })
     );
-    expect(await describeMetric('/badge/pypi/huge-preceding/v')).toBe('pypi: v4.2.0');
+    expect(await describeMetric('/badge/pypi/huge-preceding/v')).toBe('PyPI: v4.2.0');
     expect(hugeStream.stats.isCancelled).toBe(true);
   });
 
   it('reports non-object info values as not found', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"info":"oops"}'));
-    expect(await describeMetric('/badge/pypi/odd/v')).toBe('pypi: not found');
+    expect(await describeMetric('/badge/pypi/odd/v')).toBe('PyPI: not found');
   });
 });
 
@@ -1027,8 +1038,8 @@ describe('upstream caching & redirects', () => {
     );
     const [versionBadge, downloadsBadge, licenseBadge] = await Promise.all(pendingBadges);
     expect(versionBadge.ariaLabel).toBe('crates.io: v1.0.219');
-    expect(downloadsBadge.ariaLabel).toBe('downloads: 490M');
-    expect(licenseBadge.ariaLabel).toBe('license: MIT OR Apache-2.0');
+    expect(downloadsBadge.ariaLabel).toBe('Downloads: 490M');
+    expect(licenseBadge.ariaLabel).toBe('License: MIT OR Apache-2.0');
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
@@ -1050,7 +1061,7 @@ describe('upstream caching & redirects', () => {
       describeMetric('/badge/crates/serde/dt'),
       describeMetric('/badge/crates/serde/license'),
     ]);
-    expect(labels).toEqual(['crates.io: v1.0.219', 'downloads: 490M', 'license: MIT']);
+    expect(labels).toEqual(['crates.io: v1.0.219', 'Downloads: 490M', 'License: MIT']);
     expect(requestedUrls).toHaveLength(1);
   });
 
@@ -1075,7 +1086,7 @@ describe('upstream caching & redirects', () => {
     expect(Object.keys(storedBody).toSorted()).toEqual(['defaultVersion', 'license']);
 
     resetUpstreamCaches();
-    expect(await describeMetric('/badge/crates/tiny/license')).toBe('license: MIT');
+    expect(await describeMetric('/badge/crates/tiny/license')).toBe('License: MIT');
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
@@ -1298,9 +1309,9 @@ describe('shared service refactors', () => {
     mockUpstream({
       'codeberg.org/api/v1/repos/forgejo/forgejo': { open_pr_counter: 312, stars_count: 5671 },
     });
-    expect(await describeMetric('/badge/codeberg/forgejo/forgejo/prs')).toBe('pull requests: 312');
+    expect(await describeMetric('/badge/codeberg/forgejo/forgejo/prs')).toBe('Pull Requests: 312');
     expect(await describeMetric('/badge/codeberg/forgejo/forgejo/pulls')).toBe(
-      'pull requests: 312'
+      'Pull Requests: 312'
     );
     expect(resolvePathRedirect('/badge/codeberg/forgejo/forgejo/prs')).toBe(
       'https://codeberg.org/forgejo/forgejo/pulls'
@@ -1313,8 +1324,8 @@ describe('shared service refactors', () => {
       'pypi.org/pypi/xulbux/json': { info: { license_expression: 'MIT' } },
       'sql-clickhouse': { row_1: { last_month: '3333' } },
     });
-    expect(await describeMetric('/badge/gh/color-tracr/l')).toBe('license: MIT');
-    expect(await describeMetric('/badge/pypi/xulbux/dm')).toBe('downloads: 3.3k/mo');
+    expect(await describeMetric('/badge/gh/color-tracr/l')).toBe('License: MIT');
+    expect(await describeMetric('/badge/pypi/xulbux/dm')).toBe('Downloads: 3.3k/mo');
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
       const aliases = Object.fromEntries(listServiceMetricAliases(service));
       if (Object.hasOwn(service.metrics, 'license')) {
@@ -1356,8 +1367,8 @@ describe('segment validation & query encoding', () => {
     const requestedUrls = mockUpstream({
       'formulae.brew.sh/api/formula/': { versions: { stable: '3.12.12' } },
     });
-    expect(await describeMetric('/badge/brew/python@3.12/v')).toBe('homebrew: v3.12.12');
-    expect(await describeMetric('/badge/brew/gtk%2B3/v')).toBe('homebrew: v3.12.12');
+    expect(await describeMetric('/badge/brew/python@3.12/v')).toBe('Homebrew: v3.12.12');
+    expect(await describeMetric('/badge/brew/gtk%2B3/v')).toBe('Homebrew: v3.12.12');
     expect(requestedUrls).toEqual([
       'https://formulae.brew.sh/api/formula/python%403.12.json',
       'https://formulae.brew.sh/api/formula/gtk%2B3.json',
@@ -1414,15 +1425,15 @@ describe('added service presets', () => {
         versions: { stable: '1.25.0' },
       },
     });
-    expect(await describeMetric('/badge/brew/wget/v')).toBe('homebrew: v1.25.0');
-    expect(await describeMetric('/badge/brew/wget/l')).toBe('license: GPL-3.0-or-later');
-    expect(await describeMetric('/badge/brew/wget/dl')).toBe('installs: 57.4k/mo');
-    expect(await describeMetric('/badge/brew/wget/dq')).toBe('installs: 83.5k/90d');
-    expect(await describeMetric('/badge/brew/wget/dy')).toBe('installs: 323.1k/yr');
-    expect(await describeMetric('/badge/brew/wget/dt')).toBe('installs: 323.1k/yr');
-    expect(await describeMetric('/badge/cask/firefox/v')).toBe('homebrew cask: v158.0');
-    expect(await describeMetric('/badge/cask/firefox/dy')).toBe('installs: 184.8k/yr');
-    expect(await describeMetric('/badge/cask/firefox/dt')).toBe('installs: 184.8k/yr');
+    expect(await describeMetric('/badge/brew/wget/v')).toBe('Homebrew: v1.25.0');
+    expect(await describeMetric('/badge/brew/wget/l')).toBe('License: GPL-3.0-or-later');
+    expect(await describeMetric('/badge/brew/wget/dl')).toBe('Installs: 57.4k/mo');
+    expect(await describeMetric('/badge/brew/wget/dq')).toBe('Installs: 83.5k/90d');
+    expect(await describeMetric('/badge/brew/wget/dy')).toBe('Installs: 323.1k/yr');
+    expect(await describeMetric('/badge/brew/wget/dt')).toBe('Installs: 323.1k/yr');
+    expect(await describeMetric('/badge/cask/firefox/v')).toBe('Homebrew Cask: v158.0');
+    expect(await describeMetric('/badge/cask/firefox/dy')).toBe('Installs: 184.8k/yr');
+    expect(await describeMetric('/badge/cask/firefox/dt')).toBe('Installs: 184.8k/yr');
     expect(resolvePathRedirect('/badge/cask/firefox/v')).toBe(
       'https://formulae.brew.sh/cask/firefox'
     );
@@ -1442,11 +1453,11 @@ describe('added service presets', () => {
         likes: 4260,
       },
     });
-    expect(await describeMetric('/badge/hf/openai-community/gpt2/dl')).toBe('downloads: 16.8M/mo');
-    expect(await describeMetric('/badge/hf/openai-community/gpt2/dt')).toBe('downloads: 942.5M');
-    expect(await describeMetric('/badge/hf/openai-community/gpt2/likes')).toBe('likes: 4.3k');
+    expect(await describeMetric('/badge/hf/openai-community/gpt2/dl')).toBe('Downloads: 16.8M/mo');
+    expect(await describeMetric('/badge/hf/openai-community/gpt2/dt')).toBe('Downloads: 942.5M');
+    expect(await describeMetric('/badge/hf/openai-community/gpt2/likes')).toBe('Likes: 4.3k');
     expect(await describeMetric('/badge/hf-dataset/HuggingFaceFW/fineweb/dl')).toBe(
-      'downloads: 328.7k/mo'
+      'Downloads: 328.7k/mo'
     );
     expect(requestedUrls[0]).toBe(
       'https://huggingface.co/api/models/openai-community/gpt2?expand%5B%5D=downloads&expand%5B%5D=likes&expand%5B%5D=downloadsAllTime'
@@ -1468,10 +1479,10 @@ describe('added service presets', () => {
         slug: 'sodium',
       },
     });
-    expect(await describeMetric('/badge/modrinth/sodium/dl')).toBe('downloads: 249.1M');
-    expect(await describeMetric('/badge/modrinth/sodium/followers')).toBe('followers: 41.9k');
-    expect(await describeMetric('/badge/modrinth/sodium/mc')).toBe('minecraft: 26.3');
-    expect(await describeMetric('/badge/modrinth/sodium/l')).toBe('license: Polyform-Shield-1.0.0');
+    expect(await describeMetric('/badge/modrinth/sodium/dl')).toBe('Downloads: 249.1M');
+    expect(await describeMetric('/badge/modrinth/sodium/followers')).toBe('Followers: 41.9k');
+    expect(await describeMetric('/badge/modrinth/sodium/mc')).toBe('Minecraft: 26.3');
+    expect(await describeMetric('/badge/modrinth/sodium/l')).toBe('License: Polyform-Shield-1.0.0');
   });
 
   it('resolves Firefox Add-ons (AMO) metrics', async () => {
@@ -1484,11 +1495,11 @@ describe('added service presets', () => {
         weekly_downloads: 240_419,
       },
     });
-    expect(await describeMetric('/badge/amo/ublock-origin/v')).toBe('firefox: v1.75.0');
-    expect(await describeMetric('/badge/amo/ublock-origin/users')).toBe('users: 11.4M');
-    expect(await describeMetric('/badge/amo/ublock-origin/dl')).toBe('downloads: 240.4k/wk');
-    expect(await describeMetric('/badge/amo/ublock-origin/rating')).toBe('rating: 4.8/5');
-    expect(await describeMetric('/badge/amo/ublock-origin/license')).toBe('license: GPL-3.0-only');
+    expect(await describeMetric('/badge/amo/ublock-origin/v')).toBe('Firefox: v1.75.0');
+    expect(await describeMetric('/badge/amo/ublock-origin/users')).toBe('Users: 11.4M');
+    expect(await describeMetric('/badge/amo/ublock-origin/dl')).toBe('Downloads: 240.4k/wk');
+    expect(await describeMetric('/badge/amo/ublock-origin/rating')).toBe('Rating: 4.8/5');
+    expect(await describeMetric('/badge/amo/ublock-origin/license')).toBe('License: GPL-3.0-only');
   });
 
   it('resolves Flathub AppStream and install statistics', async () => {
@@ -1504,14 +1515,14 @@ describe('added service presets', () => {
         installs_total: 12_413_951,
       },
     });
-    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/v')).toBe('flathub: v158.0');
-    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/l')).toBe('license: MPL-2.0');
-    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/dt')).toBe('installs: 12.4M');
+    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/v')).toBe('Flathub: v158.0');
+    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/l')).toBe('License: MPL-2.0');
+    expect(await describeMetric('/badge/flathub/org.mozilla.firefox/dt')).toBe('Installs: 12.4M');
     expect(await describeMetric('/badge/flathub/org.mozilla.firefox/dl')).toBe(
-      'installs: 200.3k/mo'
+      'Installs: 200.3k/mo'
     );
     expect(await describeMetric('/badge/flathub/org.mozilla.firefox/dw')).toBe(
-      'installs: 41.1k/wk'
+      'Installs: 41.1k/wk'
     );
   });
 
@@ -1533,10 +1544,10 @@ describe('added service presets', () => {
         },
       ],
     });
-    expect(await describeMetric('/badge/cran/ggplot2/v')).toBe('cran: v4.0.3');
-    expect(await describeMetric('/badge/cran/ggplot2/license')).toBe('license: MIT');
-    expect(await describeMetric('/badge/cran/ggplot2/dm')).toBe('downloads: 2.1M/mo');
-    expect(await describeMetric('/badge/cran/empty/dw')).toBe('downloads: not found');
+    expect(await describeMetric('/badge/cran/ggplot2/v')).toBe('CRAN: v4.0.3');
+    expect(await describeMetric('/badge/cran/ggplot2/license')).toBe('License: MIT');
+    expect(await describeMetric('/badge/cran/ggplot2/dm')).toBe('Downloads: 2.1M/mo');
+    expect(await describeMetric('/badge/cran/empty/dw')).toBe('Downloads: not found');
   });
 
   it('colors OpenSSF Scorecard, Codecov, and Coveralls scores by threshold with a ring gauge', async () => {
@@ -1564,10 +1575,10 @@ describe('added service presets', () => {
     expect(weakScorecard.result.color).toBe('rose');
 
     const codecov = await resolvePathMetric('/badge/codecov/codecov/codecov-api/coverage');
-    expect(`${codecov.result.label}: ${codecov.result.value ?? ''}`).toBe('coverage: 96.4%');
+    expect(`${codecov.result.label}: ${codecov.result.value ?? ''}`).toBe('Coverage: 96.4%');
     expect(codecov.result.color).toBe('emerald');
     expect(codecov.result.icon).toBe('codecov');
-    expect(await describeMetric('/badge/codecov/vuejs/core/cov')).toBe('coverage: n/a');
+    expect(await describeMetric('/badge/codecov/vuejs/core/cov')).toBe('Coverage: n/a');
 
     const coveralls = await resolvePathMetric(
       '/badge/coveralls/lemurheavy/coveralls-ruby/coverage'
@@ -1587,9 +1598,9 @@ describe('added service presets', () => {
         code: 'discord-developers',
       },
     });
-    expect(await describeMetric('/badge/discord/discord-developers/online')).toBe('online: 71.4k');
+    expect(await describeMetric('/badge/discord/discord-developers/online')).toBe('Online: 71.4k');
     expect(await describeMetric('/badge/discord/discord-developers/members')).toBe(
-      'members: 308.6k'
+      'Members: 308.6k'
     );
     expect(getServiceMetric('discord', 'online').endpoint.ttl).toBe(CACHE_TTL.slow);
     expect(resolvePathRedirect('/badge/discord/discord-developers/online')).toBe(
@@ -1608,14 +1619,14 @@ describe('added service presets', () => {
         version: '19.3.1',
       },
     });
-    expect(await describeMetric('/badge/bundlephobia/react/min')).toBe('minified: 7.8 kB');
-    expect(await describeMetric('/badge/bundlephobia/react/gzip')).toBe('minzipped: 3 kB');
-    expect(await describeMetric('/badge/bundlephobia/react/deps')).toBe('dependencies: 0');
+    expect(await describeMetric('/badge/bundlephobia/react/min')).toBe('Minified: 7.8 kB');
+    expect(await describeMetric('/badge/bundlephobia/react/gzip')).toBe('Minzipped: 3 kB');
+    expect(await describeMetric('/badge/bundlephobia/react/deps')).toBe('Dependencies: 0');
     expect(await describeMetric('/badge/bundlephobia/@hono/node-server/minzip')).toBe(
-      'minzipped: 8 kB'
+      'Minzipped: 8 kB'
     );
     expect(await describeMetric('/badge/bundlephobia/@hono/node-server/dependencies')).toBe(
-      'dependencies: 1'
+      'Dependencies: 1'
     );
     expect(resolvePathRedirect('/badge/bundlephobia/@hono/node-server/min')).toBe(
       'https://bundlephobia.com/package/@hono/node-server'
@@ -1635,8 +1646,8 @@ describe('added service presets', () => {
       service: 'go',
       target: 'github.com/spf13/cobra',
     });
-    expect(await describeMetric('/badge/go/github.com/spf13/cobra/v')).toBe('go: v1.10.2');
-    expect(await describeMetric('/badge/go/github.com/BurntSushi/toml/v')).toBe('go: v1.5.0');
+    expect(await describeMetric('/badge/go/github.com/spf13/cobra/v')).toBe('Go: v1.10.2');
+    expect(await describeMetric('/badge/go/github.com/BurntSushi/toml/v')).toBe('Go: v1.5.0');
     expect(requestedUrls.at(-1)).toBe(
       'https://proxy.golang.org/github.com/!burnt!sushi/toml/@latest'
     );
@@ -1664,16 +1675,16 @@ describe('added service presets', () => {
         version: '4.14.1',
       },
     });
-    expect(await describeMetric('/badge/wp/akismet/v')).toBe('wordpress: v5.7.2');
-    expect(await describeMetric('/badge/wp/akismet/installs')).toBe('active installs: 5M+');
-    expect(await describeMetric('/badge/wp/akismet/rating')).toBe('rating: 4.7/5');
-    expect(await describeMetric('/badge/wp/akismet/dl')).toBe('downloads: 407.7M');
-    expect(await describeMetric('/badge/wp/akismet/php')).toBe('php: v7.2');
-    expect(await describeMetric('/badge/wp/akismet/wp')).toBe('wordpress: v5.8');
-    expect(await describeMetric('/badge/wp-theme/astra/v')).toBe('wordpress theme: v4.14.1');
-    expect(await describeMetric('/badge/wp-theme/astra/rating')).toBe('rating: 4.9/5');
-    expect(await describeMetric('/badge/wp-theme/astra/php')).toBe('php: n/a');
-    expect(await describeMetric('/badge/wp-theme/astra/wp')).toBe('wordpress: v5.3');
+    expect(await describeMetric('/badge/wp/akismet/v')).toBe('WordPress: v5.7.2');
+    expect(await describeMetric('/badge/wp/akismet/installs')).toBe('Active Installs: 5M+');
+    expect(await describeMetric('/badge/wp/akismet/rating')).toBe('Rating: 4.7/5');
+    expect(await describeMetric('/badge/wp/akismet/dl')).toBe('Downloads: 407.7M');
+    expect(await describeMetric('/badge/wp/akismet/php')).toBe('PHP: v7.2');
+    expect(await describeMetric('/badge/wp/akismet/wp')).toBe('WordPress: v5.8');
+    expect(await describeMetric('/badge/wp-theme/astra/v')).toBe('WordPress Theme: v4.14.1');
+    expect(await describeMetric('/badge/wp-theme/astra/rating')).toBe('Rating: 4.9/5');
+    expect(await describeMetric('/badge/wp-theme/astra/php')).toBe('PHP: n/a');
+    expect(await describeMetric('/badge/wp-theme/astra/wp')).toBe('WordPress: v5.3');
     expect(requestedUrls[0]).toContain('request%5Bfields%5D%5Bsections%5D=0');
     expect(resolvePathRedirect('/badge/wp-theme/astra/v')).toBe(
       'https://wordpress.org/themes/astra/'
@@ -1693,10 +1704,10 @@ describe('package registry presets (CocoaPods, Snapcraft, Clojars, Hackage, Elm)
         version: '5.12.2',
       },
     });
-    expect(await describeMetric('/badge/cocoapods/Alamofire/v')).toBe('pod: v5.12.2');
-    expect(await describeMetric('/badge/cocoapods/Alamofire/l')).toBe('license: MIT');
-    expect(await describeMetric('/badge/cocoapods/AFNetworking/license')).toBe('license: MIT');
-    expect(await describeMetric('/badge/cocoapods/Missing/v')).toBe('pod: not found');
+    expect(await describeMetric('/badge/cocoapods/Alamofire/v')).toBe('Pod: v5.12.2');
+    expect(await describeMetric('/badge/cocoapods/Alamofire/l')).toBe('License: MIT');
+    expect(await describeMetric('/badge/cocoapods/AFNetworking/license')).toBe('License: MIT');
+    expect(await describeMetric('/badge/cocoapods/Missing/v')).toBe('Pod: not found');
     expect(resolvePathRedirect('/badge/cocoapods/Alamofire/v')).toBe(
       'https://cocoapods.org/pods/Alamofire'
     );
@@ -1745,11 +1756,11 @@ describe('package registry presets (CocoaPods, Snapcraft, Clojars, Hackage, Elm)
         return new Response('not found', { status: 404 });
       }
     );
-    expect(await describeMetric('/badge/snap/firefox/v')).toBe('snapcraft: v158.0-2');
-    expect(await describeMetric('/badge/snap/firefox/l')).toBe('license: MPL-2.0');
-    expect(await describeMetric('/badge/snap/armonly/v')).toBe('snapcraft: v2.4.1');
-    expect(await describeMetric('/badge/snap/armonly/license')).toBe('license: unknown');
-    expect(await describeMetric('/badge/snap/missing/v')).toBe('snapcraft: not found');
+    expect(await describeMetric('/badge/snap/firefox/v')).toBe('Snapcraft: v158.0-2');
+    expect(await describeMetric('/badge/snap/firefox/l')).toBe('License: MPL-2.0');
+    expect(await describeMetric('/badge/snap/armonly/v')).toBe('Snapcraft: v2.4.1');
+    expect(await describeMetric('/badge/snap/armonly/license')).toBe('License: unknown');
+    expect(await describeMetric('/badge/snap/missing/v')).toBe('Snapcraft: not found');
     expect(requestedHeaders.length).toBeGreaterThan(0);
     for (const headers of requestedHeaders) {
       expect(headers['Snap-Device-Series']).toBe('16');
@@ -1770,13 +1781,13 @@ describe('package registry presets (CocoaPods, Snapcraft, Clojars, Hackage, Elm)
         licenses: [{ name: 'The MIT License', url: 'http://opensource.org/licenses/MIT' }],
       },
     });
-    expect(await describeMetric('/badge/clojars/ring/ring-core/v')).toBe('clojars: v1.15.5');
-    expect(await describeMetric('/badge/clojars/ring/ring-core/dt')).toBe('downloads: 41.6M');
+    expect(await describeMetric('/badge/clojars/ring/ring-core/v')).toBe('Clojars: v1.15.5');
+    expect(await describeMetric('/badge/clojars/ring/ring-core/dt')).toBe('Downloads: 41.6M');
     expect(await describeMetric('/badge/clojars/ring/ring-core/l')).toBe(
-      'license: The MIT License'
+      'License: The MIT License'
     );
-    expect(await describeMetric('/badge/clojars/hiccup/v')).toBe('clojars: v2.0.0-RC5');
-    expect(await describeMetric('/badge/clojars/hiccup/license')).toBe('license: unknown');
+    expect(await describeMetric('/badge/clojars/hiccup/v')).toBe('Clojars: v2.0.0-RC5');
+    expect(await describeMetric('/badge/clojars/hiccup/license')).toBe('License: unknown');
     expect(requestedUrls).toEqual([
       'https://clojars.org/api/artifacts/ring/ring-core',
       'https://clojars.org/api/artifacts/hiccup',
@@ -1799,10 +1810,10 @@ describe('package registry presets (CocoaPods, Snapcraft, Clojars, Hackage, Elm)
         version: '1.0.5',
       },
     });
-    expect(await describeMetric('/badge/hackage/aeson/v')).toBe('hackage: v2.3.2.0');
-    expect(await describeMetric('/badge/hackage/empty/v')).toBe('hackage: n/a');
-    expect(await describeMetric('/badge/elm/elm/core/v')).toBe('elm: v1.0.5');
-    expect(await describeMetric('/badge/elm/elm/core/l')).toBe('license: BSD-3-Clause');
+    expect(await describeMetric('/badge/hackage/aeson/v')).toBe('Hackage: v2.3.2.0');
+    expect(await describeMetric('/badge/hackage/empty/v')).toBe('Hackage: n/a');
+    expect(await describeMetric('/badge/elm/elm/core/v')).toBe('Elm: v1.0.5');
+    expect(await describeMetric('/badge/elm/elm/core/l')).toBe('License: BSD-3-Clause');
     expect(await describeMetric('/badge/elm/core/v')).toBe('elm: missing owner');
     expect(resolvePathRedirect('/badge/hackage/aeson/v')).toBe(
       'https://hackage.haskell.org/package/aeson'
@@ -1826,14 +1837,14 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
         results: [{ metadata: { license: 'Apache-2.0' }, version: '10.1.0' }],
       },
     });
-    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/v')).toBe('puppet forge: v10.1.0');
-    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/dl')).toBe('downloads: 120.6M');
-    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/l')).toBe('license: Apache-2.0');
+    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/v')).toBe('Puppet Forge: v10.1.0');
+    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/dl')).toBe('Downloads: 120.6M');
+    expect(await describeMetric('/badge/puppet/puppetlabs/stdlib/l')).toBe('License: Apache-2.0');
     const score = await resolvePathMetric('/badge/puppet/puppetlabs/stdlib/score');
     expect(score.result.value).toBe('98%');
     expect(score.result.special).toEqual({ type: 'ring', value: 98 });
-    expect(await describeMetric('/badge/puppet/acme/fresh/score')).toBe('puppet score: n/a');
-    expect(await describeMetric('/badge/puppet/acme/gone/v')).toBe('puppet forge: not found');
+    expect(await describeMetric('/badge/puppet/acme/fresh/score')).toBe('Puppet Score: n/a');
+    expect(await describeMetric('/badge/puppet/acme/gone/v')).toBe('Puppet Forge: not found');
     expect(await describeMetric('/badge/puppet/stdlib/v')).toBe('puppet: missing owner');
     expect(requestedUrls[0]).toBe(
       'https://forgeapi.puppet.com/v3/releases?module=puppetlabs-stdlib&limit=1&sort_by=release_date&exclude_fields=readme,changelog,license,reference,tasks,plans'
@@ -1850,9 +1861,9 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
         highest_version: { version: '13.5.0' },
       },
     });
-    expect(await describeMetric('/badge/galaxy/community/general/v')).toBe('galaxy: v13.5.0');
-    expect(await describeMetric('/badge/galaxy/community/general/dt')).toBe('downloads: 278M');
-    expect(await describeMetric('/badge/galaxy/community/missing/v')).toBe('galaxy: not found');
+    expect(await describeMetric('/badge/galaxy/community/general/v')).toBe('Galaxy: v13.5.0');
+    expect(await describeMetric('/badge/galaxy/community/general/dt')).toBe('Downloads: 278M');
+    expect(await describeMetric('/badge/galaxy/community/missing/v')).toBe('Galaxy: not found');
     expect(requestedUrls[0]).toBe(
       'https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/index/community/general/'
     );
@@ -1875,9 +1886,9 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
         suggestedVersionCode: 1_023_052,
       },
     });
-    expect(await describeMetric('/badge/fdroid/org.fdroid.fdroid/v')).toBe('f-droid: v1.23.2');
-    expect(await describeMetric('/badge/fdroid/org.example.app/v')).toBe('f-droid: v3.0');
-    expect(await describeMetric('/badge/fdroid/org.missing.app/v')).toBe('f-droid: not found');
+    expect(await describeMetric('/badge/fdroid/org.fdroid.fdroid/v')).toBe('F-Droid: v1.23.2');
+    expect(await describeMetric('/badge/fdroid/org.example.app/v')).toBe('F-Droid: v3.0');
+    expect(await describeMetric('/badge/fdroid/org.missing.app/v')).toBe('F-Droid: not found');
     expect(resolvePathRedirect('/badge/fdroid/org.fdroid.fdroid/v')).toBe(
       'https://f-droid.org/packages/org.fdroid.fdroid/'
     );
@@ -1901,14 +1912,14 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
     expect(passing.result).toMatchObject({
       color: 'emerald',
       icon: 'circle-check',
-      label: 'docs',
+      label: 'Docs',
       value: 'passing',
     });
     const failing = await resolvePathMetric('/badge/rtd/broken/status');
     expect(failing.result).toMatchObject({ color: 'rose', icon: 'circle-x', value: 'failing' });
     const building = await resolvePathMetric('/badge/rtd/busy/build');
     expect(building.result).toMatchObject({ color: 'amber', value: 'building' });
-    expect(await describeMetric('/badge/rtd/missing/build')).toBe('docs: not found');
+    expect(await describeMetric('/badge/rtd/missing/build')).toBe('Docs: not found');
     expect(buildMetricApiUrl('rtd', 'build', '', 'pip')).toBe(
       'https://readthedocs.org/api/v3/projects/pip/versions/latest/builds/?limit=10'
     );
@@ -1931,9 +1942,9 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
       'gitea.com/api/v1/repos/gitea/tea': { open_pr_counter: 16, stars_count: 277 },
       'gitea.com/api/v1/repos/gitea/tea/releases/latest': { tag_name: 'v0.16.0' },
     });
-    expect(await describeMetric('/badge/gitea/gitea/tea/stars')).toBe('stars: 277');
-    expect(await describeMetric('/badge/gitea/gitea/tea/pulls')).toBe('pull requests: 16');
-    expect(await describeMetric('/badge/gitea/gitea/tea/release')).toBe('release: v0.16.0');
+    expect(await describeMetric('/badge/gitea/gitea/tea/stars')).toBe('Stars: 277');
+    expect(await describeMetric('/badge/gitea/gitea/tea/pulls')).toBe('Pull Requests: 16');
+    expect(await describeMetric('/badge/gitea/gitea/tea/release')).toBe('Release: v0.16.0');
     expect(requestedUrls).toEqual([
       'https://gitea.com/api/v1/repos/gitea/tea',
       'https://gitea.com/api/v1/repos/gitea/tea/releases/latest',
@@ -1958,12 +1969,12 @@ describe('funding & social presets (Open Collective, Liberapay, Bluesky)', () =>
         yearlyIncome: 17_751_531,
       },
     });
-    expect(await describeMetric('/badge/opencollective/webpack/backers')).toBe('backers: 3.1k');
-    expect(await describeMetric('/badge/opencollective/webpack/budget')).toBe('budget: $177.5k/yr');
+    expect(await describeMetric('/badge/opencollective/webpack/backers')).toBe('Backers: 3.1k');
+    expect(await describeMetric('/badge/opencollective/webpack/budget')).toBe('Budget: $177.5k/yr');
     expect(await describeMetric('/badge/opencollective/euro-club/budget')).toBe(
-      'budget: €640.85/yr'
+      'Budget: €640.85/yr'
     );
-    expect(await describeMetric('/badge/opencollective/euro-club/backers')).toBe('backers: n/a');
+    expect(await describeMetric('/badge/opencollective/euro-club/backers')).toBe('Backers: n/a');
     expect(resolvePathRedirect('/badge/opencollective/webpack/backers')).toBe(
       'https://opencollective.com/webpack'
     );
@@ -1977,11 +1988,11 @@ describe('funding & social presets (Open Collective, Liberapay, Bluesky)', () =>
       },
       'liberapay.com/private/public.json': { npatrons: 3 },
     });
-    expect(await describeMetric('/badge/liberapay/Liberapay/patrons')).toBe('patrons: 1.8k');
+    expect(await describeMetric('/badge/liberapay/Liberapay/patrons')).toBe('Patrons: 1.8k');
     expect(await describeMetric('/badge/liberapay/Liberapay/receives')).toBe(
-      'receives: €640.85/wk'
+      'Receives: €640.85/wk'
     );
-    expect(await describeMetric('/badge/liberapay/private/receives')).toBe('receives: hidden');
+    expect(await describeMetric('/badge/liberapay/private/receives')).toBe('Receives: hidden');
     expect(resolvePathRedirect('/badge/liberapay/Liberapay/patrons')).toBe(
       'https://liberapay.com/Liberapay'
     );
@@ -1991,8 +2002,8 @@ describe('funding & social presets (Open Collective, Liberapay, Bluesky)', () =>
     const requestedUrls = mockUpstream({
       'app.bsky.actor.getProfile?actor=bsky.app': { followersCount: 35_300_770, postsCount: 880 },
     });
-    expect(await describeMetric('/badge/bluesky/bsky.app/followers')).toBe('followers: 35.3M');
-    expect(await describeMetric('/badge/bluesky/bsky.app/posts')).toBe('posts: 880');
+    expect(await describeMetric('/badge/bluesky/bsky.app/followers')).toBe('Followers: 35.3M');
+    expect(await describeMetric('/badge/bluesky/bsky.app/posts')).toBe('Posts: 880');
     expect(requestedUrls).toHaveLength(1);
     expect(buildMetricApiUrl('bluesky', 'posts', '', 'a+b.bsky.social')).toBe(
       'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=a%2Bb.bsky.social'
@@ -2025,20 +2036,20 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       },
       'api.deps.dev/v3/projects/github.com%2Fhonojs%2Fhono': { starsCount: 32_538 },
     });
-    expect(await describeMetric('/badge/depsdev/expressjs/express/stars')).toBe('stars: 69.6k');
-    expect(await describeMetric('/badge/depsdev/expressjs/express/forks')).toBe('forks: 25.2k');
+    expect(await describeMetric('/badge/depsdev/expressjs/express/stars')).toBe('Stars: 69.6k');
+    expect(await describeMetric('/badge/depsdev/expressjs/express/forks')).toBe('Forks: 25.2k');
     expect(await describeMetric('/badge/depsdev/expressjs/express/issues')).toBe(
-      'issues & PRs: 236'
+      'Issues & PRs: 236'
     );
-    expect(await describeMetric('/badge/depsdev/expressjs/express/l')).toBe('license: MIT');
+    expect(await describeMetric('/badge/depsdev/expressjs/express/l')).toBe('License: MIT');
     const score = await resolvePathMetric('/badge/depsdev/expressjs/express/score');
     expect(score.result).toMatchObject({
       color: 'emerald',
       special: { type: 'ring', value: 85 },
       value: '8.5/10',
     });
-    expect(await describeMetric('/badge/depsdev/honojs/hono/score')).toBe('openssf scorecard: n/a');
-    expect(await describeMetric('/badge/depsdev/nobody/nothing/stars')).toBe('stars: not found');
+    expect(await describeMetric('/badge/depsdev/honojs/hono/score')).toBe('OpenSSF Scorecard: n/a');
+    expect(await describeMetric('/badge/depsdev/nobody/nothing/stars')).toBe('Stars: not found');
     expect(await describeMetric('/badge/depsdev/hono/stars')).toBe('depsdev: missing owner');
     expect(requestedUrls[0]).toBe(
       'https://api.deps.dev/v3/projects/github.com%2Fexpressjs%2Fexpress'
@@ -2073,13 +2084,13 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       },
     });
     expect(await describeMetric('/badge/terraform/terraform-aws-modules/vpc/aws/v')).toBe(
-      'terraform: v6.7.3'
+      'Terraform: v6.7.3'
     );
     const tfModuleDl = await resolvePathMetric('/badge/terraform/terraform-aws-modules/vpc/aws/dl');
     expect(tfModuleDl.result.value).toBe('222.8M');
     expect(tfModuleDl.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
     expect(await describeMetric('/badge/tf-provider/hashicorp/aws/v')).toBe(
-      'terraform provider: v6.69.1'
+      'Terraform Provider: v6.69.1'
     );
     const tfProviderDt = await resolvePathMetric('/badge/tf-provider/hashicorp/aws/dt');
     expect(tfProviderDt.result.value).toBe('8.1B');
@@ -2089,7 +2100,7 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     });
     expect(tfProviderDt.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
     expect(await describeMetric('/badge/tf-provider/hashicorp/missing/v')).toBe(
-      'terraform provider: not found'
+      'Terraform Provider: not found'
     );
     expect(requestedUrls[0]).toBe(
       'https://registry.terraform.io/v2/modules/terraform-aws-modules/vpc/aws?include=latest-version'
@@ -2116,14 +2127,14 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       },
     });
     expect(await describeMetric('/badge/artifacthub/helm/bitnami/nginx/v')).toBe(
-      'artifact hub: v25.2.5'
+      'Artifact Hub: v25.2.5'
     );
     expect(await describeMetric('/badge/artifacthub/helm/bitnami/nginx/app-version')).toBe(
-      'app version: v1.31.7'
+      'App Version: v1.31.7'
     );
-    expect(await describeMetric('/badge/artifacthub/helm/bitnami/nginx/stars')).toBe('stars: 107');
+    expect(await describeMetric('/badge/artifacthub/helm/bitnami/nginx/stars')).toBe('Stars: 107');
     expect(await describeMetric('/badge/artifacthub/helm/nobody/nothing/v')).toBe(
-      'artifact hub: not found'
+      'Artifact Hub: not found'
     );
     expect(resolvePathRedirect('/badge/artifacthub/helm/bitnami/nginx/v')).toBe(
       'https://artifacthub.io/packages/helm/bitnami/nginx'
@@ -2156,7 +2167,7 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     const quality = await resolvePathMetric('/badge/sonarcloud/apache_struts/quality');
     expect(quality.result).toMatchObject({
       color: 'emerald',
-      label: 'quality gate',
+      label: 'Quality Gate',
       value: 'passed',
     });
     const coverage = await resolvePathMetric('/badge/sonarcloud/apache_struts/cov');
@@ -2165,12 +2176,12 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       special: { type: 'ring', value: 69 },
       value: '69.4%',
     });
-    expect(await describeMetric('/badge/sonarcloud/apache_struts/bugs')).toBe('bugs: 327');
+    expect(await describeMetric('/badge/sonarcloud/apache_struts/bugs')).toBe('Bugs: 327');
     expect(await describeMetric('/badge/sonarcloud/apache_struts/code_smells')).toBe(
-      'code smells: 4k'
+      'Code Smells: 4k'
     );
     expect(await describeMetric('/badge/sonarcloud/apache_struts/dup')).toBe(
-      'duplicated lines: 2.6%'
+      'Duplicated Lines: 2.6%'
     );
     const vulnerabilities = await resolvePathMetric(
       '/badge/sonarcloud/apache_struts/vulnerabilities'
@@ -2183,7 +2194,7 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     const security = await resolvePathMetric('/badge/sonarcloud/apache_struts/security');
     expect(security.result).toMatchObject({ color: 'rose', value: 'E' });
     expect(await describeMetric('/badge/sonarcloud/apache_struts/reliability')).toBe(
-      'reliability: n/a'
+      'Reliability: n/a'
     );
     expect(requestedUrls).toHaveLength(1);
     expect(requestedUrls[0]).toContain(
@@ -2192,9 +2203,9 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     const failing = await resolvePathMetric('/badge/sonarcloud/failing_project/gate');
     expect(failing.result).toMatchObject({ color: 'rose', value: 'failed' });
     expect(await describeMetric('/badge/sonarcloud/odd_project/quality')).toBe(
-      'quality gate: not found'
+      'Quality Gate: not found'
     );
-    expect(await describeMetric('/badge/sonarcloud/missing_project/bugs')).toBe('bugs: not found');
+    expect(await describeMetric('/badge/sonarcloud/missing_project/bugs')).toBe('Bugs: not found');
     expect(resolvePathRedirect('/badge/sonarcloud/apache_struts/quality')).toBe(
       'https://sonarcloud.io/project/overview?id=apache_struts'
     );
@@ -2209,16 +2220,16 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       },
     });
     expect(await describeMetric('/badge/thunderstore/BepInEx/BepInExPack/v')).toBe(
-      'thunderstore: v5.4.2305'
+      'Thunderstore: v5.4.2305'
     );
     expect(await describeMetric('/badge/thunderstore/BepInEx/BepInExPack/dl')).toBe(
-      'downloads: 33.9M'
+      'Downloads: 33.9M'
     );
     expect(await describeMetric('/badge/thunderstore/BepInEx/BepInExPack/rating')).toBe(
-      'rating: 1k'
+      'Rating: 1k'
     );
     expect(await describeMetric('/badge/thunderstore/nobody/nothing/v')).toBe(
-      'thunderstore: not found'
+      'Thunderstore: not found'
     );
     expect(resolvePathRedirect('/badge/thunderstore/BepInEx/BepInExPack/v')).toBe(
       'https://thunderstore.io/package/BepInEx/BepInExPack/'
@@ -2234,11 +2245,11 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
         rating: { average: 4.5, count: 667 },
       },
     });
-    expect(await describeMetric('/badge/spigot/9089/v')).toBe('spigot: v2.22.0');
-    expect(await describeMetric('/badge/spigot/9089/dt')).toBe('downloads: 5.9M');
-    expect(await describeMetric('/badge/spigot/9089/rating')).toBe('rating: 4.5/5');
-    expect(await describeMetric('/badge/spigot/9089/likes')).toBe('likes: 114');
-    expect(await describeMetric('/badge/spigot/1/v')).toBe('spigot: not found');
+    expect(await describeMetric('/badge/spigot/9089/v')).toBe('Spigot: v2.22.0');
+    expect(await describeMetric('/badge/spigot/9089/dt')).toBe('Downloads: 5.9M');
+    expect(await describeMetric('/badge/spigot/9089/rating')).toBe('Rating: 4.5/5');
+    expect(await describeMetric('/badge/spigot/9089/likes')).toBe('Likes: 114');
+    expect(await describeMetric('/badge/spigot/1/v')).toBe('Spigot: not found');
     expect(requestedUrls[1]).toBe(
       'https://api.spiget.org/v2/resources/9089?fields=downloads,rating,likes'
     );
@@ -2262,15 +2273,15 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
       },
     });
     expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/dt')).toBe(
-      'downloads: 514.2k'
+      'Downloads: 514.2k'
     );
-    expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/stars')).toBe('stars: 472');
+    expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/stars')).toBe('Stars: 472');
     expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/watchers')).toBe(
-      'watchers: 273'
+      'Watchers: 273'
     );
-    expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/l')).toBe('license: GPL');
-    expect(await describeMetric('/badge/hangar/acme/Typed/license')).toBe('license: MIT');
-    expect(await describeMetric('/badge/hangar/acme/Typed/stars')).toBe('stars: n/a');
+    expect(await describeMetric('/badge/hangar/ViaVersion/ViaVersion/l')).toBe('License: GPL');
+    expect(await describeMetric('/badge/hangar/acme/Typed/license')).toBe('License: MIT');
+    expect(await describeMetric('/badge/hangar/acme/Typed/stars')).toBe('Stars: n/a');
     expect(resolvePathRedirect('/badge/hangar/ViaVersion/ViaVersion/stars')).toBe(
       'https://hangar.papermc.io/ViaVersion/ViaVersion'
     );
@@ -2310,16 +2321,16 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
         results: [{ epoch: 0, flag_date: '2026-10-10T14:59:18Z', pkgrel: '1', pkgver: '3.14.8' }],
       },
     });
-    expect(await describeMetric('/badge/arch/pacman/v')).toBe('arch linux: v7.1.0-3');
-    expect(await describeMetric('/badge/arch/pacman/l')).toBe('license: GPL-2.0-or-later');
-    expect(await describeMetric('/badge/arch/pacman/repo')).toBe('repo: core');
-    expect(await describeMetric('/badge/arch/ffmpeg/v')).toBe('arch linux: v2:9.0.2-1');
+    expect(await describeMetric('/badge/arch/pacman/v')).toBe('Arch Linux: v7.1.0-3');
+    expect(await describeMetric('/badge/arch/pacman/l')).toBe('License: GPL-2.0-or-later');
+    expect(await describeMetric('/badge/arch/pacman/repo')).toBe('Repo: core');
+    expect(await describeMetric('/badge/arch/ffmpeg/v')).toBe('Arch Linux: v2:9.0.2-1');
     const outdated = await resolvePathMetric('/badge/arch/python/v');
     expect(outdated.result).toMatchObject({ color: 'amber', value: 'v3.14.8-1 (outdated)' });
-    expect(await describeMetric('/badge/arch/missing/v')).toBe('arch linux: not found');
-    expect(await describeMetric('/badge/arch/odd/v')).toBe('arch linux: n/a');
-    expect(await describeMetric('/badge/arch/odd/repo')).toBe('repo: n/a');
-    expect(await describeMetric('/badge/arch/odd/license')).toBe('license: unknown');
+    expect(await describeMetric('/badge/arch/missing/v')).toBe('Arch Linux: not found');
+    expect(await describeMetric('/badge/arch/odd/v')).toBe('Arch Linux: n/a');
+    expect(await describeMetric('/badge/arch/odd/repo')).toBe('Repo: n/a');
+    expect(await describeMetric('/badge/arch/odd/license')).toBe('License: unknown');
     expect(requestedUrls[0]).toBe(
       'https://archlinux.org/packages/search/json/?name=pacman&repo=Core&repo=Extra&repo=Multilib'
     );
@@ -2348,15 +2359,15 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
           },
         },
       });
-      expect(await describeMetric('/badge/cpan/Moose/v')).toBe('cpan: v2.4001');
-      expect(await describeMetric('/badge/cpan/Moose/license')).toBe('license: Perl 5');
-      expect(await describeMetric('/badge/cpan/Moose/updated')).toBe('last release: 2w ago');
-      expect(await describeMetric('/badge/cpan/Acme-Odd/v')).toBe('cpan: v1.2.3');
-      expect(await describeMetric('/badge/cpan/Acme-Odd/l')).toBe('license: unknown');
-      expect(await describeMetric('/badge/cpan/Acme-Odd/updated')).toBe('last release: n/a');
-      expect(await describeMetric('/badge/cpan/Acme-Custom/l')).toBe('license: custom');
-      expect(await describeMetric('/badge/cpan/Acme-Custom/updated')).toBe('last release: today');
-      expect(await describeMetric('/badge/cpan/Missing/v')).toBe('cpan: not found');
+      expect(await describeMetric('/badge/cpan/Moose/v')).toBe('CPAN: v2.4001');
+      expect(await describeMetric('/badge/cpan/Moose/license')).toBe('License: Perl 5');
+      expect(await describeMetric('/badge/cpan/Moose/updated')).toBe('Last Release: 2w ago');
+      expect(await describeMetric('/badge/cpan/Acme-Odd/v')).toBe('CPAN: v1.2.3');
+      expect(await describeMetric('/badge/cpan/Acme-Odd/l')).toBe('License: unknown');
+      expect(await describeMetric('/badge/cpan/Acme-Odd/updated')).toBe('Last Release: n/a');
+      expect(await describeMetric('/badge/cpan/Acme-Custom/l')).toBe('License: custom');
+      expect(await describeMetric('/badge/cpan/Acme-Custom/updated')).toBe('Last Release: today');
+      expect(await describeMetric('/badge/cpan/Missing/v')).toBe('CPAN: not found');
       expect(requestedUrls[0]).toBe(
         'https://fastapi.metacpan.org/v1/release/_search?q=distribution:Moose%20AND%20status:latest&_source=version,license,date&size=1'
       );
@@ -2381,11 +2392,11 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
         version: '2.56.0',
       },
     });
-    expect(await describeMetric('/badge/macports/git/v')).toBe('macports: v2.56.0');
+    expect(await describeMetric('/badge/macports/git/v')).toBe('MacPorts: v2.56.0');
     expect(await describeMetric('/badge/macports/git/license')).toBe(
-      'license: GPL-2 and LGPL-2.1+'
+      'License: GPL-2 and LGPL-2.1+'
     );
-    expect(await describeMetric('/badge/macports/missing/v')).toBe('macports: not found');
+    expect(await describeMetric('/badge/macports/missing/v')).toBe('MacPorts: not found');
     expect(getServiceMetric('macports', 'v').endpoint.ttl).toBe(CACHE_TTL.daily);
     expect(resolvePathRedirect('/badge/macports/git/v')).toBe(
       'https://ports.macports.org/port/git/'
@@ -2408,15 +2419,15 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       }
       return new Response('400: Bad Request', { status: 400 });
     });
-    expect(await describeMetric('/badge/fedora/python3/v')).toBe('fedora: v3.15.0-1.fc46');
-    expect(await describeMetric('/badge/fedora/f43/python3/v')).toBe('fedora: v3.14.8-1.fc43');
-    expect(await describeMetric('/badge/fedora/ed/v')).toBe('fedora: v1:2.0-3.fc46');
+    expect(await describeMetric('/badge/fedora/python3/v')).toBe('Fedora: v3.15.0-1.fc46');
+    expect(await describeMetric('/badge/fedora/f43/python3/v')).toBe('Fedora: v3.14.8-1.fc43');
+    expect(await describeMetric('/badge/fedora/ed/v')).toBe('Fedora: v1:2.0-3.fc46');
     const missing = await resolvePathMetric('/badge/fedora/no-such-pkg/v');
     expect(missing.status).toBe(404);
     expect(missing.result.value).toBe('not found');
-    expect(await describeMetric('/badge/fedora/f42/python3/v')).toBe('fedora: not found');
+    expect(await describeMetric('/badge/fedora/f42/python3/v')).toBe('Fedora: not found');
     // Endpoints without `missingStatuses` keep reporting upstream `400` answers as API errors.
-    expect(await describeMetric('/badge/macports/git/v')).toBe('macports: api error');
+    expect(await describeMetric('/badge/macports/git/v')).toBe('MacPorts: api error');
     expect(requestedUrls[0]).toBe('https://mdapi.fedoraproject.org/rawhide/pkg/python3');
     expect(resolvePathRedirect('/badge/fedora/f43/python3/v')).toBe(
       'https://packages.fedoraproject.org/search?query=python3'
@@ -2428,9 +2439,9 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       'GetNumberOfCurrentPlayers/v1/?appid=730': { response: { player_count: 982_255, result: 1 } },
       'GetNumberOfCurrentPlayers/v1/?appid=999': { response: { player_count: 'lots', result: 1 } },
     });
-    expect(await describeMetric('/badge/steam/730/players')).toBe('players: 982.3k');
-    expect(await describeMetric('/badge/steam/999/players')).toBe('players: n/a');
-    expect(await describeMetric('/badge/steam/1/players')).toBe('players: not found');
+    expect(await describeMetric('/badge/steam/730/players')).toBe('Players: 982.3k');
+    expect(await describeMetric('/badge/steam/999/players')).toBe('Players: n/a');
+    expect(await describeMetric('/badge/steam/1/players')).toBe('Players: not found');
     const requestCount = requestedUrls.length;
     const invalid = await resolvePathMetric('/badge/steam/abc/players');
     expect(invalid.status).toBe(400);
@@ -2452,21 +2463,21 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
         stats: { downloads: 76_001, unique_downloads: 34_081, unique_views: 1319, views: 1387 },
       },
     });
-    expect(await describeMetric('/badge/zenodo/3835582/dt')).toBe('downloads: 76k');
-    expect(await describeMetric('/badge/zenodo/3835582/dl')).toBe('downloads: 76k');
+    expect(await describeMetric('/badge/zenodo/3835582/dt')).toBe('Downloads: 76k');
+    expect(await describeMetric('/badge/zenodo/3835582/dl')).toBe('Downloads: 76k');
     const zenodoUnique = await resolvePathMetric('/badge/zenodo/3835582/unique');
     expect(zenodoUnique.result.value).toBe('34.1k');
     expect(zenodoUnique.result.specials?.bar).toEqual({ type: 'bar', value: 45 });
     expect(zenodoUnique.result.specials?.ring).toEqual({ type: 'ring', value: 45 });
-    expect(await describeMetric('/badge/zenodo/3835582/views')).toBe('views: 1.4k');
-    expect(await describeMetric('/badge/zenodo/3835582/doi')).toBe('doi: 10.5281/zenodo.3835582');
-    expect(await describeMetric('/badge/zenodo/3835582/v')).toBe('zenodo: v4.0.1');
-    expect(await describeMetric('/badge/zenodo/3835582/license')).toBe('license: BSD-3-Clause');
-    expect(await describeMetric('/badge/zenodo/42/dt')).toBe('downloads: n/a');
-    expect(await describeMetric('/badge/zenodo/42/doi')).toBe('doi: n/a');
-    expect(await describeMetric('/badge/zenodo/42/v')).toBe('zenodo: n/a');
-    expect(await describeMetric('/badge/zenodo/42/license')).toBe('license: unknown');
-    expect(await describeMetric('/badge/zenodo/7/views')).toBe('views: not found');
+    expect(await describeMetric('/badge/zenodo/3835582/views')).toBe('Views: 1.4k');
+    expect(await describeMetric('/badge/zenodo/3835582/doi')).toBe('DOI: 10.5281/zenodo.3835582');
+    expect(await describeMetric('/badge/zenodo/3835582/v')).toBe('Zenodo: v4.0.1');
+    expect(await describeMetric('/badge/zenodo/3835582/license')).toBe('License: BSD-3-Clause');
+    expect(await describeMetric('/badge/zenodo/42/dt')).toBe('Downloads: n/a');
+    expect(await describeMetric('/badge/zenodo/42/doi')).toBe('DOI: n/a');
+    expect(await describeMetric('/badge/zenodo/42/v')).toBe('Zenodo: n/a');
+    expect(await describeMetric('/badge/zenodo/42/license')).toBe('License: unknown');
+    expect(await describeMetric('/badge/zenodo/7/views')).toBe('Views: not found');
     const requestCount = requestedUrls.length;
     expect(await describeMetric('/badge/zenodo/astropy/dt')).toBe('zenodo: invalid name');
     expect(requestedUrls).toHaveLength(requestCount);
@@ -2483,10 +2494,10 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       'g:com.google.guava+AND+a:missing': { response: { docs: [], numFound: 0 } },
     });
     expect(await describeMetric('/badge/maven/com.google.guava/guava/v')).toBe(
-      'maven: v33.5.0-jre'
+      'Maven: v33.5.0-jre'
     );
     expect(await describeMetric('/badge/maven/com.google.guava/missing/v')).toBe(
-      'maven: not found'
+      'Maven: not found'
     );
     expect(await describeMetric('/badge/maven/guava/v')).toBe('maven: missing owner');
     const requestCount = requestedUrls.length;
@@ -2510,12 +2521,12 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       'plugins.jetbrains.com/api/plugins/9999/rating': { meanRating: 0, meanVotes: 0 },
       'plugins.jetbrains.com/api/plugins/9999/updates?size=1': [],
     });
-    expect(await describeMetric('/badge/jetbrains/8182/v')).toBe('jetbrains: v0.4.200.5421-243');
-    expect(await describeMetric('/badge/jetbrains/8182/dl')).toBe('downloads: 12.8M');
-    expect(await describeMetric('/badge/jetbrains/8182/dt')).toBe('downloads: 12.8M');
-    expect(await describeMetric('/badge/jetbrains/8182/rating')).toBe('rating: 4.7/5');
-    expect(await describeMetric('/badge/jetbrains/9999/v')).toBe('jetbrains: not found');
-    expect(await describeMetric('/badge/jetbrains/9999/rating')).toBe('rating: unrated');
+    expect(await describeMetric('/badge/jetbrains/8182/v')).toBe('JetBrains: v0.4.200.5421-243');
+    expect(await describeMetric('/badge/jetbrains/8182/dl')).toBe('Downloads: 12.8M');
+    expect(await describeMetric('/badge/jetbrains/8182/dt')).toBe('Downloads: 12.8M');
+    expect(await describeMetric('/badge/jetbrains/8182/rating')).toBe('Rating: 4.7/5');
+    expect(await describeMetric('/badge/jetbrains/9999/v')).toBe('JetBrains: not found');
+    expect(await describeMetric('/badge/jetbrains/9999/rating')).toBe('Rating: unrated');
     const requestCount = requestedUrls.length;
     expect(await describeMetric('/badge/jetbrains/rust/v')).toBe('jetbrains: invalid name');
     expect(requestedUrls).toHaveLength(requestCount);
@@ -2529,9 +2540,9 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       'v0/user/ghost/karma.json': null,
       'v0/user/pg/karma.json': 157_316,
     });
-    expect(await describeMetric('/badge/hn/pg/karma')).toBe('karma: 157.3k');
-    expect(await describeMetric('/badge/hn/ghost/karma')).toBe('karma: not found');
-    expect(await describeMetric('/badge/hn/nobody/karma')).toBe('karma: not found');
+    expect(await describeMetric('/badge/hn/pg/karma')).toBe('Karma: 157.3k');
+    expect(await describeMetric('/badge/hn/ghost/karma')).toBe('Karma: not found');
+    expect(await describeMetric('/badge/hn/nobody/karma')).toBe('Karma: not found');
     expect(requestedUrls[0]).toBe('https://hacker-news.firebaseio.com/v0/user/pg/karma.json');
     const requestCount = requestedUrls.length;
     expect(await describeMetric('/badge/hn/a.b/karma')).toBe('hn: invalid name');
@@ -2570,17 +2581,17 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       'sources.debian.org/api/src/missing/': { error: 404 },
     });
 
-    expect(await describeMetric('/badge/conda/numpy/v')).toBe('conda: v2.4.1');
-    expect(await describeMetric('/badge/conda/numpy/license')).toBe('license: BSD-3-Clause');
-    expect(await describeMetric('/badge/conda/bioconda/samtools/v')).toBe('conda: v1.22.1');
+    expect(await describeMetric('/badge/conda/numpy/v')).toBe('Conda: v2.4.1');
+    expect(await describeMetric('/badge/conda/numpy/license')).toBe('License: BSD-3-Clause');
+    expect(await describeMetric('/badge/conda/bioconda/samtools/v')).toBe('Conda: v1.22.1');
     expect(resolvePathRedirect('/badge/conda/numpy/v')).toBe(
       'https://anaconda.org/conda-forge/numpy'
     );
 
-    expect(await describeMetric('/badge/dub/vibe-d/v')).toBe('dub: v0.10.3');
-    expect(await describeMetric('/badge/dub/vibe-d/l')).toBe('license: MIT');
-    expect(await describeMetric('/badge/dub/vibe-d/dt')).toBe('downloads: 1.9M');
-    expect(await describeMetric('/badge/dub/vibe-d/dl')).toBe('downloads: 25k/mo');
+    expect(await describeMetric('/badge/dub/vibe-d/v')).toBe('DUB: v0.10.3');
+    expect(await describeMetric('/badge/dub/vibe-d/l')).toBe('License: MIT');
+    expect(await describeMetric('/badge/dub/vibe-d/dt')).toBe('Downloads: 1.9M');
+    expect(await describeMetric('/badge/dub/vibe-d/dl')).toBe('Downloads: 25k/mo');
     const dubDw = await resolvePathMetric('/badge/dub/vibe-d/dw');
     expect(dubDw.result.value).toBe('9.8k/wk');
     expect(dubDw.result.specials?.delta).toEqual({ type: 'delta', value: '+112%' });
@@ -2594,17 +2605,17 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     );
 
     expect(await describeMetric('/badge/cdnjs/htmx/v')).toBe('cdnjs: v4.0.0');
-    expect(await describeMetric('/badge/cdnjs/htmx/license')).toBe('license: BSD 2-Clause');
+    expect(await describeMetric('/badge/cdnjs/htmx/license')).toBe('License: BSD 2-Clause');
     expect(resolvePathRedirect('/badge/cdnjs/htmx/v')).toBe('https://cdnjs.com/libraries/htmx');
 
-    expect(await describeMetric('/badge/ctan/pgf/v')).toBe('ctan: v3.1.12');
-    expect(await describeMetric('/badge/ctan/pgf/license')).toBe('license: LPPL-1.3c');
+    expect(await describeMetric('/badge/ctan/pgf/v')).toBe('CTAN: v3.1.12');
+    expect(await describeMetric('/badge/ctan/pgf/license')).toBe('License: LPPL-1.3c');
     expect(resolvePathRedirect('/badge/ctan/pgf/v')).toBe('https://ctan.org/pkg/pgf');
 
-    expect(await describeMetric('/badge/debian/curl/v')).toBe('debian: v8.23.0-1');
-    expect(await describeMetric('/badge/debian/stable/curl/v')).toBe('debian: v8.14.1-2+deb13u5');
-    expect(await describeMetric('/badge/debian/trixie/curl/v')).toBe('debian: v8.14.1-2+deb13u5');
-    expect(await describeMetric('/badge/debian/missing/v')).toBe('debian: not found');
+    expect(await describeMetric('/badge/debian/curl/v')).toBe('Debian: v8.23.0-1');
+    expect(await describeMetric('/badge/debian/stable/curl/v')).toBe('Debian: v8.14.1-2+deb13u5');
+    expect(await describeMetric('/badge/debian/trixie/curl/v')).toBe('Debian: v8.14.1-2+deb13u5');
+    expect(await describeMetric('/badge/debian/missing/v')).toBe('Debian: not found');
     expect(resolvePathRedirect('/badge/debian/curl/v')).toBe('https://tracker.debian.org/pkg/curl');
     expect(requestedUrls).toContain('https://api.anaconda.org/package/conda-forge/numpy');
   });

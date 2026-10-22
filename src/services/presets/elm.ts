@@ -33,7 +33,7 @@ export const ELM_SERVICE = defineService({
     license: createLicenseMetric(ELM_ENDPOINT, (manifest) => manifest.license),
     v: createVersionMetric(
       ELM_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'elm', defaultLabel: 'elm' },
+      { defaultColor: 'sky', defaultIcon: 'elm', defaultLabel: 'Elm' },
       (manifest) => manifest.version
     ),
   },

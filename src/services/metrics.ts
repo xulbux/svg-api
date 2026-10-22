@@ -211,7 +211,7 @@ const COVERAGE: MetricPresentation = {
   autoSpecials: SCORE_SPECIALS,
   defaultColor: 'emerald',
   defaultIcon: 'shield-check',
-  defaultLabel: 'coverage',
+  defaultLabel: 'Coverage',
   defaultSpecial: 'ring',
 };
 
@@ -220,14 +220,14 @@ const RATING: MetricPresentation = {
   autoSpecials: RATING_SPECIALS,
   defaultColor: 'amber',
   defaultIcon: 'star',
-  defaultLabel: 'rating',
+  defaultLabel: 'Rating',
 };
 
 /** Default presentation for latest release tag metrics (`release`). */
 const RELEASE: MetricPresentation = {
   defaultColor: 'indigo',
   defaultIcon: 'tag',
-  defaultLabel: 'release',
+  defaultLabel: 'Release',
 };
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -369,38 +369,38 @@ export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring',
 export const FORKS: MetricPresentation = {
   defaultColor: 'sky',
   defaultIcon: 'git-fork',
-  defaultLabel: 'forks',
+  defaultLabel: 'Forks',
 };
 
-/** Presentation override for download metrics labeled `installs` (`createDownloadsMetric(…, INSTALLS_LABEL)`). */
-export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'installs' };
+/** Presentation override for download metrics labeled `Installs` (`createDownloadsMetric(…, INSTALLS_LABEL)`). */
+export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'Installs' };
 
 /** Default presentation for open issue metrics (`issues`). */
 export const ISSUES: MetricPresentation = {
   defaultColor: 'rose',
   defaultIcon: 'circle-dot',
-  defaultLabel: 'issues',
+  defaultLabel: 'Issues',
 };
 
 /** Default presentation for last commit / activity metrics (`commit`). */
 export const LAST_COMMIT: MetricPresentation = {
   defaultColor: 'rose',
   defaultIcon: 'git-commit-horizontal',
-  defaultLabel: 'last commit',
+  defaultLabel: 'Last Commit',
 };
 
 /** Default presentation for license metrics (`license`). */
 export const LICENSE: MetricPresentation = {
   defaultColor: 'slate',
   defaultIcon: 'scale',
-  defaultLabel: 'license',
+  defaultLabel: 'License',
 };
 
 /** Default presentation for open pull request metrics (`prs`). */
 export const PULL_REQUESTS: MetricPresentation = {
   defaultColor: 'violet',
   defaultIcon: 'git-pull-request',
-  defaultLabel: 'pull requests',
+  defaultLabel: 'Pull Requests',
 };
 
 /** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
@@ -408,7 +408,7 @@ export const SCORE: MetricPresentation = {
   autoSpecials: SCORE_SPECIALS,
   defaultColor: 'emerald',
   defaultIcon: 'gauge',
-  defaultLabel: 'score',
+  defaultLabel: 'Score',
   defaultSpecial: 'ring',
 };
 
@@ -416,14 +416,14 @@ export const SCORE: MetricPresentation = {
 export const STARS: MetricPresentation = {
   defaultColor: 'amber',
   defaultIcon: 'star',
-  defaultLabel: 'stars',
+  defaultLabel: 'Stars',
 };
 
 /** Default presentation for package / image last-updated timestamp metrics (`updated`). */
 export const UPDATED: MetricPresentation = {
   defaultColor: 'indigo',
   defaultIcon: 'clock',
-  defaultLabel: 'updated',
+  defaultLabel: 'Updated',
 };
 
 export { SCORE_SPECIALS, readFiniteNumber, readText };
@@ -910,7 +910,7 @@ export function createDownloadsMetric<P>(
       autoSpecials: overrides?.autoSpecials,
       defaultColor: overrides?.defaultColor ?? spec.color,
       defaultIcon: overrides?.defaultIcon ?? 'download',
-      defaultLabel: overrides?.defaultLabel ?? 'downloads',
+      defaultLabel: overrides?.defaultLabel ?? 'Downloads',
       defaultSpecial: overrides?.defaultSpecial,
     },
     readCount,
@@ -927,7 +927,7 @@ export function createDownloadsMetric<P>(
  * @param readCount       Reads the raw count from the projected payload.
  * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
  * @param autoSpecials    Optional list of automatic inline widget kinds supported by this metric.
- * @returns Metric rendering (e.g., `'12.4k'` labeled `followers`).
+ * @returns Metric rendering (e.g., `'12.4k'` labeled `Followers`).
  */
 export function createCommunityMetric<P>(
   endpoint: MetricEndpoint<P>,
@@ -939,7 +939,12 @@ export function createCommunityMetric<P>(
 ): ServiceMetricConfig {
   return createCountMetric(
     endpoint,
-    { autoSpecials, defaultColor: COMMUNITY_KINDS[kind], defaultIcon: icon, defaultLabel: kind },
+    {
+      autoSpecials,
+      defaultColor: COMMUNITY_KINDS[kind],
+      defaultIcon: icon,
+      defaultLabel: `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`,
+    },
     readCount,
     '',
     buildSpecials
@@ -1213,7 +1218,7 @@ export function createScorecardMetric<P>(
     autoSpecials: readChecks ? SCORECARD_CHECK_SPECIALS : SCORE_SPECIALS,
     defaultColor: 'emerald',
     defaultIcon: 'shield-check',
-    defaultLabel: 'openssf scorecard',
+    defaultLabel: 'OpenSSF Scorecard',
     defaultSpecial: 'ring',
   };
   return createMetric(endpoint, presentation, (payload) => {

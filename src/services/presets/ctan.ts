@@ -68,7 +68,7 @@ export const CTAN_SERVICE = defineService({
     license: createLicenseMetric(CTAN_ENDPOINT, (pkg) => pkg.license),
     v: createVersionMetric(
       CTAN_ENDPOINT,
-      { defaultColor: 'teal', defaultIcon: 'latex', defaultLabel: 'ctan' },
+      { defaultColor: 'teal', defaultIcon: 'latex', defaultLabel: 'CTAN' },
       (pkg) => pkg.version
     ),
   },

@@ -109,13 +109,13 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
       dt: createDownloadsMetric(endpoint, 'dt', (info) => info.downloaded),
       installs: createCountMetric(
         endpoint,
-        { defaultColor: 'emerald', defaultIcon: 'users', defaultLabel: 'active installs' },
+        { defaultColor: 'emerald', defaultIcon: 'users', defaultLabel: 'Active Installs' },
         (info) => info.active_installs,
         '+'
       ),
       php: createVersionMetric(
         endpoint,
-        { defaultColor: 'indigo', defaultIcon: 'php', defaultLabel: 'php' },
+        { defaultColor: 'indigo', defaultIcon: 'php', defaultLabel: 'PHP' },
         (info) => readText(info.requires_php)
       ),
       rating: createRatingMetric(
@@ -130,7 +130,7 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
       ),
       wp: createVersionMetric(
         endpoint,
-        { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: 'wordpress' },
+        { defaultColor: 'sky', defaultIcon: 'wordpress', defaultLabel: 'WordPress' },
         (info) => readText(info.requires)
       ),
     },
@@ -145,7 +145,7 @@ export const WORDPRESS_PLUGIN_SERVICE: ServiceDefinition = createWordPressServic
   action: 'plugin_information',
   description:
     'Plugin version, required PHP/WordPress versions, active installs, all-time downloads, and rating.',
-  label: 'wordpress',
+  label: 'WordPress',
   path: 'plugins',
   targetPlaceholder: ':plugin',
   title: 'WordPress Plugins',
@@ -157,7 +157,7 @@ export const WORDPRESS_THEME_SERVICE: ServiceDefinition = createWordPressService
   action: 'theme_information',
   description:
     'Theme version, required PHP/WordPress versions, active installs, all-time downloads, and rating.',
-  label: 'wordpress theme',
+  label: 'WordPress Theme',
   path: 'themes',
   targetPlaceholder: ':theme',
   title: 'WordPress Themes',

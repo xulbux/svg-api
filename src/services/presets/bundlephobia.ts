@@ -69,7 +69,7 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
   metrics: {
     deps: createCountMetric(
       BUNDLEPHOBIA_ENDPOINT,
-      { defaultColor: 'indigo', defaultIcon: 'package', defaultLabel: 'dependencies' },
+      { defaultColor: 'indigo', defaultIcon: 'package', defaultLabel: 'Dependencies' },
       (sizes) => sizes.dependencyCount
     ),
     gzip: createBytesMetric(
@@ -78,7 +78,7 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
         autoSpecials: SIZE_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'weight',
-        defaultLabel: 'minzipped',
+        defaultLabel: 'Minzipped',
       },
       (sizes) => sizes.gzip,
       buildBundleSizeSpecials
@@ -89,7 +89,7 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
         autoSpecials: SIZE_SPECIALS,
         defaultColor: 'sky',
         defaultIcon: 'weight',
-        defaultLabel: 'minified',
+        defaultLabel: 'Minified',
       },
       (sizes) => sizes.size,
       buildBundleSizeSpecials

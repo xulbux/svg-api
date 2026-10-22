@@ -111,7 +111,7 @@ const RATING_PRESENTATION: MetricPresentation = {
   autoSpecials: GRADE_SPECIALS,
   defaultColor: 'slate',
   defaultIcon: 'sonarcloud',
-  defaultLabel: 'rating',
+  defaultLabel: 'Rating',
 };
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -310,7 +310,7 @@ export const SONARCLOUD_SERVICE = defineService({
     bugs: createIssueCountMetric('bugs', 'new_bugs', {
       defaultColor: 'rose',
       defaultIcon: 'bug',
-      defaultLabel: 'bugs',
+      defaultLabel: 'Bugs',
     }),
     coverage: createCoverageMetric(
       MEASURES_ENDPOINT,
@@ -324,7 +324,7 @@ export const SONARCLOUD_SERVICE = defineService({
         autoSpecials: DUPLICATION_SPECIALS,
         defaultColor: 'sky',
         defaultIcon: 'copy',
-        defaultLabel: 'duplicated lines',
+        defaultLabel: 'Duplicated Lines',
       },
       (measures) => {
         const percent = toFiniteNumber(measures.duplicated_lines_density);
@@ -345,28 +345,28 @@ export const SONARCLOUD_SERVICE = defineService({
         };
       }
     ),
-    maintainability: createGradeMetric('sqale_rating', 'maintainability'),
+    maintainability: createGradeMetric('sqale_rating', 'Maintainability'),
     quality: createMetric(
       MEASURES_ENDPOINT,
       {
         autoSpecials: QUALITY_GATE_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'sonarcloud',
-        defaultLabel: 'quality gate',
+        defaultLabel: 'Quality Gate',
       },
       transformQualityGate
     ),
-    reliability: createGradeMetric('reliability_rating', 'reliability'),
-    security: createGradeMetric('security_rating', 'security'),
+    reliability: createGradeMetric('reliability_rating', 'Reliability'),
+    security: createGradeMetric('security_rating', 'Security'),
     smells: createIssueCountMetric('code_smells', 'new_code_smells', {
       defaultColor: 'amber',
       defaultIcon: 'wind',
-      defaultLabel: 'code smells',
+      defaultLabel: 'Code Smells',
     }),
     vulnerabilities: createIssueCountMetric('vulnerabilities', 'new_vulnerabilities', {
       defaultColor: 'orange',
       defaultIcon: 'shield-alert',
-      defaultLabel: 'vulnerabilities',
+      defaultLabel: 'Vulnerabilities',
     }),
   },
   route: { target: { placeholder: ':component' } },

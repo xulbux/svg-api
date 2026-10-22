@@ -78,7 +78,7 @@ export const HEX_SERVICE = defineService({
     license: createLicenseMetric(HEX_ENDPOINT, (pkg) => pkg.license),
     v: createVersionMetric(
       HEX_ENDPOINT,
-      { defaultColor: 'violet', defaultIcon: 'elixir', defaultLabel: 'hex' },
+      { defaultColor: 'violet', defaultIcon: 'elixir', defaultLabel: 'Hex' },
       (pkg) => pkg.version
     ),
   },

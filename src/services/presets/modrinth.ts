@@ -95,7 +95,7 @@ export const MODRINTH_SERVICE = defineService({
     ),
     game: createTextMetric(
       MODRINTH_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'modrinth', defaultLabel: 'minecraft' },
+      { defaultColor: 'emerald', defaultIcon: 'modrinth', defaultLabel: 'Minecraft' },
       (project) => project.gameVersion
     ),
     license: createLicenseMetric(MODRINTH_ENDPOINT, (project) => project.license),

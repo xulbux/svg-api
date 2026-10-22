@@ -155,7 +155,7 @@ export const FLATHUB_SERVICE = defineService({
     license: createLicenseMetric(APPSTREAM_ENDPOINT, (app) => app.license),
     v: createVersionMetric(
       APPSTREAM_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'flathub', defaultLabel: 'flathub' },
+      { defaultColor: 'sky', defaultIcon: 'flathub', defaultLabel: 'Flathub' },
       (app) => app.version
     ),
   },

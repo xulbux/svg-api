@@ -51,7 +51,7 @@ export const RUBYGEMS_SERVICE = defineService({
     updated: createRelativeDateMetric(RUBYGEMS_ENDPOINT, UPDATED, (gem) => gem.version_created_at),
     v: createVersionMetric(
       RUBYGEMS_ENDPOINT,
-      { defaultColor: 'red', defaultIcon: 'rubygems', defaultLabel: 'gem' },
+      { defaultColor: 'red', defaultIcon: 'rubygems', defaultLabel: 'Gem' },
       (gem) => gem.version
     ),
   },

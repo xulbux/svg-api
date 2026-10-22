@@ -39,12 +39,12 @@ export const THUNDERSTORE_SERVICE = defineService({
     dt: createDownloadsMetric(THUNDERSTORE_ENDPOINT, 'dt', (metrics) => metrics.downloads),
     rating: createCountMetric(
       THUNDERSTORE_ENDPOINT,
-      { defaultColor: 'amber', defaultIcon: 'thumbs-up', defaultLabel: 'rating' },
+      { defaultColor: 'amber', defaultIcon: 'thumbs-up', defaultLabel: 'Rating' },
       (metrics) => metrics.rating_score
     ),
     v: createVersionMetric(
       THUNDERSTORE_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'thunderstore', defaultLabel: 'thunderstore' },
+      { defaultColor: 'blue', defaultIcon: 'thunderstore', defaultLabel: 'Thunderstore' },
       (metrics) => metrics.latest_version
     ),
   },

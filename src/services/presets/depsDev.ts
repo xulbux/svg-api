@@ -83,7 +83,7 @@ export const DEPS_DEV_SERVICE = defineService({
     ),
     issues: createCountMetric(
       PROJECT_ENDPOINT,
-      { ...ISSUES, autoSpecials: RATIO_SPECIALS, defaultLabel: 'issues & PRs' },
+      { ...ISSUES, autoSpecials: RATIO_SPECIALS, defaultLabel: 'Issues & PRs' },
       (project) => project.issues,
       '',
       (project) => buildRatioSpecials(project.issues, project.stars)

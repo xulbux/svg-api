@@ -65,7 +65,7 @@ export const GO_SERVICE = defineService({
   metrics: {
     v: createVersionMetric(
       PROXY_ENDPOINT,
-      { defaultColor: 'cyan', defaultIcon: 'go', defaultLabel: 'go' },
+      { defaultColor: 'cyan', defaultIcon: 'go', defaultLabel: 'Go' },
       (latest) => latest.Version
     ),
   },

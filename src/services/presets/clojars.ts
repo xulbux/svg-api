@@ -94,7 +94,7 @@ export const CLOJARS_SERVICE = defineService({
     ),
     v: createVersionMetric(
       CLOJARS_ENDPOINT,
-      { defaultColor: 'blue', defaultIcon: 'clojure', defaultLabel: 'clojars' },
+      { defaultColor: 'blue', defaultIcon: 'clojure', defaultLabel: 'Clojars' },
       (artifact) => artifact.latest_release ?? artifact.latest_version
     ),
   },
