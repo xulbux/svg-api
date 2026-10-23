@@ -234,9 +234,6 @@ export const TYPING_ALIGN_MAP: Readonly<Record<string, TypingAlign>> = {
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches `+` characters in URL path segments for space decoding. */
-const PLUS_SIGN_RX = /\+/g;
-
 /** Matches comma or whitespace separators in list-style payloads. */
 const LIST_SEPARATOR_RX = /[,\s]+/;
 
@@ -430,20 +427,7 @@ function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefine
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/**
- * Decode a raw (still percent-encoded) URL path segment exactly once, converting `+` into spaces.
- * A literal `+` must be sent as `%2B` and a literal `%` as `%25`.
- * @param raw   Raw path segment as it appears in `URL.pathname`.
- * @returns Decoded segment text (the `+`-decoded raw text when percent-decoding fails).
- */
-export function decodeSegment(raw: string): string {
-  const withSpaces = raw.replace(PLUS_SIGN_RX, ' ');
-  try {
-    return decodeURIComponent(withSpaces);
-  } catch {
-    return withSpaces;
-  }
-}
+export { decodeSegment } from '@/site/shared';
 
 /**
  * Parse an optional finite number query parameter (e.g., `?size=24`, `?stroke=2.25`).

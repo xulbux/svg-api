@@ -6,6 +6,8 @@
  * Icon picker pages are built on demand (never kept in memory) and share the version of the icon index.
  */
 
+import builderScript from '@bundles/builder.client.js';
+import siteScript from '@bundles/site.client.js';
 import geistBoldBuffer from '@/assets/fonts/Geist-Bold.ttf';
 import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
 import geistRegularBuffer from '@/assets/fonts/Geist-Regular.ttf';
@@ -15,8 +17,6 @@ import jetBrainsMonoBoldBuffer from '@/assets/fonts/JetBrainsMono-Bold.ttf';
 import jetBrainsMonoBoldItalicBuffer from '@/assets/fonts/JetBrainsMono-BoldItalic.ttf';
 import jetBrainsMonoItalicBuffer from '@/assets/fonts/JetBrainsMono-Italic.ttf';
 import jetBrainsMonoRegularBuffer from '@/assets/fonts/JetBrainsMono-Regular.ttf';
-import builderScript from '@/site/client/bundles/builder.client.js';
-import siteScript from '@/site/client/bundles/site.client.js';
 import { getSiteStylesheet } from '@/site/styles';
 import { getIconPickerIndex, getIconPickerPage } from '@/svg/icons';
 import { getOwnValue, hashBytes, hashText } from '@/svg/shared';

@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
@@ -13,7 +14,7 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "paths": { "@/*": ["./src/*"] },
+    "paths": { "@/*": ["./src/*"], "@bundles/*": ["./dist/client/*"] },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,
@@ -22,5 +23,5 @@
     "verbatimModuleSyntax": true
   },
   "exclude": ["node_modules", "dist", ".wrangler", "src/site/client"],
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "*.config.*"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/**/*.ts", "test/**/*.ts", "*.config.*"]
 }

@@ -1,91 +1,18 @@
 /**
- * URL builder client entry point – Form state synchronization, live SVG preview debouncing, snippet tabs, shareable links, and modular select/icon/stack controllers for `/builder/:kind`.
+ * URL builder client entry point – Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
  */
 
-import {
-  buildAltText,
-  buildDefaultLinkTarget,
-  buildPath,
-  buildPreviewPath,
-  buildShareUrl,
-  buildSnippetTokens,
-  composeAnim,
-  composeHint,
-  composeIconPair,
-  composeSpecial,
-  core,
-  findOption,
-  findService,
-  isTypingFieldActiveForLayout,
-  parsePath,
-  readState,
-  resolveEffectiveFieldDefault,
-  splitAnim,
-  splitHint,
-  splitIconPair,
-  splitSize,
-  splitSpecial,
-} from '@/site/client/builder/core';
+import { buildPath, core, findService, parsePath } from '@/site/client/builder/core';
+import { createBuilderFieldsController } from '@/site/client/builder/fields';
 import { createIconPickerController } from '@/site/client/builder/iconPicker';
-import {
-  bindSelects,
-  setSelectOptions,
-  syncSelect,
-  syncSelects,
-} from '@/site/client/builder/select';
+import { createKindSyncController } from '@/site/client/builder/kindSync';
+import { createBuilderOutputController } from '@/site/client/builder/output';
+import { bindSelects, syncSelects } from '@/site/client/builder/select';
 import { createStackCatalogController } from '@/site/client/builder/stackCatalog';
 import { createTypingLinesController } from '@/site/client/builder/typingLines';
-import type {
-  BuilderBuildResult,
-  BuilderField,
-  BuilderOption,
-  BuilderSchema,
-  BuilderServiceMetric,
-  BuilderState,
-  HighlightToken,
-  SnippetSet,
-} from '@/types';
-
-// ---------------------------------------- TYPES ----------------------------------------
-
-/** Single native form control of a builder field. */
-type FieldControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Debounce delay in milliseconds before reloading the live SVG preview and updating `history.replaceState`. */
-const PREVIEW_DEBOUNCE_MS = 180;
+import type { BuilderField, BuilderSchema, BuilderState } from '@/types';
 
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Find a part control of a field element. */
-function getPart(fieldElement: Element, part: string): FieldControl | undefined {
-  const control = fieldElement.querySelector<FieldControl>(`[data-part="${part}"]`);
-  return control ?? undefined;
-}
-
-/** Set the value of a part control of a field element (no-op when the part does not exist). */
-function setPartValue(fieldElement: Element, part: string, value: string): void {
-  const control = getPart(fieldElement, part);
-  if (control) {
-    control.value = value;
-  }
-}
-
-/** Show the custom pixel input of a `size` field only for the `Custom…` preset. */
-function syncSizeParts(fieldElement: Element): void {
-  const isCustom = getPart(fieldElement, 'preset')?.value === 'custom';
-  fieldElement.querySelector('[data-size-part="custom"]')?.toggleAttribute('hidden', !isCustom);
-}
-
-/** Check the radio input matching `value` inside `fieldElement`. */
-function setRadioGroupValue(fieldElement: Element, value: string): void {
-  for (const radio of fieldElement.querySelectorAll('input[type="radio"]')) {
-    if (radio instanceof HTMLInputElement) {
-      radio.checked = radio.value === value;
-    }
-  }
-}
 
 /** Initialize the URL builder DOM when running in a browser context. */
 function initBuilderDom(): void {
@@ -109,24 +36,12 @@ function initBuilderDom(): void {
   const copyButton = document.getElementById('builder-copy') as HTMLButtonElement | null;
   const shareButton = document.getElementById('builder-share');
   const resetButton = document.getElementById('builder-reset');
-  const picker = document.getElementById('icon-picker');
-  const pickerEmpty = document.getElementById('icon-picker-empty');
-  const pickerGrid = document.getElementById('icon-picker-grid');
-  const pickerSearch = document.getElementById('icon-picker-search') as HTMLInputElement | null;
-  const pickerStatus = document.getElementById('icon-picker-status');
-  const glyphTemplates = document.getElementById('icon-glyph-templates');
-  const stackCatalog = document.getElementById('stack-catalog');
   const stackCategorySearch = document.getElementById(
     'stack-category-search'
   ) as HTMLInputElement | null;
-  const stackCatalogEmpty = document.getElementById('stack-catalog-empty');
   const stackGroupToggle = document.getElementById(
     'stack-group-by-category'
   ) as HTMLInputElement | null;
-  const stackGroupToggleLabel = document.querySelector('[data-stack-group-toggle]');
-  const stackCategoriesPanel = document.getElementById('stack-panel-categories');
-  const stackRawPanel = document.getElementById('stack-panel-raw');
-  const stackRawActions = document.querySelector('[data-stack-raw-actions]');
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
 
   const fieldsById = new Map<string, BuilderField>();
@@ -139,66 +54,13 @@ function initBuilderDom(): void {
     }
   }
 
-  const controlCache = new Map<string, FieldControl | undefined>();
-
   let state: BuilderState = { ...schema.initialState };
-  let snippetFormat: keyof SnippetSet = 'markdown';
-  let lastPreviewSrc = '';
-  let currentPreviewPath = '';
-  let crossBuilderNotice = '';
-  let previewTimer = 0;
-
-  function getControl(id: string): FieldControl | undefined {
-    if (!controlCache.has(id)) {
-      const element = document.getElementById(`field-${id}`);
-      controlCache.set(
-        id,
-        element instanceof HTMLInputElement ||
-          element instanceof HTMLSelectElement ||
-          element instanceof HTMLTextAreaElement
-          ? element
-          : undefined
-      );
-    }
-    return controlCache.get(id);
+  function getState(): BuilderState {
+    return state;
   }
 
   let stackCatalogController: ReturnType<typeof createStackCatalogController> | undefined =
     undefined;
-
-  const iconPickerController = createIconPickerController({
-    form,
-    glyphTemplates,
-    onIndexLoaded() {
-      stackCatalogController?.flushPendingChips();
-    },
-    picker,
-    pickerEmpty,
-    pickerGrid,
-    pickerSearch,
-    pickerStatus,
-    schema,
-    site,
-  });
-
-  stackCatalogController = createStackCatalogController({
-    createGlyph: iconPickerController.createGlyph,
-    form,
-    getControl,
-    getResolver: iconPickerController.getResolver,
-    getState() {
-      return state;
-    },
-    loadPage: iconPickerController.loadPage,
-    stackCatalog,
-    stackCatalogEmpty,
-    stackCategoriesPanel,
-    stackCategorySearch,
-    stackGroupToggle,
-    stackGroupToggleLabel,
-    stackRawActions,
-    stackRawPanel,
-  });
 
   const typingLinesController = createTypingLinesController({
     addButton: document.getElementById('typing-line-add') as HTMLButtonElement | null,
@@ -207,686 +69,101 @@ function initBuilderDom(): void {
     listElement: document.getElementById('typing-lines-list'),
   });
 
-  function getActiveServiceMetric(): BuilderServiceMetric | undefined {
-    if (schema.kind !== 'service') {
-      return undefined;
-    }
-    const service = findService(schema, state.service) ?? schema.services?.[0];
-    return findOption(service?.metrics, state.metric ?? '') ?? service?.metrics[0];
-  }
-
-  function getActiveAutoSpecials(): readonly string[] {
-    return getActiveServiceMetric()?.autoSpecials ?? [];
-  }
-
-  function normalizeDefaultSelection(
-    field: BuilderField,
-    rawValue: string,
-    isCustomSize = false
-  ): string {
-    if (!field.param || isCustomSize) {
-      return rawValue;
-    }
-    const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
-    return rawValue.toLowerCase() === effectiveDefault.toLowerCase() ? '' : rawValue;
-  }
-
-  function readFieldValue(field: BuilderField, fieldElement: Element): string {
-    function readPartValue(part: string): string {
-      return getPart(fieldElement, part)?.value ?? '';
-    }
-    switch (field.control) {
-      case 'anim': {
-        const sheen = getPart(fieldElement, 'sheen');
-        return composeAnim(
-          sheen instanceof HTMLInputElement && sheen.checked,
-          readPartValue('left'),
-          readPartValue('right')
-        );
-      }
-      case 'color': {
-        const checked = fieldElement.querySelector('input:checked');
-        const checkedValue = checked instanceof HTMLInputElement ? checked.value : '';
-        return normalizeDefaultSelection(field, checkedValue);
-      }
-      case 'hint': {
-        return composeHint(readPartValue('icon'), readPartValue('text'));
-      }
-      case 'icon': {
-        return readPartValue('main').trim();
-      }
-      case 'iconPair': {
-        return composeIconPair(readPartValue('left'), readPartValue('right'), hasPresetIcon);
-      }
-      case 'size': {
-        const preset = readPartValue('preset');
-        const rawSize = preset === 'custom' ? readPartValue('custom').trim() : preset;
-        return normalizeDefaultSelection(field, rawSize, preset === 'custom');
-      }
-      case 'special': {
-        const kind = readPartValue('kind');
-        const composedSpecial = composeSpecial(
-          kind,
-          readPartValue('payload'),
-          readPartValue('modifier'),
-          Boolean(kind && getActiveAutoSpecials().includes(kind))
-        );
-        return normalizeDefaultSelection(field, composedSpecial);
-      }
-      case 'typingLines': {
-        return typingLinesController.readValue();
-      }
-      default: {
-        const rawValue = getControl(field.id)?.value ?? '';
-        return field.control === 'select' ? normalizeDefaultSelection(field, rawValue) : rawValue;
-      }
-    }
-  }
-
-  function resolveSpecialHint(
-    field: BuilderField,
-    kind: string,
-    kindOption: BuilderOption | undefined,
-    isAuto: boolean
-  ): string {
-    const baseHint = kindOption?.description ?? field.description ?? '';
-    if (kind && kind !== 'none') {
-      return isAuto
-        ? `Uses live upstream data when Data is left empty; Manual: ${baseHint}`
-        : baseHint;
-    }
-    if (schema.kind === 'service') {
-      const metric = getActiveServiceMetric();
-      if (metric?.defaultSpecial) {
-        return `Hides the default ${metric.defaultSpecial} widget of this metric.`;
-      }
-      if (getActiveAutoSpecials().length > 0) {
-        return 'Auto-marked widgets use live upstream data when Data is left empty.';
-      }
-      return 'Optional inline chart, gauge, or delta pill next to the badge value.';
-    }
-    return baseHint;
-  }
-
-  function syncSpecialParts(field: BuilderField, fieldElement: Element, modifier: string): void {
-    const kind = getPart(fieldElement, 'kind')?.value ?? '';
-    const kindOption = findOption(field.options, kind);
-    const modifiers = kindOption?.modifiers ?? [];
-    const payload = getPart(fieldElement, 'payload');
-    const modifierSelect = getPart(fieldElement, 'modifier');
-    const isAuto = Boolean(kind && getActiveAutoSpecials().includes(kind));
-    if (payload instanceof HTMLInputElement) {
-      const example = kindOption?.placeholder ?? '';
-      let autoPlaceholder = example;
-      if (isAuto) {
-        autoPlaceholder = example ? `auto (or e.g., ${example})` : 'auto';
-      }
-      payload.placeholder = autoPlaceholder;
-    }
-    if (modifierSelect instanceof HTMLSelectElement) {
-      setSelectOptions(modifierSelect, modifiers, modifier);
-    }
-    const hint = fieldElement.querySelector('.builder-hint');
-    if (hint) {
-      hint.textContent = resolveSpecialHint(field, kind, kindOption, isAuto);
-    }
-    fieldElement
-      .querySelector('[data-special-part="payload"]')
-      ?.toggleAttribute('hidden', !kind || kind === 'none');
-    fieldElement
-      .querySelector('[data-special-part="modifier"]')
-      ?.toggleAttribute('hidden', modifiers.length === 0);
-  }
-
-  function resolveWritableEffectiveValue(field: BuilderField, value: string): string {
-    if (value) {
-      return value;
-    }
-    const isSelectableDefault =
-      Boolean(field.param) &&
-      (field.control === 'select' ||
-        field.control === 'color' ||
-        field.control === 'size' ||
-        field.control === 'special');
-    return isSelectableDefault ? resolveEffectiveFieldDefault(schema, state, field) : '';
-  }
-
-  function writeScalarOrSelectControl(
-    field: BuilderField,
-    value: string,
-    effectiveValue: string
-  ): void {
-    const control = getControl(field.id);
-    if (control instanceof HTMLSelectElement) {
-      control.value = effectiveValue;
-      if (control.selectedIndex < 0 && control.options.length > 0) {
-        control.selectedIndex = 0;
-      }
-    } else if (control) {
-      control.value = value;
-    }
-    if (field.control === 'stackGroups') {
+  const fieldsController = createBuilderFieldsController({
+    fieldElements,
+    getState,
+    hasPresetIcon,
+    schema,
+    syncStackFromDsl(value: string) {
       stackCatalogController?.syncFromDsl(value);
-    }
-  }
+    },
+    typingLinesController,
+  });
 
-  function writeFieldValue(field: BuilderField, value: string): void {
-    const fieldElement = fieldElements.get(field.id);
-    if (!fieldElement) {
-      return;
-    }
-    const effectiveValue = resolveWritableEffectiveValue(field, value);
+  const kindSyncController = createKindSyncController({
+    fieldElements,
+    fieldsById,
+    fieldsController,
+    form,
+    getState,
+    schema,
+  });
 
-    switch (field.control) {
-      case 'anim': {
-        const anim = splitAnim(value, field.options);
-        const sheen = getPart(fieldElement, 'sheen');
-        if (sheen instanceof HTMLInputElement) {
-          sheen.checked = anim.hasSheen;
-        }
-        setPartValue(fieldElement, 'left', anim.left);
-        setPartValue(fieldElement, 'right', anim.right);
-        break;
-      }
-      case 'color': {
-        setRadioGroupValue(fieldElement, effectiveValue);
-        break;
-      }
-      case 'hint': {
-        const hint = splitHint(value);
-        setPartValue(fieldElement, 'icon', hint.icon);
-        setPartValue(fieldElement, 'text', hint.text);
-        break;
-      }
-      case 'icon': {
-        setPartValue(fieldElement, 'main', value);
-        break;
-      }
-      case 'iconPair': {
-        const [left, right] = splitIconPair(value, hasPresetIcon);
-        setPartValue(fieldElement, 'left', left);
-        setPartValue(fieldElement, 'right', right);
-        break;
-      }
-      case 'size': {
-        const size = splitSize(effectiveValue, field.options ?? []);
-        setPartValue(fieldElement, 'preset', size.preset);
-        setPartValue(fieldElement, 'custom', size.custom);
-        syncSizeParts(fieldElement);
-        break;
-      }
-      case 'special': {
-        const special = splitSpecial(effectiveValue, field.options ?? []);
-        setPartValue(fieldElement, 'kind', special.kind);
-        setPartValue(fieldElement, 'payload', special.payload);
-        syncSpecialParts(field, fieldElement, special.modifier);
-        break;
-      }
-      case 'typingLines': {
-        typingLinesController.syncFromValue(value);
-        break;
-      }
-      default: {
-        writeScalarOrSelectControl(field, value, effectiveValue);
-      }
-    }
-  }
+  const outputController = createBuilderOutputController({
+    altInput,
+    codeElement,
+    copyButton,
+    fieldElements,
+    getState,
+    linkInput,
+    openLink,
+    outputElement,
+    previewImage,
+    previewPlaceholder,
+    reducedMotionQuery,
+    schema,
+    shareButton,
+    site,
+    statusElement,
+  });
 
-  function syncServiceSpecialOptions(): void {
-    const specialField = fieldsById.get('special');
-    const specialElement = fieldElements.get('special');
-    if (!specialField || !specialElement) {
-      return;
-    }
-    const autoSpecials = getActiveAutoSpecials();
-    const kindSelect = getPart(specialElement, 'kind');
-    if (kindSelect instanceof HTMLSelectElement) {
-      for (const option of kindSelect.options) {
-        if (option.value && autoSpecials.includes(option.value)) {
-          option.dataset.badge = 'Auto';
-        } else {
-          delete option.dataset.badge;
-        }
-      }
-    }
-    if (!state.special) {
-      writeFieldValue(specialField, '');
-    } else {
-      const modifier = getPart(specialElement, 'modifier')?.value ?? '';
-      syncSpecialParts(specialField, specialElement, modifier);
-    }
-    if (kindSelect instanceof HTMLSelectElement) {
-      const wrapper = kindSelect.closest('[data-select]');
-      if (wrapper) {
-        syncSelect(wrapper);
-      }
-    }
-  }
+  const iconPickerController = createIconPickerController({
+    form,
+    glyphTemplates: document.getElementById('icon-glyph-templates'),
+    onIndexLoaded() {
+      stackCatalogController?.flushPendingChips();
+    },
+    picker: document.getElementById('icon-picker'),
+    pickerEmpty: document.getElementById('icon-picker-empty'),
+    pickerGrid: document.getElementById('icon-picker-grid'),
+    pickerSearch: document.getElementById('icon-picker-search') as HTMLInputElement | null,
+    pickerStatus: document.getElementById('icon-picker-status'),
+    schema,
+    site,
+  });
 
-  function syncServiceDotOptions(hasDynamicDot: boolean): void {
-    const dotField = fieldsById.get('dot');
-    const dotControl = getControl('dot');
-    if (!dotField || !(dotControl instanceof HTMLSelectElement)) {
-      return;
-    }
-    const dotOptions: BuilderOption[] = [];
-    for (const option of dotField.options ?? []) {
-      if (hasDynamicDot || option.value !== '') {
-        dotOptions.push(option);
-      }
-    }
-    const targetDotValue = state.dot || resolveEffectiveFieldDefault(schema, state, dotField);
-    setSelectOptions(dotControl, dotOptions, targetDotValue);
-    state.dot = normalizeDefaultSelection(dotField, dotControl.value);
-  }
-
-  function syncServicePresetIconTrigger(
-    defaultIcon: string | undefined,
-    hasDynamicIcon: boolean
-  ): void {
-    const leftIconTrigger = form.querySelector('[data-icon-target="field-icon-left"]');
-    if (!(leftIconTrigger instanceof HTMLElement)) {
-      return;
-    }
-    if (defaultIcon) {
-      leftIconTrigger.dataset.presetIcon = defaultIcon;
-    } else {
-      delete leftIconTrigger.dataset.presetIcon;
-    }
-    if (hasDynamicIcon) {
-      leftIconTrigger.dataset.presetDynamic = 'true';
-    } else {
-      delete leftIconTrigger.dataset.presetDynamic;
-    }
-  }
-
-  function syncServiceMetricPresentation(): void {
-    const metric = getActiveServiceMetric();
-    const labelControl = getControl('label');
-    if (labelControl instanceof HTMLInputElement) {
-      labelControl.placeholder = metric?.defaultLabel || 'preset label';
-    }
-
-    fieldElements
-      .get('color')
-      ?.querySelector('[data-color-auto]')
-      ?.toggleAttribute('hidden', !metric?.hasDynamicColor);
-    const colorField = fieldsById.get('color');
-    if (colorField && !state.color) {
-      writeFieldValue(colorField, '');
-    }
-
-    syncServiceDotOptions(Boolean(metric?.hasDynamicDot));
-    syncServicePresetIconTrigger(metric?.defaultIcon, Boolean(metric?.hasDynamicIcon));
-    syncServiceSpecialOptions();
-  }
-
-  function labelServiceSegment(
-    id: string,
-    label: string,
-    segmentName: string,
-    placeholder: string,
-    isRequired: boolean
-  ): void {
-    const fieldElement = fieldElements.get(id);
-    const textElement = fieldElement?.querySelector('.builder-label-text');
-    if (textElement) {
-      textElement.textContent = `${label} ${segmentName}`.trim();
-    }
-    fieldElement?.querySelector('.builder-required')?.toggleAttribute('hidden', !isRequired);
-    const control = getControl(id);
-    if (control instanceof HTMLInputElement) {
-      control.placeholder = placeholder;
-      if (isRequired) {
-        control.setAttribute('aria-required', 'true');
-      } else {
-        control.removeAttribute('aria-required');
-      }
-    }
-  }
-
-  function syncServiceFields(): void {
-    const service = findService(schema, state.service);
-    if (!service) {
-      return;
-    }
-    fieldElements.get('owner')?.toggleAttribute('hidden', service.ownerMode === 'none');
-    labelServiceSegment(
-      'owner',
-      'Owner',
-      service.ownerName ?? '',
-      service.ownerHint ?? '',
-      service.ownerMode === 'required'
-    );
-    labelServiceSegment(
-      'target',
-      'Target',
-      service.targetName,
-      service.targetName.replace(':', ''),
-      true
-    );
-    const metricControl = getControl('metric');
-    const { metrics } = service;
-    if (!findOption(metrics, state.metric ?? '')) {
-      state.metric = metrics[0]?.value ?? '';
-    }
-    if (metricControl instanceof HTMLSelectElement) {
-      setSelectOptions(metricControl, metrics, state.metric ?? '');
-    }
-    syncServiceMetricPresentation();
-  }
-
-  function syncQuoteFields(): void {
-    if (schema.kind !== 'quote') {
-      return;
-    }
-    const sizeField = fieldsById.get('size');
-    if (sizeField && !state.size) {
-      writeFieldValue(sizeField, '');
-    }
-  }
-
-  function syncTypingFields(): void {
-    if (schema.kind !== 'typing') {
-      return;
-    }
-    const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
-
-    fieldElements
-      .get('title')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('title', effectiveLayout));
-    fieldElements
-      .get('hint')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('hint', effectiveLayout));
-    fieldElements
-      .get('align')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('align', effectiveLayout));
-
-    const titleControl = getControl('title');
-    if (titleControl instanceof HTMLInputElement) {
-      titleControl.placeholder =
-        effectiveLayout === 'ide' ? 'index.ts (ide default)' : 'optional (e.g., zsh)';
-    }
-    const prefixControl = getControl('prefix');
-    if (prefixControl instanceof HTMLInputElement) {
-      prefixControl.placeholder = effectiveLayout === 'window' ? '❯ (window default)' : 'optional';
-    }
-    const hintElement = fieldElements.get('hint');
-    const hintTextControl = hintElement ? getPart(hintElement, 'text') : undefined;
-    if (hintTextControl instanceof HTMLInputElement) {
-      hintTextControl.placeholder =
-        effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
-    }
-
-    const fontField = fieldsById.get('font');
-    if (fontField && !state.font) {
-      writeFieldValue(fontField, '');
-    }
-    const alignField = fieldsById.get('align');
-    if (alignField && !state.align) {
-      writeFieldValue(alignField, '');
-    }
-  }
+  stackCatalogController = createStackCatalogController({
+    createGlyph: iconPickerController.createGlyph,
+    form,
+    getControl: fieldsController.getControl,
+    getResolver: iconPickerController.getResolver,
+    getState,
+    loadPage: iconPickerController.loadPage,
+    stackCatalog: document.getElementById('stack-catalog'),
+    stackCatalogEmpty: document.getElementById('stack-catalog-empty'),
+    stackCategoriesPanel: document.getElementById('stack-panel-categories'),
+    stackCategorySearch,
+    stackGroupToggle,
+    stackGroupToggleLabel: document.querySelector('[data-stack-group-toggle]'),
+    stackRawActions: document.querySelector('[data-stack-raw-actions]'),
+    stackRawPanel: document.getElementById('stack-panel-raw'),
+  });
 
   function writeState(): void {
     if (schema.kind === 'service') {
-      syncServiceFields();
+      kindSyncController.syncServiceFields();
     } else if (schema.kind === 'typing') {
-      syncTypingFields();
+      kindSyncController.syncTypingFields();
     }
     for (const field of schema.fields) {
       if (field.id !== 'metric') {
-        writeFieldValue(field, state[field.id] ?? '');
+        fieldsController.writeFieldValue(field, state[field.id] ?? '');
       }
     }
-  }
-
-  function renderCode(tokens: readonly HighlightToken[]): void {
-    if (!codeElement) {
-      return;
-    }
-    const fragment = document.createDocumentFragment();
-    for (const [className, text] of tokens) {
-      const span = document.createElement('span');
-      span.className = className;
-      span.textContent = text;
-      fragment.append(span);
-    }
-    codeElement.replaceChildren(fragment);
-  }
-
-  function setStatus(message: string, isWarning = false): void {
-    if (statusElement) {
-      statusElement.textContent = message;
-      statusElement.classList.toggle('is-warning', isWarning);
-    }
-  }
-
-  function loadPreview(path: string): void {
-    currentPreviewPath = path;
-    const previewSrc = buildPreviewPath(path, reducedMotionQuery.matches);
-    if (!previewImage || previewSrc === lastPreviewSrc) {
-      return;
-    }
-    lastPreviewSrc = previewSrc;
-    previewImage.toggleAttribute('hidden', !previewSrc);
-    previewPlaceholder?.toggleAttribute('hidden', Boolean(previewSrc));
-    if (previewSrc) {
-      previewImage.classList.add('is-loading');
-      previewImage.src = previewSrc;
-    }
-  }
-
-  function syncOutputAvailability(result: BuilderBuildResult): void {
-    const isComplete = result.missing.length === 0;
-    const service = schema.kind === 'service' ? findService(schema, state.service) : undefined;
-    for (const field of schema.fields) {
-      const isRequired =
-        field.isRequired || (field.id === 'owner' && service?.ownerMode === 'required');
-      const isMissing = isRequired && !readState(state, field.id);
-      const fieldElement = fieldElements.get(field.id);
-      if (fieldElement) {
-        fieldElement.classList.toggle('is-missing', isMissing);
-        for (const control of fieldElement.querySelectorAll(
-          '.builder-input:not(.select-trigger)'
-        )) {
-          if (isMissing) {
-            control.setAttribute('aria-invalid', 'true');
-          } else if (!control.closest('.is-invalid')) {
-            control.removeAttribute('aria-invalid');
-          }
-        }
-      }
-    }
-    if (openLink) {
-      if (isComplete) {
-        openLink.href = result.path;
-        openLink.tabIndex = 0;
-        openLink.removeAttribute('aria-disabled');
-      } else {
-        openLink.removeAttribute('href');
-        openLink.tabIndex = -1;
-        openLink.setAttribute('aria-disabled', 'true');
-      }
-    }
-    if (copyButton) {
-      copyButton.disabled = !isComplete;
-    }
-    outputElement?.classList.toggle('is-incomplete', !isComplete);
-    setStatus(
-      isComplete
-        ? crossBuilderNotice
-        : `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
-      !isComplete || Boolean(crossBuilderNotice)
-    );
-  }
-
-  function readSnippetOptions(): { alt: string; link: string } {
-    return { alt: (altInput?.value ?? '').trim(), link: (linkInput?.value ?? '').trim() };
-  }
-
-  function renderOutputs(): void {
-    const result = buildPath(schema, state);
-    const isComplete = result.missing.length === 0;
-    const absoluteUrl = `${schema.origin}${result.path}`;
-    const autoAlt = buildAltText(schema, state);
-    const options = readSnippetOptions();
-    const alt = options.alt || autoAlt;
-    if (altInput) {
-      altInput.placeholder = autoAlt;
-    }
-    if (previewImage) {
-      previewImage.alt = alt;
-    }
-    const link = options.link || buildDefaultLinkTarget(schema, state, absoluteUrl);
-    renderCode(buildSnippetTokens(absoluteUrl, alt, link)[snippetFormat]);
-    syncOutputAvailability(result);
-
-    clearTimeout(previewTimer);
-    previewTimer = globalThis.setTimeout(() => {
-      loadPreview(isComplete ? result.path : '');
-      history.replaceState(
-        history.state,
-        '',
-        buildShareUrl(globalThis.location.href, result.path, options.alt, options.link)
-      );
-    }, PREVIEW_DEBOUNCE_MS);
   }
 
   function update(scope: ParentNode): void {
-    renderOutputs();
+    outputController.renderOutputs();
     syncSelects(scope);
     iconPickerController.syncIconSelects(scope);
     iconPickerController.validateIcons(scope);
-  }
-
-  function bindHelpPopovers(): void {
-    for (const trigger of form.querySelectorAll('[data-help-popover]')) {
-      if (trigger instanceof HTMLElement) {
-        const popoverId = trigger.dataset.helpPopover ?? '';
-        const align = trigger.dataset.helpAlign === 'start' ? 'start' : 'end';
-        const popover = popoverId ? document.getElementById(popoverId) : undefined;
-        if (popover instanceof HTMLElement) {
-          popover.addEventListener('toggle', (event) => {
-            if ((event as ToggleEvent).newState === 'open') {
-              site?.placePopover(popover, trigger, { align, gap: 6 });
-            }
-          });
-        }
-      }
-    }
-  }
-
-  function syncServiceFieldChange(field: BuilderField): void {
-    if (field.id === 'service') {
-      syncServiceFields();
-    } else if (field.id === 'metric') {
-      syncServiceMetricPresentation();
-    } else {
-      return;
-    }
-    const specialField = fieldsById.get('special');
-    const specialElement = fieldElements.get('special');
-    if (specialField && specialElement) {
-      state.special = readFieldValue(specialField, specialElement);
-      if (!state.special) {
-        writeFieldValue(specialField, '');
-        const kindSelect = getPart(specialElement, 'kind');
-        const wrapper = kindSelect?.closest('[data-select]');
-        if (wrapper) {
-          syncSelect(wrapper);
-        }
-      }
-    }
-  }
-
-  function syncControlPartsOnInput(
-    field: BuilderField,
-    fieldElement: Element,
-    target: EventTarget | undefined
-  ): void {
-    if (field.control === 'anim' && field.animScope !== 'pair' && target instanceof Element) {
-      const sheen = getPart(fieldElement, 'sheen');
-      const left = getPart(fieldElement, 'left');
-      if (
-        target.matches('[data-part="left"]') &&
-        left?.value === 'none' &&
-        sheen instanceof HTMLInputElement
-      ) {
-        sheen.checked = false;
-      } else if (
-        target.matches('[data-part="sheen"]') &&
-        sheen instanceof HTMLInputElement &&
-        sheen.checked &&
-        left?.value === 'none'
-      ) {
-        left.value = '';
-      }
-    }
-    if (
-      field.control === 'special' &&
-      target instanceof Element &&
-      target.matches('[data-part="kind"]')
-    ) {
-      syncSpecialParts(field, fieldElement, '');
-    }
-    if (field.control === 'size') {
-      syncSizeParts(fieldElement);
-    }
-  }
-
-  function handleFieldInput(event: Event): void {
-    const target = event.target ?? undefined;
-    if (
-      (event.type === 'change' && !(target instanceof HTMLSelectElement)) ||
-      target === stackCategorySearch ||
-      target === stackGroupToggle
-    ) {
-      return;
-    }
-    const fieldElement = target instanceof Element ? target.closest('[data-field]') : undefined;
-    const field = fieldsById.get(fieldElement?.getAttribute('data-field') ?? '');
-    if (!fieldElement || !field) {
-      return;
-    }
-    crossBuilderNotice = '';
-    syncControlPartsOnInput(field, fieldElement, target);
-    state[field.id] = readFieldValue(field, fieldElement);
-    stackCatalogController?.syncStackFieldChange(field);
-    syncServiceFieldChange(field);
-    if (field.id === 'layout') {
-      syncQuoteFields();
-      syncTypingFields();
-    } else if (field.id === 'prefix' || field.id === 'icon') {
-      syncTypingFields();
-    }
-    const hasCrossFieldSync =
-      field.id === 'service' ||
-      field.id === 'metric' ||
-      field.id === 'layout' ||
-      field.id === 'prefix' ||
-      field.id === 'icon';
-    update(hasCrossFieldSync ? form : fieldElement);
-  }
-
-  function selectTab(tab: HTMLElement): void {
-    const { format } = tab.dataset;
-    snippetFormat = format === 'html' || format === 'url' ? format : 'markdown';
-    for (const otherTab of document.querySelectorAll('.builder-tab')) {
-      const isSelected = otherTab === tab;
-      otherTab.classList.toggle('is-active', isSelected);
-      otherTab.setAttribute('aria-selected', String(isSelected));
-      otherTab.setAttribute('tabindex', isSelected ? '0' : '-1');
-    }
-    document.getElementById('builder-code')?.setAttribute('aria-labelledby', tab.id);
-    renderOutputs();
   }
 
   function syncStateFromForm(): void {
     for (const field of schema.fields) {
       const fieldElement = fieldElements.get(field.id);
       if (fieldElement) {
-        state[field.id] = readFieldValue(field, fieldElement);
+        state[field.id] = fieldsController.readFieldValue(field, fieldElement);
       }
     }
   }
@@ -911,55 +188,63 @@ function initBuilderDom(): void {
     if (linkInput) {
       linkInput.value = pageParams.get('link') ?? '';
     }
-    crossBuilderNotice =
+    outputController.setCrossBuilderNotice(
       sharedPath && !parsedState
         ? 'The shared link belongs to another builder; Showing the example instead.'
-        : '';
+        : ''
+    );
     applyState(parsedState ?? schema.initialState);
   }
 
-  function copyShareLink(): void {
-    const options = readSnippetOptions();
-    if (shareButton) {
-      site?.copyText(
-        buildShareUrl(
-          globalThis.location.href,
-          buildPath(schema, state).path,
-          options.alt,
-          options.link
-        ),
-        shareButton
-      );
+  function bindHelpPopovers(): void {
+    for (const trigger of form.querySelectorAll('[data-help-popover]')) {
+      if (trigger instanceof HTMLElement) {
+        const popoverId = trigger.dataset.helpPopover ?? '';
+        const align = trigger.dataset.helpAlign === 'start' ? 'start' : 'end';
+        const popover = popoverId ? document.getElementById(popoverId) : undefined;
+        if (popover instanceof HTMLElement) {
+          popover.addEventListener('toggle', (event) => {
+            if ((event as ToggleEvent).newState === 'open') {
+              site?.placePopover(popover, trigger, { align, gap: 6 });
+            }
+          });
+        }
+      }
     }
   }
 
-  function handleTabKeydown(event: KeyboardEvent): void {
-    const tabs = [...document.querySelectorAll('.builder-tab')];
-    if (tabs.length === 0) {
+  function handleFieldInput(event: Event): void {
+    const target = event.target ?? undefined;
+    if (
+      (event.type === 'change' && !(target instanceof HTMLSelectElement)) ||
+      target === stackCategorySearch ||
+      target === stackGroupToggle
+    ) {
       return;
     }
-    let current = 0;
-    for (const [i, tab] of tabs.entries()) {
-      if (tab.getAttribute('aria-selected') === 'true') {
-        current = i;
-      }
+    const fieldElement = target instanceof Element ? target.closest('[data-field]') : undefined;
+    const field = fieldsById.get(fieldElement?.getAttribute('data-field') ?? '');
+    if (!fieldElement || !field) {
+      return;
     }
-    let nextIndex: number | undefined = undefined;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (current - 1 + tabs.length) % tabs.length;
-    } else if (event.key === 'ArrowRight') {
-      nextIndex = (current + 1) % tabs.length;
-    } else if (event.key === 'Home') {
-      nextIndex = 0;
-    } else if (event.key === 'End') {
-      nextIndex = tabs.length - 1;
+    outputController.clearCrossBuilderNotice();
+    fieldsController.syncControlPartsOnInput(field, fieldElement, target);
+    state[field.id] = fieldsController.readFieldValue(field, fieldElement);
+    stackCatalogController?.syncStackFieldChange(field);
+    kindSyncController.syncServiceFieldChange(field);
+    if (field.id === 'layout') {
+      kindSyncController.syncQuoteFields();
+      kindSyncController.syncTypingFields();
+    } else if (field.id === 'prefix' || field.id === 'icon') {
+      kindSyncController.syncTypingFields();
     }
-    const next = nextIndex !== undefined ? tabs[nextIndex] : undefined;
-    if (next instanceof HTMLElement) {
-      event.preventDefault();
-      selectTab(next);
-      next.focus();
-    }
+    const hasCrossFieldSync =
+      field.id === 'service' ||
+      field.id === 'metric' ||
+      field.id === 'layout' ||
+      field.id === 'prefix' ||
+      field.id === 'icon';
+    update(hasCrossFieldSync ? form : fieldElement);
   }
 
   function bindBuilderEvents(): void {
@@ -967,12 +252,12 @@ function initBuilderDom(): void {
     form.addEventListener('change', handleFieldInput);
     form.addEventListener('submit', (event) => event.preventDefault());
     altInput?.addEventListener('input', () => {
-      crossBuilderNotice = '';
-      renderOutputs();
+      outputController.clearCrossBuilderNotice();
+      outputController.renderOutputs();
     });
     linkInput?.addEventListener('input', () => {
-      crossBuilderNotice = '';
-      renderOutputs();
+      outputController.clearCrossBuilderNotice();
+      outputController.renderOutputs();
     });
     if (linkInput && schema.kind === 'service') {
       linkInput.placeholder = 'Upstream page of the service';
@@ -981,24 +266,29 @@ function initBuilderDom(): void {
     previewImage?.addEventListener('load', () => {
       previewImage.classList.remove('is-loading');
       if (buildPath(schema, state).missing.length === 0) {
-        setStatus(crossBuilderNotice, Boolean(crossBuilderNotice));
+        const notice = outputController.getCrossBuilderNotice();
+        outputController.setStatus(notice, Boolean(notice));
       }
     });
     previewImage?.addEventListener('error', () => {
       previewImage.classList.remove('is-loading');
-      setStatus('The preview could not be loaded; Check the route values.', true);
+      outputController.setStatus('The preview could not be loaded; Check the route values.', true);
     });
-    reducedMotionQuery.addEventListener('change', () => loadPreview(currentPreviewPath));
+    reducedMotionQuery.addEventListener('change', () =>
+      outputController.loadPreview(outputController.getCurrentPreviewPath())
+    );
 
     const tabList = outputElement?.querySelector('.builder-tabs');
     tabList?.addEventListener('click', (event) => {
       const tab =
         event.target instanceof Element ? event.target.closest('.builder-tab') : undefined;
       if (tab instanceof HTMLElement) {
-        selectTab(tab);
+        outputController.selectTab(tab);
       }
     });
-    tabList?.addEventListener('keydown', (event) => handleTabKeydown(event as KeyboardEvent));
+    tabList?.addEventListener('keydown', (event) =>
+      outputController.handleTabKeydown(event as KeyboardEvent)
+    );
 
     form.addEventListener('click', (event) => {
       const clearButton =
@@ -1020,7 +310,7 @@ function initBuilderDom(): void {
     bindHelpPopovers();
 
     resetButton?.addEventListener('click', () => {
-      crossBuilderNotice = '';
+      outputController.clearCrossBuilderNotice();
       if (altInput) {
         altInput.value = '';
       }
@@ -1033,7 +323,7 @@ function initBuilderDom(): void {
       }
       applyState({});
     });
-    shareButton?.addEventListener('click', copyShareLink);
+    shareButton?.addEventListener('click', outputController.copyShareLink);
   }
 
   initializeState();

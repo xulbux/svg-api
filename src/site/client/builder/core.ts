@@ -2,13 +2,14 @@
  * Builder client core – Pure URL, snippet, grid focus, async cache, and icon resolver helpers exposed on `globalThis.svgBuilderCore` for unit testing and shared by the builder DOM modules.
  */
 
-import { buildSnippets, buildSnippetTokens } from '@/site/shared/snippets';
 import {
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
   buildPreviewPath,
   buildShareUrl,
+  buildSnippets,
+  buildSnippetTokens,
   collectStackSlugs,
   composeAnim,
   composeCategorizedStack,
@@ -25,7 +26,7 @@ import {
   splitIconPair,
   splitSize,
   splitSpecial,
-} from '@/site/shared/url';
+} from '@/site/shared';
 import type { IconMatch, IconPickerIndex, IconPickerSetId, IconResolver } from '@/types';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -210,13 +211,14 @@ export const core = {
   splitSpecial,
 };
 
-export { buildSnippets, buildSnippetTokens } from '@/site/shared/snippets';
 export {
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
   buildPreviewPath,
   buildShareUrl,
+  buildSnippets,
+  buildSnippetTokens,
   collectStackSlugs,
   collectStackTileTokens,
   composeAnim,
@@ -240,4 +242,4 @@ export {
   splitSize,
   splitSpecial,
   stripStackTileColor,
-} from '@/site/shared/url';
+} from '@/site/shared';

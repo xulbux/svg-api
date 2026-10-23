@@ -10,7 +10,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build:client": "node scripts/buildClient.mjs && oxfmt src/site/client/bundles/*.client.js",
+    "build:client": "node scripts/buildClient.ts",
     "check": "pnpm run build:client && pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && pnpm run test && pnpm exec wrangler deploy --dry-run",
     "deploy": "pnpm run build:client && wrangler deploy",
     "dev": "pnpm run build:client && wrangler dev",

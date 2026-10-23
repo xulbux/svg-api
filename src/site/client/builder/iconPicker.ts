@@ -1,5 +1,5 @@
 /**
- * Icon picker controller – Lazy icon index & body page loading, inline glyph rendering, input slug validation, search filtering, and chunked grid navigation.
+ * Icon picker controller – Lazy icon index & body page loading, inline glyph rendering, input slug validation, and chunked grid navigation.
  */
 
 import {
@@ -8,6 +8,13 @@ import {
   createAsyncCache,
   createIconResolver,
 } from '@/site/client/builder/core';
+import {
+  createIconGlyph,
+  filterIconCatalog,
+  insertPickedSlugAtCursor,
+  resolveIconSelectDisplay,
+  resolveTriggerEffectiveSlug,
+} from '@/site/client/builder/iconSearch';
 import type { SvgSite } from '@/site/client/site/types';
 import type {
   BuilderSchema,
@@ -69,129 +76,6 @@ const PICKER_CHUNK_SIZE = 72;
 
 /** Maximum number of unknown icon slugs listed explicitly in a validation hint. */
 const MAX_LISTED_UNKNOWN_ICONS = 3;
-
-// ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches whitespace runs in search queries. */
-const WHITESPACE_RX = /\s+/g;
-
-/** Matches a trailing separator (or whitespace) in the stack groups textarea when inserting a picked icon. */
-const TRAILING_STACK_SEPARATOR_RX = /[,;|\s]$/;
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Check whether every whitespace-separated word of `tokens` appears in `haystack`. */
-function hasAllQueryTokens(haystack: string, tokens: readonly string[]): boolean {
-  for (const token of tokens) {
-    if (!haystack.includes(token)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/** Collect target icon slugs whose alias matches every token of `queryTokens`. */
-function collectMatchingAliasTargets(
-  aliasMap: Readonly<Record<string, string>>,
-  queryTokens: readonly string[],
-  targetSet: Set<string>
-): void {
-  for (const [alias, primary] of Object.entries(aliasMap)) {
-    if (hasAllQueryTokens(alias, queryTokens)) {
-      targetSet.add(primary);
-    }
-  }
-}
-
-/**
- * Compute the filtered icon picker matches for a single icon set and search query
- * (prefix slug matches first, then substring/alias matches, then Lucide tag matches).
- */
-function computeSetMatches(
-  index: IconPickerIndex,
-  catalog: Record<IconPickerSetId, string[]>,
-  set: IconPickerSetId,
-  query: string,
-  queryTokens: string[],
-  setAliasHits: Set<string>
-): IconMatch[] {
-  const prefixMatches: IconMatch[] = [];
-  const substringMatches: IconMatch[] = [];
-  const tagMatches: IconMatch[] = [];
-  for (const slug of catalog[set]) {
-    if (slug.startsWith(query)) {
-      prefixMatches.push({ set, slug });
-    } else if (hasAllQueryTokens(slug, queryTokens) || setAliasHits.has(slug)) {
-      substringMatches.push({ set, slug });
-    } else if (set === 'lucide') {
-      const tags = index.lucideTags[slug];
-      if (tags && hasAllQueryTokens(`${slug} ${tags}`, queryTokens)) {
-        tagMatches.push({ set, slug });
-      }
-    }
-  }
-  prefixMatches.push(...substringMatches, ...tagMatches);
-  return prefixMatches;
-}
-
-/** Resolve the effective icon slug represented by `trigger` and `rawSlug`. */
-function resolveTriggerEffectiveSlug(
-  trigger: HTMLElement | undefined,
-  rawSlug: string,
-  hasDynamicFallback: boolean
-): string {
-  const trimmed = rawSlug.trim();
-  if (trimmed.toLowerCase() === 'none') {
-    return '';
-  }
-  if (trimmed) {
-    return trimmed;
-  }
-  if (!trigger || (trigger.dataset.presetDynamic === 'true' && !hasDynamicFallback)) {
-    return '';
-  }
-  return trigger.dataset.presetIcon?.trim() ?? '';
-}
-
-/** Resolve the label, placeholder state, and glyph slug of an icon selector trigger. */
-function resolveIconSelectDisplay(
-  trigger: HTMLElement | undefined,
-  rawSlug: string,
-  placeholder: string
-): { displayLabel: string; glyphSlug: string; isPlaceholder: boolean } {
-  const trimmed = rawSlug.trim();
-  if (trimmed.toLowerCase() === 'none') {
-    return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
-  }
-  if (trimmed) {
-    return { displayLabel: trimmed, glyphSlug: trimmed, isPlaceholder: false };
-  }
-  const presetIcon = trigger?.dataset.presetIcon?.trim() ?? '';
-  if (presetIcon) {
-    const isPresetDynamic = trigger?.dataset.presetDynamic === 'true';
-    return {
-      displayLabel: isPresetDynamic ? 'Auto' : presetIcon,
-      glyphSlug: presetIcon,
-      isPlaceholder: false,
-    };
-  }
-  return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
-}
-
-/** Insert `slug` at the current caret or selection inside `target` (adding a comma separator when needed). */
-function insertPickedSlugAtCursor(
-  target: HTMLInputElement | HTMLTextAreaElement,
-  slug: string
-): void {
-  const cursor = target.selectionStart ?? target.value.length;
-  const before = target.value.slice(0, cursor);
-  const after = target.value.slice(target.selectionEnd ?? cursor);
-  const needsSeparator = before.length > 0 && !TRAILING_STACK_SEPARATOR_RX.test(before);
-  const insertion = `${needsSeparator ? ',' : ''}${slug}`;
-  target.value = `${before}${insertion}${after}`;
-  const cursorAfter = before.length + insertion.length;
-  target.setSelectionRange(cursorAfter, cursorAfter);
-}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -274,18 +158,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
   }
 
   function createGlyph(set: IconPickerSetId, innerSvg: string): SVGSVGElement {
-    const template =
-      glyphTemplates instanceof HTMLTemplateElement
-        ? glyphTemplates.content.querySelector(`svg[data-set="${set}"]`)
-        : undefined;
-    const glyph = template ? document.importNode(template, false) : undefined;
-    const svg =
-      glyph instanceof SVGSVGElement
-        ? glyph
-        : document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.removeAttribute('data-set');
-    svg.innerHTML = innerSvg;
-    return svg;
+    return createIconGlyph(glyphTemplates, set, innerSvg);
   }
 
   function renderInputGlyph(container: HTMLElement, slug: string): void {
@@ -403,42 +276,14 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     const checkedTab = picker?.querySelector('input[name="icon-picker-set"]:checked');
     const activeSet: IconPickerSetId =
       checkedTab instanceof HTMLInputElement && checkedTab.value === 'brands' ? 'brands' : 'lucide';
-    const query = (pickerSearch?.value ?? '').trim().toLowerCase();
-    if (!query) {
-      updatePickerTabLabels(undefined);
-      const allMatches: IconMatch[] = [];
-      for (const slug of catalog[activeSet]) {
-        allMatches.push({ set: activeSet, slug });
-      }
-      return allMatches;
-    }
-
-    const queryTokens = query.split(WHITESPACE_RX);
-    const lucideAliasHits = new Set<string>();
-    const brandAliasHits = new Set<string>();
-    collectMatchingAliasTargets(index.lucideAliases, queryTokens, lucideAliasHits);
-    collectMatchingAliasTargets(index.brandAliases, queryTokens, brandAliasHits);
-    collectMatchingAliasTargets(index.aliases, queryTokens, lucideAliasHits);
-    collectMatchingAliasTargets(index.aliases, queryTokens, brandAliasHits);
-
-    const lucideMatches = computeSetMatches(
+    const { counts, matches } = filterIconCatalog(
       index,
       catalog,
-      'lucide',
-      query,
-      queryTokens,
-      lucideAliasHits
+      activeSet,
+      pickerSearch?.value ?? ''
     );
-    const brandMatches = computeSetMatches(
-      index,
-      catalog,
-      'brands',
-      query,
-      queryTokens,
-      brandAliasHits
-    );
-    updatePickerTabLabels({ brands: brandMatches.length, lucide: lucideMatches.length });
-    return activeSet === 'brands' ? brandMatches : lucideMatches;
+    updatePickerTabLabels(counts);
+    return matches;
   }
 
   function fillTile(tile: HTMLElement): void {

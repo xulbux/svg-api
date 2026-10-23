@@ -2,6 +2,7 @@
  * Documentation website tests – HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards, and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/site/`).
  */
 
+import siteScript from '@bundles/site.client.js';
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
@@ -11,7 +12,6 @@ import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { getSiteAsset } from '@/site/assets';
 import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/site/catalog';
-import siteScript from '@/site/client/bundles/site.client.js';
 import { getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/site/navigation';

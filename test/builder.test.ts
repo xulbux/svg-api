@@ -1,7 +1,8 @@
 /**
- * URL builder tests – Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution), icon picker assets, and "Open in Builder" links, verified against the Worker's route parser (`src/routes/schema.ts`, `src/site/pages/BuilderPage.tsx`, `src/site/client/bundles/builder.client.js`).
+ * URL builder tests – Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution), icon picker assets, and "Open in Builder" links, verified against the Worker's route parser (`src/routes/schema.ts`, `src/site/pages/BuilderPage.tsx`, `dist/client/builder.client.js`).
  */
 
+import builderScript from '@bundles/builder.client.js';
 import { describe, expect, it } from 'vitest';
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { STACK_CATEGORIES } from '@/config/stack';
@@ -37,7 +38,6 @@ import {
   resolveSvgRoute,
 } from '@/routes/svg';
 import { getSiteAsset } from '@/site/assets';
-import builderScript from '@/site/client/bundles/builder.client.js';
 import { BUILDER_PAGES, DOCS_PAGES } from '@/site/navigation';
 import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import { buildMarkdownSnippetTokens } from '@/site/shared';
