@@ -2,17 +2,16 @@
  * Worker entrypoint – Hono router for `svg.xul.is`: documentation and builder pages, versioned static assets, SVG routes (`/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`), smart document redirects, and Tier-2 SVG edge caching.
  */
 
-import type { Context, Next } from 'hono';
+import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { DEFAULT_ENV, FALLBACK_REDIRECT_URL } from '@/config/site';
+import { DEFAULT_ENV } from '@/config/site';
 import {
   buildSvgResponse,
   computeEtag,
   HTML_SECURITY_HEADERS,
   isDocumentNavigation,
   isEtagMatch,
-  isPreviewDisabledFlag,
   NOSNIFF_HEADERS,
   sanitizeRedirectUrl,
   SERVICE_VARY_HEADER,
@@ -82,9 +81,6 @@ const INTERNAL_ERROR_HEADERS: Readonly<Record<string, string>> = {
   'Content-Type': 'text/plain; charset=utf-8',
 };
 
-/** Route patterns of the homepage, documentation, and builder pages (redirected when previews are disabled). */
-const PREVIEW_PAGE_PATHS: readonly string[] = ['/', '/builder/*', '/docs/*', '/preview'];
-
 /** Trailing-slash variants of the documentation and builder routes (redirected to their canonical paths). */
 const TRAILING_SLASH_PATHS: readonly string[] = [
   '/builder/',
@@ -135,11 +131,6 @@ function getSafeExecutionContext(context: AppContext): WaitUntilContext | undefi
   }
 }
 
-/** Check whether the homepage, documentation, builder, and asset routes are disabled in production. */
-function isPreviewDisabled(context: AppContext): boolean {
-  return isPreviewDisabledFlag(context.env?.ALLOW_PREVIEW_IN_PROD);
-}
-
 /**
  * Extract the raw (still percent-encoded) pathname Hono routes on. The SVG dispatcher decodes every
  * segment itself, and Hono's default decoded path made wildcard routes miss line terminators
@@ -153,18 +144,6 @@ function getRawPathname(request: Request): string {
   }
   const queryStart = url.indexOf('?', pathStart);
   return queryStart === -1 ? url.slice(pathStart) : url.slice(pathStart, queryStart);
-}
-
-/** Middleware: Redirect the homepage, documentation, and builder pages to `FALLBACK_REDIRECT_URL` when previews are disabled. */
-function guardPreviewPages(context: AppContext, next: Next): Promise<Response> | ReturnType<Next> {
-  return isPreviewDisabled(context)
-    ? Promise.resolve(context.redirect(FALLBACK_REDIRECT_URL, 302))
-    : next();
-}
-
-/** Middleware: Answer static asset requests with `404` when previews are disabled. */
-function guardPreviewAssets(context: AppContext, next: Next): Promise<Response> | ReturnType<Next> {
-  return isPreviewDisabled(context) ? Promise.resolve(context.notFound()) : next();
 }
 
 /** Serve an SVG from the Tier-2 edge cache, or build it and store cacheable responses (skipped when no cache exists, e.g., in tests). */
@@ -201,7 +180,7 @@ async function handleServiceRoute(
 
   // Document navigations only need the redirect target; Skip the upstream fetch entirely.
   if (isDocumentNavigation(context.req.raw)) {
-    const redirectUrl = sanitizeRedirectUrl(resolveServiceRedirectUrl(request, env));
+    const redirectUrl = sanitizeRedirectUrl(resolveServiceRedirectUrl(request));
     if (redirectUrl) {
       return new Response(undefined, {
         headers: { ...SERVICE_REDIRECT_HEADERS, Location: redirectUrl },
@@ -337,13 +316,7 @@ function handleAppError(error: Error, context: AppContext): Response {
 
 const app = new Hono<{ Bindings: Env }>({ getPath: getRawPathname });
 
-// 1. Preview kill switch (`ALLOW_PREVIEW_IN_PROD=false`) for the website routes.
-for (const path of PREVIEW_PAGE_PATHS) {
-  app.use(path, guardPreviewPages);
-}
-app.use('/assets/*', guardPreviewAssets);
-
-// 2. Homepage, documentation & builder pages, static assets & favicon.
+// [1] Homepage, documentation & builder pages, static assets & favicon:
 app.get('/', handleRootRoute);
 app.get('/favicon.svg', handleFaviconRoute);
 app.get('/favicon.ico', handleFaviconRoute);
@@ -357,12 +330,12 @@ for (const path of TRAILING_SLASH_PATHS) {
   app.get(path, handleTrailingSlashRoute);
 }
 
-// 3. SVG routes (badges, service presets, buttons, icons, stacks & quotes) from the route table.
+// [2] SVG routes (badges, service presets, buttons, icons, stacks & quotes) from the route table:
 for (const route of SVG_ROUTES) {
   app.get(`/${route.prefix}/*`, handleSvgRoute);
 }
 
-// 4. Unexpected failures.
+// [3] Unexpected failures:
 app.onError(handleAppError);
 
 export default app;

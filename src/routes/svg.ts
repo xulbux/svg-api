@@ -8,7 +8,7 @@
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
+import { SITE_ORIGIN } from '@/config/site';
 import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
   decodeSegment,
@@ -490,10 +490,7 @@ export function renderSvgPath(path: string, sample: ServicePreviewSample = 'n/a'
   if (match.kind === 'static') {
     return match.render();
   }
-  return renderServiceBadge(
-    resolveServicePreview(match.request, DEFAULT_ENV, sample),
-    url.searchParams
-  );
+  return renderServiceBadge(resolveServicePreview(match.request, sample), url.searchParams);
 }
 
 /**
@@ -503,7 +500,5 @@ export function renderSvgPath(path: string, sample: ServicePreviewSample = 'n/a'
  */
 export function resolveSvgPathRedirectUrl(path: string): string | undefined {
   const match = resolveSvgRoute(new URL(path, SITE_ORIGIN));
-  return match?.kind === 'service'
-    ? resolveServiceRedirectUrl(match.request, DEFAULT_ENV)
-    : undefined;
+  return match?.kind === 'service' ? resolveServiceRedirectUrl(match.request) : undefined;
 }

@@ -32,11 +32,9 @@ interface StackIconMeta {
  */
 export const STACK_CATEGORIES: readonly StackCategory[] = [
   {
-    // Sub-group order: 1. Systems & compiled -> 2. General-purpose & OO/scripting -> 3. Functional, BEAM, ML & Lisp ->
-    // 4. Scientific & numerical -> 5. Web, Wasm & smart contracts -> 6. Shells, Nix & hardware description (HDL).
     id: 'languages',
     items: [
-      // 1. Systems & compiled languages
+      // [1] Systems & compiled languages:
       { canonical: 'c', label: 'C', slug: 'c' },
       { canonical: 'cplusplus', label: 'C++', slug: 'cpp' },
       { canonical: 'csharp', label: 'C#', slug: 'cs' },
@@ -52,7 +50,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'ada', label: 'Ada', slug: 'ada' },
       { canonical: 'cobol', label: 'COBOL', slug: 'cobol' },
       { canonical: 'delphi', label: 'Delphi', slug: 'delphi' },
-      // 2. General-purpose, mobile & scripting languages
+      // [2] General-purpose, mobile & scripting languages:
       { canonical: 'python', label: 'Python', slug: 'py' },
       { canonical: 'javascript', label: 'JavaScript', slug: 'js' },
       { canonical: 'typescript', label: 'TypeScript', slug: 'ts' },
@@ -68,7 +66,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'perl', label: 'Perl', slug: 'perl' },
       { canonical: 'apachegroovy', label: 'Groovy', slug: 'apachegroovy' },
       { canonical: 'visualbasic', label: 'Visual Basic', slug: 'visualbasic' },
-      // 3. Functional, BEAM, ML-family & Lisp languages (grouped by family)
+      // [3] Functional, BEAM, ML-family & Lisp languages (grouped by family):
       { canonical: 'scala', label: 'Scala', slug: 'scala' },
       { canonical: 'elixir', label: 'Elixir', slug: 'elixir' },
       { canonical: 'erlang', label: 'Erlang', slug: 'erlang' },
@@ -84,12 +82,12 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'commonlisp', label: 'Common Lisp', slug: 'commonlisp' },
       { canonical: 'racket', label: 'Racket', slug: 'racket' },
       { canonical: 'prolog', label: 'Prolog', slug: 'prolog' },
-      // 4. Scientific & numerical computing languages
+      // [4] Scientific & numerical computing languages:
       { canonical: 'r', label: 'R', slug: 'r' },
       { canonical: 'julia', label: 'Julia', slug: 'julia' },
       { canonical: 'matlab', label: 'MATLAB', slug: 'matlab' },
       { canonical: 'octave', label: 'Octave', slug: 'octave' },
-      // 5. Core web, WebAssembly & smart-contract languages
+      // [5] Core web, WebAssembly & smart-contract languages:
       { canonical: 'html5', label: 'HTML5', slug: 'html' },
       { canonical: 'css3', label: 'CSS3', slug: 'css' },
       { canonical: 'webassembly', label: 'WebAssembly', slug: 'webassembly' },
@@ -98,7 +96,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'solidity', label: 'Solidity', slug: 'solidity' },
       { canonical: 'vyper', label: 'Vyper', slug: 'vyper' },
       { canonical: 'cairo', label: 'Cairo', slug: 'cairo' },
-      // 6. Shells, Nix & hardware description languages
+      // [6] Shells, Nix & hardware description languages:
       { canonical: 'gnubash', label: 'Bash', slug: 'bash' },
       { canonical: 'zsh', label: 'Zsh', slug: 'zsh' },
       { canonical: 'fishshell', label: 'Fish', slug: 'fishshell' },
@@ -111,11 +109,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Languages',
   },
   {
-    // Sub-group order: 1. Web UI, meta-frameworks & template engines -> 2. CSS & styling -> 3. Component libraries ->
-    // 4. State, data fetching, routing & forms -> 5. 3D, canvas, animation, data viz, maps & component docs.
     id: 'frontend',
     items: [
-      // 1. Web UI, meta-frameworks & template engines
+      // [1] Web UI, meta-frameworks & template engines:
       { canonical: 'react', label: 'React', slug: 'react' },
       { canonical: 'nextdotjs', label: 'Next.js', slug: 'nextdotjs' },
       { canonical: 'remix', label: 'Remix', slug: 'remix' },
@@ -143,7 +139,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'pug', label: 'Pug', slug: 'pug' },
       { canonical: 'ejs', label: 'EJS', slug: 'ejs' },
       { canonical: 'nunjucks', label: 'Nunjucks', slug: 'nunjucks' },
-      // 2. CSS & styling
+      // [2] CSS & styling:
       { canonical: 'tailwindcss', label: 'Tailwind CSS', slug: 'tailwind' },
       { canonical: 'unocss', label: 'UnoCSS', slug: 'unocss' },
       { canonical: 'sass', label: 'Sass', slug: 'sass' },
@@ -152,7 +148,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'styledcomponents', label: 'styled-components', slug: 'styledcomponents' },
       { canonical: 'bootstrap', label: 'Bootstrap', slug: 'bootstrap' },
       { canonical: 'bulma', label: 'Bulma', slug: 'bulma' },
-      // 3. UI component libraries (headless/Tailwind -> React suites -> Vue suites)
+      // [3] UI component libraries (headless/Tailwind -> React suites -> Vue suites):
       { canonical: 'shadcnui', label: 'shadcn/ui', slug: 'shadcnui' },
       { canonical: 'radixui', label: 'Radix UI', slug: 'radixui' },
       { canonical: 'headlessui', label: 'Headless UI', slug: 'headlessui' },
@@ -164,7 +160,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'vuetify', label: 'Vuetify', slug: 'vuetify' },
       { canonical: 'primevue', label: 'PrimeVue', slug: 'primevue' },
       { canonical: 'quasar', label: 'Quasar', slug: 'quasar' },
-      // 4. State management, data fetching, routing & forms
+      // [4] State management, data fetching, routing & forms:
       { canonical: 'redux', label: 'Redux', slug: 'redux' },
       { canonical: 'zustand', label: 'Zustand', slug: 'zustand' },
       { canonical: 'recoil', label: 'Recoil', slug: 'recoil' },
@@ -180,7 +176,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'reactrouter', label: 'React Router', slug: 'reactrouter' },
       { canonical: 'reacthookform', label: 'React Hook Form', slug: 'reacthookform' },
       { canonical: 'formik', label: 'Formik', slug: 'formik' },
-      // 5. 3D, canvas, animation, data visualization, maps & component docs
+      // [5] 3D, canvas, animation, data visualization, maps & component docs:
       { canonical: 'threedotjs', label: 'Three.js', slug: 'threejs' },
       { canonical: 'webgl', label: 'WebGL', slug: 'webgl' },
       { canonical: 'babylondotjs', label: 'Babylon.js', slug: 'babylondotjs' },
@@ -199,11 +195,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Frontend & Web UI',
   },
   {
-    // Sub-group order: 1. JS/TS runtimes & frameworks -> 2. Python, Go, Rust, JVM, .NET, PHP, Ruby & Elixir frameworks ->
-    // 3. APIs, RPC & real-time -> 4. Auth & identity -> 5. Messaging & workflow queues -> 6. CMS, e-commerce & payments.
     id: 'backend',
     items: [
-      // 1. JS/TS runtimes & backend frameworks
+      // [1] JS/TS runtimes & backend frameworks:
       { canonical: 'nodedotjs', label: 'Node.js', slug: 'nodejs' },
       { canonical: 'bun', label: 'Bun', slug: 'bun' },
       { canonical: 'deno', label: 'Deno', slug: 'deno' },
@@ -215,7 +209,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'koa', label: 'Koa', slug: 'koa' },
       { canonical: 'adonisjs', label: 'AdonisJS', slug: 'adonisjs' },
       { canonical: 'meteor', label: 'Meteor', slug: 'meteor' },
-      // 2. Python, Go, Rust, JVM, .NET, PHP, Ruby & Elixir frameworks
+      // [2] Python, Go, Rust, JVM, .NET, PHP, Ruby & Elixir frameworks:
       { canonical: 'fastapi', label: 'FastAPI', slug: 'fastapi' },
       { canonical: 'django', label: 'Django', slug: 'django' },
       { canonical: 'flask', label: 'Flask', slug: 'flask' },
@@ -237,7 +231,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'phalcon', label: 'Phalcon', slug: 'phalcon' },
       { canonical: 'rubyonrails', label: 'Ruby on Rails', slug: 'rubyonrails' },
       { canonical: 'phoenixframework', label: 'Phoenix', slug: 'phoenixframework' },
-      // 3. APIs, RPC & real-time protocols
+      // [3] APIs, RPC & real-time protocols:
       { canonical: 'graphql', label: 'GraphQL', slug: 'graphql' },
       { canonical: 'apollographql', label: 'Apollo GraphQL', slug: 'apollographql' },
       { canonical: 'hasura', label: 'Hasura', slug: 'hasura' },
@@ -247,14 +241,14 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'swagger', label: 'Swagger', slug: 'swagger' },
       { canonical: 'socketdotio', label: 'Socket.io', slug: 'socketdotio' },
       { canonical: 'webrtc', label: 'WebRTC', slug: 'webrtc' },
-      // 4. Auth & identity
+      // [4] Auth & identity:
       { canonical: 'jsonwebtokens', label: 'JWT', slug: 'jsonwebtokens' },
       { canonical: 'auth0', label: 'Auth0', slug: 'auth0' },
       { canonical: 'clerk', label: 'Clerk', slug: 'clerk' },
       { canonical: 'keycloak', label: 'Keycloak', slug: 'keycloak' },
       { canonical: 'ory', label: 'Ory', slug: 'ory' },
       { canonical: 'fusionauth', label: 'FusionAuth', slug: 'fusionauth' },
-      // 5. Messaging, event streaming & background workflows
+      // [5] Messaging, event streaming & background workflows:
       { canonical: 'apachekafka', label: 'Kafka', slug: 'apachekafka' },
       { canonical: 'rabbitmq', label: 'RabbitMQ', slug: 'rabbitmq' },
       { canonical: 'nats', label: 'NATS', slug: 'nats' },
@@ -263,7 +257,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'temporal', label: 'Temporal', slug: 'temporal' },
       { canonical: 'celery', label: 'Celery', slug: 'celery' },
       { canonical: 'sidekiq', label: 'Sidekiq', slug: 'sidekiq' },
-      // 6. Headless CMS, publishing, e-commerce & payments
+      // [6] Headless CMS, publishing, e-commerce & payments:
       { canonical: 'strapi', label: 'Strapi', slug: 'strapi' },
       { canonical: 'payloadcms', label: 'Payload CMS', slug: 'payloadcms' },
       { canonical: 'directus', label: 'Directus', slug: 'directus' },
@@ -290,11 +284,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Backend, APIs & CMS',
   },
   {
-    // Sub-group order: 1. Relational SQL -> 2. NoSQL, key-value, wide-column & graph -> 3. Analytical, OLAP & time-series ->
-    // 4. Search & vector databases -> 5. Backend-as-a-Service (BaaS) -> 6. ORMs & query builders.
     id: 'databases',
     items: [
-      // 1. Relational SQL databases
+      // [1] Relational SQL databases:
       { canonical: 'postgresql', label: 'PostgreSQL', slug: 'postgres' },
       { canonical: 'mysql', label: 'MySQL', slug: 'mysql' },
       { canonical: 'mariadb', label: 'MariaDB', slug: 'mariadb' },
@@ -303,7 +295,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'planetscale', label: 'PlanetScale', slug: 'planetscale' },
       { canonical: 'turso', label: 'Turso', slug: 'turso' },
       { canonical: 'cockroachlabs', label: 'CockroachDB', slug: 'cockroachlabs' },
-      // 2. NoSQL, key-value, wide-column & graph databases
+      // [2] NoSQL, key-value, wide-column & graph databases:
       { canonical: 'mongodb', label: 'MongoDB', slug: 'mongodb' },
       { canonical: 'redis', label: 'Redis', slug: 'redis' },
       { canonical: 'memcached', label: 'Memcached', slug: 'memcached' },
@@ -318,7 +310,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'surrealdb', label: 'SurrealDB', slug: 'surrealdb' },
       { canonical: 'neo4j', label: 'Neo4j', slug: 'neo4j' },
       { canonical: 'dgraph', label: 'Dgraph', slug: 'dgraph' },
-      // 3. Analytical, OLAP & time-series databases
+      // [3] Analytical, OLAP & time-series databases:
       { canonical: 'duckdb', label: 'DuckDB', slug: 'duckdb' },
       { canonical: 'clickhouse', label: 'ClickHouse', slug: 'clickhouse' },
       { canonical: 'snowflake', label: 'Snowflake', slug: 'snowflake' },
@@ -326,7 +318,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'databricks', label: 'Databricks', slug: 'databricks' },
       { canonical: 'timescale', label: 'Timescale', slug: 'timescale' },
       { canonical: 'influxdb', label: 'InfluxDB', slug: 'influxdb' },
-      // 4. Search & vector databases
+      // [4] Search & vector databases:
       { canonical: 'elasticsearch', label: 'Elasticsearch', slug: 'elasticsearch' },
       { canonical: 'opensearch', label: 'OpenSearch', slug: 'opensearch' },
       { canonical: 'algolia', label: 'Algolia', slug: 'algolia' },
@@ -334,14 +326,14 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'vespa', label: 'Vespa', slug: 'vespa' },
       { canonical: 'qdrant', label: 'Qdrant', slug: 'qdrant' },
       { canonical: 'milvus', label: 'Milvus', slug: 'milvus' },
-      // 5. Backend-as-a-Service (BaaS)
+      // [5] Backend-as-a-Service (BaaS):
       { canonical: 'supabase', label: 'Supabase', slug: 'supabase' },
       { canonical: 'firebase', label: 'Firebase', slug: 'firebase' },
       { canonical: 'convex', label: 'Convex', slug: 'convex' },
       { canonical: 'appwrite', label: 'Appwrite', slug: 'appwrite' },
       { canonical: 'pocketbase', label: 'PocketBase', slug: 'pocketbase' },
       { canonical: 'nhost', label: 'Nhost', slug: 'nhost' },
-      // 6. ORMs & query builders
+      // [6] ORMs & query builders:
       { canonical: 'prisma', label: 'Prisma', slug: 'prisma' },
       { canonical: 'drizzle', label: 'Drizzle', slug: 'drizzle' },
       { canonical: 'typeorm', label: 'TypeORM', slug: 'typeorm' },
@@ -354,11 +346,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Databases, Cache & ORM',
   },
   {
-    // Sub-group order: 1. Containers, orchestration & service mesh -> 2. IaC & provisioning -> 3. Hyperscale cloud & edge ->
-    // 4. App PaaS & VPS hosting -> 5. CI/CD & GitOps -> 6. Web servers, proxies, VPN & secrets -> 7. Observability, analytics & monitoring.
     id: 'devops',
     items: [
-      // 1. Containers, orchestration & service mesh
+      // [1] Containers, orchestration & service mesh:
       { canonical: 'docker', label: 'Docker', slug: 'docker' },
       { canonical: 'podman', label: 'Podman', slug: 'podman' },
       { canonical: 'kubernetes', label: 'Kubernetes', slug: 'kubernetes' },
@@ -368,21 +358,21 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'cilium', label: 'Cilium', slug: 'cilium' },
       { canonical: 'consul', label: 'Consul', slug: 'consul' },
       { canonical: 'nomad', label: 'Nomad', slug: 'nomad' },
-      // 2. Infrastructure as Code & provisioning
+      // [2] Infrastructure as Code & provisioning:
       { canonical: 'terraform', label: 'Terraform', slug: 'terraform' },
       { canonical: 'opentofu', label: 'OpenTofu', slug: 'opentofu' },
       { canonical: 'pulumi', label: 'Pulumi', slug: 'pulumi' },
       { canonical: 'ansible', label: 'Ansible', slug: 'ansible' },
       { canonical: 'packer', label: 'Packer', slug: 'packer' },
       { canonical: 'vagrant', label: 'Vagrant', slug: 'vagrant' },
-      // 3. Hyperscale cloud & edge networks
+      // [3] Hyperscale cloud & edge networks:
       { canonical: 'amazonwebservices', label: 'AWS', slug: 'aws' },
       { canonical: 'googlecloud', label: 'Google Cloud', slug: 'googlecloud' },
       { canonical: 'microsoftazure', label: 'Azure', slug: 'azure' },
       { canonical: 'cloudflare', label: 'Cloudflare', slug: 'cloudflare' },
       { canonical: 'cloudflareworkers', label: 'CF Workers', slug: 'cloudflareworkers' },
       { canonical: 'cloudflarepages', label: 'CF Pages', slug: 'cloudflarepages' },
-      // 4. App PaaS, serverless & VPS hosting
+      // [4] App PaaS, serverless & VPS hosting:
       { canonical: 'vercel', label: 'Vercel', slug: 'vercel' },
       { canonical: 'netlify', label: 'Netlify', slug: 'netlify' },
       { canonical: 'flydotio', label: 'Fly.io', slug: 'flydotio' },
@@ -397,7 +387,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'vultr', label: 'Vultr', slug: 'vultr' },
       { canonical: 'scaleway', label: 'Scaleway', slug: 'scaleway' },
       { canonical: 'ovh', label: 'OVHcloud', slug: 'ovh' },
-      // 5. CI/CD & GitOps
+      // [5] CI/CD & GitOps:
       { canonical: 'githubactions', label: 'GitHub Actions', slug: 'githubactions' },
       { canonical: 'argo', label: 'Argo', slug: 'argo' },
       { canonical: 'flux', label: 'Flux', slug: 'flux' },
@@ -408,7 +398,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'drone', label: 'Drone', slug: 'drone' },
       { canonical: 'circleci', label: 'CircleCI', slug: 'circleci' },
       { canonical: 'travisci', label: 'Travis CI', slug: 'travisci' },
-      // 6. Web servers, reverse proxies, mesh VPN & secrets management
+      // [6] Web servers, reverse proxies, mesh VPN & secrets management:
       { canonical: 'nginx', label: 'NGINX', slug: 'nginx' },
       { canonical: 'caddy', label: 'Caddy', slug: 'caddy' },
       { canonical: 'traefikproxy', label: 'Traefik', slug: 'traefikproxy' },
@@ -420,7 +410,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'wireguard', label: 'WireGuard', slug: 'wireguard' },
       { canonical: 'zerotier', label: 'ZeroTier', slug: 'zerotier' },
       { canonical: 'vault', label: 'HashiCorp Vault', slug: 'vault' },
-      // 7. Observability, metrics, analytics & error tracking
+      // [7] Observability, metrics, analytics & error tracking:
       { canonical: 'prometheus', label: 'Prometheus', slug: 'prometheus' },
       { canonical: 'grafana', label: 'Grafana', slug: 'grafana' },
       { canonical: 'opentelemetry', label: 'OpenTelemetry', slug: 'opentelemetry' },
@@ -435,18 +425,16 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Cloud, Hosting & DevOps',
   },
   {
-    // Sub-group order: 1. Deep learning & computer vision -> 2. LLMs, inference & AI providers ->
-    // 3. Data science, dataframe & visualization libraries -> 4. Distributed data, MLOps & GPU compute.
     id: 'ai',
     items: [
-      // 1. Deep learning, ML & computer vision frameworks
+      // [1] Deep learning, ML & computer vision frameworks:
       { canonical: 'pytorch', label: 'PyTorch', slug: 'pytorch' },
       { canonical: 'tensorflow', label: 'TensorFlow', slug: 'tensorflow' },
       { canonical: 'keras', label: 'Keras', slug: 'keras' },
       { canonical: 'scikitlearn', label: 'scikit-learn', slug: 'scikitlearn' },
       { canonical: 'onnx', label: 'ONNX', slug: 'onnx' },
       { canonical: 'opencv', label: 'OpenCV', slug: 'opencv' },
-      // 2. LLMs, inference engines, orchestration & AI providers
+      // [2] LLMs, inference engines, orchestration & AI providers:
       { canonical: 'openai', label: 'OpenAI', slug: 'openai' },
       { canonical: 'claude', label: 'Claude', slug: 'claude' },
       { canonical: 'anthropic', label: 'Anthropic', slug: 'anthropic' },
@@ -462,7 +450,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'dify', label: 'Dify', slug: 'dify' },
       { canonical: 'replicate', label: 'Replicate', slug: 'replicate' },
       { canonical: 'bentoml', label: 'BentoML', slug: 'bentoml' },
-      // 3. Data science, arrays, notebooks & interactive apps
+      // [3] Data science, arrays, notebooks & interactive apps:
       { canonical: 'numpy', label: 'NumPy', slug: 'numpy' },
       { canonical: 'pandas', label: 'pandas', slug: 'pandas' },
       { canonical: 'polars', label: 'Polars', slug: 'polars' },
@@ -473,7 +461,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'plotly', label: 'Plotly', slug: 'plotly' },
       { canonical: 'streamlit', label: 'Streamlit', slug: 'streamlit' },
       { canonical: 'gradio', label: 'Gradio', slug: 'gradio' },
-      // 4. Big data pipelines, MLOps & GPU compute
+      // [4] Big data pipelines, MLOps & GPU compute:
       { canonical: 'apachespark', label: 'Apache Spark', slug: 'apachespark' },
       { canonical: 'dbt', label: 'dbt', slug: 'dbt' },
       { canonical: 'apacheairflow', label: 'Airflow', slug: 'apacheairflow' },
@@ -491,10 +479,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'AI, Data Science & ML',
   },
   {
-    // Sub-group order: 1. Mobile & cross-platform app frameworks -> 2. Desktop application frameworks & native GUI toolkits.
     id: 'mobile',
     items: [
-      // 1. Mobile & cross-platform app frameworks
+      // [1] Mobile & cross-platform app frameworks:
       { canonical: 'flutter', label: 'Flutter', slug: 'flutter' },
       { canonical: 'expo', label: 'Expo', slug: 'expo' },
       { canonical: 'jetpackcompose', label: 'Jetpack Compose', slug: 'jetpackcompose' },
@@ -503,7 +490,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'nativescript', label: 'NativeScript', slug: 'nativescript' },
       { canonical: 'cordova', label: 'Cordova', slug: 'cordova' },
       { canonical: 'xamarin', label: 'Xamarin', slug: 'xamarin' },
-      // 2. Desktop application frameworks & native GUI toolkits
+      // [2] Desktop application frameworks & native GUI toolkits:
       { canonical: 'tauri', label: 'Tauri', slug: 'tauri' },
       { canonical: 'electron', label: 'Electron', slug: 'electron' },
       { canonical: 'wails', label: 'Wails', slug: 'wails' },
@@ -515,10 +502,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Mobile & Desktop Apps',
   },
   {
-    // Sub-group order: 1. Game engines & editors -> 2. Game frameworks & multimedia libraries -> 3. Low-level graphics & compute APIs.
     id: 'gamedev',
     items: [
-      // 1. Game engines & editors
+      // [1] Game engines & editors:
       { canonical: 'unity', label: 'Unity', slug: 'unity' },
       { canonical: 'unrealengine', label: 'Unreal Engine', slug: 'unreal' },
       { canonical: 'godotengine', label: 'Godot', slug: 'godotengine' },
@@ -529,13 +515,13 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'cryengine', label: 'CryEngine', slug: 'cryengine' },
       { canonical: 'sourceengine', label: 'Source Engine', slug: 'sourceengine' },
       { canonical: 'cocos', label: 'Cocos', slug: 'cocos' },
-      // 2. Game frameworks & multimedia libraries
+      // [2] Game frameworks & multimedia libraries:
       { canonical: 'raylib', label: 'raylib', slug: 'raylib' },
       { canonical: 'love2d', label: 'LÖVE', slug: 'love2d' },
       { canonical: 'monogame', label: 'MonoGame', slug: 'monogame' },
       { canonical: 'sdl', label: 'SDL', slug: 'sdl' },
       { canonical: 'sfml', label: 'SFML', slug: 'sfml' },
-      // 3. Low-level graphics & compute APIs
+      // [3] Low-level graphics & compute APIs:
       { canonical: 'vulkan', label: 'Vulkan', slug: 'vulkan' },
       { canonical: 'opengl', label: 'OpenGL', slug: 'opengl' },
       { canonical: 'opencl', label: 'OpenCL', slug: 'opencl' },
@@ -545,11 +531,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Game Dev & Graphics APIs',
   },
   {
-    // Sub-group order: 1. Version control & code forges -> 2. JS/TS bundlers, compilers & monorepos ->
-    // 3. Package managers & build systems -> 4. Testing, E2E & load testing -> 5. Linters, formatters, Git hooks & quality -> 6. API clients.
     id: 'tools',
     items: [
-      // 1. Version control & code forges
+      // [1] Version control & code forges:
       { canonical: 'git', label: 'Git', slug: 'git' },
       { canonical: 'github', label: 'GitHub', slug: 'github' },
       { canonical: 'gitlab', label: 'GitLab', slug: 'gitlab' },
@@ -557,7 +541,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'codeberg', label: 'Codeberg', slug: 'codeberg' },
       { canonical: 'gitea', label: 'Gitea', slug: 'gitea' },
       { canonical: 'forgejo', label: 'Forgejo', slug: 'forgejo' },
-      // 2. JS/TS bundlers, transpilers & monorepo build systems
+      // [2] JS/TS bundlers, transpilers & monorepo build systems:
       { canonical: 'vite', label: 'Vite', slug: 'vite' },
       { canonical: 'esbuild', label: 'esbuild', slug: 'esbuild' },
       { canonical: 'rollupdotjs', label: 'Rollup', slug: 'rollupdotjs' },
@@ -566,7 +550,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'babel', label: 'Babel', slug: 'babel' },
       { canonical: 'turborepo', label: 'Turborepo', slug: 'turborepo' },
       { canonical: 'nx', label: 'Nx', slug: 'nx' },
-      // 3. Package managers & native/JVM build tools
+      // [3] Package managers & native/JVM build tools:
       { canonical: 'pnpm', label: 'pnpm', slug: 'pnpm' },
       { canonical: 'npm', label: 'npm', slug: 'npm' },
       { canonical: 'yarn', label: 'Yarn', slug: 'yarn' },
@@ -579,7 +563,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'cmake', label: 'CMake', slug: 'cmake' },
       { canonical: 'gradle', label: 'Gradle', slug: 'gradle' },
       { canonical: 'maven', label: 'Maven', slug: 'maven' },
-      // 4. Unit, component, E2E & load testing frameworks
+      // [4] Unit, component, E2E & load testing frameworks:
       { canonical: 'vitest', label: 'Vitest', slug: 'vitest' },
       { canonical: 'jest', label: 'Jest', slug: 'jest' },
       { canonical: 'mocha', label: 'Mocha', slug: 'mocha' },
@@ -596,7 +580,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'k6', label: 'k6', slug: 'k6' },
       { canonical: 'locust', label: 'Locust', slug: 'locust' },
       { canonical: 'gatling', label: 'Gatling', slug: 'gatling' },
-      // 5. Linters, formatters, schema validation, Git hooks & code quality
+      // [5] Linters, formatters, schema validation, Git hooks & code quality:
       { canonical: 'biome', label: 'Biome', slug: 'biome' },
       { canonical: 'oxc', label: 'Oxc', slug: 'oxc' },
       { canonical: 'eslint', label: 'ESLint', slug: 'eslint' },
@@ -614,7 +598,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'coveralls', label: 'Coveralls', slug: 'coveralls' },
       { canonical: 'snyk', label: 'Snyk', slug: 'snyk' },
       { canonical: 'trivy', label: 'Trivy', slug: 'trivy' },
-      // 6. API clients & HTTP debugging
+      // [6] API clients & HTTP debugging:
       { canonical: 'postman', label: 'Postman', slug: 'postman' },
       { canonical: 'bruno', label: 'Bruno', slug: 'bruno' },
       { canonical: 'insomnia', label: 'Insomnia', slug: 'insomnia' },
@@ -623,11 +607,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Build, Testing & Dev Tools',
   },
   {
-    // Sub-group order: 1. Code editors & AI coding assistants -> 2. Full IDEs & language workbenches ->
-    // 3. Cloud IDEs & browser sandboxes -> 4. Terminals, multiplexers & shell prompts.
     id: 'editors',
     items: [
-      // 1. Code editors & AI coding assistants
+      // [1] Code editors & AI coding assistants:
       { canonical: 'visualstudiocode', label: 'VS Code', slug: 'vscode' },
       { canonical: 'vscodium', label: 'VSCodium', slug: 'vscodium' },
       { canonical: 'cursor', label: 'Cursor', slug: 'cursor' },
@@ -642,7 +624,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'notepadplusplus', label: 'Notepad++', slug: 'notepadplusplus' },
       { canonical: 'githubcopilot', label: 'GitHub Copilot', slug: 'githubcopilot' },
       { canonical: 'codeium', label: 'Codeium', slug: 'codeium' },
-      // 2. Full IDEs & language workbenches (Microsoft/Apple/Google -> JetBrains suite -> classic & scientific)
+      // [2] Full IDEs & language workbenches (Microsoft/Apple/Google -> JetBrains suite -> classic & scientific):
       { canonical: 'visualstudio', label: 'Visual Studio', slug: 'visualstudio' },
       { canonical: 'xcode', label: 'Xcode', slug: 'xcode' },
       { canonical: 'androidstudio', label: 'Android Studio', slug: 'androidstudio' },
@@ -663,14 +645,14 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'rstudioide', label: 'RStudio', slug: 'rstudioide' },
       { canonical: 'posit', label: 'Posit', slug: 'posit' },
       { canonical: 'spyderide', label: 'Spyder', slug: 'spyderide' },
-      // 3. Cloud IDEs & browser sandboxes
+      // [3] Cloud IDEs & browser sandboxes:
       { canonical: 'gitpod', label: 'Gitpod', slug: 'gitpod' },
       { canonical: 'stackblitz', label: 'StackBlitz', slug: 'stackblitz' },
       { canonical: 'codesandbox', label: 'CodeSandbox', slug: 'codesandbox' },
       { canonical: 'replit', label: 'Replit', slug: 'replit' },
       { canonical: 'codepen', label: 'CodePen', slug: 'codepen' },
       { canonical: 'jsfiddle', label: 'JSFiddle', slug: 'jsfiddle' },
-      // 4. Terminals, multiplexers & shell prompts
+      // [4] Terminals, multiplexers & shell prompts:
       { canonical: 'ghostty', label: 'Ghostty', slug: 'ghostty' },
       { canonical: 'wezterm', label: 'WezTerm', slug: 'wezterm' },
       { canonical: 'alacritty', label: 'Alacritty', slug: 'alacritty' },
@@ -685,11 +667,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'IDEs, Editors & Terminals',
   },
   {
-    // Sub-group order: 1. UI/UX, prototyping & web design -> 2. Vector, raster, photo & publishing ->
-    // 3. 3D modeling, VFX, CAD & electronics (EDA) -> 4. Video editing, color grading, streaming & audio production.
     id: 'design',
     items: [
-      // 1. UI/UX, prototyping & web design
+      // [1] UI/UX, prototyping & web design:
       { canonical: 'figma', label: 'Figma', slug: 'figma' },
       { canonical: 'framer', label: 'Framer', slug: 'framer' },
       { canonical: 'webflow', label: 'Webflow', slug: 'webflow' },
@@ -698,7 +678,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'adobexd', label: 'Adobe XD', slug: 'adobexd' },
       { canonical: 'canva', label: 'Canva', slug: 'canva' },
       { canonical: 'invision', label: 'InVision', slug: 'invision' },
-      // 2. Vector, raster, photo & publishing suites (Adobe -> Affinity -> open-source & specialized)
+      // [2] Vector, raster, photo & publishing suites (Adobe -> Affinity -> open-source & specialized):
       { canonical: 'adobephotoshop', label: 'Photoshop', slug: 'ps' },
       { canonical: 'adobeillustrator', label: 'Illustrator', slug: 'ai' },
       { canonical: 'adobelightroom', label: 'Lightroom', slug: 'adobelightroom' },
@@ -711,7 +691,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'krita', label: 'Krita', slug: 'krita' },
       { canonical: 'aseprite', label: 'Aseprite', slug: 'aseprite' },
       { canonical: 'coreldraw', label: 'CorelDRAW', slug: 'coreldraw' },
-      // 3. 3D modeling, VFX, CAD & electronics (EDA)
+      // [3] 3D modeling, VFX, CAD & electronics (EDA):
       { canonical: 'blender', label: 'Blender', slug: 'blender' },
       { canonical: 'cinema4d', label: 'Cinema 4D', slug: 'cinema4d' },
       { canonical: 'autodeskmaya', label: 'Maya', slug: 'autodeskmaya' },
@@ -725,7 +705,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'altiumdesigner', label: 'Altium Designer', slug: 'altiumdesigner' },
       { canonical: 'easyeda', label: 'EasyEDA', slug: 'easyeda' },
       { canonical: 'ltspice', label: 'LTspice', slug: 'ltspice' },
-      // 4. Video editing, color grading, streaming & audio production (video -> streaming -> audio/DAWs)
+      // [4] Video editing, color grading, streaming & audio production (video -> streaming -> audio/DAWs):
       { canonical: 'davinciresolve', label: 'DaVinci Resolve', slug: 'davinciresolve' },
       { canonical: 'blackmagicdesign', label: 'Blackmagic Design', slug: 'blackmagicdesign' },
       { canonical: 'adobepremierepro', label: 'Premiere Pro', slug: 'pr' },
@@ -746,11 +726,9 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
     title: 'Design, 3D, Media & CAD',
   },
   {
-    // Sub-group order: 1. Linux, BSD, virtualization & NAS/router OS -> 2. Desktop & mobile operating systems -> 3. Embedded & SBC hardware ->
-    // 4. Security & password managers -> 5. Documentation, typesetting & SSGs -> 6. Knowledge bases, PM, diagramming & automation.
     id: 'systems',
     items: [
-      // 1. Linux, BSD, virtualization & NAS/router operating systems
+      // [1] Linux, BSD, virtualization & NAS/router operating systems:
       { canonical: 'linux', label: 'Linux', slug: 'linux' },
       { canonical: 'ubuntu', label: 'Ubuntu', slug: 'ubuntu' },
       { canonical: 'debian', label: 'Debian', slug: 'debian' },
@@ -768,23 +746,23 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'openwrt', label: 'OpenWrt', slug: 'openwrt' },
       { canonical: 'pfsense', label: 'pfSense', slug: 'pfsense' },
       { canonical: 'opnsense', label: 'OPNsense', slug: 'opnsense' },
-      // 2. Desktop & mobile operating systems
+      // [2] Desktop & mobile operating systems:
       { canonical: 'apple', label: 'macOS / Apple', slug: 'apple' },
       { canonical: 'windows', label: 'Windows', slug: 'windows' },
       { canonical: 'android', label: 'Android', slug: 'android' },
       { canonical: 'ios', label: 'iOS', slug: 'ios' },
-      // 3. Embedded & single-board hardware
+      // [3] Embedded & single-board hardware:
       { canonical: 'raspberrypi', label: 'Raspberry Pi', slug: 'raspberrypi' },
       { canonical: 'arduino', label: 'Arduino', slug: 'arduino' },
       { canonical: 'espressif', label: 'Espressif / ESP32', slug: 'espressif' },
-      // 4. Security, network analysis & password managers
+      // [4] Security, network analysis & password managers:
       { canonical: 'owasp', label: 'OWASP', slug: 'owasp' },
       { canonical: 'wireshark', label: 'Wireshark', slug: 'wireshark' },
       { canonical: 'burpsuite', label: 'Burp Suite', slug: 'burpsuite' },
       { canonical: 'metasploit', label: 'Metasploit', slug: 'metasploit' },
       { canonical: 'bitwarden', label: 'Bitwarden', slug: 'bitwarden' },
       { canonical: '1password', label: '1Password', slug: '1password' },
-      // 5. Documentation, typesetting & static site generators
+      // [5] Documentation, typesetting & static site generators:
       { canonical: 'markdown', label: 'Markdown', slug: 'markdown' },
       { canonical: 'mdx', label: 'MDX', slug: 'mdx' },
       { canonical: 'latex', label: 'LaTeX', slug: 'latex' },
@@ -800,7 +778,7 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
       { canonical: 'eleventy', label: 'Eleventy', slug: 'eleventy' },
       { canonical: 'jekyll', label: 'Jekyll', slug: 'jekyll' },
       { canonical: 'hexo', label: 'Hexo', slug: 'hexo' },
-      // 6. Knowledge bases, project management, diagramming & workflow automation
+      // [6] Knowledge bases, project management, diagramming & workflow automation:
       { canonical: 'obsidian', label: 'Obsidian', slug: 'obsidian' },
       { canonical: 'notion', label: 'Notion', slug: 'notion' },
       { canonical: 'logseq', label: 'Logseq', slug: 'logseq' },

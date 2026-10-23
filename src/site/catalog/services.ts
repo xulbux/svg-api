@@ -2,8 +2,7 @@
  * Services documentation catalog – Live service preset showcase cards and generated route/metric reference rows for `/docs/services`.
  */
 
-import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
-import { DEFAULT_ENV } from '@/config/site';
+import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { formatVariantValues } from '@/site/glossary';
@@ -81,6 +80,25 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
     subtitle:
       'Pass a bare widget kind (?special=sparkline, bars, delta, bar, ring, steps, or strip) on supported metrics to populate the widget from live upstream data, ?special=none to hide a default preset widget, or ?special=<kind>:<payload> to supply custom numbers.',
     title: 'Automatic Inline Data Widgets (?special=sparkline|bars|delta|…)',
+  },
+  {
+    items: [
+      { alt: 'GitHub Stars', path: '/badge/gh/honojs/hono/stars', sample: '32.5k' },
+      { alt: 'GitHub Forks', path: '/badge/gh/honojs/hono/forks', sample: '1.1k' },
+      { alt: 'GitHub Open Issues', path: '/badge/gh/honojs/hono/issues', sample: '118' },
+      { alt: 'GitHub Pull Requests', path: '/badge/gh/honojs/hono/prs', sample: '24' },
+      { alt: 'GitHub Release', path: '/badge/gh/honojs/hono/release', sample: 'v4.13.13' },
+      { alt: 'GitHub Last Commit', path: '/badge/gh/honojs/hono/commit', sample: 'today' },
+      { alt: 'GitHub License', path: '/badge/gh/honojs/hono/license', sample: 'MIT' },
+      {
+        alt: 'GitHub Commit Activity',
+        path: '/badge/gh/honojs/hono/activity',
+        sample: { all: [14, 21, 18, 26, 22, 31, 28, 35] },
+      },
+    ],
+    subtitle:
+      'Stars, forks, open issues, open pull requests, latest release, last commit age, SPDX license, and 8-week commit activity sparkline for any public GitHub repository.',
+    title: 'GitHub (/badge/gh/:owner/:repo/:metric)',
   },
   {
     items: [
@@ -648,7 +666,7 @@ function formatServiceDefaultValue(service: ServiceDefinition): string {
   if (ownerMode === 'required') {
     return `~${owner.placeholder} required`;
   }
-  const defaultOwner = owner.resolveDefault?.(DEFAULT_ENV);
+  const defaultOwner = owner.resolveDefault?.();
   return defaultOwner ? `${defaultOwner} (${owner.placeholder})` : `~${owner.placeholder} optional`;
 }
 
@@ -660,7 +678,7 @@ function formatServiceDefaultValue(service: ServiceDefinition): string {
  */
 export function buildServiceParamRows(): ParamTableRow[] {
   const rows: ParamTableRow[] = [];
-  for (const [key, service] of listPublicServices()) {
+  for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
     rows.push({
       defaultVal: formatServiceDefaultValue(service),
       description: `${service.docs.title}: ${service.docs.description}`,

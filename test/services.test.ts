@@ -85,8 +85,8 @@ interface ChunkedBody {
 /** Request headers of an embedded `<img>` badge request. */
 const IMAGE_REQUEST: RequestInit = { headers: { 'Sec-Fetch-Dest': 'image' } };
 
-/** Worker environment without a `DEFAULT_GH_OWNER` binding. */
-const UNCONFIGURED_ENV: Env = { ALLOW_PREVIEW_IN_PROD: 'true' };
+/** Worker environment with an authenticated `GITHUB_TOKEN` secret. */
+const AUTHENTICATED_GH_ENV: Env = { GITHUB_TOKEN: 'github_pat_test_token' };
 
 /** Reference timestamp of the cache expiry tests in milliseconds. */
 const REFERENCE_NOW = Date.parse('2026-10-19T12:00:00Z');
@@ -197,7 +197,7 @@ async function describeMetric(path: string, env: Env = TEST_ENV): Promise<string
 
 /** Resolve the browser redirect destination of a service badge path. */
 function resolvePathRedirect(path: string): string {
-  return resolveServiceRedirectUrl(parseServiceRequest(path), TEST_ENV);
+  return resolveServiceRedirectUrl(parseServiceRequest(path));
 }
 
 /** Look up a registered service preset (throws for unknown services). */
@@ -259,11 +259,11 @@ describe('service registry integrity', () => {
     }
   });
 
-  it('lists every public service route on /docs/services', async () => {
+  it('lists every registered service route on /docs/services', async () => {
     const response = await app.request('/docs/services', {}, TEST_ENV);
     const body = await response.text();
-    for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
-      expect(body.includes(`/badge/${key}/`)).toBe(!service.allowedOwners);
+    for (const key of Object.keys(SERVICES_CONFIG)) {
+      expect(body).toContain(`/badge/${key}/`);
     }
   });
 
@@ -370,36 +370,193 @@ describe('endpoint helpers', () => {
 });
 
 describe('existing service presets', () => {
-  it('resolves GitHub repository metrics from one shared, cached upstream payload', async () => {
+  it('resolves GitHub repository metrics for any owner via REST when GITHUB_TOKEN is unset', async () => {
     const requestedUrls = mockUpstream({
-      '/repos/xulbux/color-tracr': {
-        forks_count: 12,
+      '/repos/honojs/hono': {
+        forks_count: 1100,
         license: { spdx_id: 'MIT' },
-        open_issues_count: 7,
         pushed_at: new Date().toISOString(),
-        stargazers_count: 1420,
+        stargazers_count: 11_000,
       },
-      '/repos/xulbux/color-tracr/releases/latest': { tag_name: 'v2.1.0' },
-      'search/issues?q=repo:xulbux/color-tracr+type:issue+state:open': { total_count: 5 },
-      'search/issues?q=repo:xulbux/color-tracr+type:pr+state:open': { total_count: 2 },
+      '/repos/honojs/hono/releases/latest': { tag_name: 'v4.13.13' },
+      'search/issues?q=repo:honojs/hono+type:issue+state:open': { total_count: 5 },
+      'search/issues?q=repo:honojs/hono+type:pr+state:open': { total_count: 2 },
     });
 
-    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('Stars: 1.4k');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/commit')).toBe('Last Commit: today');
-    expect(await requestAriaLabel('/badge/gh/xulbux/color-tracr/last-commit')).toBe(
-      'Last Commit: today'
-    );
-    expect(await requestAriaLabel('/badge/gh/color-tracr/license')).toBe('License: MIT');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/release')).toBe('Release: v2.1.0');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/issues')).toBe('Issues: 5');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/prs')).toBe('Pull Requests: 2');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/pr')).toBe('Pull Requests: 2');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/pulls')).toBe('Pull Requests: 2');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/pull-requests')).toBe('Pull Requests: 2');
-    expect(resolvePathRedirect('/badge/gh/color-tracr/prs')).toBe(
-      'https://github.com/xulbux/color-tracr/pulls'
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/stars')).toBe('Stars: 11k');
+    const forksMetric = await resolvePathMetric('/badge/gh/honojs/hono/forks');
+    expect(forksMetric.result.value).toBe('1.1k');
+    expect(forksMetric.result.specials?.bar).toEqual({ type: 'bar', value: 10 });
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/commit')).toBe('Last Commit: today');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/last-commit')).toBe('Last Commit: today');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/license')).toBe('License: MIT');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/release')).toBe('Release: v4.13.13');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/issues')).toBe('Issues: 5');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/prs')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/pr')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/pulls')).toBe('Pull Requests: 2');
+    expect(await requestAriaLabel('/badge/gh/honojs/hono/pull-requests')).toBe('Pull Requests: 2');
+    expect(resolvePathRedirect('/badge/gh/honojs/hono/prs')).toBe(
+      'https://github.com/honojs/hono/pulls'
     );
     expect(requestedUrls).toHaveLength(4);
+  });
+
+  it('coalesces GitHub issues and prs onto one GraphQL v4 query when GITHUB_TOKEN is configured and classifies GraphQL errors', async () => {
+    const graphqlBodies: string[] = [];
+    const authHeaders: (string | undefined)[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = resolveFetchUrl(input);
+        const headers = new Headers(init?.headers);
+        authHeaders.push(headers.get('Authorization') ?? undefined);
+        const rawBody = typeof init?.body === 'string' ? init.body : '';
+        graphqlBodies.push(rawBody);
+        if (url !== 'https://api.github.com/graphql') {
+          return Promise.resolve(new Response('unexpected url', { status: 500 }));
+        }
+        const parsed = JSON.parse(rawBody) as { variables?: { name?: string; owner?: string } };
+        const repoName = parsed.variables?.name;
+        if (repoName === 'missing-repo') {
+          return Promise.resolve(
+            Response.json({
+              data: { repository: null },
+              errors: [{ message: 'Could not resolve to a Repository', type: 'NOT_FOUND' }],
+            })
+          );
+        }
+        if (repoName === 'throttled-repo') {
+          return Promise.resolve(
+            Response.json({
+              errors: [{ message: 'API rate limit exceeded', type: 'RATE_LIMITED' }],
+            })
+          );
+        }
+        if (repoName === 'broken-repo') {
+          return Promise.resolve(
+            Response.json({ errors: [{ message: 'Internal GraphQL failure' }] })
+          );
+        }
+        return Promise.resolve(
+          Response.json({
+            data: { repository: { issues: { totalCount: 118 }, pullRequests: { totalCount: 24 } } },
+          })
+        );
+      }
+    );
+
+    const [issuesLabel, prsLabel, pullsLabel] = await Promise.all([
+      requestAriaLabel('/badge/gh/honojs/hono/issues', AUTHENTICATED_GH_ENV),
+      requestAriaLabel('/badge/gh/honojs/hono/prs', AUTHENTICATED_GH_ENV),
+      requestAriaLabel('/badge/gh/honojs/hono/pulls', AUTHENTICATED_GH_ENV),
+    ]);
+    expect(issuesLabel).toBe('Issues: 118');
+    expect(prsLabel).toBe('Pull Requests: 24');
+    expect(pullsLabel).toBe('Pull Requests: 24');
+    expect(graphqlBodies).toHaveLength(1);
+    expect(authHeaders[0]).toBe('Bearer github_pat_test_token');
+
+    const missingMetric = await resolvePathMetric(
+      '/badge/gh/honojs/missing-repo/issues',
+      AUTHENTICATED_GH_ENV
+    );
+    expect(missingMetric.status).toBe(404);
+    expect(missingMetric.result.value).toBe('not found');
+
+    const throttledMetric = await resolvePathMetric(
+      '/badge/gh/honojs/throttled-repo/prs',
+      AUTHENTICATED_GH_ENV
+    );
+    expect(throttledMetric.status).toBe(429);
+    expect(throttledMetric.result.value).toBe('rate limited');
+
+    const brokenMetric = await resolvePathMetric(
+      '/badge/gh/honojs/broken-repo/issues',
+      AUTHENTICATED_GH_ENV
+    );
+    expect(brokenMetric.status).toBe(502);
+    expect(brokenMetric.result.value).toBe('api error');
+  });
+
+  it('micro-batches up to 16 concurrent GitHub repositories into one 1-point GraphQL query and isolates per-repo NOT_FOUND errors', async () => {
+    const batchSizes: number[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_input: RequestInfo | URL, init?: RequestInit) => {
+        const rawBody = typeof init?.body === 'string' ? init.body : '{}';
+        const parsed = JSON.parse(rawBody) as { variables?: Record<string, string> };
+        const variables = parsed.variables ?? {};
+        if (Object.hasOwn(variables, 'name')) {
+          batchSizes.push(1);
+          const repoName = variables.name ?? '';
+          const issueTotal = Number(repoName.replace('repo-', '')) * 10;
+          return Promise.resolve(
+            Response.json({
+              data: {
+                repository: { issues: { totalCount: issueTotal }, pullRequests: { totalCount: 3 } },
+              },
+            })
+          );
+        }
+        const data: Record<string, unknown> = {};
+        const errors: Record<string, unknown>[] = [];
+        let count = 0;
+        while (Object.hasOwn(variables, `n${count}`)) {
+          const repoName = variables[`n${count}`] ?? '';
+          const alias = `r${count}`;
+          if (repoName === 'missing') {
+            data[alias] = null;
+            errors.push({ message: 'Not found', path: [alias], type: 'NOT_FOUND' });
+          } else {
+            const indexNumber = Number(repoName.replace('repo-', ''));
+            data[alias] = {
+              issues: { totalCount: indexNumber * 10 },
+              pullRequests: { totalCount: indexNumber },
+            };
+          }
+          count += 1;
+        }
+        batchSizes.push(count);
+        return Promise.resolve(Response.json(errors.length > 0 ? { data, errors } : { data }));
+      }
+    );
+
+    // 18 concurrent repositories (incl. 1 missing + both issues & prs on repo-1): splits into 16 + 2!
+    const requests: Promise<string>[] = [
+      describeMetric('/badge/gh/acme/missing/issues', AUTHENTICATED_GH_ENV),
+      describeMetric('/badge/gh/acme/repo-1/prs', AUTHENTICATED_GH_ENV),
+    ];
+    for (let i = 1; i <= 17; i += 1) {
+      requests.push(describeMetric(`/badge/gh/acme/repo-${i}/issues`, AUTHENTICATED_GH_ENV));
+    }
+    const labels = await Promise.all(requests);
+    expect(batchSizes).toEqual([16, 2]);
+    expect(labels[0]).toBe('Issues: not found');
+    expect(labels[1]).toBe('Pull Requests: 1');
+    expect(labels[2]).toBe('Issues: 10');
+    expect(labels[18]).toBe('Issues: 170');
+  });
+
+  it('short-circuits GitHub issues and prs at zero API cost when open_issues_count is 0', async () => {
+    const requestedUrls = mockUpstream({
+      '/repos/xulbux/clean-repo': {
+        forks_count: 2,
+        license: { spdx_id: 'MIT' },
+        open_issues_count: 0,
+        pushed_at: new Date().toISOString(),
+        stargazers_count: 50,
+      },
+    });
+    expect(await describeMetric('/badge/gh/xulbux/clean-repo/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 50'
+    );
+    expect(requestedUrls).toHaveLength(1);
+    expect(await describeMetric('/badge/gh/xulbux/clean-repo/issues', AUTHENTICATED_GH_ENV)).toBe(
+      'Issues: 0'
+    );
+    expect(await describeMetric('/badge/gh/xulbux/clean-repo/prs', AUTHENTICATED_GH_ENV)).toBe(
+      'Pull Requests: 0'
+    );
+    expect(requestedUrls).toHaveLength(1);
   });
 
   it('reports missing GitHub licenses as none and unrecognized ones as custom (regression: license null showed custom)', async () => {
@@ -407,9 +564,9 @@ describe('existing service presets', () => {
       '/repos/xulbux/no-license': { license: null },
       '/repos/xulbux/odd-license': { license: { spdx_id: 'NOASSERTION' } },
     });
-    expect(await describeMetric('/badge/gh/no-license/license')).toBe('License: none');
-    expect(await describeMetric('/badge/gh/odd-license/l')).toBe('License: custom');
-    expect(resolvePathRedirect('/badge/gh/no-license/license')).toBe(
+    expect(await describeMetric('/badge/gh/xulbux/no-license/license')).toBe('License: none');
+    expect(await describeMetric('/badge/gh/xulbux/odd-license/l')).toBe('License: custom');
+    expect(resolvePathRedirect('/badge/gh/xulbux/no-license/license')).toBe(
       'https://github.com/xulbux/no-license'
     );
   });
@@ -418,7 +575,7 @@ describe('existing service presets', () => {
     mockUpstream({
       '/repos/xulbux/color-tracr/stats/participation': { all: [1, 2, null, 'x', 4, 5, 6, 7, 8, 9] },
     });
-    const activity = await resolvePathMetric('/badge/gh/color-tracr/activity');
+    const activity = await resolvePathMetric('/badge/gh/xulbux/color-tracr/activity');
     expect(activity.result.value).toBe('39/8w');
     expect(activity.result.special).toEqual({
       type: 'sparkline',
@@ -426,20 +583,15 @@ describe('existing service presets', () => {
     });
   });
 
-  it('never falls back to a hard-coded GitHub owner (regression: gh defaulted to xulbux without the binding)', async () => {
+  it('requires an explicit GitHub owner segment without calling upstream', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    expect(await describeMetric('/badge/gh/color-tracr/stars', UNCONFIGURED_ENV)).toBe(
-      'gh: missing owner'
-    );
-    expect(await requestAriaLabel('/badge/gh/xulbux/color-tracr/stars', UNCONFIGURED_ENV)).toBe(
-      'svg.xul.is: restricted'
-    );
+    expect(await describeMetric('/badge/gh/color-tracr/stars')).toBe('gh: missing owner');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('shows "computing" while GitHub statistics are still being generated (HTTP 202)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({}, { status: 202 }));
-    const badge = await requestBadge('/badge/gh/color-tracr/activity');
+    const badge = await requestBadge('/badge/gh/xulbux/color-tracr/activity');
     expect(badge.ariaLabel).toBe('Commits: computing');
   });
 
@@ -773,12 +925,12 @@ describe('new service presets', () => {
 });
 
 describe('service request validation', () => {
-  it('rejects path traversal segments without calling upstream (regression: ..%2F bypassed the GitHub owner allowlist)', async () => {
+  it('rejects path traversal segments without calling upstream', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const badges = await Promise.all(
       [
         '/badge/gh/xulbux/..%2F..%2Fusers%2Fevil/stars',
-        '/badge/gh/..%2Fevil/stars',
+        '/badge/gh/..%2Fevil/repo/stars',
         '/badge/npm/%2E%2E%2Fsecret/v',
         '/badge/pypi/a%2Fb/v',
       ].map((path) => requestBadge(path))
@@ -790,11 +942,9 @@ describe('service request validation', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('enforces owner allowlists, owner modes, and known metrics without calling upstream', async () => {
+  it('enforces owner modes, target patterns, and known metrics without calling upstream', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    expect(await requestAriaLabel('/badge/gh/someone-else/repo/stars')).toBe(
-      'svg.xul.is: restricted'
-    );
+    expect(await requestAriaLabel('/badge/gh/repo/stars')).toBe('gh: missing owner');
     expect(await requestAriaLabel('/badge/pypi/owner/pkg/v')).toBe('pypi: invalid route');
     expect(await requestAriaLabel('/badge/maven/com@google/guava/v')).toBe('maven: invalid name');
     expect(await requestAriaLabel('/badge/npm/hono/nope')).toBe('npm: invalid metric');
@@ -858,25 +1008,25 @@ describe('upstream error handling', () => {
       return Promise.resolve(new Response('', { status: 403 }));
     });
     expect(await requestAriaLabel('/badge/npm/throttled/v')).toBe('npm: rate limited');
-    expect(await requestAriaLabel('/badge/gh/color-tracr/stars')).toBe('Stars: rate limited');
+    expect(await requestAriaLabel('/badge/gh/xulbux/color-tracr/stars')).toBe(
+      'Stars: rate limited'
+    );
     expect(await requestAriaLabel('/badge/crates/serde/v')).toBe('crates.io: rate limited');
     expect(await requestAriaLabel('/badge/npm/forbidden/v')).toBe('npm: api error');
   });
 
   it('guards resolveServicePreview against invalid routes, missing samples, and throwing transforms', () => {
+    expect(resolveServicePreview({ metric: 'v', service: 'nope', target: 'x' }, {}).color).toBe(
+      'rose'
+    );
     expect(
-      resolveServicePreview({ metric: 'v', service: 'nope', target: 'x' }, TEST_ENV, {}).color
-    ).toBe('rose');
-    expect(
-      resolveServicePreview({ metric: 'v', service: 'crates', target: 'x' }, TEST_ENV, [])
+      resolveServicePreview({ metric: 'v', service: 'crates', target: 'x' }, [])
     ).toMatchObject({ color: 'rose', value: 'not found' });
     vi.spyOn(getServiceMetric('npm', 'v'), 'transform').mockImplementation(() => {
       throw new TypeError('preview crash');
     });
     expect(
-      resolveServicePreview({ metric: 'v', service: 'npm', target: 'x' }, TEST_ENV, {
-        version: '1.0.0',
-      })
+      resolveServicePreview({ metric: 'v', service: 'npm', target: 'x' }, { version: '1.0.0' })
     ).toMatchObject({ color: 'rose', value: 'invalid data' });
   });
 
@@ -1200,9 +1350,201 @@ describe('upstream caching & redirects', () => {
     const aurRes = await app.request('/badge/aur/yay/v', documentRequest, TEST_ENV);
     expect(aurRes.headers.get('Location')).toBe('https://aur.archlinux.org/packages/yay');
 
-    const restrictedRes = await app.request('/badge/gh/evil/repo/stars', documentRequest, TEST_ENV);
-    expect(restrictedRes.headers.get('Location')).toBe('https://xul.is');
+    const ghRes = await app.request('/badge/gh/honojs/hono/stars', documentRequest, TEST_ENV);
+    expect(ghRes.headers.get('Location')).toBe('https://github.com/honojs/hono/stargazers');
+
+    const missingOwnerRes = await app.request('/badge/gh/hono/stars', documentRequest, TEST_ENV);
+    expect(missingOwnerRes.headers.get('Location')).toBe('https://xul.is');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('revalidates expired cache entries conditionally via ETag / If-None-Match on 304 Not Modified', async () => {
+    const stub = installEdgeCacheStub();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    const seenIfNoneMatch: (string | undefined)[] = [];
+    const seenAuth: (string | undefined)[] = [];
+    let callNumber = 0;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_input: RequestInfo | URL, init?: RequestInit) => {
+        callNumber += 1;
+        const headers = new Headers(init?.headers);
+        seenIfNoneMatch.push(headers.get('If-None-Match') ?? undefined);
+        seenAuth.push(headers.get('Authorization') ?? undefined);
+        if (callNumber === 1) {
+          return Promise.resolve(
+            Response.json({ stargazers_count: 1400 }, { headers: { ETag: 'W/"etag-v1"' } })
+          );
+        }
+        if (callNumber === 2) {
+          return Promise.resolve(new Response(null, { status: 304 }));
+        }
+        return Promise.resolve(
+          Response.json({ stargazers_count: 2500 }, { headers: { ETag: 'W/"etag-v2"' } })
+        );
+      }
+    );
+
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 1.4k'
+    );
+    expect(seenIfNoneMatch).toEqual([undefined]);
+    expect(seenAuth).toEqual(['Bearer github_pat_test_token']);
+    const [storedKey = ''] = stub.storedKeys;
+    expect(stub.store.get(storedKey)?.headers.get('X-Svg-Api-ETag')).toBe('W/"etag-v1"');
+    expect(stub.store.get(storedKey)?.headers.get('Cache-Control')).toContain('max-age=604800');
+
+    // Expire logical TTL (even if memory is cold, the edge cache carries the stale projection + ETag).
+    const firstExpiry = REFERENCE_NOW + CACHE_TTL.default * 1000 + 1000;
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(firstExpiry);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 1.4k'
+    );
+    expect(seenIfNoneMatch).toEqual([undefined, 'W/"etag-v1"']);
+    expect(seenAuth[1]).toBe('Bearer github_pat_test_token');
+
+    // Another cold isolate within the refreshed TTL reads the refreshed edge entry with zero upstream fetches.
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(firstExpiry + 5000);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 1.4k'
+    );
+    expect(seenIfNoneMatch).toHaveLength(2);
+
+    // Next expiry receives 200 OK with updated stars and ETag.
+    const secondExpiry = firstExpiry + CACHE_TTL.default * 1000 + 1000;
+    nowSpy.mockReturnValue(secondExpiry);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 2.5k'
+    );
+    expect(seenIfNoneMatch).toEqual([undefined, 'W/"etag-v1"', 'W/"etag-v1"']);
+    expect(stub.store.get(storedKey)?.headers.get('X-Svg-Api-ETag')).toBe('W/"etag-v2"');
+  });
+
+  it('rescues stale projected payloads on 429, 5xx, timeout, and 202 revalidation errors while 404 still invalidates', async () => {
+    installEdgeCacheStub();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    let phase: 'seed' | 'throttled' | 'outage' | 'deleted' = 'seed';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = resolveFetchUrl(input);
+      if (phase === 'seed') {
+        if (url === 'https://api.github.com/graphql') {
+          return Promise.resolve(
+            Response.json({
+              data: { repository: { issues: { totalCount: 42 }, pullRequests: { totalCount: 9 } } },
+            })
+          );
+        }
+        if (url.endsWith('/stats/participation')) {
+          return Promise.resolve(Response.json({ all: [5, 5, 5, 5, 5, 5, 5, 5] }));
+        }
+        return Promise.resolve(Response.json({ stargazers_count: 3200 }));
+      }
+      if (phase === 'throttled') {
+        if (url === 'https://api.github.com/graphql') {
+          return Promise.resolve(
+            Response.json({
+              errors: [{ message: 'API rate limit exceeded', type: 'RATE_LIMITED' }],
+            })
+          );
+        }
+        if (url.endsWith('/stats/participation')) {
+          return Promise.resolve(Response.json({}, { status: 202 }));
+        }
+        return Promise.resolve(
+          new Response('', { headers: { 'x-ratelimit-remaining': '0' }, status: 403 })
+        );
+      }
+      if (phase === 'outage') {
+        return Promise.resolve(new Response('', { status: 503 }));
+      }
+      return Promise.resolve(new Response('', { status: 404 }));
+    });
+
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 3.2k'
+    );
+    expect(await describeMetric('/badge/gh/honojs/hono/issues', AUTHENTICATED_GH_ENV)).toBe(
+      'Issues: 42'
+    );
+    expect(await describeMetric('/badge/gh/honojs/hono/activity', AUTHENTICATED_GH_ENV)).toBe(
+      'Commits: 40/8w'
+    );
+
+    // Expire both `default` and `slow` TTLs; 429, GraphQL `RATE_LIMITED`, and 202 rescue the stale projections.
+    const afterSlowExpiry = REFERENCE_NOW + CACHE_TTL.slow * 1000 + 1000;
+    phase = 'throttled';
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(afterSlowExpiry);
+    const rescuedStars = await resolvePathMetric(
+      '/badge/gh/honojs/hono/stars',
+      AUTHENTICATED_GH_ENV
+    );
+    expect(rescuedStars.status).toBe(200);
+    expect(rescuedStars.result.value).toBe('3.2k');
+    expect(await describeMetric('/badge/gh/honojs/hono/issues', AUTHENTICATED_GH_ENV)).toBe(
+      'Issues: 42'
+    );
+    expect(await describeMetric('/badge/gh/honojs/hono/activity', AUTHENTICATED_GH_ENV)).toBe(
+      'Commits: 40/8w'
+    );
+
+    // Upstream 503 outage also rescues stale data.
+    phase = 'outage';
+    nowSpy.mockReturnValue(afterSlowExpiry + CACHE_TTL.slow * 1000 + 1000);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 3.2k'
+    );
+
+    // Upstream 404 (deleted or privatized repository) does NOT rescue stale data.
+    phase = 'deleted';
+    nowSpy.mockReturnValue(afterSlowExpiry + CACHE_TTL.slow * 2000 + 2000);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: not found'
+    );
+  });
+
+  it('stretches positive logical TTLs toward x-ratelimit-reset when remaining quota drops to 10% or below', async () => {
+    installEdgeCacheStub();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    const resetEpoch = Math.floor(REFERENCE_NOW / 1000) + 2700;
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() =>
+        Promise.resolve(
+          Response.json(
+            { stargazers_count: 900 },
+            {
+              headers: {
+                'x-ratelimit-limit': '5000',
+                'x-ratelimit-remaining': '400',
+                'x-ratelimit-reset': String(resetEpoch),
+              },
+            }
+          )
+        )
+      );
+
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 900'
+    );
+    expect(fetchSpy).toHaveBeenCalledOnce();
+
+    // 25 minutes later (past the normal 10-minute default TTL, before the 45-minute reset): still fresh!
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(REFERENCE_NOW + 25 * 60 * 1000);
+    expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
+      'Stars: 900'
+    );
+    expect(fetchSpy).toHaveBeenCalledOnce();
+
+    // Past the 45-minute reset window: revalidates upstream as normal.
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(REFERENCE_NOW + 46 * 60 * 1000);
+    await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1324,7 +1666,7 @@ describe('shared service refactors', () => {
       'pypi.org/pypi/xulbux/json': { info: { license_expression: 'MIT' } },
       'sql-clickhouse': { row_1: { last_month: '3333' } },
     });
-    expect(await describeMetric('/badge/gh/color-tracr/l')).toBe('License: MIT');
+    expect(await describeMetric('/badge/gh/xulbux/color-tracr/l')).toBe('License: MIT');
     expect(await describeMetric('/badge/pypi/xulbux/dm')).toBe('Downloads: 3.3k/mo');
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
       const aliases = Object.fromEntries(listServiceMetricAliases(service));
@@ -1350,7 +1692,7 @@ describe('shared service refactors', () => {
   });
 
   it('builds forge endpoints from the shared builders (GitHub, GitLab, Codeberg)', () => {
-    expect(resolvePathRedirect('/badge/gh/color-tracr/stars')).toBe(
+    expect(resolvePathRedirect('/badge/gh/xulbux/color-tracr/stars')).toBe(
       'https://github.com/xulbux/color-tracr/stargazers'
     );
     expect(resolvePathRedirect('/badge/gitlab/gitlab-org/gitlab-runner/release')).toBe(

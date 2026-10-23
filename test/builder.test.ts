@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
+import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { STACK_CATEGORIES } from '@/config/stack';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
@@ -242,11 +242,11 @@ describe('builder schemas', () => {
     }
   });
 
-  it('offers every public service preset with all of its metrics, and never owner-restricted presets', () => {
+  it('offers every registered service preset with all of its metrics and owner arity', () => {
     const services = getBuilderSchema('service').services ?? [];
-    const publicServices = listPublicServices();
-    expect(services.map((service) => service.key)).toEqual(publicServices.map(([key]) => key));
-    for (const [key, definition] of publicServices) {
+    const registeredServices = Object.entries(SERVICES_CONFIG);
+    expect(services.map((service) => service.key)).toEqual(registeredServices.map(([key]) => key));
+    for (const [key, definition] of registeredServices) {
       const option = services.find((service) => service.key === key);
       expect(
         option?.metrics.map((metric) => metric.value),
@@ -254,7 +254,7 @@ describe('builder schemas', () => {
       ).toEqual(Object.keys(definition.metrics));
       expect(option?.ownerMode, key).toBe(resolveServiceOwnerMode(definition));
     }
-    expect(services.some((service) => service.key === 'gh')).toBe(false);
+    expect(services.find((service) => service.key === 'gh')?.ownerMode).toBe('required');
   });
 
   it('accepts every offered select value and widget modifier in the matching parser', () => {
@@ -1285,12 +1285,14 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(linkCount).toBeGreaterThan(100);
   });
 
-  it('resolves builder targets per route family and skips owner-restricted or invalid paths', () => {
+  it('resolves builder targets per route family and skips invalid or mismatched-arity paths', () => {
     expect(resolveBuilderTarget('/badge/build/passing')?.kind).toBe('badge');
     expect(resolveBuilderTarget('/badge/status/online/up')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/pypi/xulbux/v')?.kind).toBe('service');
-    expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
+    expect(resolveBuilderTarget('/badge/pypi/owner/pkg/v')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/gh/xulbux/svg-api/stars')?.kind).toBe('service');
     expect(resolveBuilderTarget('/badge/gh/svg-api/stars')).toBeUndefined();
+    expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
     expect(resolveBuilderTarget('/icon/a/b')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/a/b/c/d')).toBeUndefined();
     expect(resolveBuilderTarget('/favicon.svg')).toBeUndefined();

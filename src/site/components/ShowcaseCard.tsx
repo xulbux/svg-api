@@ -85,7 +85,7 @@ function renderCardTitleChildren(rawTitle: string): HtmlFragment {
   let remainder = rawTitle.trim();
   const trailingPills: HtmlFragment[] = [];
 
-  // 1. Extract the trailing parenthetical group first so inner symbols never interfere with ` · ` prefix splitting.
+  // [1] Extract the trailing parenthetical group first so inner symbols never interfere with ` · ` prefix splitting:
   const trailing = splitTrailingParenthetical(remainder);
   if (trailing) {
     remainder = trailing.main;
@@ -108,7 +108,7 @@ function renderCardTitleChildren(rawTitle: string): HtmlFragment {
     }
   }
 
-  // 2. Extract the leading `code · ` prefix if present on the main title text.
+  // [2] Extract the leading `code · ` prefix if present on the main title text:
   let prefixBadge: HtmlFragment | undefined = undefined;
   const dotSeparatorIndex = remainder.indexOf(' · ');
   if (dotSeparatorIndex !== -1) {

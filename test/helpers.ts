@@ -21,8 +21,8 @@ export interface EdgeCacheStub {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Test Worker environment bindings (previews enabled, default GitHub owner `xulbux`). */
-export const TEST_ENV: Env = { ALLOW_PREVIEW_IN_PROD: 'true', DEFAULT_GH_OWNER: 'xulbux' };
+/** Default unauthenticated test Worker environment bindings. */
+export const TEST_ENV: Env = {};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 

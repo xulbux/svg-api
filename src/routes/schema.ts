@@ -7,8 +7,8 @@
  * the builder client script (`src/site/client/bundles/builder.client.js`).
  */
 
-import { listPublicServices, resolveServiceOwnerMode } from '@/config/services';
-import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
+import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
+import { SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import {
   ICON_MOTION_TOKENS,
@@ -38,6 +38,7 @@ import {
   ICON_STROKE_RANGE,
   MAX_LABEL_LENGTH,
 } from '@/svg/renderer';
+import { getOwnValue } from '@/svg/shared';
 import {
   STACK_GAP_RANGE,
   STACK_GROUP_GAP_RANGE,
@@ -65,6 +66,7 @@ import type {
   NumericRange,
   ServiceDefinition,
   ServiceMetricConfig,
+  ServiceRequest,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -110,9 +112,6 @@ const REDIRECT_VERIFY_PATH_TARGET = 'Host.example/a-B/c_d';
 
 /** Memoized builder schemas keyed by element kind. */
 const BUILDER_SCHEMA_CACHE = new Map<BuilderKind, BuilderSchema>();
-
-/** Memoized public service keys (`undefined` until first used). */
-let publicServiceKeysCache: ReadonlySet<string> | undefined = undefined;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -288,7 +287,7 @@ function buildServiceOwnerHint(service: ServiceDefinition): string | undefined {
   if (owner.isRequired) {
     return 'required';
   }
-  const defaultOwner = owner.resolveDefault?.(DEFAULT_ENV);
+  const defaultOwner = owner.resolveDefault?.();
   return defaultOwner ? `${defaultOwner} (default)` : 'optional';
 }
 
@@ -353,12 +352,12 @@ function deriveRedirectTemplate(
   return template;
 }
 
-/** Build the service preset options of the service badge builder (public presets only). */
+/** Build the service preset options of the service badge builder. */
 function buildServiceOptions(): BuilderServiceOption[] {
   const services: BuilderServiceOption[] = [];
-  for (const [key, service] of listPublicServices()) {
+  for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
     const { owner, target } = service.route;
-    const defaultOwner = owner?.resolveDefault?.(DEFAULT_ENV) || undefined;
+    const defaultOwner = owner?.resolveDefault?.() || undefined;
     const metrics: BuilderServiceMetric[] = [];
     for (const [metric, config] of Object.entries(service.metrics)) {
       metrics.push({
@@ -385,16 +384,20 @@ function buildServiceOptions(): BuilderServiceOption[] {
   return services;
 }
 
-/** Collect (once per isolate) the route keys of every public service preset. */
-function getPublicServiceKeys(): ReadonlySet<string> {
-  if (publicServiceKeysCache === undefined) {
-    const keys = new Set<string>();
-    for (const [key] of listPublicServices()) {
-      keys.add(key);
-    }
-    publicServiceKeysCache = keys;
+/** Check whether a parsed service request matches the service's required/optional owner arity. */
+function isEditableServiceRequest(request: ServiceRequest): boolean {
+  const service = getOwnValue(SERVICES_CONFIG, request.service);
+  if (!service) {
+    return false;
   }
-  return publicServiceKeysCache;
+  const ownerMode = resolveServiceOwnerMode(service);
+  if (ownerMode === 'none') {
+    return request.owner === undefined;
+  }
+  if (ownerMode === 'required') {
+    return request.owner !== undefined;
+  }
+  return true;
 }
 
 /** Build the badge builder fields. */
@@ -853,7 +856,7 @@ export function getBuilderSchema(kind: BuilderKind): BuilderSchema {
 /**
  * Resolve the builder that edits a documented SVG path ("Open in Builder" preview links).
  * @param path   Root-relative path and query string (e.g., `'/badge/pypi/xulbux/v'`).
- * @returns Builder kind and prefilled builder URL, or `undefined` for paths no builder can edit (e.g., owner-restricted services).
+ * @returns Builder kind and prefilled builder URL, or `undefined` for paths no builder can edit.
  */
 export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
   if (!URL.canParse(path, SITE_ORIGIN)) {
@@ -866,7 +869,7 @@ export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
   }
   let kind: BuilderKind | undefined = undefined;
   if (match.kind === 'service') {
-    if (getPublicServiceKeys().has(match.request.service)) {
+    if (isEditableServiceRequest(match.request)) {
       kind = 'service';
     }
   } else {

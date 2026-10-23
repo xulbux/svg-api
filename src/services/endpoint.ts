@@ -17,6 +17,7 @@ import type {
   PayloadProjection,
   ServiceDefinition,
   ServiceMetricConfig,
+  ServiceRequestBuilder,
   ServiceRoute,
   ServiceRouteParams,
   ServiceUrlBuilder,
@@ -31,6 +32,8 @@ type UrlSource = string | ServiceUrlBuilder;
 interface EndpointOptions<P> {
   /** Upstream JSON API URL template or builder. */
   api: UrlSource;
+  /** Optional custom HTTP request builder (e.g., an authenticated GraphQL `POST` query). */
+  buildRequest?: ServiceRequestBuilder;
   /** Top-level JSON object keys whose values are the only parts needed (see `MetricEndpoint.extractKeys`). */
   extractKeys?: readonly string[];
   /** Single top-level JSON object key whose value is the only part needed (see `MetricEndpoint.leadingKey`). */
@@ -182,6 +185,7 @@ export function createEndpoint<P = Record<string, unknown>>(
   return {
     buildApiUrl: toUrlBuilder(options.api),
     buildPageUrl: toUrlBuilder(options.page),
+    buildRequest: options.buildRequest,
     extractKeys,
     leadingKey: options.leadingKey,
     missingStatuses: options.missingStatuses,

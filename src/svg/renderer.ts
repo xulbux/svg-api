@@ -1030,28 +1030,28 @@ function renderDotMarkup(
     return staticCore;
   }
 
-  // 1. Critical / Offline (red, rose): urgent 1.15s outward beacon + core pulse.
+  // [1] Critical / Offline (red, rose); urgent 1.15s outward beacon + core pulse:
   if (CRITICAL_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', 'dur="1.15s"'))}`;
   }
 
-  // 2. Incident / Overloaded (orange): faster 1.45s double-beat outward ripple + subtle core pulse.
+  // [2] Incident / Overloaded (orange); faster 1.45s double-beat outward ripple + subtle core pulse:
   if (INCIDENT_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.45;1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', 'dur="1.45s"'))}`;
   }
 
-  // 3. Degraded / Warning (amber, yellow): 1.8s double-beat outward radar ripple.
+  // [3] Degraded / Warning (amber, yellow); 1.8s double-beat outward radar ripple:
   if (WARNING_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.46;1" dur="1.8s"')}${staticCore}`;
   }
 
-  // 4. Maintenance / Deploying / Syncing (sky, blue, cyan, indigo): active-work breathing core + soft outward halo.
+  // [4] Maintenance / Deploying / Syncing (sky, blue, cyan, indigo); active-work breathing core + soft outward halo:
   if (ACTIVE_WORK_DOT_STATES.has(dot)) {
     const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', 'dur="2s"')}${renderDotAnimate('opacity', '0.75;1;0.75', 'dur="2s"')}`;
     return `${renderDotRipple(position, dotHex, '2.6;5.8', '0.5;0', 'dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1"')}${renderDotCore(position, dotHex, breathing)}`;
   }
 
-  // 5. Standby / Paused / Idle (slate, gray, zinc, neutral, stone): calm 3.4s deep-sleep core breath without radar ring.
+  // [5] Standby / Paused / Idle (slate, gray, zinc, neutral, stone); calm 3.4s deep-sleep core breath without radar ring:
   if (STANDBY_DOT_STATES.has(dot)) {
     return renderDotCore(
       position,
@@ -1060,7 +1060,7 @@ function renderDotMarkup(
     );
   }
 
-  // 6. Operational / Online & Beta / Preview (green, emerald, violet, purple, etc.): calm 2.3s outward spline wave.
+  // [6] Operational / Online & Beta / Preview (green, emerald, violet, purple, etc.); calm 2.3s outward spline wave:
   return `${renderDotRipple(position, dotHex, '2.6;6.8', '0.6;0', 'dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1"')}${staticCore}`;
 }
 

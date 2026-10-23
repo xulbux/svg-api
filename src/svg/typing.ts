@@ -1067,14 +1067,14 @@ function scheduleLineTimeline(options: {
   const startCursorX = roundCoord(lineStartX + offsetX);
   const endCursorX = roundCoord(lineStartX + totalAdvance + offsetX);
 
-  // 1. Pre-typing pause with cursor positioned at the start of the line.
+  // [1] Pre-typing pause with cursor positioned at the start of the line:
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, startCursorX);
   appendTimelinePoint(state.cursorOpacityPoints, state.currentTimeMs, activeOpacity);
   state.currentTimeMs += PRE_LINE_PAUSE_MS;
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, startCursorX);
   appendTimelinePoint(state.cursorOpacityPoints, state.currentTimeMs, activeOpacity);
 
-  // 2. Compute normalized HCI keystroke intervals across the line's characters.
+  // [2] Compute normalized HCI keystroke intervals across the line's characters:
   const chars = glyphs.map((glyph) => glyph.char);
   const weights: number[] = [];
   let weightSum = 0;

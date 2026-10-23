@@ -9,8 +9,8 @@
   "ignorePatterns": [
     ".wrangler/**",
     "dist/**",
-    ".markdownlint.json",
     "*.md",
+    ".markdownlint.json",
     "package.json",
     "wrangler.jsonc"
   ],

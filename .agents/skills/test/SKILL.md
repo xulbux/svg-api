@@ -36,7 +36,7 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 3.  **Descriptive Names:** `describe()` the function or route, `it()` the specific behavior being verified:
     -   ✅ `'returns 302 redirect when Sec-Fetch-Dest is document'`
     -   ❌ `'test redirect'`
-4.  **Both Positive and Negative Assertions:** Test both valid inputs and fallback/error handling (e.g., unknown colors, restricted owners, invalid icons, XML escaping).
+4.  **Both Positive and Negative Assertions:** Test both valid inputs and fallback/error handling (e.g., unknown colors, missing owners, invalid icons, XML escaping).
 5.  **Regression Tests:** Required for every bug fix (see `AGENTS.md` Section 4). Name the original bug in the title (`'… (regression: <bug>)'`). For performance and DoS fixes, assert deterministic bounds (output size, identical output for over-long vs. capped input, number of `fetch` calls) instead of wall-clock timings, which are flaky in CI.
 6.  **Shared Helpers:** Repeated setup goes into hoisted `function` helpers in the file's `INTERNALS` section (e.g., `mockUpstream`, `requestBadge`), not into arrow functions inside `it()` blocks.
 

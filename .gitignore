@@ -1,7 +1,5 @@
 /.wrangler
-/dist
 /node_modules
-/coverage
 
 /.dev.vars*
 /.env*

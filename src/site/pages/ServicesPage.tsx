@@ -2,7 +2,7 @@
  * Services documentation page – Renders the Live Service Badges (`/docs/services`) section (`<ServicesSection />` and `renderServicesSectionHtml`).
  */
 
-import { listPublicServices } from '@/config/services';
+import { SERVICES_CONFIG } from '@/config/services';
 import {
   buildServiceParamRows,
   SERVICE_PRESET_CARDS,
@@ -21,11 +21,11 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="services">` JSX fragment.
  */
 export function ServicesSection(): HtmlFragment {
-  const publicServices = listPublicServices();
+  const serviceCount = Object.keys(SERVICES_CONFIG).length;
   return (
     <section class="doc-section" id="services">
       <SectionHeader
-        description={`Auto-fetched metrics from ${publicServices.length} public registries and forges (no tokens required) with multi-tier edge caching and smart 302 redirects to the upstream page when opened in a browser tab. The route reference below lists every service with its exact route, metrics (aliases in parentheses), and owner defaults.`}
+        description={`Auto-fetched metrics from ${serviceCount} public registries and forges (no signup or API keys required) with multi-tier edge caching and smart 302 redirects to the upstream page when opened in a browser tab. The route reference below lists every service with its exact route, metrics (aliases in parentheses), and owner defaults.`}
         routes={[SERVICE_ROUTE_PATTERN]}
         title="Live Service Badges"
       />

@@ -13,16 +13,9 @@ export interface WaitUntilContext {
   waitUntil: (promise: Promise<unknown>) => void;
 }
 
-/** Cloudflare Worker environment bindings and variables. */
+/** Cloudflare Worker environment bindings and secrets. */
 export interface Env {
-  /** Whether the `/` homepage and `/docs/*` documentation pages are enabled in production. */
-  ALLOW_PREVIEW_IN_PROD?: string;
-  /**
-   * GitHub owner of the restricted `gh` preset: Default owner of 3-segment `/badge/gh/:repo/:metric`
-   * routes and the only allowed owner; When unset or empty, every `gh` badge is restricted.
-   */
-  DEFAULT_GH_OWNER?: string;
-  /** Optional GitHub Personal Access Token for higher upstream API rate limits. */
+  /** Optional GitHub Personal Access Token for authenticated conditional REST and GraphQL requests. */
   GITHUB_TOKEN?: string;
 }
 
@@ -81,6 +74,49 @@ export interface ServiceRouteParams {
 /** Builds an upstream API or browser page URL from validated route params. */
 export type ServiceUrlBuilder = (params: ServiceRouteParams) => string;
 
+/** Custom upstream HTTP transport invoked instead of a direct `fetch()` call. */
+export type UpstreamTransport = (
+  headers: Readonly<Record<string, string>>,
+  signal: AbortSignal
+) => Promise<Response>;
+
+/** Custom upstream HTTP request descriptor (e.g., an authenticated GraphQL `POST` query). */
+export interface UpstreamRequestInit {
+  /** Optional serialized request body (e.g., a GraphQL JSON query). */
+  body?: string;
+  /**
+   * Canonical cache key URL shared across memory, coalescing, and edge caches (defaults to `url`);
+   * Allows several metrics sharing one `POST` query to coalesce under one deterministic key.
+   */
+  cacheKey?: string;
+  /**
+   * Top-level JSON object keys to extract while streaming (overrides `MetricEndpoint.extractKeys`;
+   * `undefined` reads the full response body).
+   */
+  extractKeys?: readonly string[];
+  /** Additional request headers merged on top of the service headers. */
+  headers?: Readonly<Record<string, string>>;
+  /** HTTP method (`'GET'` or `'POST'`; Defaults to `'GET'`). */
+  method?: 'GET' | 'POST';
+  /** Optional custom transport (e.g., micro-batched GraphQL queries or cached short-circuits). */
+  send?: UpstreamTransport;
+  /** Upstream HTTP URL to fetch. */
+  url: string;
+}
+
+/** Reads a fresh positive projected payload from the in-isolate memory cache by cache key URL. */
+export type CachedPayloadReader = (cacheKeyUrl: string) => unknown;
+
+/**
+ * Builds an optional custom upstream HTTP request from validated route params and Worker bindings;
+ * Returning `undefined` falls back to a standard `GET` request to `buildApiUrl(params)`.
+ */
+export type ServiceRequestBuilder = (
+  params: ServiceRouteParams,
+  env: Env,
+  peekCached: CachedPayloadReader
+) => UpstreamRequestInit | undefined;
+
 /**
  * Projects a raw upstream JSON payload into the small value kept in the in-isolate memory cache
  * and the Tier-1 edge cache. Returning `undefined` marks the package or repository as not found.
@@ -102,6 +138,8 @@ export interface MetricEndpoint<P = unknown> {
   buildApiUrl: ServiceUrlBuilder;
   /** Builds the browser redirect destination URL. */
   buildPageUrl: ServiceUrlBuilder;
+  /** Optional custom HTTP request builder (e.g., an authenticated GraphQL `POST` query). */
+  buildRequest?: ServiceRequestBuilder;
   /**
    * Top-level keys of the upstream JSON object whose values are the only parts needed (e.g., PyPI's
    * `['info']` or pub.dev's `['latest']`); Unneeded keys are skipped in `O(1)` memory while
@@ -176,11 +214,8 @@ export interface ServiceOwnerSegment {
   pattern?: RegExp;
   /** Docs placeholder of the owner segment (e.g., `':scope'`, `':vendor'`). */
   placeholder: string;
-  /**
-   * Resolves the owner of routes without an owner segment (optional owners only); Returning
-   * `undefined` or `''` rejects the route as `missing owner`.
-   */
-  resolveDefault?: (env: Env) => string | undefined;
+  /** Resolves the default owner when an optional owner segment is omitted (e.g., `'library'`). */
+  resolveDefault?: () => string;
 }
 
 /** Target path segment(s) of a service preset route. */
@@ -223,11 +258,6 @@ export interface ServiceDocs {
  * canonical metric keys, so alias targets are checked at compile time (see `defineService`).
  */
 export interface ServiceDefinition<M extends string = string> {
-  /**
-   * Returns the allowlist of owners permitted to use this service preset.
-   * Include `'*'` to allow any owner; Services with an allowlist are omitted from the public docs.
-   */
-  allowedOwners?: (env: Env) => readonly string[];
   /** Returns additional upstream request headers (e.g., an `Authorization` token). */
   buildHeaders?: (env: Env) => Readonly<Record<string, string>>;
   /** Documentation metadata for the `/docs/services` reference table. */

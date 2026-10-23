@@ -2,7 +2,7 @@
  * Homepage – Renders the `svg.xul.is` homepage (`/`) with the hero section, dynamically computed feature highlight cards, and unified endpoint showcase cards.
  */
 
-import { listPublicServices } from '@/config/services';
+import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
@@ -138,7 +138,7 @@ function formatCountWord(count: number): string {
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
 function buildHomeFeatures(): FeatureCardItem[] {
   const publicServiceTitles: string[] = [];
-  for (const [, service] of listPublicServices()) {
+  for (const service of Object.values(SERVICES_CONFIG)) {
     publicServiceTitles.push(service.docs.title);
   }
   const iconCounts = getIconSetCounts();

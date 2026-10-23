@@ -532,20 +532,16 @@ describe('documentation pages – navigation & static assets', () => {
 /********************************** Docs drift guards ***********************************/
 
 describe('documentation drift guards', () => {
-  it('lists every metric and metric alias of every public service in the generated services table', () => {
+  it('lists every metric and metric alias of every registered service in the generated services table', () => {
     const servicesHtml = renderDocsHtml('services');
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
-      if (service.allowedOwners) {
-        expect(servicesHtml).not.toContain(`role="rowheader">/badge/${key}/`);
-      } else {
-        const listed = collectListedMetrics(extractServiceRow(servicesHtml, key));
-        expect(listed.metrics.toSorted(), key).toEqual(Object.keys(service.metrics).toSorted());
-        expect(listed.aliases.toSorted(), key).toEqual(
-          listServiceMetricAliases(service)
-            .map(([alias]) => alias)
-            .toSorted()
-        );
-      }
+      const listed = collectListedMetrics(extractServiceRow(servicesHtml, key));
+      expect(listed.metrics.toSorted(), key).toEqual(Object.keys(service.metrics).toSorted());
+      expect(listed.aliases.toSorted(), key).toEqual(
+        listServiceMetricAliases(service)
+          .map(([alias]) => alias)
+          .toSorted()
+      );
     }
   });
 

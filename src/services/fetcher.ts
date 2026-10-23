@@ -1,15 +1,16 @@
 /**
- * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing, an in-isolate memory cache, and Tier-1 JSON edge caching.
+ * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing, an in-isolate memory cache, conditional `ETag` revalidation, `stale-if-error` fallback, and Tier-1 JSON edge caching.
  *
- * Lookup order per upstream URL: in-isolate memory cache -> in-flight request -> Cloudflare edge
- * cache -> upstream `fetch` (with timeout and a response size cap). Only the endpoint projection
- * of a payload is kept in both caches, and failures are cached briefly as small markers. Failures
- * never throw; They resolve to error badges.
+ * Lookup order per upstream key: in-isolate memory cache -> in-flight request -> Cloudflare edge
+ * cache -> conditional or fresh upstream `fetch` (with timeout and a response size cap). Positive
+ * projections stay physically retained at the edge beyond their logical TTL so expired entries can
+ * revalidate via `If-None-Match` (`304 Not Modified`) and survive transient `429` / `5xx` errors.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { FALLBACK_REDIRECT_URL, SITE_HOST, SITE_ORIGIN } from '@/config/site';
+import { FALLBACK_REDIRECT_URL, SITE_ORIGIN } from '@/config/site';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
+import { isJsonObject } from '@/services/endpoint';
 import {
   clearLruCache,
   createLruCache,
@@ -29,6 +30,7 @@ import type {
   ServiceRequest,
   ServiceRouteParams,
   ThemeColorName,
+  UpstreamTransport,
   WaitUntilContext,
 } from '@/types';
 
@@ -38,7 +40,9 @@ import type {
 interface UpstreamOutcome {
   /** Projected payload (only present for successful `2xx` responses other than `202`). */
   data?: unknown;
-  /** Expiry timestamp of the outcome in milliseconds. */
+  /** Upstream `ETag` validator kept for conditional `If-None-Match` revalidation. */
+  etag?: string;
+  /** Logical expiry timestamp of the outcome in milliseconds. */
   expiresAt: number;
   /** Whether the payload could not be projected (rendered as `invalid data`). */
   isInvalidData?: boolean;
@@ -50,14 +54,44 @@ interface UpstreamOutcome {
 
 /** Raw upstream response body before JSON parsing and projection. */
 interface UpstreamBody {
+  /** Extended logical TTL in seconds when the upstream rate-limit bucket is running low. */
+  adaptiveTtl?: number;
   /** Leading value already parsed by the streaming prefix reader (`{ [leadingKey]: value }`). */
   data?: unknown;
+  /** Upstream `ETag` response header value (when within `MAX_ETAG_LENGTH`). */
+  etag?: string;
   /** Seconds until a rate limit resets (`Retry-After` or `x-ratelimit-reset`). */
   retryAfter?: number;
   /** Upstream HTTP status (`504` for timeouts, `502` for network errors, `413` for oversized bodies). */
   status: number;
   /** Complete response body (successful responses without a parsed leading value). */
   text?: string;
+}
+
+/** Result of reading an entry from the Tier-1 JSON edge cache. */
+interface EdgeCacheReadResult {
+  /** Whether the entry's logical TTL (`X-Svg-Api-Expires-At`) is still fresh. */
+  isFresh: boolean;
+  /** Decoded positive or negative outcome. */
+  outcome: UpstreamOutcome;
+}
+
+/** Concrete HTTP request parameters and cache key for one upstream load. */
+interface ResolvedFetchTarget {
+  /** Optional request body (e.g., serialized GraphQL JSON query). */
+  body?: string;
+  /** Deterministic cache key URL for memory, coalescing, and edge caches. */
+  cacheKeyUrl: string;
+  /** Top-level JSON object keys to extract while streaming (`undefined` reads full body). */
+  extractKeys?: readonly string[];
+  /** Request headers before conditional `If-None-Match` injection. */
+  headers: Readonly<Record<string, string>>;
+  /** HTTP method (`'GET'` or `'POST'`). */
+  method: 'GET' | 'POST';
+  /** Optional custom HTTP transport (e.g., micro-batched GraphQL queries). */
+  send?: UpstreamTransport;
+  /** Upstream URL passed to `fetch()`. */
+  url: string;
 }
 
 /** Validated service request with its resolved preset, metric, and route params. */
@@ -175,7 +209,22 @@ const MAX_MEMORY_CACHE_ENTRIES = 256;
 const MAX_MEMORY_CACHE_WEIGHT = 4_000_000;
 
 /** Synthetic origin of Tier-1 JSON edge cache keys (versioned, because entries hold projections). */
-const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/v2/';
+const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/v3/';
+
+/** Physical edge cache retention in seconds (`7 days`) for positive projections, preserving `ETag` and `stale-if-error` data past logical expiry. */
+const POSITIVE_EDGE_RETENTION_SECONDS = 604_800;
+
+/** Remaining-quota fraction (`10%`) at or below which positive logical TTLs stretch toward the rate-limit reset. */
+const LOW_QUOTA_RATIO = 0.1;
+
+/** Maximum adaptive logical TTL in seconds when an upstream rate-limit bucket is running low. */
+const MAX_ADAPTIVE_TTL = 3600;
+
+/** Maximum length in UTF-16 code units of an upstream `ETag` header stored in cache. */
+const MAX_ETAG_LENGTH = 512;
+
+/** Edge cache entry header holding the upstream `ETag` validator. */
+const ETAG_HEADER = 'X-Svg-Api-ETag';
 
 /** Edge cache entry header holding the outcome expiry timestamp in milliseconds. */
 const EXPIRES_AT_HEADER = 'X-Svg-Api-Expires-At';
@@ -188,6 +237,9 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
   Accept: 'application/json',
   'User-Agent': `svg-api/1.0 (${SITE_ORIGIN})`,
 };
+
+/** HTTP status of unchanged conditional upstream responses (`If-None-Match` hit). */
+const NOT_MODIFIED_STATUS = 304;
 
 /** HTTP status of rate-limited upstream responses (GitHub's `403` + `x-ratelimit-remaining: 0` is normalized to it). */
 const RATE_LIMITED_STATUS = 429;
@@ -264,21 +316,6 @@ function buildRouteErrorResult(serviceKey: string, value: string): ResolvedServi
   return buildErrorResult(serviceKey, value, 404, { color: 'amber', icon: 'circle-help' });
 }
 
-/** Check whether `owner` is permitted by the service's owner allowlist. */
-function isOwnerAllowed(service: ServiceDefinition, owner: string, env: Env): boolean {
-  if (!service.allowedOwners) {
-    return true;
-  }
-  const ownerLower = owner.toLowerCase();
-  for (const allowed of service.allowedOwners(env)) {
-    const allowedLower = allowed.toLowerCase();
-    if (allowedLower === '*' || allowedLower === ownerLower) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Check whether `target` is valid for `service`: Between `route.target.minSegments` and
  * `route.target.maxSegments` (both default `1`) `/`-separated segments, each one matching
@@ -313,8 +350,7 @@ function resolveMetricKey(service: ServiceDefinition, metricKey: string): string
 
 /** Validate a service request and resolve its preset, metric, and effective route params. */
 function resolveServiceContext(
-  request: ServiceRequest,
-  env: Env
+  request: ServiceRequest
 ): ResolvedServiceContext | ResolvedServiceMetric {
   const serviceKey = request.service.toLowerCase();
   const service = getOwnValue(SERVICES_CONFIG, serviceKey);
@@ -332,7 +368,7 @@ function resolveServiceContext(
       return buildRouteErrorResult(serviceKey, 'missing owner');
     }
     if (ownerSegment.resolveDefault) {
-      owner = ownerSegment.resolveDefault(env) ?? '';
+      owner = ownerSegment.resolveDefault();
       if (!owner) {
         return buildRouteErrorResult(serviceKey, 'missing owner');
       }
@@ -345,9 +381,6 @@ function resolveServiceContext(
       (ownerSegment?.pattern === undefined || ownerSegment.pattern.test(owner)));
   if (!isOwnerValid || !isTargetValid(service, request.target)) {
     return buildErrorResult(serviceKey, 'invalid name', 400);
-  }
-  if (!isOwnerAllowed(service, owner, env)) {
-    return buildErrorResult(SITE_HOST, 'restricted', 403, { icon: 'lock' });
   }
 
   const metric = getOwnValue(
@@ -385,19 +418,6 @@ function resolveRequestHeaders(
   return headers;
 }
 
-/** Read a non-expired upstream outcome from the in-isolate memory cache (`now` in milliseconds). */
-function readMemoryCache(apiUrl: string, now: number): UpstreamOutcome | undefined {
-  const outcome = readLruCache(MEMORY_CACHE, apiUrl);
-  if (!outcome) {
-    return undefined;
-  }
-  if (outcome.expiresAt <= now) {
-    deleteLruEntry(MEMORY_CACHE, apiUrl);
-    return undefined;
-  }
-  return outcome;
-}
-
 /** Check whether a response signals an exhausted rate limit (`429`, or `403` with `x-ratelimit-remaining: 0` / `ratelimit-remaining: 0`). */
 function isRateLimited(response: Response): boolean {
   if (response.status === RATE_LIMITED_STATUS) {
@@ -433,6 +453,32 @@ function readRetryAfter(response: Response, now: number): number | undefined {
   }
   const resetValue = Number(resetHeader);
   return resetValue < RATE_LIMIT_RESET_EPOCH_THRESHOLD ? resetValue : resetValue - now / 1000;
+}
+
+/**
+ * Compute an extended logical TTL in seconds up to the rate-limit window reset (capped at
+ * `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` (`10%`) remaining.
+ */
+function readAdaptiveTtlSeconds(response: Response, now: number): number | undefined {
+  const rawLimit = (
+    response.headers.get('x-ratelimit-limit') ?? response.headers.get('ratelimit-limit')
+  )?.trim();
+  const rawRemaining = (
+    response.headers.get('x-ratelimit-remaining') ?? response.headers.get('ratelimit-remaining')
+  )?.trim();
+  if (!rawLimit || !rawRemaining || !DIGITS_RX.test(rawLimit) || !DIGITS_RX.test(rawRemaining)) {
+    return undefined;
+  }
+  const limit = Number(rawLimit);
+  const remaining = Number(rawRemaining);
+  if (limit <= 0 || remaining > limit * LOW_QUOTA_RATIO) {
+    return undefined;
+  }
+  const resetSeconds = readRetryAfter(response, now);
+  if (resetSeconds === undefined || resetSeconds <= 0) {
+    return undefined;
+  }
+  return Math.min(MAX_ADAPTIVE_TTL, Math.ceil(resetSeconds));
 }
 
 /** Resolve the cache TTL in seconds of a failed upstream outcome. */
@@ -843,21 +889,82 @@ async function readResponseBody(
   return { status: response.status, text: buffer + decoder.decode() };
 }
 
+/** Read a bounded `ETag` validator from an upstream or cached `Response`. */
+function readBoundedEtag(response: Response, headerName: string): string | undefined {
+  const raw = response.headers.get(headerName)?.trim() ?? '';
+  return raw.length > 0 && raw.length <= MAX_ETAG_LENGTH ? raw : undefined;
+}
+
+/** Read a fresh positive projected payload from the in-isolate memory cache by cache key URL. */
+function peekFreshMemoryCache(cacheKeyUrl: string): unknown {
+  const entry = readLruCache(MEMORY_CACHE, cacheKeyUrl);
+  return entry && entry.status === 200 && entry.expiresAt > Date.now() ? entry.data : undefined;
+}
+
+/** Resolve the concrete HTTP request parameters and cache key of an endpoint call. */
+function resolveFetchTarget(
+  endpoint: MetricEndpoint,
+  params: ServiceRouteParams,
+  serviceHeaders: Readonly<Record<string, string>>,
+  env: Env
+): ResolvedFetchTarget {
+  const custom = endpoint.buildRequest?.(params, env, peekFreshMemoryCache);
+  if (!custom) {
+    const apiUrl = endpoint.buildApiUrl(params);
+    return {
+      cacheKeyUrl: apiUrl,
+      extractKeys: resolveExtractKeys(endpoint),
+      headers: serviceHeaders,
+      method: 'GET',
+      url: apiUrl,
+    };
+  }
+  return {
+    body: custom.body,
+    cacheKeyUrl: custom.cacheKey ?? custom.url,
+    extractKeys: custom.extractKeys,
+    headers: custom.headers ? { ...serviceHeaders, ...custom.headers } : serviceHeaders,
+    method: custom.method ?? 'GET',
+    send: custom.send,
+    url: custom.url,
+  };
+}
+
 /**
- * Fetch an upstream document body, mapping timeouts, network errors, rate limits, oversized bodies,
- * and the endpoint's `missingStatuses` (to `404`) to statuses.
+ * Fetch an upstream document body, mapping conditional `304` hits, timeouts, network errors, rate
+ * limits, oversized bodies, and the endpoint's `missingStatuses` (to `404`) to statuses.
  */
 async function fetchUpstreamBody(
-  apiUrl: string,
-  headers: Readonly<Record<string, string>>,
-  endpoint: MetricEndpoint
+  target: ResolvedFetchTarget,
+  endpoint: MetricEndpoint,
+  ifNoneMatch?: string
 ): Promise<UpstreamBody> {
+  const requestHeaders =
+    ifNoneMatch && target.method === 'GET'
+      ? { ...target.headers, 'If-None-Match': ifNoneMatch }
+      : target.headers;
+  const signal = AbortSignal.timeout(UPSTREAM_TIMEOUT);
   let response: Response | undefined = undefined;
   try {
-    response = await fetch(apiUrl, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT) });
+    response = target.send
+      ? await target.send(requestHeaders, signal)
+      : await fetch(target.url, {
+          body: target.body,
+          headers: requestHeaders,
+          method: target.method,
+          signal,
+        });
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'TimeoutError';
     return { status: isTimeout ? 504 : 502 };
+  }
+  if (response.status === NOT_MODIFIED_STATUS) {
+    cancelBody(response.body);
+    return {
+      adaptiveTtl: readAdaptiveTtlSeconds(response, Date.now()),
+      etag: readBoundedEtag(response, 'etag'),
+      status: NOT_MODIFIED_STATUS,
+    };
   }
   if (!response.ok) {
     cancelBody(response.body);
@@ -866,15 +973,24 @@ async function fetchUpstreamBody(
     }
     return { status: endpoint.missingStatuses?.includes(response.status) ? 404 : response.status };
   }
+  if (response.status === 202) {
+    cancelBody(response.body);
+    return { status: 202 };
+  }
   // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early, so only the streaming byte counter may reject them.
-  const extractKeys = resolveExtractKeys(endpoint);
+  const { extractKeys } = target;
   const contentLength = Number(response.headers.get('content-length') ?? '0');
   if (extractKeys === undefined && contentLength > MAX_UPSTREAM_BYTES) {
     cancelBody(response.body);
     return { status: TOO_LARGE_STATUS };
   }
+  const now = Date.now();
+  const adaptiveTtl = readAdaptiveTtlSeconds(response, now);
+  const etag = readBoundedEtag(response, 'etag');
+  const retryAfter = readRetryAfter(response, now);
   try {
-    return await readResponseBody(response, extractKeys);
+    const body = await readResponseBody(response, extractKeys);
+    return { ...body, adaptiveTtl, etag, retryAfter };
   } catch (error) {
     const isTimeout = error instanceof Error && error.name === 'TimeoutError';
     return { status: isTimeout ? 504 : 502 };
@@ -884,6 +1000,39 @@ async function fetchUpstreamBody(
 /** Build a failed outcome cached for its failure TTL. */
 function buildFailureOutcome(status: number, retryAfter?: number): UpstreamOutcome {
   return { expiresAt: Date.now() + resolveFailureTtl(status, retryAfter) * 1000, size: 0, status };
+}
+
+/**
+ * Classify GraphQL-style error payloads (`{ errors: [...] }`) so rate-limit and server errors on
+ * HTTP `200` responses map to `429` or `502` instead of being misclassified as `404 not found`.
+ */
+function classifyGraphQlErrorStatus(parsed: unknown): number | undefined {
+  if (!isJsonObject(parsed) || !Array.isArray(parsed.errors) || parsed.errors.length === 0) {
+    return undefined;
+  }
+  let hasNotFound = false;
+  for (const entry of parsed.errors) {
+    if (isJsonObject(entry)) {
+      if (entry.type === 'RATE_LIMITED' || entry.code === 'graphql_rate_limit') {
+        return RATE_LIMITED_STATUS;
+      }
+      if (entry.type === 'NOT_FOUND') {
+        hasNotFound = true;
+      }
+    }
+  }
+  if (!isJsonObject(parsed.data)) {
+    return hasNotFound ? 404 : 502;
+  }
+  return undefined;
+}
+
+/** Check whether a failed revalidation should fall back to a previously cached positive projection (`stale-if-error`). */
+function isStaleRescuable(outcome: UpstreamOutcome): boolean {
+  if (outcome.isInvalidData) {
+    return false;
+  }
+  return outcome.status === 202 || outcome.status === RATE_LIMITED_STATUS || outcome.status >= 500;
 }
 
 /** Parse and project a fetched body into an outcome and the serialized projection stored at the edge. */
@@ -905,6 +1054,10 @@ function buildFetchedOutcome(
       return [buildFailureOutcome(502), undefined];
     }
   }
+  const graphQlErrorStatus = classifyGraphQlErrorStatus(parsed);
+  if (graphQlErrorStatus !== undefined) {
+    return [buildFailureOutcome(graphQlErrorStatus, fetched.retryAfter), undefined];
+  }
   let projected: unknown = undefined;
   try {
     projected = endpoint.project ? endpoint.project(parsed) : (parsed ?? {});
@@ -918,36 +1071,103 @@ function buildFetchedOutcome(
   // Keep the verbatim body of unprojected payloads; Serialize projections (always small).
   const edgeBody =
     endpoint.project || fetched.text === undefined ? JSON.stringify(projected) : fetched.text;
+  const effectiveTtl = Math.max(endpoint.ttl, fetched.adaptiveTtl ?? 0);
   const outcome: UpstreamOutcome = {
     data: projected,
-    expiresAt: Date.now() + endpoint.ttl * 1000,
+    etag: fetched.etag,
+    expiresAt: Date.now() + effectiveTtl * 1000,
     size: edgeBody.length,
     status: fetched.status,
   };
   return [outcome, edgeBody];
 }
 
-/** Read an edge cache entry (projected payload or negative marker) into an outcome, or `undefined` when corrupt. */
-async function readEdgeCacheEntry(cached: Response): Promise<UpstreamOutcome | undefined> {
-  const now = Date.now();
-  const expiresAt = Math.max(
-    Number(cached.headers.get(EXPIRES_AT_HEADER) ?? '0') || 0,
-    now + MIN_MEMORY_LIFETIME
-  );
+/** Reconcile a fresh or conditional upstream response with an optional stale positive projection. */
+function resolveRevalidatedOutcome(
+  fetched: UpstreamBody,
+  endpoint: MetricEndpoint,
+  stale: UpstreamOutcome | undefined
+): [outcome: UpstreamOutcome, edgeBody: string | undefined] {
+  if (fetched.status === NOT_MODIFIED_STATUS) {
+    if (!stale || stale.data === undefined) {
+      return [buildFailureOutcome(502), undefined];
+    }
+    const edgeBody = JSON.stringify(stale.data);
+    const effectiveTtl = Math.max(endpoint.ttl, fetched.adaptiveTtl ?? 0);
+    return [
+      {
+        data: stale.data,
+        etag: fetched.etag ?? stale.etag,
+        expiresAt: Date.now() + effectiveTtl * 1000,
+        size: edgeBody.length,
+        status: 200,
+      },
+      edgeBody,
+    ];
+  }
+  const [freshOutcome, freshEdgeBody] = buildFetchedOutcome(fetched, endpoint);
+  if (stale && stale.data !== undefined && isStaleRescuable(freshOutcome)) {
+    const backoffSeconds =
+      freshOutcome.status === 202
+        ? ERROR_CACHE_TTL
+        : resolveFailureTtl(freshOutcome.status, fetched.retryAfter);
+    const edgeBody = JSON.stringify(stale.data);
+    return [
+      {
+        data: stale.data,
+        etag: stale.etag,
+        expiresAt: Date.now() + backoffSeconds * 1000,
+        size: edgeBody.length,
+        status: 200,
+      },
+      edgeBody,
+    ];
+  }
+  return [freshOutcome, freshEdgeBody];
+}
+
+/** Read an edge cache entry (projected payload or negative marker) and whether its logical TTL is fresh. */
+async function readEdgeCacheEntry(
+  cached: Response,
+  now: number
+): Promise<EdgeCacheReadResult | undefined> {
+  const rawExpiresAt = Number(cached.headers.get(EXPIRES_AT_HEADER) ?? '0') || 0;
   const markerStatus = Number(cached.headers.get(STATUS_HEADER) ?? '0');
   if (markerStatus > 0) {
     cancelBody(cached.body);
-    return { expiresAt, size: 0, status: markerStatus };
+    if (rawExpiresAt > 0 && rawExpiresAt <= now) {
+      return undefined;
+    }
+    return {
+      isFresh: true,
+      outcome: {
+        expiresAt: Math.max(rawExpiresAt, now + MIN_MEMORY_LIFETIME),
+        size: 0,
+        status: markerStatus,
+      },
+    };
   }
+  const etag = readBoundedEtag(cached, ETAG_HEADER);
   try {
     const text = await cached.text();
-    return { data: JSON.parse(text) as unknown, expiresAt, size: text.length, status: 200 };
+    const isFresh = rawExpiresAt === 0 || rawExpiresAt > now;
+    const expiresAt = isFresh ? Math.max(rawExpiresAt, now + MIN_MEMORY_LIFETIME) : rawExpiresAt;
+    return {
+      isFresh,
+      outcome: {
+        data: JSON.parse(text) as unknown,
+        etag,
+        expiresAt,
+        size: text.length,
+        status: 200,
+      },
+    };
   } catch {
     return undefined;
   }
 }
 
-/** Write an outcome into the edge cache (projected payload or negative marker), never throwing. */
+/** Write an outcome into the edge cache (projected payload with extended retention or negative marker), never throwing. */
 async function writeEdgeCacheEntry(
   edgeCache: Cache,
   cacheKey: Request,
@@ -959,12 +1179,18 @@ async function writeEdgeCacheEntry(
   if (!isPositive && !isEdgeCacheableFailure(outcome)) {
     return;
   }
-  const maxAge = Math.max(1, Math.ceil((outcome.expiresAt - Date.now()) / 1000));
+  const logicalMaxAge = Math.max(1, Math.ceil((outcome.expiresAt - Date.now()) / 1000));
+  const cacheMaxAge = isPositive
+    ? Math.max(logicalMaxAge, POSITIVE_EDGE_RETENTION_SECONDS)
+    : logicalMaxAge;
   const headers: Record<string, string> = {
-    'Cache-Control': `public, max-age=${maxAge}, s-maxage=${maxAge}`,
+    'Cache-Control': `public, max-age=${cacheMaxAge}, s-maxage=${cacheMaxAge}`,
     'Content-Type': 'application/json',
     [EXPIRES_AT_HEADER]: String(outcome.expiresAt),
   };
+  if (isPositive && outcome.etag) {
+    headers[ETAG_HEADER] = outcome.etag;
+  }
   if (!isPositive) {
     headers[STATUS_HEADER] = String(outcome.status);
   }
@@ -980,34 +1206,36 @@ async function writeEdgeCacheEntry(
   }
 }
 
-/** Load an upstream JSON document through the edge cache, writing projections and negative markers back. */
+/** Load an upstream JSON document through the edge cache, revalidating stale entries via `If-None-Match`. */
 async function loadThroughEdgeCache(
   endpoint: MetricEndpoint,
-  apiUrl: string,
-  headers: Readonly<Record<string, string>>,
+  target: ResolvedFetchTarget,
+  staleMemory: UpstreamOutcome | undefined,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
   const edgeCache = getEdgeCache();
   const cacheKey = edgeCache
-    ? new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(apiUrl)}`)
+    ? new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(target.cacheKeyUrl)}`)
     : undefined;
+  let staleEdge: UpstreamOutcome | undefined = undefined;
 
   if (edgeCache && cacheKey) {
     let cached: Response | undefined = undefined;
     try {
       cached = await edgeCache.match(cacheKey);
     } catch {
-      // A failing edge cache falls through to a fresh upstream fetch.
+      // A failing edge cache falls through to an upstream fetch.
     }
-    const cachedOutcome = cached ? await readEdgeCacheEntry(cached) : undefined;
-    // A corrupt cache entry falls through to a fresh upstream fetch.
-    if (cachedOutcome) {
-      return cachedOutcome;
+    const edgeEntry = cached ? await readEdgeCacheEntry(cached, Date.now()) : undefined;
+    if (edgeEntry?.isFresh) {
+      return edgeEntry.outcome;
     }
+    staleEdge = edgeEntry?.outcome;
   }
 
-  const fetched = await fetchUpstreamBody(apiUrl, headers, endpoint);
-  const [outcome, edgeBody] = buildFetchedOutcome(fetched, endpoint);
+  const stale = staleEdge ?? staleMemory;
+  const fetched = await fetchUpstreamBody(target, endpoint, stale?.etag);
+  const [outcome, edgeBody] = resolveRevalidatedOutcome(fetched, endpoint, stale);
   if (edgeCache && cacheKey) {
     await writeEdgeCacheEntry(edgeCache, cacheKey, outcome, edgeBody, executionCtx);
   }
@@ -1017,32 +1245,40 @@ async function loadThroughEdgeCache(
 /** Load an upstream JSON document via memory cache, in-flight request coalescing, and the edge cache. */
 async function loadUpstreamJson(
   endpoint: MetricEndpoint,
-  apiUrl: string,
-  headers: Readonly<Record<string, string>>,
+  target: ResolvedFetchTarget,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
-  const memoryHit = readMemoryCache(apiUrl, Date.now());
-  if (memoryHit) {
-    return memoryHit;
+  const { cacheKeyUrl } = target;
+  const now = Date.now();
+  const memoryEntry = readLruCache(MEMORY_CACHE, cacheKeyUrl);
+  if (memoryEntry && memoryEntry.expiresAt > now) {
+    return memoryEntry;
+  }
+  const staleMemory =
+    memoryEntry && memoryEntry.status === 200 && memoryEntry.data !== undefined
+      ? memoryEntry
+      : undefined;
+  if (memoryEntry) {
+    deleteLruEntry(MEMORY_CACHE, cacheKeyUrl);
   }
 
-  const pending = IN_FLIGHT_LOADS.get(apiUrl);
+  const pending = IN_FLIGHT_LOADS.get(cacheKeyUrl);
   if (pending) {
     return pending;
   }
 
-  const load = loadThroughEdgeCache(endpoint, apiUrl, headers, executionCtx)
+  const load = loadThroughEdgeCache(endpoint, target, staleMemory, executionCtx)
     // A rejected load must never reject every coalesced request.
     .catch((): UpstreamOutcome => buildFailureOutcome(502))
     .then((outcome) => {
-      writeLruCache(MEMORY_CACHE, apiUrl, outcome);
+      writeLruCache(MEMORY_CACHE, cacheKeyUrl, outcome);
       return outcome;
     });
-  IN_FLIGHT_LOADS.set(apiUrl, load);
+  IN_FLIGHT_LOADS.set(cacheKeyUrl, load);
   try {
     return await load;
   } finally {
-    IN_FLIGHT_LOADS.delete(apiUrl);
+    IN_FLIGHT_LOADS.delete(cacheKeyUrl);
   }
 }
 
@@ -1137,11 +1373,10 @@ export function listServiceMetricAliases(
 /**
  * Resolve the browser redirect destination of a service preset badge without any network access.
  * @param request   Parsed service preset route.
- * @param env       Worker environment bindings.
- * @returns Upstream page URL, or the fallback URL when the request is invalid or restricted.
+ * @returns Upstream page URL, or the fallback URL when the request is invalid.
  */
-export function resolveServiceRedirectUrl(request: ServiceRequest, env: Env): string {
-  const context = resolveServiceContext(request, env);
+export function resolveServiceRedirectUrl(request: ServiceRequest): string {
+  const context = resolveServiceContext(request);
   return isResolvedError(context)
     ? context.result.redirectUrl
     : context.metric.endpoint.buildPageUrl(context.params);
@@ -1151,16 +1386,14 @@ export function resolveServiceRedirectUrl(request: ServiceRequest, env: Env): st
  * Resolve a service preset badge from sample data without any network access (used by the docs previews).
  * Applies the exact same request validation, projection, and metric defaults as `resolveServiceMetric`.
  * @param request   Parsed service preset route.
- * @param env       Worker environment bindings.
  * @param sample    Sample right-hand value text (e.g., `'4.2M/mo'`) or a sample upstream JSON payload run through the projection and transform.
  * @returns Resolved metric result (an error badge when the request is invalid).
  */
 export function resolveServicePreview(
   request: ServiceRequest,
-  env: Env,
   sample: ServicePreviewSample
 ): MetricResult {
-  const context = resolveServiceContext(request, env);
+  const context = resolveServiceContext(request);
   if (isResolvedError(context)) {
     return context.result;
   }
@@ -1187,7 +1420,7 @@ export function resolveServicePreview(
 }
 
 /**
- * Resolve an external service metric with request validation, owner allowlisting, and multi-tier caching.
+ * Resolve an external service metric with request validation, conditional revalidation, and multi-tier caching.
  * @param request        Parsed service preset route.
  * @param env            Cloudflare Worker environment bindings.
  * @param executionCtx   Optional Worker execution context for non-blocking cache writes.
@@ -1198,17 +1431,17 @@ export async function resolveServiceMetric(
   env: Env,
   executionCtx?: WaitUntilContext
 ): Promise<ResolvedServiceMetric> {
-  const context = resolveServiceContext(request, env);
+  const context = resolveServiceContext(request);
   if (isResolvedError(context)) {
     return context;
   }
 
   const { metric, params, service } = context;
   const { endpoint } = metric;
-  const apiUrl = endpoint.buildApiUrl(params);
   const redirectUrl = endpoint.buildPageUrl(params);
-  const headers = resolveRequestHeaders(service, env);
-  const outcome = await loadUpstreamJson(endpoint, apiUrl, headers, executionCtx);
+  const serviceHeaders = resolveRequestHeaders(service, env);
+  const target = resolveFetchTarget(endpoint, params, serviceHeaders, env);
+  const outcome = await loadUpstreamJson(endpoint, target, executionCtx);
   const errorOptions: ErrorResultOptions = { icon: metric.defaultIcon, redirectUrl };
 
   if (outcome.status === 202) {

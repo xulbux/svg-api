@@ -1,5 +1,5 @@
 /**
- * HTTP helpers – Request classification, entity tags, redirect validation, the preview kill switch, and shared response headers of the Worker router.
+ * HTTP helpers – Request classification, entity tags, redirect validation, and shared response headers of the Worker router.
  */
 
 import { hashText } from '@/svg/shared';
@@ -40,9 +40,6 @@ const SVG_BROWSER_MAX_AGE_SECONDS = 60;
 
 /** Window in seconds during which shared caches may serve a stale SVG while revalidating. */
 const SVG_STALE_WHILE_REVALIDATE_SECONDS = 600;
-
-/** Normalized `ALLOW_PREVIEW_IN_PROD` values that disable the homepage, docs, builder, and assets. */
-const DISABLED_FLAG_TOKENS: ReadonlySet<string> = new Set(['0', 'false']);
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -120,15 +117,6 @@ export function sanitizeRedirectUrl(rawUrl: string): string | undefined {
     return undefined;
   }
   return trimmed;
-}
-
-/**
- * Check whether an `ALLOW_PREVIEW_IN_PROD` binding disables the preview pages (`false` or `0`, case-insensitive).
- * @param rawFlag   Raw environment variable value (`undefined` keeps the pages enabled).
- * @returns `true` when the homepage, docs, builder, and assets must not be served.
- */
-export function isPreviewDisabledFlag(rawFlag: string | undefined): boolean {
-  return DISABLED_FLAG_TOKENS.has((rawFlag ?? '').trim().toLowerCase());
 }
 
 /**

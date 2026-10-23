@@ -10,7 +10,6 @@ import {
   buildSvgCacheControl,
   computeEtag,
   isDocumentNavigation,
-  isPreviewDisabledFlag,
   sanitizeRedirectUrl,
 } from '@/routes/http';
 import {
@@ -39,9 +38,6 @@ import type { BadgeSpecialElement, BadgeSpecialMap, Env, ThemeColorName } from '
 import { extractAriaLabel, installEdgeCacheStub, requireDefined, TEST_ENV } from './helpers';
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Worker environment with the preview pages disabled. */
-const DISABLED_ENV: Env = { ALLOW_PREVIEW_IN_PROD: 'false', DEFAULT_GH_OWNER: 'xulbux' };
 
 /** Six valid stack icon slugs forming one group (wider than a `?perline=4` row). */
 const STACK_GROUP = 'c,cpp,cs,rust,py,ts';
@@ -362,15 +358,6 @@ describe('route parameter parsers', () => {
 });
 
 describe('HTTP helpers', () => {
-  it('parses ALLOW_PREVIEW_IN_PROD case-insensitively (false and 0 disable the previews)', () => {
-    for (const flag of ['false', ' FALSE ', '0']) {
-      expect(isPreviewDisabledFlag(flag), flag).toBe(true);
-    }
-    for (const flag of [undefined, '', 'true', '1', 'no']) {
-      expect(isPreviewDisabledFlag(flag), String(flag)).toBe(false);
-    }
-  });
-
   it('accepts only parseable http(s) redirect URLs without control characters', () => {
     expect(sanitizeRedirectUrl(' https://www.npmjs.com/package/hono ')).toBe(
       'https://www.npmjs.com/package/hono'
@@ -400,7 +387,7 @@ describe('HTTP helpers', () => {
 });
 
 describe('Hono routes on svg.xul.is', () => {
-  it('renders homepage HTML at / and redirects when ALLOW_PREVIEW_IN_PROD is false', async () => {
+  it('renders homepage HTML at /', async () => {
     const response = await app.request('/', {}, TEST_ENV);
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('text/html');
@@ -413,10 +400,6 @@ describe('Hono routes on svg.xul.is', () => {
     expect(body).toContain('class="ui-icon');
     expect(body).toMatch(/<link rel="stylesheet" href="\/assets\/site\.css\?v=[\da-z]+" \/>/);
     expect(body).toContain('class="feature-card"');
-
-    const disabledRes = await app.request('/', {}, DISABLED_ENV);
-    expect(disabledRes.status).toBe(302);
-    expect(disabledRes.headers.get('Location')).toBe('https://xul.is');
   });
 
   it('renders the /docs overview, redirects /preview and unknown sections to /docs, and renders /docs/:section pages with syntax-highlighted Markdown code drawers', async () => {
@@ -476,38 +459,6 @@ describe('Hono routes on svg.xul.is', () => {
     for (const [i, response] of builderResponses.entries()) {
       expect(response.status, builderPaths[i]).toBe(200);
       expect(response.headers.get('Content-Type'), builderPaths[i]).toContain('text/html');
-    }
-  });
-
-  it('disables the docs, builder, and asset routes when ALLOW_PREVIEW_IN_PROD is false', async () => {
-    const disabledPaths = [
-      '/docs',
-      '/docs/badges',
-      '/docs/',
-      '/preview',
-      '/builder',
-      '/builder/icon',
-      '/builder/',
-    ];
-    const disabledResponses = await requestAll(disabledPaths, DISABLED_ENV);
-    for (const [i, response] of disabledResponses.entries()) {
-      expect(response.status, disabledPaths[i]).toBe(302);
-      expect(response.headers.get('Location'), disabledPaths[i]).toBe('https://xul.is');
-    }
-    const assetRes = await app.request('/assets/site.css', {}, DISABLED_ENV);
-    expect(assetRes.status).toBe(404);
-  });
-
-  it('treats ALLOW_PREVIEW_IN_PROD case-insensitively (regression: " FALSE " and "0" kept the previews online)', async () => {
-    const flags = [' FALSE ', '0'];
-    const responses = await Promise.all(
-      flags.map((flag) =>
-        app.request('/docs', {}, { ALLOW_PREVIEW_IN_PROD: flag, DEFAULT_GH_OWNER: 'xulbux' })
-      )
-    );
-    for (const [i, response] of responses.entries()) {
-      expect(response.status, flags[i]).toBe(302);
-      expect(response.headers.get('Location'), flags[i]).toBe('https://xul.is');
     }
   });
 
@@ -1086,13 +1037,11 @@ describe('unexpected errors', () => {
 
   it('answers failing HTML routes with a plain-text 500', async () => {
     muteConsoleError();
-    const throwingEnv: Env = {
-      get ALLOW_PREVIEW_IN_PROD(): string {
-        throw new Error('binding unavailable');
-      },
-      DEFAULT_GH_OWNER: 'xulbux',
-    };
-    const response = await app.request('/docs', {}, throwingEnv);
+    const request = new Request('https://svg.xul.is/docs');
+    vi.spyOn(request.headers, 'get').mockImplementation(() => {
+      throw new Error('header read failed');
+    });
+    const response = await app.fetch(request, TEST_ENV);
     expect(response.status).toBe(500);
     expect(response.headers.get('Content-Type')).toContain('text/plain');
     expect(response.headers.get('Cache-Control')).toBe('no-store');
