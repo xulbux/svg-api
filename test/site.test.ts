@@ -622,7 +622,7 @@ describe('documentation drift guards', () => {
     const badgesHtml = renderDocsHtml('badges');
     for (const dotColor of ['green', 'amber', 'orange', 'red', 'sky', 'violet', 'slate']) {
       expect(badgesHtml, dotColor).toContain(
-        `<span class="hl-key">?dot=</span><span class="hl-val">${dotColor}</span>`
+        `<span class="hl-key">&amp;dot=</span><span class="hl-val">${dotColor}</span>`
       );
     }
     expect(badgesHtml).toContain(`(${THEME_COLOR_NAMES.length} colors)`);
@@ -670,34 +670,58 @@ describe('documentation drift guards', () => {
     );
   });
 
-  it('documents quote text/author aliases, layout aliases, ?anim=, and the single-segment route', () => {
+  it('documents quote text/author aliases, layout aliases, ?anim=, and the single-segment route in unified parameter order', () => {
     const quotesHtml = renderDocsHtml('quotes');
-    for (const name of [
-      '?author=',
+    const orderedRows = [
       '?text=<span class="param-sep"> / </span>?quote=',
+      '?author=',
       '?layout=<span class="param-sep"> / </span>?type=',
       '?center=',
+      '?variant=',
+      '?color=',
+      '?size=',
+      '?width=',
       '?anim=',
-    ]) {
-      expect(quotesHtml, name).toContain(`<th scope="row" role="rowheader">${name}</th>`);
+    ];
+    let lastRowIndex = -1;
+    for (const name of orderedRows) {
+      const marker = `<th scope="row" role="rowheader">${name}</th>`;
+      const rowIndex = quotesHtml.indexOf(marker);
+      expect(rowIndex, name).toBeGreaterThan(lastRowIndex);
+      lastRowIndex = rowIndex;
     }
     expect(quotesHtml).toContain('<span class="route-method">GET</span>/quote/:text</code>');
   });
 
-  it('documents typing query aliases, container layouts, cursor shapes, erase modes, and the two-segment route', () => {
+  it('documents typing query aliases, container layouts, cursor shapes, erase modes, and the two-segment route in unified parameter order', () => {
     const typingHtml = renderDocsHtml('typing');
-    for (const name of [
+    const orderedRows = [
       ':prefix<span class="param-sep"> / </span>:lines',
       '?lines=<span class="param-sep"> / </span>?text=',
       '?prefix=<span class="param-sep"> / </span>?prompt=',
       '?layout=<span class="param-sep"> / </span>?frame=<span class="param-sep"> / </span>?type=',
+      '?variant=',
+      '?color=',
       '?font=',
+      '?size=',
+      '?width=',
+      '?align=<span class="param-sep"> / </span>?center=',
+      '?title=',
+      '?icon=',
+      '?hint=',
       '?cursor=',
       '?erase=<span class="param-sep"> / </span>?delete=',
-      '?align=<span class="param-sep"> / </span>?center=',
       '?typo=',
-    ]) {
-      expect(typingHtml, name).toContain(`<th scope="row" role="rowheader">${name}</th>`);
+      '?duration=',
+      '?pause=',
+      '?anim=',
+    ];
+    let lastRowIndex = -1;
+    for (const name of orderedRows) {
+      const marker = `<th scope="row" role="rowheader">${name}</th>`;
+      const rowIndex = typingHtml.indexOf(marker);
+      expect(rowIndex, name).toBeGreaterThan(lastRowIndex);
+      lastRowIndex = rowIndex;
     }
     expect(typingHtml).toContain(
       '<span class="route-method">GET</span>/typing/:prefix/:lines</code>'
@@ -979,7 +1003,13 @@ describe('site stylesheet', () => {
       /@media \(max-width: 640px\) \{\s*\.anchor-link \{\s*opacity: 1;\s*\}\s*\}/
     );
     expect(css).toMatch(
-      /\.scroll-btn \{\s*display: none;\s*inline-size: 24px;\s*block-size: 24px;/
+      /\.scroll-btn \{\s*display: none;\s*inline-size: 18px;\s*block-size: 18px;\s*border-radius: 5px;/
+    );
+    expect(css).toMatch(/\.scroll-btn::before \{[^}]*inset: -3px;/);
+    expect(css).toMatch(/\.scroll-btn-left \{\s*inset-inline-start: 5px;\s*\}/);
+    expect(css).toMatch(/\.scroll-btn-right \{\s*inset-inline-start: 29px;\s*\}/);
+    expect(css).toMatch(
+      /\.typing-line-handle \{[^}]*-webkit-user-select: none;\s*user-select: none;/
     );
     expect(css).toMatch(/\.swatch-dot \{\s*inline-size: 24px;\s*block-size: 24px;/);
     expect(css).toMatch(/\.help-btn::before \{[^}]*inset: -3px;/);

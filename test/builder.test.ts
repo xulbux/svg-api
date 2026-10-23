@@ -3,7 +3,7 @@
  */
 
 import builderScript from '@bundles/builder.client.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { STACK_CATEGORIES } from '@/config/stack';
 import { THEME_COLOR_NAMES } from '@/config/theme';
@@ -59,6 +59,144 @@ import type {
   ServiceRequest,
 } from '@/types';
 import { evaluateClientCore } from './helpers';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Minimal synthetic DOM event payload used to drive `createTypingLinesController` in Node. */
+interface FakeDomEvent {
+  /** Whether the event bubbles up through `parentElement`. */
+  bubbles?: boolean;
+  /** Mouse button index (`0` for primary button). */
+  button?: number;
+  /** Pointer vertical viewport coordinate in pixels. */
+  clientY?: number;
+  /** Pointer identifier. */
+  pointerId?: number;
+  /** Pointer device kind (`'mouse'`, `'touch'`, or `'pen'`). */
+  pointerType?: string;
+  /** No-op `preventDefault` hook. */
+  preventDefault: () => void;
+  /** Originating target node. */
+  target?: FakeDomNode;
+  /** DOM event type name. */
+  type: string;
+}
+
+/** Minimal synthetic DOM element supporting pointer capture, layout geometry, and DOM relocation. */
+interface FakeDomNode {
+  /** Register an event listener for `type`. */
+  addEventListener: (type: string, listener: (event: FakeDomEvent) => void) => void;
+  /** Append child nodes or fragments. */
+  append: (...nodes: (FakeDomFragment | FakeDomNode)[]) => void;
+  /** Attribute map. */
+  attributes: Map<string, string>;
+  /** Insert `nodes` right before this child inside `parentElement`. */
+  before: (...nodes: FakeDomNode[]) => void;
+  /** Ordered child elements. */
+  children: FakeDomNode[];
+  /** Minimal `DOMTokenList` implementation. */
+  classList: {
+    add: (...tokens: string[]) => void;
+    contains: (token: string) => boolean;
+    remove: (...tokens: string[]) => void;
+  };
+  /** Deep or shallow clone preserving prototype and subtree structure. */
+  cloneNode: (isDeep?: boolean) => FakeDomNode;
+  /** Closest ancestor (including self) matching a selector. */
+  closest: (selector: string) => FakeDomNode | undefined;
+  /** `data-*` camelCase dataset record. */
+  dataset: Record<string, string>;
+  /** Disabled flag for button controls. */
+  disabled: boolean;
+  /** Dispatch a synthetic or native `Event` with optional bubbling. */
+  dispatchEvent: (event: Event | FakeDomEvent) => boolean;
+  /** Move `document.activeElement` to this node. */
+  focus: () => void;
+  /** Read an attribute value (`undefined` when unset). */
+  getAttribute: (name: string) => string | undefined;
+  /** Compute layout bounding box from row order inside `#typing-lines-list`. */
+  getBoundingClientRect: () => {
+    bottom: number;
+    height: number;
+    left: number;
+    right: number;
+    top: number;
+    width: number;
+  };
+  /** Check whether `pointerId` is currently captured on this element. */
+  hasPointerCapture: (pointerId: number) => boolean;
+  /** Node kind tag used when cloning. */
+  kind: 'button' | 'div' | 'input';
+  /** Optional atomic `moveBefore` hook (relocates without detaching or dropping pointer capture). */
+  moveBefore?: (movedNode: FakeDomNode, referenceNode: FakeDomNode | undefined) => void;
+  /** Next sibling element (`undefined` at end). */
+  readonly nextElementSibling: FakeDomNode | undefined;
+  /** Next sibling node (`undefined` at end). */
+  readonly nextSibling: FakeDomNode | undefined;
+  /** Element pixel height. */
+  readonly offsetHeight: number;
+  /** Element pixel Y offset relative to `#typing-lines-list`. */
+  readonly offsetTop: number;
+  /** Parent element (`undefined` when detached). */
+  parentElement: FakeDomNode | undefined;
+  /** Input placeholder text. */
+  placeholder: string;
+  /** Previous sibling element (`undefined` at start). */
+  readonly previousElementSibling: FakeDomNode | undefined;
+  /** First descendant matching `selector`. */
+  querySelector: (selector: string) => FakeDomNode | undefined;
+  /** All descendants matching `selector` in tree order. */
+  querySelectorAll: (selector: string) => FakeDomNode[];
+  /** Release pointer capture for `pointerId`. */
+  releasePointerCapture: (pointerId: number) => void;
+  /** Replace all children with `nodes`. */
+  replaceChildren: (...nodes: (FakeDomFragment | FakeDomNode)[]) => void;
+  /** Set an attribute value. */
+  setAttribute: (name: string, value: string) => void;
+  /** Capture `pointerId` on this element. */
+  setPointerCapture: (pointerId: number) => void;
+  /** Set input caret selection offsets. */
+  setSelectionRange: (start: number, end: number) => void;
+  /** Minimal inline style object. */
+  style: { removeProperty: (property: string) => void; translate: string };
+  /** Text content string. */
+  textContent: string;
+  /** Input value string. */
+  value: string;
+}
+
+/** Minimal `DocumentFragment` container used by `syncFromValue`. */
+interface FakeDomFragment {
+  /** Append child elements into the fragment. */
+  append: (...nodes: FakeDomNode[]) => void;
+  /** Buffered child elements. */
+  children: FakeDomNode[];
+  /** Discriminator distinguishing fragments from elements. */
+  isFragment: true;
+}
+
+/** Mounted fake `/builder/typing` line-editor harness and global cleanup callback. */
+interface TypingLinesDomHarness {
+  /** Simulated `document` object tracking `activeElement`. */
+  documentStub: {
+    activeElement: FakeDomNode | undefined;
+    createDocumentFragment: () => FakeDomFragment;
+  };
+  /** Count of fallback (`before` / `append`) relocations of already-mounted rows. */
+  getFallbackMoveCount: () => number;
+  /** Hidden `#field-lines` input element. */
+  hiddenInput: FakeDomNode;
+  /** `#typing-lines-list` row container element. */
+  listElement: FakeDomNode;
+  /** Read the current `.typing-line-index` badge strings in DOM order. */
+  readBadges: () => string[];
+  /** Read the current `.typing-line-input` values in DOM order. */
+  readInputs: () => string[];
+  /** Reset the fallback relocation counter. */
+  resetFallbackMoveCount: () => void;
+  /** Restore stubbed global constructors. */
+  teardown: () => void;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -128,6 +266,400 @@ function renderPrefillRoundTrip(
   const parsed = core.parsePath(schema, path);
   expect(parsed, path).toBeDefined();
   return [renderSvgPath(path), renderSvgPath(core.buildPath(schema, parsed ?? {}).path)];
+}
+
+/** Match the subset of selectors queried by `createTypingLinesController`. */
+function matchesTypingSelector(node: FakeDomNode, selector: string): boolean {
+  if (selector === '[data-typing-line-row]') {
+    return Object.hasOwn(node.dataset, 'typingLineRow');
+  }
+  if (selector === '[data-typing-line-handle]') {
+    return Object.hasOwn(node.dataset, 'typingLineHandle');
+  }
+  if (selector === '[data-typing-line-remove]') {
+    return Object.hasOwn(node.dataset, 'typingLineRemove');
+  }
+  if (selector.startsWith('.')) {
+    return node.classList.contains(selector.slice(1));
+  }
+  return false;
+}
+
+/** No-op callback for synthetic DOM `preventDefault` and prototype constructors. */
+function noopDomAction(): undefined {
+  return undefined;
+}
+
+/** Prototype constructor for simulated `Element` instances. */
+function FakeElement(): undefined {
+  return undefined;
+}
+
+/** Prototype constructor for simulated `HTMLElement` instances. */
+function FakeHTMLElement(): undefined {
+  return undefined;
+}
+FakeHTMLElement.prototype = Object.create(FakeElement.prototype);
+
+/** Prototype constructor for simulated `HTMLInputElement` instances. */
+function FakeHTMLInputElement(): undefined {
+  return undefined;
+}
+FakeHTMLInputElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Prototype constructor for simulated `HTMLButtonElement` instances. */
+function FakeHTMLButtonElement(): undefined {
+  return undefined;
+}
+FakeHTMLButtonElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Build and mount a minimal W3C-pointer-capture-compliant DOM harness for `createTypingLinesController`. */
+function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness {
+  const documentStub = {
+    activeElement: undefined as FakeDomNode | undefined,
+    createDocumentFragment(): FakeDomFragment {
+      const children: FakeDomNode[] = [];
+      return {
+        append(...nodes: FakeDomNode[]) {
+          children.push(...nodes);
+        },
+        children,
+        isFragment: true,
+      };
+    },
+  };
+
+  let fallbackMoveCount = 0;
+  const capturedByNode = new WeakMap<FakeDomNode, Set<number>>();
+
+  function getCapturedSet(node: FakeDomNode): Set<number> {
+    let set = capturedByNode.get(node);
+    if (!set) {
+      set = new Set<number>();
+      capturedByNode.set(node, set);
+    }
+    return set;
+  }
+
+  // Per the W3C Pointer Events spec, detaching a node releases any pointer capture held inside its subtree:
+  function releaseCaptureInDetachedSubtree(subtreeRoot: FakeDomNode): void {
+    const captured = capturedByNode.get(subtreeRoot);
+    if (captured && captured.size > 0) {
+      captured.clear();
+      subtreeRoot.dispatchEvent({
+        bubbles: false,
+        preventDefault: noopDomAction,
+        target: subtreeRoot,
+        type: 'lostpointercapture',
+      });
+    }
+    for (const child of subtreeRoot.children) {
+      releaseCaptureInDetachedSubtree(child);
+    }
+  }
+
+  function relocateChild(
+    parent: FakeDomNode,
+    movedNode: FakeDomNode,
+    referenceNode: FakeDomNode | undefined,
+    isAtomicMove: boolean
+  ): FakeDomNode {
+    const oldParent = movedNode.parentElement;
+    if (oldParent) {
+      const existingIndex = oldParent.children.indexOf(movedNode);
+      if (existingIndex !== -1) {
+        oldParent.children.splice(existingIndex, 1);
+      }
+      movedNode.parentElement = undefined;
+      if (!isAtomicMove) {
+        fallbackMoveCount += 1;
+        releaseCaptureInDetachedSubtree(movedNode);
+      }
+    }
+    movedNode.parentElement = parent;
+    if (!referenceNode) {
+      parent.children.push(movedNode);
+    } else {
+      const refIndex = parent.children.indexOf(referenceNode);
+      if (refIndex === -1) {
+        parent.children.push(movedNode);
+      } else {
+        parent.children.splice(refIndex, 0, movedNode);
+      }
+    }
+    return movedNode;
+  }
+
+  const listenerStore = new WeakMap<FakeDomNode, Map<string, ((event: FakeDomEvent) => void)[]>>();
+  function listenersByTypeOf(node: FakeDomNode, type: string): ((event: FakeDomEvent) => void)[] {
+    return listenerStore.get(node)?.get(type) ?? [];
+  }
+
+  function createFakeNode(kind: 'button' | 'div' | 'input'): FakeDomNode {
+    let prototype = FakeHTMLElement.prototype as object;
+    if (kind === 'button') {
+      prototype = FakeHTMLButtonElement.prototype as object;
+    } else if (kind === 'input') {
+      prototype = FakeHTMLInputElement.prototype as object;
+    }
+    const node = Object.create(prototype) as FakeDomNode;
+    const classSet = new Set<string>();
+    const listenersByType = new Map<string, ((event: FakeDomEvent) => void)[]>();
+    const rowHeight = 36;
+    const rowGap = 6;
+    const listTop = 100;
+
+    node.attributes = new Map<string, string>();
+    node.children = [];
+    node.dataset = {};
+    node.disabled = false;
+    node.kind = kind;
+    node.parentElement = undefined;
+    node.placeholder = '';
+    node.style = {
+      removeProperty(property: string) {
+        if (property === 'translate') {
+          node.style.translate = '';
+        }
+      },
+      translate: '',
+    };
+    node.textContent = '';
+    node.value = '';
+    node.classList = {
+      add(...tokens: string[]) {
+        for (const token of tokens) {
+          classSet.add(token);
+        }
+      },
+      contains: (token: string) => classSet.has(token),
+      remove(...tokens: string[]) {
+        for (const token of tokens) {
+          classSet.delete(token);
+        }
+      },
+    };
+    node.addEventListener = (type, listener) => {
+      const list = listenersByType.get(type) ?? [];
+      list.push(listener);
+      listenersByType.set(type, list);
+    };
+    node.dispatchEvent = (rawEvent) => {
+      const eventPayload: FakeDomEvent =
+        rawEvent instanceof Event
+          ? {
+              bubbles: rawEvent.bubbles,
+              preventDefault: () => rawEvent.preventDefault(),
+              target: node,
+              type: rawEvent.type,
+            }
+          : { ...rawEvent, target: rawEvent.target ?? node };
+      let current: FakeDomNode | undefined = node;
+      while (current) {
+        for (const listener of listenersByTypeOf(current, eventPayload.type)) {
+          listener(eventPayload);
+        }
+        current = eventPayload.bubbles ? current.parentElement : undefined;
+      }
+      return true;
+    };
+    node.focus = () => {
+      documentStub.activeElement = node;
+    };
+    node.getAttribute = (name) => node.attributes.get(name);
+    node.setAttribute = (name, value) => {
+      node.attributes.set(name, value);
+    };
+    node.setSelectionRange = noopDomAction;
+    node.setPointerCapture = (pointerId) => {
+      getCapturedSet(node).add(pointerId);
+    };
+    node.hasPointerCapture = (pointerId) => getCapturedSet(node).has(pointerId);
+    node.releasePointerCapture = (pointerId) => {
+      getCapturedSet(node).delete(pointerId);
+    };
+    node.append = (...items) => {
+      for (const item of items) {
+        if ('isFragment' in item) {
+          for (const child of item.children) {
+            relocateChild(node, child, undefined, false);
+          }
+        } else {
+          relocateChild(node, item, undefined, false);
+        }
+      }
+    };
+    node.before = (...items) => {
+      const parent = node.parentElement;
+      if (!parent) {
+        return;
+      }
+      for (const item of items) {
+        relocateChild(parent, item, node, false);
+      }
+    };
+    node.replaceChildren = (...items) => {
+      for (const existing of node.children) {
+        existing.parentElement = undefined;
+        releaseCaptureInDetachedSubtree(existing);
+      }
+      node.children = [];
+      node.append(...items);
+    };
+    node.closest = (selector) => {
+      let cursor: FakeDomNode | undefined = node;
+      while (cursor) {
+        if (matchesTypingSelector(cursor, selector)) {
+          return cursor;
+        }
+        cursor = cursor.parentElement;
+      }
+      return undefined;
+    };
+    node.querySelectorAll = (selector) => {
+      const matches: FakeDomNode[] = [];
+      function walk(parent: FakeDomNode): void {
+        for (const child of parent.children) {
+          if (matchesTypingSelector(child, selector)) {
+            matches.push(child);
+          }
+          walk(child);
+        }
+      }
+      walk(node);
+      return matches;
+    };
+    node.querySelector = (selector) => node.querySelectorAll(selector)[0];
+    node.cloneNode = (isDeep = false) => {
+      const cloned = createFakeNode(node.kind);
+      for (const [attrName, attrVal] of node.attributes) {
+        cloned.attributes.set(attrName, attrVal);
+      }
+      for (const token of classSet) {
+        cloned.classList.add(token);
+      }
+      Object.assign(cloned.dataset, node.dataset);
+      cloned.disabled = node.disabled;
+      cloned.placeholder = node.placeholder;
+      cloned.style.translate = node.style.translate;
+      cloned.textContent = node.textContent;
+      cloned.value = node.value;
+      if (isDeep) {
+        for (const child of node.children) {
+          cloned.append(child.cloneNode(true));
+        }
+      }
+      return cloned;
+    };
+    node.getBoundingClientRect = () => {
+      if (Object.hasOwn(node.dataset, 'typingLineRow')) {
+        const index = node.parentElement
+          ? Math.max(0, node.parentElement.children.indexOf(node))
+          : 0;
+        const top = listTop + index * (rowHeight + rowGap);
+        return { bottom: top + rowHeight, height: rowHeight, left: 0, right: 320, top, width: 320 };
+      }
+      const count = node.children.length;
+      const height = count > 0 ? count * rowHeight + (count - 1) * rowGap : 0;
+      return { bottom: listTop + height, height, left: 0, right: 320, top: listTop, width: 320 };
+    };
+
+    Object.defineProperties(node, {
+      nextElementSibling: {
+        get(): FakeDomNode | undefined {
+          if (!node.parentElement) {
+            return undefined;
+          }
+          const idx = node.parentElement.children.indexOf(node);
+          return idx !== -1 ? node.parentElement.children[idx + 1] : undefined;
+        },
+      },
+      nextSibling: {
+        get(): FakeDomNode | undefined {
+          return node.nextElementSibling;
+        },
+      },
+      offsetHeight: {
+        get(): number {
+          return node.getBoundingClientRect().height;
+        },
+      },
+      offsetTop: {
+        get(): number {
+          if (!Object.hasOwn(node.dataset, 'typingLineRow') || !node.parentElement) {
+            return 0;
+          }
+          return Math.max(0, node.parentElement.children.indexOf(node)) * (rowHeight + rowGap);
+        },
+      },
+      previousElementSibling: {
+        get(): FakeDomNode | undefined {
+          if (!node.parentElement) {
+            return undefined;
+          }
+          const idx = node.parentElement.children.indexOf(node);
+          return idx > 0 ? node.parentElement.children[idx - 1] : undefined;
+        },
+      },
+    });
+
+    listenerStore.set(node, listenersByType);
+    return node;
+  }
+
+  vi.stubGlobal('Element', FakeElement);
+  vi.stubGlobal('HTMLElement', FakeHTMLElement);
+  vi.stubGlobal('HTMLInputElement', FakeHTMLInputElement);
+  vi.stubGlobal('HTMLButtonElement', FakeHTMLButtonElement);
+  vi.stubGlobal('document', documentStub);
+
+  const editorElement = createFakeNode('div');
+  editorElement.dataset.maxLines = '12';
+  editorElement.dataset.maxLength = '80';
+  const hiddenInput = createFakeNode('input');
+  const addButton = createFakeNode('button');
+  const listElement = createFakeNode('div');
+
+  const templateRow = createFakeNode('div');
+  templateRow.dataset.typingLineRow = '';
+  const templateHandle = createFakeNode('button');
+  templateHandle.dataset.typingLineHandle = '';
+  const templateIndexBadge = createFakeNode('div');
+  templateIndexBadge.classList.add('typing-line-index');
+  templateHandle.append(templateIndexBadge);
+  const templateInput = createFakeNode('input');
+  templateInput.classList.add('typing-line-input');
+  const templateRemove = createFakeNode('button');
+  templateRemove.dataset.typingLineRemove = '';
+  templateRow.append(templateHandle, templateInput, templateRemove);
+  listElement.append(templateRow);
+
+  const controller = core.createTypingLinesController({
+    addButton,
+    editorElement,
+    hiddenInput,
+    listElement,
+  });
+  controller.syncFromValue(initialLines);
+  controller.bind();
+  fallbackMoveCount = 0;
+
+  return {
+    documentStub,
+    getFallbackMoveCount: () => fallbackMoveCount,
+    hiddenInput,
+    listElement,
+    readBadges: () =>
+      listElement.querySelectorAll('.typing-line-index').map((badge) => badge.textContent),
+    readInputs: () =>
+      listElement.querySelectorAll('.typing-line-input').map((input) => input.value),
+    resetFallbackMoveCount() {
+      fallbackMoveCount = 0;
+    },
+    teardown() {
+      vi.unstubAllGlobals();
+    },
+  };
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -328,6 +860,168 @@ describe('builder schemas', () => {
       }
     }
     expect(templateCount).toBeGreaterThan(metricCount / 2);
+  });
+
+  it('orders builder fields and emitted query parameters consistently from content to appearance, geometry, chrome, and motion', () => {
+    const expectedFieldIds: Readonly<Record<BuilderKind, readonly string[]>> = {
+      badge: ['label', 'value', 'variant', 'color', 'icon', 'dot', 'special', 'anim'],
+      button: ['label', 'value', 'variant', 'color', 'size', 'icon', 'anim'],
+      icon: ['icon', 'color', 'size', 'stroke', 'anim'],
+      quote: ['text', 'author', 'layout', 'variant', 'color', 'size', 'width', 'anim'],
+      service: [
+        'service',
+        'owner',
+        'target',
+        'metric',
+        'label',
+        'variant',
+        'color',
+        'icon',
+        'dot',
+        'special',
+        'anim',
+      ],
+      stack: ['groups', 'variant', 'color', 'perline', 'size', 'gap', 'groupgap', 'anim'],
+      typing: [
+        'lines',
+        'prefix',
+        'layout',
+        'variant',
+        'color',
+        'font',
+        'size',
+        'width',
+        'align',
+        'title',
+        'icon',
+        'hint',
+        'cursor',
+        'erase',
+        'typo',
+        'duration',
+        'pause',
+        'anim',
+      ],
+    };
+
+    for (const kind of BUILDER_KINDS) {
+      const schema = getBuilderSchema(kind);
+      expect(
+        schema.fields.map((field) => field.id),
+        kind
+      ).toEqual(expectedFieldIds[kind]);
+    }
+
+    // Verify that `buildPath` emits query parameters in the exact same order as `schema.fields`:
+    const nonDefaultStates: Readonly<Record<BuilderKind, BuilderState>> = {
+      badge: {
+        anim: 'sheen',
+        color: 'emerald',
+        dot: 'green',
+        icon: 'sparkles',
+        label: 'Build',
+        special: 'bar:80',
+        value: 'Passing',
+        variant: '2',
+      },
+      button: {
+        anim: 'sheen',
+        color: 'emerald',
+        icon: 'rocket',
+        label: 'Deploy',
+        size: 'lg',
+        value: 'v2',
+        variant: '2',
+      },
+      icon: { anim: 'spin', color: 'emerald', icon: 'refresh-cw', size: '32', stroke: '1.5' },
+      quote: {
+        anim: 'sheen',
+        author: 'Ada',
+        color: 'emerald',
+        layout: 'vertical',
+        size: 'xl',
+        text: 'Code is poetry.',
+        variant: '1',
+        width: '420',
+      },
+      service: {
+        anim: 'sheen',
+        color: 'emerald',
+        dot: 'green',
+        icon: 'package',
+        label: 'pkg',
+        metric: 'v',
+        service: 'npm',
+        special: 'bar:80',
+        target: 'hono',
+        variant: '2',
+      },
+      stack: {
+        anim: 'wave',
+        color: 'emerald',
+        gap: '12',
+        groupgap: '32',
+        groups: 'ts,rust|go,py',
+        perline: '2',
+        size: '48',
+        variant: '1',
+      },
+      typing: {
+        align: 'center',
+        anim: 'none',
+        color: 'emerald',
+        cursor: 'block',
+        duration: '1800',
+        erase: 'select',
+        font: 'mono',
+        hint: 'utf8',
+        icon: 'terminal',
+        layout: 'prompt',
+        lines: 'First;Second',
+        pause: '900',
+        prefix: '$',
+        size: 'lg',
+        typo: 'true',
+        variant: '1',
+        width: '520',
+      },
+    };
+
+    for (const kind of BUILDER_KINDS) {
+      const schema = getBuilderSchema(kind);
+      const { path } = core.buildPath(schema, nonDefaultStates[kind]);
+      const emittedKeys = [...new URL(path, schema.origin).searchParams.keys()];
+      const expectedKeys = schema.fields
+        .filter((field) => field.param !== undefined && (kind !== 'typing' || field.id !== 'title'))
+        .map((field) => field.param ?? '');
+      expect(emittedKeys, `${kind}: ${path}`).toEqual(expectedKeys);
+    }
+
+    // Also verify `title` sits between `align` and `icon` when emitted on a titled typing layout (`window`):
+    const typingSchema = getBuilderSchema('typing');
+    const titledTypingPath = core.buildPath(typingSchema, {
+      ...nonDefaultStates.typing,
+      font: 'sans',
+      layout: 'window',
+      title: 'zsh',
+    }).path;
+    expect([...new URL(titledTypingPath, typingSchema.origin).searchParams.keys()]).toEqual([
+      'variant',
+      'color',
+      'font',
+      'size',
+      'width',
+      'align',
+      'title',
+      'icon',
+      'hint',
+      'cursor',
+      'erase',
+      'typo',
+      'duration',
+      'pause',
+      'anim',
+    ]);
   });
 });
 
@@ -1428,6 +2122,139 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(builderScript).toContain('typingLinesController.syncFromValue(value)');
     expect(builderScript).toContain('typingLinesController.readValue()');
     expect(builderScript).toContain('setPointerCapture');
+  });
+
+  it('reorders a typing line across multiple positions in one continuous pointer drag without losing capture (regression: detaching the captured handle ended the drag after one swap)', () => {
+    const initialLines = [
+      'Full-Stack Developer',
+      'Design-Driven Engineering',
+      'Edge Systems Architect',
+      'Some Line 4',
+      'Some Line 5',
+      'Some Line 6',
+      'Some Line 7',
+      'Some Line 8',
+    ].join(';');
+    const harness = mountTypingLinesDomHarness(initialLines);
+    try {
+      const eighthHandle = harness.listElement.querySelectorAll('[data-typing-line-handle]').at(7);
+      expect(eighthHandle).toBeDefined();
+      if (!eighthHandle) {
+        return;
+      }
+
+      // [1] Fallback `before` / `append` path (`moveBefore` absent); detaching row 8 on swap 1 must NOT drop pointer capture on `listElement`:
+      eighthHandle.dispatchEvent({
+        bubbles: true,
+        button: 0,
+        clientY: 412,
+        pointerId: 1,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: eighthHandle,
+        type: 'pointerdown',
+      });
+      expect(harness.listElement.hasPointerCapture(1)).toBe(true);
+      expect(harness.listElement.classList.contains('is-reordering')).toBe(true);
+
+      for (const pointerY of [365, 320, 275, 230, 190, 155]) {
+        harness.listElement.dispatchEvent({
+          bubbles: true,
+          clientY: pointerY,
+          pointerId: 1,
+          pointerType: 'mouse',
+          preventDefault: noopDomAction,
+          target: harness.listElement,
+          type: 'pointermove',
+        });
+        expect(harness.listElement.hasPointerCapture(1), `clientY=${pointerY}`).toBe(true);
+      }
+
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 155,
+        pointerId: 1,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointerup',
+      });
+
+      expect(harness.getFallbackMoveCount()).toBe(6);
+      expect(harness.listElement.hasPointerCapture(1)).toBe(false);
+      expect(harness.listElement.classList.contains('is-reordering')).toBe(false);
+      expect(harness.documentStub.activeElement).toBe(eighthHandle);
+      expect(harness.readBadges()).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+      expect(harness.readInputs()).toEqual([
+        'Full-Stack Developer',
+        'Some Line 8',
+        'Design-Driven Engineering',
+        'Edge Systems Architect',
+        'Some Line 4',
+        'Some Line 5',
+        'Some Line 6',
+        'Some Line 7',
+      ]);
+      expect(harness.hiddenInput.value).toBe(
+        'Full-Stack Developer;Some Line 8;Design-Driven Engineering;Edge Systems Architect;Some Line 4;Some Line 5;Some Line 6;Some Line 7'
+      );
+
+      // [2] Atomic `moveBefore` path when supported by the browser; relocates across 4 slots without fallback detaches:
+      harness.resetFallbackMoveCount();
+      let moveBeforeCallCount = 0;
+      harness.listElement.moveBefore = (movedNode, referenceNode) => {
+        moveBeforeCallCount += 1;
+        const oldIndex = harness.listElement.children.indexOf(movedNode);
+        if (oldIndex !== -1) {
+          harness.listElement.children.splice(oldIndex, 1);
+        }
+        if (!referenceNode) {
+          harness.listElement.children.push(movedNode);
+        } else {
+          const refIndex = harness.listElement.children.indexOf(referenceNode);
+          harness.listElement.children.splice(
+            refIndex === -1 ? harness.listElement.children.length : refIndex,
+            0,
+            movedNode
+          );
+        }
+      };
+
+      eighthHandle.dispatchEvent({
+        bubbles: true,
+        button: 0,
+        clientY: 160,
+        pointerId: 2,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: eighthHandle,
+        type: 'pointerdown',
+      });
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 332,
+        pointerId: 2,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointermove',
+      });
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 332,
+        pointerId: 2,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointerup',
+      });
+
+      expect(moveBeforeCallCount).toBe(4);
+      expect(harness.getFallbackMoveCount()).toBe(0);
+      expect(harness.readInputs().at(5)).toBe('Some Line 8');
+    } finally {
+      harness.teardown();
+    }
   });
 
   it('links every docs preview to a builder whose prefill renders the identical SVG', () => {

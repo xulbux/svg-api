@@ -605,6 +605,14 @@ const STANDBY_DOT_STATES: ReadonlySet<DotState> = new Set([
   'zinc',
 ]);
 
+/** Symmetric 4-segment sine-wave SMIL timing shared by continuous `'breathe'` and `'float'` icon motions. */
+const SINE_WAVE_TIMING =
+  'keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="3.4s"';
+
+/** Symmetric 2-segment ease-in-out SMIL spline attributes for breathing status dots and soft widget pulses. */
+const SMOOTH_BREATH_SPLINES =
+  'calcMode="spline" keyTimes="0;0.5;1" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"';
+
 /** Lazily built bar shimmer `<linearGradient>` definitions (one per surface kind). */
 const BAR_SHIMMER_DEFS: BarShimmerDefCache = {};
 
@@ -863,27 +871,27 @@ function wrapIconWithAnimation(
     case 'shake': {
       return wrapCenteredAnimation(
         innerSvg,
-        '<animateTransform attributeName="transform" type="scale" values="1;1;1.15;1.15;1.15;1.15;1;1" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" dur="3.2s" repeatCount="indefinite" /><animateTransform attributeName="transform" type="rotate" values="0;0;-11;11;-9;7;0;0" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" dur="3.2s" additive="sum" repeatCount="indefinite" />'
+        '<animateTransform attributeName="transform" type="scale" values="1;1;1.15;1.15;1.15;1.15;1;1" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" calcMode="spline" keySplines="0 0 1 1;0.34 0 0.2 1;0 0 1 1;0 0 1 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="3.2s" repeatCount="indefinite" /><animateTransform attributeName="transform" type="rotate" values="0;0;-11;11;-9;7;0;0" keyTimes="0;0.62;0.70;0.76;0.82;0.88;0.95;1" calcMode="spline" keySplines="0 0 1 1;0.36 0 0.24 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.36 0 0.2 1;0 0 1 1" dur="3.2s" additive="sum" repeatCount="indefinite" />'
       );
     }
     case 'nudge': {
       const [deltaX, deltaY] = getOwnValue(AUTO_NUDGE_VECTORS, iconKey) ?? DEFAULT_NUDGE_VECTOR;
-      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 0;${deltaX} ${deltaY};0 0;0 0" keyTimes="0;0.65;0.78;0.92;1" dur="2.8s" repeatCount="indefinite" />${innerSvg}</g>`;
+      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 0;${deltaX} ${deltaY};0 0;0 0" keyTimes="0;0.62;0.76;0.92;1" calcMode="spline" keySplines="0 0 1 1;0.34 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="2.8s" repeatCount="indefinite" />${innerSvg}</g>`;
     }
     case 'pulse': {
       return wrapCenteredAnimation(
         innerSvg,
-        '<animateTransform attributeName="transform" type="scale" values="1;1;1.18;0.96;1.14;1;1" keyTimes="0;0.58;0.68;0.76;0.84;0.94;1" dur="2.6s" repeatCount="indefinite" />'
+        '<animateTransform attributeName="transform" type="scale" values="1;1;1.18;0.96;1.14;1;1" keyTimes="0;0.56;0.67;0.76;0.85;0.96;1" calcMode="spline" keySplines="0 0 1 1;0.34 0 0.22 1;0.42 0 0.58 1;0.42 0 0.58 1;0.4 0 0.2 1;0 0 1 1" dur="2.6s" repeatCount="indefinite" />'
       );
     }
     case 'breathe': {
       return wrapCenteredAnimation(
         innerSvg,
-        '<animateTransform attributeName="transform" type="scale" values="1;1.14;1;0.92;1" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="3.4s" repeatCount="indefinite" />'
+        `<animateTransform attributeName="transform" type="scale" values="1;1.11;1;0.89;1" ${SINE_WAVE_TIMING} repeatCount="indefinite" />`
       );
     }
     case 'float': {
-      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="3.4s" repeatCount="indefinite" />${innerSvg}</g>`;
+      return `<g><animateTransform attributeName="transform" type="translate" values="0 0;0 -1.5;0 0;0 1.5;0 0" ${SINE_WAVE_TIMING} repeatCount="indefinite" />${innerSvg}</g>`;
     }
     default: {
       return innerSvg;
@@ -1029,22 +1037,22 @@ function renderDotMarkup(
 
   // [1] Critical / offline state; urgent outward beacon and core pulse:
   if (CRITICAL_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', 'dur="1.15s"'))}`;
+    return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', `dur="1.15s" ${SMOOTH_BREATH_SPLINES}`))}`;
   }
 
   // [2] Incident / overloaded state; fast double-beat outward ripple and core pulse:
   if (INCIDENT_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.45;1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', 'dur="1.45s"'))}`;
+    return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.441;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', `dur="1.45s" ${SMOOTH_BREATH_SPLINES}`))}`;
   }
 
   // [3] Degraded / warning state; double-beat outward radar ripple:
   if (WARNING_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.46;1" dur="1.8s"')}${staticCore}`;
+    return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.451;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.8s"')}${staticCore}`;
   }
 
   // [4] Active work / deploying state; breathing core and soft outward halo:
   if (ACTIVE_WORK_DOT_STATES.has(dot)) {
-    const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', 'dur="2s"')}${renderDotAnimate('opacity', '0.75;1;0.75', 'dur="2s"')}`;
+    const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}${renderDotAnimate('opacity', '0.75;1;0.75', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}`;
     return `${renderDotRipple(position, dotHex, '2.6;5.8', '0.5;0', 'dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1"')}${renderDotCore(position, dotHex, breathing)}`;
   }
 
@@ -1053,12 +1061,17 @@ function renderDotMarkup(
     return renderDotCore(
       position,
       dotHex,
-      renderDotAnimate('opacity', '0.9;0.32;0.9', 'dur="3.4s"')
+      renderDotAnimate('opacity', '0.9;0.32;0.9', `dur="3.4s" ${SMOOTH_BREATH_SPLINES}`)
     );
   }
 
   // [6] Operational / default state; calm outward spline wave:
   return `${renderDotRipple(position, dotHex, '2.6;6.8', '0.6;0', 'dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1"')}${staticCore}`;
+}
+
+/** Render a smooth ease-in-out opacity pulse `<animate>` element for inline data widgets. */
+function renderSoftPulseAnimate(values: string, dur = '2s'): string {
+  return `<animate attributeName="opacity" values="${values}" dur="${dur}" ${SMOOTH_BREATH_SPLINES} repeatCount="indefinite" />`;
 }
 
 /** Resolve the empty-track and active paint of a bar (`fill`) or ring (`stroke`) gauge. */
@@ -1180,7 +1193,7 @@ function renderBarsWidgetMarkup(values: number[], context: SpecialElementContext
     const barGeometry = `x="${barX}" y="${barY}" width="${barWidth}" height="${barHeight}" rx="${barRadius}" fill="${activeColor}"${opacityAttr}`;
     barsMarkup +=
       isAnimated && isLastBar
-        ? `<rect ${barGeometry}><animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" /></rect>`
+        ? `<rect ${barGeometry}>${renderSoftPulseAnimate('1;0.45;1')}</rect>`
         : `<rect ${barGeometry} />`;
   }
 
@@ -1207,7 +1220,7 @@ function renderStepsWidgetMarkup(
     if (isFilled) {
       pillsMarkup +=
         isAnimated && i === done - 1
-          ? `<rect ${pillGeometry} fill="${paint.activeColor}"><animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" /></rect>`
+          ? `<rect ${pillGeometry} fill="${paint.activeColor}">${renderSoftPulseAnimate('1;0.45;1')}</rect>`
           : `<rect ${pillGeometry} fill="${paint.activeColor}" />`;
     } else {
       pillsMarkup += `<rect ${pillGeometry} ${paint.trackAttrs} />`;
@@ -1235,9 +1248,7 @@ function renderRingWidgetMarkup(
     // A zero-length dash with a round line cap would still draw a dot:
     return trackCircle;
   }
-  const pulseAnim = hasPulse
-    ? '<animate attributeName="opacity" values="1;0.45;1" dur="2s" repeatCount="indefinite" />'
-    : '';
+  const pulseAnim = hasPulse ? renderSoftPulseAnimate('1;0.45;1') : '';
   return `${trackCircle}<circle ${circleGeometry} stroke="${paint.activeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
 }
 
@@ -1259,7 +1270,7 @@ function renderStripWidgetMarkup(states: StripTickState[], context: SpecialEleme
     const tickColor = resolveStripTickColor(state, context.isOnPrimary);
     const isAnimatedLast = isAnimated && i === states.length - 1;
     ticksMarkup += isAnimatedLast
-      ? `<rect x="${tickX}" ${tickGeometry} fill="${tickColor}"><animate attributeName="opacity" values="1;0.4;1" dur="2s" repeatCount="indefinite" /></rect>`
+      ? `<rect x="${tickX}" ${tickGeometry} fill="${tickColor}">${renderSoftPulseAnimate('1;0.4;1')}</rect>`
       : `<rect x="${tickX}" ${tickGeometry} fill="${tickColor}" />`;
   }
   return ticksMarkup;

@@ -444,8 +444,8 @@ details.code-drawer > summary {
   font-weight: 600;
   color: var(--c-text-2);
   cursor: pointer;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   transition: color var(--duration-base) ease;
 }
 
@@ -503,8 +503,17 @@ details.code-drawer[open] .drawer-chevron {
 
 .scroll-btn {
   display: none;
-  inline-size: 24px;
-  block-size: 24px;
+  inline-size: 18px;
+  block-size: 18px;
+  border-radius: 5px;
+}
+
+/* Expand the `18x18` scroll button's hit area to the `24x24` WCAG 2.2 AA minimum target size: */
+
+.scroll-btn::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
 }
 
 .scroll-btn.is-visible {
@@ -516,7 +525,7 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .scroll-btn-right {
-  inset-inline-start: 33px;
+  inset-inline-start: 29px;
 }
 
 .copy-btn {

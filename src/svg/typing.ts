@@ -206,8 +206,10 @@ interface SelectionFlash {
   startMs: number;
 }
 
-/** Time-value pair in milliseconds for building SMIL `values` and `keyTimes` lists. */
+/** Time-value pair in milliseconds for building SMIL `values`, `keyTimes`, and `keySplines` lists. */
 interface TimelinePoint {
+  /** Optional cubic-Bezier `keySplines` segment arriving at this point (`'x1 y1 x2 y2'`). */
+  spline?: string;
   /** Timestamp in milliseconds within `[0, totalCycleMs]`. */
   timeMs: number;
   /** Numeric attribute value at `timeMs`. */
@@ -428,14 +430,26 @@ interface RenderHintBadgeOptions {
 
 /** Horizontal geometry of the 3-dot window/browser traffic-light controls. */
 interface TrafficLightLayout {
-  /** Center Y (and first-dot center X) coordinate in pixels. */
+  /** Center Y coordinate of the dots in pixels. */
   dotCy: number;
   /** Horizontal center-to-center spacing between adjacent dots in pixels. */
   dotGap: number;
   /** Dot circle radius in pixels. */
   dotRadius: number;
+  /** Center X coordinate of the first dot in pixels. */
+  firstDotCx: number;
   /** Rightmost edge X coordinate of the third dot in pixels. */
   rightEdgeX: number;
+}
+
+/** Horizontal geometry of the traffic-light dots and search omnibox well in `browser` layout. */
+interface BrowserToolbarLayout {
+  /** Leftmost edge X coordinate of the first dot in pixels. */
+  dotLeftEdgeX: number;
+  /** Traffic-light dot coordinates and dimensions. */
+  trafficLights: TrafficLightLayout;
+  /** Left X coordinate of the search omnibox well in pixels. */
+  wellX: number;
 }
 
 /** Rendered traffic-light `<circle>` markup and rightmost X coordinate. */
@@ -1171,7 +1185,12 @@ function resolveLineTypo(
 }
 
 /** Append a `(timeMs, value)` keyframe point, keeping timestamps strictly increasing and collapsing redundant holds. */
-function appendTimelinePoint(points: TimelinePoint[], timeMs: number, value: number): void {
+function appendTimelinePoint(
+  points: TimelinePoint[],
+  timeMs: number,
+  value: number,
+  spline?: string
+): void {
   const roundedValue = roundCoord(value);
   const roundedTime = Math.max(0, Math.round(timeMs));
   const len = points.length;
@@ -1196,11 +1215,11 @@ function appendTimelinePoint(points: TimelinePoint[], timeMs: number, value: num
     if (last.value === roundedValue) {
       return;
     }
-    points.push({ timeMs: last.timeMs + 1, value: roundedValue });
+    points.push({ spline, timeMs: last.timeMs + 1, value: roundedValue });
     return;
   }
 
-  points.push({ timeMs: roundedTime, value: roundedValue });
+  points.push({ spline, timeMs: roundedTime, value: roundedValue });
 }
 
 /** Append smooth cursor blink oscillation points across `[startMs, endMs]` while holding at `activeOpacity` at the boundaries. */
@@ -1228,18 +1247,20 @@ function appendCursorBlinkWindow(
   appendTimelinePoint(opacityPoints, endMs, activeOpacity);
 }
 
-/** Serialize a list of `TimelinePoint` entries into a SMIL `<animate>` element over `totalCycleMs`. */
+/** Serialize a list of `TimelinePoint` entries into a spline-eased SMIL `<animate>` element over `totalCycleMs`. */
 function renderTimelineAnimate(
   attributeName: string,
   points: readonly TimelinePoint[],
   totalCycleMs: number,
-  cycleDurAttr: string
+  cycleDurAttr: string,
+  defaultSpline: string
 ): string {
   if (points.length === 0 || totalCycleMs <= 0) {
     return '';
   }
   const valuesList: string[] = [];
   const keyTimesList: string[] = [];
+  const keySplinesList: string[] = [];
   let prevKeyTime = -1;
 
   for (const [i, point] of points.entries()) {
@@ -1248,8 +1269,16 @@ function renderTimelineAnimate(
       keyTime = 0;
     } else if (i === points.length - 1) {
       keyTime = 1;
-    } else if (keyTime <= prevKeyTime) {
-      keyTime = roundScale(Math.min(0.9999, prevKeyTime + 0.0001));
+    } else {
+      const remainingIntervals = points.length - 1 - i;
+      const maxInteriorKeyTime = roundScale(Math.max(0.0001, 1 - remainingIntervals * 0.0001));
+      const minInteriorKeyTime = roundScale(prevKeyTime + 0.0001);
+      keyTime = Math.min(maxInteriorKeyTime, Math.max(minInteriorKeyTime, keyTime));
+    }
+    if (i > 0) {
+      const prevPoint = points[i - 1];
+      const isHoldSegment = prevPoint !== undefined && prevPoint.value === point.value;
+      keySplinesList.push(isHoldSegment ? '0 0 1 1' : (point.spline ?? defaultSpline));
     }
     prevKeyTime = keyTime;
     valuesList.push(String(point.value));
@@ -1260,9 +1289,10 @@ function renderTimelineAnimate(
     const lastValue = valuesList[valuesList.length - 1] ?? '0';
     valuesList.push(lastValue);
     keyTimesList.push('1');
+    keySplinesList.push('0 0 1 1');
   }
 
-  return `<animate attributeName="${attributeName}" values="${valuesList.join(';')}" keyTimes="${keyTimesList.join(';')}" dur="${cycleDurAttr}" repeatCount="indefinite" />`;
+  return `<animate attributeName="${attributeName}" values="${valuesList.join(';')}" keyTimes="${keyTimesList.join(';')}" calcMode="spline" keySplines="${keySplinesList.join(';')}" dur="${cycleDurAttr}" repeatCount="indefinite" />`;
 }
 
 /** Register a glyph's `(0, 0)` `<path>` outline in `glyphDefsById` and return its content-addressed ID. */
@@ -1304,7 +1334,12 @@ function scheduleLineErasePhase(options: ScheduleLineEraseOptions): void {
       record.eraseEndMs = selectClearMs + CHAR_FAST_FADE_OUT_MS;
     }
     appendTimelinePoint(state.cursorXPoints, selectClearMs, endCursorX);
-    appendTimelinePoint(state.cursorXPoints, selectClearMs + 115, nextLineStartCursorX);
+    appendTimelinePoint(
+      state.cursorXPoints,
+      selectClearMs + 160,
+      nextLineStartCursorX,
+      '0.42 0 0.2 1'
+    );
     state.currentTimeMs = selectClearMs + CHAR_FAST_FADE_OUT_MS + POST_ERASE_PAUSE_MS;
     appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, nextLineStartCursorX);
     appendTimelinePoint(state.cursorOpacityPoints, state.currentTimeMs, activeOpacity);
@@ -1314,14 +1349,17 @@ function scheduleLineErasePhase(options: ScheduleLineEraseOptions): void {
   if (eraseMode === 'fade') {
     const fadeStartMs = state.currentTimeMs;
     const fadeEndMs = fadeStartMs + LINE_FADE_ERASE_MS;
+    const repositionDoneMs = fadeEndMs + 20;
     for (const record of lineScheduledRecords) {
       record.eraseStartMs = fadeStartMs;
       record.eraseEndMs = fadeEndMs;
     }
     appendTimelinePoint(state.cursorOpacityPoints, fadeStartMs, activeOpacity);
     appendTimelinePoint(state.cursorOpacityPoints, fadeEndMs, 0);
+    appendTimelinePoint(state.cursorOpacityPoints, repositionDoneMs, 0);
     appendTimelinePoint(state.cursorXPoints, fadeStartMs, endCursorX);
-    appendTimelinePoint(state.cursorXPoints, fadeEndMs + 110, nextLineStartCursorX);
+    appendTimelinePoint(state.cursorXPoints, fadeEndMs, endCursorX);
+    appendTimelinePoint(state.cursorXPoints, repositionDoneMs, nextLineStartCursorX);
     state.currentTimeMs = fadeEndMs + POST_ERASE_PAUSE_MS;
     appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, nextLineStartCursorX);
     appendTimelinePoint(state.cursorOpacityPoints, state.currentTimeMs, activeOpacity);
@@ -1340,7 +1378,15 @@ function scheduleLineErasePhase(options: ScheduleLineEraseOptions): void {
       const stepDelay = i === glyphs.length - 1 ? 65 : perCharEraseMs;
       state.currentTimeMs += stepDelay;
       const targetCursorX = roundCoord(lineStartX + glyph.glyphX + offsetX);
-      appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, targetCursorX);
+      let stepSpline = '0 0 1 1';
+      if (i === glyphs.length - 1 || (i === 0 && glyphs.length <= 2)) {
+        stepSpline = '0.42 0 0.2 1';
+      } else if (i === glyphs.length - 2) {
+        stepSpline = '0.38 0 1 1';
+      } else if (i === 0) {
+        stepSpline = '0 0 0.2 1';
+      }
+      appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, targetCursorX, stepSpline);
 
       if (glyph.pathData.length > 0 && visibleRecordCursor >= 0) {
         const record = lineScheduledRecords[visibleRecordCursor];
@@ -1356,7 +1402,12 @@ function scheduleLineErasePhase(options: ScheduleLineEraseOptions): void {
   // Smoothly fly the cursor to `nextLineStartCursorX` when center alignment shifts the next line's start X:
   if (Math.abs(nextLineStartCursorX - startCursorX) > 0.5) {
     appendTimelinePoint(state.cursorXPoints, state.currentTimeMs + 35, startCursorX);
-    appendTimelinePoint(state.cursorXPoints, state.currentTimeMs + 165, nextLineStartCursorX);
+    appendTimelinePoint(
+      state.cursorXPoints,
+      state.currentTimeMs + 185,
+      nextLineStartCursorX,
+      '0.42 0 0.2 1'
+    );
   }
   state.currentTimeMs += POST_ERASE_PAUSE_MS;
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, nextLineStartCursorX);
@@ -1416,7 +1467,12 @@ function scheduleLineTimeline(options: ScheduleLineTimelineOptions): void {
       appendTimelinePoint(state.cursorXPoints, typoStartMs, preTypoCursorX);
       appendTimelinePoint(state.cursorXPoints, typoStartMs + CURSOR_GLIDE_MS, typoCursorTargetX);
       appendTimelinePoint(state.cursorXPoints, typoBackspaceMs, typoCursorTargetX);
-      appendTimelinePoint(state.cursorXPoints, typoBackspaceMs + 22, preTypoCursorX);
+      appendTimelinePoint(
+        state.cursorXPoints,
+        typoBackspaceMs + 34,
+        preTypoCursorX,
+        '0.42 0 0.2 1'
+      );
 
       const typoGlyphId = registerGlyphDef(typoGlyph.pathData, state.glyphDefsById);
       state.scheduledGlyphs.push({
@@ -1764,12 +1820,31 @@ function renderHintBadge(options: RenderHintBadgeOptions): string {
   );
 }
 
-/** Compute traffic-light dot geometry where left X-padding equals vertical Y-padding in `bandHeight`. */
-function computeTrafficLightLayout(bandHeight: number, scale: number): TrafficLightLayout {
+/** Compute traffic-light dot geometry, defaulting left X-padding to match vertical Y-padding in `bandHeight`. */
+function computeTrafficLightLayout(
+  bandHeight: number,
+  scale: number,
+  leftEdgeX?: number
+): TrafficLightLayout {
   const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
   const dotGap = roundCoord(Math.max(12, 14 * scale));
   const dotCy = roundCoord(bandHeight / 2);
-  return { dotCy, dotGap, dotRadius, rightEdgeX: roundCoord(dotCy + 2 * dotGap + dotRadius) };
+  const firstDotCx = leftEdgeX === undefined ? dotCy : roundCoord(leftEdgeX + dotRadius);
+  return {
+    dotCy,
+    dotGap,
+    dotRadius,
+    firstDotCx,
+    rightEdgeX: roundCoord(firstDotCx + 2 * dotGap + dotRadius),
+  };
+}
+
+/** Compute balanced horizontal spacing around the traffic-light dots and search omnibox well in `browser` layout. */
+function computeBrowserToolbarLayout(bodyHeight: number, scale: number): BrowserToolbarLayout {
+  const dotMargin = Math.round(12 * scale);
+  const dotLeftEdgeX = roundCoord(0.5 + dotMargin);
+  const trafficLights = computeTrafficLightLayout(bodyHeight, scale, dotLeftEdgeX);
+  return { dotLeftEdgeX, trafficLights, wellX: roundCoord(trafficLights.rightEdgeX + dotMargin) };
 }
 
 /** Compute horizontal geometry of the active file tab in `ide` layout. */
@@ -1792,18 +1867,23 @@ function computeIdeTabMetrics(
   return { closeGap, closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth };
 }
 
-/** Render traffic-light window control dots with left X-padding matching their vertical Y-padding in `bandHeight`. */
+/** Render traffic-light window control dots inside `bandHeight`. */
 function renderTrafficLightDots(
   bandHeight: number,
   scale: number,
   variant: BadgeVariant,
-  isOnPrimary: boolean
+  isOnPrimary: boolean,
+  leftEdgeX?: number
 ): RenderedTrafficLightDots {
-  const { dotCy, dotGap, dotRadius, rightEdgeX } = computeTrafficLightLayout(bandHeight, scale);
+  const { dotCy, dotGap, dotRadius, firstDotCx, rightEdgeX } = computeTrafficLightLayout(
+    bandHeight,
+    scale,
+    leftEdgeX
+  );
   let dotsMarkup = '';
 
   for (let i = 0; i < 3; i += 1) {
-    const dotCx = roundCoord(dotCy + i * dotGap);
+    const dotCx = roundCoord(firstDotCx + i * dotGap);
     if (isOnPrimary) {
       const opacity = PRIMARY_WINDOW_DOT_OPACITIES[i] ?? '0.4';
       dotsMarkup += `<circle cx="${dotCx}" cy="${dotCy}" r="${dotRadius}" fill="${WHITE}" fill-opacity="${opacity}" />`;
@@ -2035,14 +2115,15 @@ function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): s
   }
 
   if (layout === 'browser') {
-    const { dotsMarkup, rightEdgeX } = renderTrafficLightDots(
+    const { dotLeftEdgeX, wellX } = computeBrowserToolbarLayout(bodyHeight, scale);
+    const { dotsMarkup } = renderTrafficLightDots(
       bodyHeight,
       scale,
       variant,
-      styleTokens.isOnPrimary
+      styleTokens.isOnPrimary,
+      dotLeftEdgeX
     );
     const wellInsetY = roundCoord(Math.max(6, Math.round(7 * scale)));
-    const wellX = roundCoord(rightEdgeX + Math.round(12 * scale));
     const wellWidth = roundCoord(Math.max(60, width - wellX - wellInsetY));
     const wellHeight = roundCoord(bodyHeight - 2 * wellInsetY);
     const wellRadius = Math.max(6, Math.round(8 * scale));
@@ -2079,8 +2160,7 @@ function resolveBodyStartX(layout: TypingLayout, metrics: TypingMetrics): number
     return Math.round(36 * scale) + Math.round(12 * scale);
   }
   if (layout === 'browser') {
-    const { rightEdgeX } = computeTrafficLightLayout(bodyHeight, scale);
-    const wellX = roundCoord(rightEdgeX + Math.round(12 * scale));
+    const { wellX } = computeBrowserToolbarLayout(bodyHeight, scale);
     return roundCoord(wellX + Math.round(11 * scale));
   }
   return padX;
@@ -2258,25 +2338,31 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   const selectBoxY = roundCoord(baselineY - fontSize * 0.92);
   const selectBoxHeight = roundCoord(fontSize * 1.2);
   for (const flash of timelineState.selectionFlashes) {
-    const tStart = roundScale(Math.max(0.0001, flash.startMs / totalCycleMs));
-    const tAppear = roundScale(Math.min(0.9995, tStart + 0.002));
+    const tStart = roundScale(Math.min(0.9992, Math.max(0.0001, flash.startMs / totalCycleMs)));
+    const tAppear = roundScale(Math.min(0.9994, Math.max(tStart + 0.0001, tStart + 0.002)));
     const tEnd = roundScale(
-      Math.min(0.9998, Math.max(tAppear + 0.001, flash.endMs / totalCycleMs))
+      Math.min(0.9996, Math.max(tAppear + 0.0002, flash.endMs / totalCycleMs))
     );
-    const tClear = roundScale(Math.min(0.9999, tEnd + 0.002));
-    selectionMarkup += `<rect x="${flash.rectX}" y="${selectBoxY}" width="${flash.rectWidth}" height="${selectBoxHeight}" rx="3" fill="${styleTokens.selectionColor}" fill-opacity="0.28" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${tStart};${tAppear};${tEnd};${tClear};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></rect>`;
+    const tClear = roundScale(Math.min(0.9998, Math.max(tEnd + 0.0001, tEnd + 0.002)));
+    selectionMarkup += `<rect x="${flash.rectX}" y="${selectBoxY}" width="${flash.rectWidth}" height="${selectBoxHeight}" rx="3" fill="${styleTokens.selectionColor}" fill-opacity="0.28" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${tStart};${tAppear};${tEnd};${tClear};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" /></rect>`;
   }
 
   let charsMarkup = `<g fill="${styleTokens.textColor}">`;
   for (const scheduled of timelineState.scheduledGlyphs) {
-    const t1 = roundScale(Math.max(0.0001, scheduled.appearStartMs / totalCycleMs));
-    const t2 = roundScale(Math.max(t1 + 0.0002, scheduled.appearEndMs / totalCycleMs));
-    const t3 = roundScale(Math.max(t2 + 0.0002, scheduled.eraseStartMs / totalCycleMs));
+    const t1 = roundScale(
+      Math.min(0.9992, Math.max(0.0001, scheduled.appearStartMs / totalCycleMs))
+    );
+    const t2 = roundScale(
+      Math.min(0.9994, Math.max(t1 + 0.0002, scheduled.appearEndMs / totalCycleMs))
+    );
+    const t3 = roundScale(
+      Math.min(0.9996, Math.max(t2 + 0.0002, scheduled.eraseStartMs / totalCycleMs))
+    );
     const t4 = roundScale(
-      Math.min(0.9999, Math.max(t3 + 0.0002, scheduled.eraseEndMs / totalCycleMs))
+      Math.min(0.9998, Math.max(t3 + 0.0002, scheduled.eraseEndMs / totalCycleMs))
     );
     const baseOpacityAttr = scheduled.isFirstLineChar ? '' : ' opacity="0"';
-    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.glyphX}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
+    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.glyphX}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
   }
   charsMarkup += '</g>';
 
@@ -2284,13 +2370,15 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     'x',
     timelineState.cursorXPoints,
     totalCycleMs,
-    cycleDurAttr
+    cycleDurAttr,
+    '0.25 0 0.2 1'
   );
   const opacityAnimate = renderTimelineAnimate(
     'opacity',
     timelineState.cursorOpacityPoints,
     totalCycleMs,
-    cycleDurAttr
+    cycleDurAttr,
+    '0.45 0 0.55 1'
   );
   const cursorMarkup = `<rect x="${timelineState.firstLineEndCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" opacity="${cursorGeometry.activeOpacity}">${xAnimate}${opacityAnimate}</rect>`;
 

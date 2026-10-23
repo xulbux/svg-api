@@ -613,8 +613,8 @@
 
 .builder-tabs,
 .icon-picker-tabs {
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
 }
 
 .builder-tabs {
@@ -1086,8 +1086,8 @@
 
 .typing-lines-list.is-reordering,
 .typing-lines-list.is-reordering * {
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   cursor: grabbing !important;
 }
 
@@ -1123,8 +1123,8 @@
   color: var(--c-text-3);
   background: var(--c-bg-soft);
   touch-action: none;
-  user-select: none;
   -webkit-user-select: none;
+  user-select: none;
   cursor: grab;
   transition:
     background-color var(--duration-fast) ease,

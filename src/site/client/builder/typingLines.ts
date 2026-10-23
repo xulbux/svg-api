@@ -2,7 +2,15 @@
  * Typing lines controller – Interactive line-by-line list editor for the `/builder/typing` URL builder.
  */
 
+import type { TypingLinesController } from '@/types';
+
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Parent element with optional atomic `moveBefore` DOM relocation support. */
+interface AtomicMoveParent {
+  /** Atomically relocate a child node without detaching it when supported by the browser. */
+  moveBefore?: (movedNode: Node, referenceNode: Node | null) => void;
+}
 
 /** Options for initializing the `/builder/typing` interactive line list controller. */
 export interface TypingLinesControllerOptions {
@@ -14,16 +22,6 @@ export interface TypingLinesControllerOptions {
   hiddenInput: HTMLInputElement | null;
   /** `#typing-lines-list` row container element. */
   listElement: HTMLElement | null;
-}
-
-/** Public controller interface returned by `createTypingLinesController`. */
-export interface TypingLinesController {
-  /** Bind add, remove, keyboard navigation, and multi-line paste listeners. */
-  bind: () => void;
-  /** Read and serialize the non-empty line inputs into `;`-separated form and sync `#field-lines`. */
-  readValue: () => string;
-  /** Rebuild the line input rows from a `;`- or newline-separated lines string. */
-  syncFromValue: (rawValue: string) => void;
 }
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -51,13 +49,35 @@ function focusRowInput(row: HTMLElement | undefined, hasCaretAtEnd = false): voi
   }
 }
 
+/** Relocate `row` before `referenceNode` inside `parent`, preserving state when `moveBefore` exists. */
+function moveRowBefore(
+  parent: HTMLElement,
+  row: HTMLElement,
+  referenceNode: ChildNode | null
+): void {
+  const atomicParent = parent as HTMLElement & AtomicMoveParent;
+  if (typeof atomicParent.moveBefore === 'function') {
+    atomicParent.moveBefore(row, referenceNode);
+    return;
+  }
+  if (referenceNode) {
+    referenceNode.before(row);
+    return;
+  }
+  parent.append(row);
+}
+
 /** Swap `draggedRow` with an adjacent row when `visualCenterY` crosses its vertical midpoint. */
 function trySwapDraggedRowOnce(draggedRow: HTMLElement, visualCenterY: number): boolean {
+  const parent = draggedRow.parentElement;
+  if (!parent) {
+    return false;
+  }
   const previousSibling = draggedRow.previousElementSibling;
   if (previousSibling instanceof HTMLElement) {
     const previousRect = previousSibling.getBoundingClientRect();
     if (visualCenterY < previousRect.top + previousRect.height / 2) {
-      previousSibling.before(draggedRow);
+      moveRowBefore(parent, draggedRow, previousSibling);
       return true;
     }
   }
@@ -65,7 +85,7 @@ function trySwapDraggedRowOnce(draggedRow: HTMLElement, visualCenterY: number): 
   if (nextSibling instanceof HTMLElement) {
     const nextRect = nextSibling.getBoundingClientRect();
     if (visualCenterY > nextRect.top + nextRect.height / 2) {
-      nextSibling.after(draggedRow);
+      moveRowBefore(parent, draggedRow, nextSibling.nextSibling);
       return true;
     }
   }
@@ -240,6 +260,9 @@ export function createTypingLinesController(
     targetIndex: number,
     focusTarget: 'handle' | 'input'
   ): void {
+    if (!listElement) {
+      return;
+    }
     const rows = getRows();
     const currentIndex = rows.indexOf(row);
     const clampedIndex = Math.max(0, Math.min(rows.length - 1, targetIndex));
@@ -247,11 +270,11 @@ export function createTypingLinesController(
     if (currentIndex === -1 || currentIndex === clampedIndex || !referenceRow) {
       return;
     }
-    if (clampedIndex < currentIndex) {
-      referenceRow.before(row);
-    } else {
-      referenceRow.after(row);
-    }
+    moveRowBefore(
+      listElement,
+      row,
+      clampedIndex < currentIndex ? referenceRow : referenceRow.nextSibling
+    );
     refreshRowMetadata();
     if (focusTarget === 'handle') {
       const handle = row.querySelector('[data-typing-line-handle]');
@@ -409,14 +432,13 @@ export function createTypingLinesController(
     finishedRow.classList.remove('is-dragging');
     listElement.classList.remove('is-reordering');
 
-    if (
-      finishedHandle &&
-      finishedPointerId !== undefined &&
-      finishedHandle.hasPointerCapture(finishedPointerId)
-    ) {
-      finishedHandle.releasePointerCapture(finishedPointerId);
+    if (finishedPointerId !== undefined && listElement.hasPointerCapture(finishedPointerId)) {
+      listElement.releasePointerCapture(finishedPointerId);
     }
     refreshRowMetadata();
+    if (finishedHandle && !finishedHandle.disabled && document.activeElement !== finishedHandle) {
+      finishedHandle.focus({ preventScroll: true });
+    }
     if (getRows().indexOf(finishedRow) !== dragInitialIndex) {
       notifyChange();
     }
@@ -441,7 +463,7 @@ export function createTypingLinesController(
     }
     event.preventDefault();
     handle.focus();
-    handle.setPointerCapture(event.pointerId);
+    listElement.setPointerCapture(event.pointerId);
 
     const rowRect = row.getBoundingClientRect();
     activeDragRow = row;

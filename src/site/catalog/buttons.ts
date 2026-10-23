@@ -50,19 +50,19 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Small Button',
-        path: `/button/Small+${BUTTON_SIZE_PRESETS.sm.height}px?icon=sparkles&size=sm`,
+        path: `/button/Small+${BUTTON_SIZE_PRESETS.sm.height}px?size=sm&icon=sparkles`,
       },
       {
         alt: 'Medium Button',
-        path: `/button/Medium+${BUTTON_SIZE_PRESETS.md.height}px?icon=rocket&size=md&color=emerald`,
+        path: `/button/Medium+${BUTTON_SIZE_PRESETS.md.height}px?color=emerald&size=md&icon=rocket`,
       },
       {
         alt: 'Large Button',
-        path: `/button/Large+${BUTTON_SIZE_PRESETS.lg.height}px?icon=zap&size=lg&color=cyan`,
+        path: `/button/Large+${BUTTON_SIZE_PRESETS.lg.height}px?color=cyan&size=lg&icon=zap`,
       },
       {
         alt: 'XL Hero Button',
-        path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?icon=flame&size=xl&color=rose`,
+        path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?color=rose&size=xl&icon=flame`,
       },
     ],
     subtitle: `Scale button height, padding, font size, and icon dimensions with ?size=${SIZE_TOKENS.join('|')} or a custom pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
@@ -78,9 +78,9 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       {
         alt: 'Open Website',
         href: 'https://xul.is',
-        path: '/button/Open+Website?icon=globe,external-link&color=sky&variant=2',
+        path: '/button/Open+Website?variant=2&color=sky&icon=globe,external-link',
       },
-      { alt: 'Continue', path: '/btn/Continue?icon=none,chevron-right&color=emerald' },
+      { alt: 'Continue', path: '/btn/Continue?color=emerald&icon=none,chevron-right' },
     ],
     subtitle:
       'Set a leading icon (?icon=name), both leading and trailing icons (?icon=left,right), or a trailing icon only (?icon=none,right).',
@@ -95,12 +95,12 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       },
       {
         alt: 'Launch App',
-        path: '/button/Launch+App?icon=rocket&color=emerald&variant=2&anim=auto',
+        path: '/button/Launch+App?variant=2&color=emerald&icon=rocket&anim=auto',
       },
-      { alt: 'Sponsor', path: '/button/Sponsor?icon=heart&color=rose&variant=2&anim=pulse' },
+      { alt: 'Sponsor', path: '/button/Sponsor?variant=2&color=rose&icon=heart&anim=pulse' },
       {
         alt: 'Next Step',
-        path: '/button/Next?icon=sparkles,arrow-right&color=violet&anim=shake,nudge',
+        path: '/button/Next?color=violet&icon=sparkles,arrow-right&anim=shake,nudge',
       },
     ],
     subtitle:
@@ -112,11 +112,11 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Deploy Production', path: '/button/Deploy/Production?icon=rocket' },
       {
         alt: 'Download v1.4.0',
-        path: '/button/Download/v1.4.0?icon=download,arrow-right&color=emerald&variant=2',
+        path: '/button/Download/v1.4.0?variant=2&color=emerald&icon=download,arrow-right',
       },
       {
         alt: 'Discussions Join',
-        path: '/btn/Discussions/Join?icon=message-square&color=violet&variant=3',
+        path: '/btn/Discussions/Join?variant=3&color=violet&icon=message-square',
       },
     ],
     subtitle:
@@ -133,17 +133,17 @@ function buildButtonVariantItems(variant: BadgeVariant): ShowcaseItem[] {
     {
       alt: 'Documentation',
       href: `${SITE_ORIGIN}/docs`,
-      path: `/button/Documentation?icon=book-open&variant=${variant}`,
+      path: `/button/Documentation?variant=${variant}&icon=book-open`,
     },
     {
       alt: 'Install Arch',
-      path: `/button/Install+Arch?icon=archlinux&color=cyan&variant=${variant}`,
+      path: `/button/Install+Arch?variant=${variant}&color=cyan&icon=archlinux`,
     },
     {
       alt: 'Latest Release',
-      path: `/button/Latest+Release?icon=rocket&color=emerald&variant=${variant}`,
+      path: `/button/Latest+Release?variant=${variant}&color=emerald&icon=rocket`,
     },
-    { alt: 'Report Issue', path: `/button/Report+Issue?icon=bug&color=rose&variant=${variant}` },
+    { alt: 'Report Issue', path: `/button/Report+Issue?variant=${variant}&color=rose&icon=bug` },
   ];
 }
 
@@ -168,16 +168,16 @@ export function buildButtonParamRows(): ParamTableRow[] {
   }
   return [
     buildVariantParamRow(DEFAULT_BUTTON_VARIANT, 'Surface tier'),
+    buildColorParamRow(
+      DEFAULT_THEME_COLOR,
+      'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
+    ),
     {
       defaultVal: `md (${BUTTON_SIZE_PRESETS.md.height}px)`,
       description: `Button scale preset (${presetHeights.join(', ')}) or custom pixel height.`,
       name: '?size=',
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,
     },
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
-    ),
     buildIconQueryParamRow(
       'Leading left icon (icon=name), both left and right icons (icon=left,right), or trailing right icon only (icon=none,right).',
       'rocket | book-open,arrow-right | none,chevron-right | sparkles | …'

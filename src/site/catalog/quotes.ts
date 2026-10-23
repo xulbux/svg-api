@@ -117,18 +117,17 @@ export function buildQuoteParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: '~none',
-      description: 'Author attribution for the single-segment /quote/:text and /quote?text= forms.',
-      name: '?author=',
-      values: '~any string',
-    },
-    {
-      defaultVal: '~none',
       description:
         'Quote body text when no path segment is given (e.g., /quote?text=Hi&author=XulbuX).',
       name: '?text= / ?quote=',
       values: '~any string',
     },
-    buildVariantParamRow(DEFAULT_QUOTE_VARIANT, 'Surface tier'),
+    {
+      defaultVal: '~none',
+      description: 'Author attribution for the single-segment /quote/:text and /quote?text= forms.',
+      name: '?author=',
+      values: '~any string',
+    },
     {
       defaultVal: DEFAULT_QUOTE_LAYOUT,
       description: `Layout mode: horizontal (left accent bar) or vertical (centered watermarks); ${formatConjunctionList(verticalAliases)} are vertical aliases, and ?type= is an alias of ?layout= (an empty ?layout= falls through to ?type=).`,
@@ -142,16 +141,17 @@ export function buildQuoteParamRows(): ParamTableRow[] {
       name: '?center=',
       values: TRUTHY_FLAG_LIST.join(' | '),
     },
+    buildVariantParamRow(DEFAULT_QUOTE_VARIANT, 'Surface tier'),
+    buildColorParamRow(
+      DEFAULT_THEME_COLOR,
+      'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
+    ),
     {
       defaultVal: `${DEFAULT_HORIZONTAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_HORIZONTAL_QUOTE_SIZE]}px) / ${DEFAULT_VERTICAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_VERTICAL_QUOTE_SIZE]}px, vertical)`,
       description: 'Typography scale preset or custom pixel size.',
       name: '?size=',
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(QUOTE_FONT_SIZE_RANGE)}`,
     },
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
-    ),
     {
       defaultVal: `${QUOTE_WIDTH_RANGE.default} (horizontal) / ${DEFAULT_VERTICAL_QUOTE_WIDTH} (vertical)`,
       description:

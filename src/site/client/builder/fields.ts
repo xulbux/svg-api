@@ -17,13 +17,13 @@ import {
   splitSpecial,
 } from '@/site/client/builder/core';
 import { setSelectOptions } from '@/site/client/builder/select';
-import type { TypingLinesController } from '@/site/client/builder/typingLines';
 import type {
   BuilderField,
   BuilderOption,
   BuilderSchema,
   BuilderServiceMetric,
   BuilderState,
+  TypingLinesController,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------

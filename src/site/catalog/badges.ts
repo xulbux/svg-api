@@ -56,15 +56,15 @@ export const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
 /** Build the static badge showcase items for a badge variant. */
 function buildBadgeVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   return [
-    { alt: 'Build', path: `/badge/Build/Passing?icon=circle-check&variant=${variant}` },
-    { alt: 'Arch', path: `/badge/Arch/Hyprland?icon=archlinux&color=cyan&variant=${variant}` },
+    { alt: 'Build', path: `/badge/Build/Passing?variant=${variant}&icon=circle-check` },
+    { alt: 'Arch', path: `/badge/Arch/Hyprland?variant=${variant}&color=cyan&icon=archlinux` },
     {
       alt: 'Runtime',
-      path: `/badge/Runtime/Cloudflare?icon=cloudflare&color=emerald&variant=${variant}`,
+      path: `/badge/Runtime/Cloudflare?variant=${variant}&color=emerald&icon=cloudflare`,
     },
     {
       alt: 'Security',
-      path: `/badge/Security/Verified?icon=shield-check&color=rose&variant=${variant}`,
+      path: `/badge/Security/Verified?variant=${variant}&color=rose&icon=shield-check`,
     },
   ];
 }
@@ -93,27 +93,27 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         },
         {
           alt: 'Bars Widget',
-          path: '/badge/Requests/1.8k%2Fs?icon=layers&color=indigo&special=bars:3,6,5,8,7,9,6',
+          path: '/badge/Requests/1.8k%2Fs?color=indigo&icon=layers&special=bars:3,6,5,8,7,9,6',
         },
         {
           alt: 'Progress Bar Widget',
-          path: '/badge/Coverage/92%25?icon=shield-check&color=emerald&special=bar:92',
+          path: '/badge/Coverage/92%25?color=emerald&icon=shield-check&special=bar:92',
         },
         {
           alt: 'Steps Widget',
-          path: '/badge/Onboarding/4%2F5?icon=circle-check&color=teal&special=steps:4/5',
+          path: '/badge/Onboarding/4%2F5?color=teal&icon=circle-check&special=steps:4/5',
         },
         {
           alt: 'Donut Ring Widget',
-          path: '/badge/KV+Quota/84%25?icon=cpu&color=sky&special=ring:84:pulse',
+          path: '/badge/KV+Quota/84%25?color=sky&icon=cpu&special=ring:84:pulse',
         },
         {
           alt: 'Uptime Strip Widget',
-          path: '/badge/Uptime/99.98%25?dot=green&color=emerald&variant=2&special=strip:9987998999',
+          path: '/badge/Uptime/99.98%25?variant=2&color=emerald&dot=green&special=strip:9987998999',
         },
         {
           alt: 'Delta Trend Pill',
-          path: '/badge/Requests/2.4M%2Fd?icon=trending-up&color=violet&special=delta:%2B38%25',
+          path: '/badge/Requests/2.4M%2Fd?color=violet&icon=trending-up&special=delta:%2B38%25',
         },
       ],
       subtitle: `Embed sparklines, bar histograms, progress bars, step pills, donut rings, ${STRIP_TICK_MAX_STATE + 1}-stage strips, and delta pills via ?special=.`,
@@ -123,20 +123,20 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
       items: [
         {
           alt: 'Status Operational',
-          path: '/badge/Status/Operational?dot=green&color=emerald&variant=2',
+          path: '/badge/Status/Operational?variant=2&color=emerald&dot=green',
         },
         {
           alt: 'Status Degraded',
-          path: '/badge/Status/180ms+Latency?dot=amber&color=amber&variant=2',
+          path: '/badge/Status/180ms+Latency?variant=2&color=amber&dot=amber',
         },
         {
           alt: 'Status Incident',
-          path: '/badge/Status/Queue+Load+94%25?dot=orange&color=orange&variant=2',
+          path: '/badge/Status/Queue+Load+94%25?variant=2&color=orange&dot=orange',
         },
-        { alt: 'Status Offline', path: '/badge/Status/Unreachable?dot=red&color=rose&variant=2' },
-        { alt: 'Status Maintenance', path: '/badge/Status/Scheduled?dot=sky&color=sky&variant=2' },
-        { alt: 'Status Beta', path: '/badge/Status/v3+Engine?dot=violet&color=violet&variant=2' },
-        { alt: 'Status Standby', path: '/badge/Status/Warm+Spare?dot=slate&color=slate&variant=3' },
+        { alt: 'Status Offline', path: '/badge/Status/Unreachable?variant=2&color=rose&dot=red' },
+        { alt: 'Status Maintenance', path: '/badge/Status/Scheduled?variant=2&color=sky&dot=sky' },
+        { alt: 'Status Beta', path: '/badge/Status/v3+Engine?variant=2&color=violet&dot=violet' },
+        { alt: 'Status Standby', path: '/badge/Status/Warm+Spare?variant=3&color=slate&dot=slate' },
       ],
       subtitle: `Outward radar ripple, double-beat warning, urgent pulse, breathing, and standby dots across all ${THEME_COLOR_NAMES.length} theme colors via ?dot=.`,
       title: 'Pulsing Radar Status Dots (?dot=)',
@@ -144,11 +144,11 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
     {
       items: [
         { alt: 'Single-Part Tag', path: '/badge/XulbuX?icon=sparkles' },
-        { alt: 'Secondary Tag', path: '/badge/Verified?icon=shield-check&color=emerald&variant=2' },
-        { alt: 'Compact Icon + Value', path: '/badge//100%25?icon=zap&color=amber' },
-        { alt: 'Dual-Icon Badge', path: '/badge/Docs/Read?icon=book-open,arrow-right&color=sky' },
+        { alt: 'Secondary Tag', path: '/badge/Verified?variant=2&color=emerald&icon=shield-check' },
+        { alt: 'Compact Icon + Value', path: '/badge//100%25?color=amber&icon=zap' },
+        { alt: 'Dual-Icon Badge', path: '/badge/Docs/Read?color=sky&icon=book-open,arrow-right' },
         { alt: 'No-Icon Badge', path: '/badge/Platform/Linux?color=rose' },
-        { alt: 'Icon-Only Pill', path: '/badge?icon=github&color=neutral&variant=3' },
+        { alt: 'Icon-Only Pill', path: '/badge?variant=3&color=neutral&icon=github' },
       ],
       subtitle:
         'Omit label or value segments, or set both left and right icons via ?icon=left,right.',
@@ -159,31 +159,31 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         { alt: 'Sheen Sweep', path: '/badge/Release/v2.0?icon=sparkles&anim=sheen' },
         {
           alt: 'Sheen + Icon Motion',
-          path: '/badge/Featured?icon=sparkles&color=amber&anim=sheen,auto',
+          path: '/badge/Featured?color=amber&icon=sparkles&anim=sheen,auto',
         },
         {
           alt: 'Icon Spin',
-          path: '/badge/Build/Running?icon=loader&color=sky&variant=2&anim=spin',
+          path: '/badge/Build/Running?variant=2&color=sky&icon=loader&anim=spin',
         },
         {
           alt: 'Icon Pulse',
-          path: '/badge/Sponsor/Heart?icon=heart&color=rose&variant=2&anim=pulse',
+          path: '/badge/Sponsor/Heart?variant=2&color=rose&icon=heart&anim=pulse',
         },
         {
           alt: 'Icon Nudge',
-          path: '/badge/Next/Step?icon=none,arrow-right&color=emerald&variant=2&anim=none,nudge',
+          path: '/badge/Next/Step?variant=2&color=emerald&icon=none,arrow-right&anim=none,nudge',
         },
         {
           alt: 'Icon Turn',
-          path: '/badge/Sync/Active?icon=refresh-cw&color=cyan&variant=3&anim=turn',
+          path: '/badge/Sync/Active?variant=3&color=cyan&icon=refresh-cw&anim=turn',
         },
         {
           alt: 'Icon Whirl',
-          path: '/badge/Orbit/Active?icon=orbit&color=indigo&variant=3&anim=whirl',
+          path: '/badge/Orbit/Active?variant=3&color=indigo&icon=orbit&anim=whirl',
         },
         {
           alt: 'Icon Breathe',
-          path: '/badge/Aura/Glow?icon=flame&color=orange&variant=3&anim=breathe',
+          path: '/badge/Aura/Glow?variant=3&color=orange&icon=flame&anim=breathe',
         },
       ],
       subtitle: `Surface sheen, icon motion presets (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or combined sheen,auto via ?anim=.`,

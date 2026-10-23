@@ -5,7 +5,7 @@
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
-import { BADGE_QUERY_PARAMS } from '@/routes/svg';
+import { getBuilderSchema } from '@/routes/schema';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { COVERAGE_THRESHOLDS, MAX_SCORECARD_SCORE, SCORECARD_THRESHOLDS } from '@/services/metrics';
 import { formatVariantValues } from '@/site/glossary';
@@ -750,9 +750,12 @@ export function buildServiceParamRows(): ParamTableRow[] {
       values: formatServiceMetrics(service),
     });
   }
-  const standardBadgeParams = BADGE_QUERY_PARAMS.filter((param) => param !== 'label')
-    .map((param) => `?${param}=`)
-    .join(', ');
+  const standardBadgeParams: string[] = [];
+  for (const field of getBuilderSchema('service').fields) {
+    if (field.param && field.param !== 'label') {
+      standardBadgeParams.push(`?${field.param}=`);
+    }
+  }
   rows.push(
     {
       defaultVal: '~service preset',
@@ -762,16 +765,16 @@ export function buildServiceParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: '~service preset',
+      description: `All standard badge query params (${standardBadgeParams.join(', ')}) apply; An empty ?icon= keeps the preset icon.`,
+      name: '?variant= / ?color= / …',
+      values: `${formatVariantValues()} (and ${THEME_COLOR_NAMES.length} colors)`,
+    },
+    {
+      defaultVal: '~service preset',
       description:
         'Auto-populates an inline widget from live upstream data on supported metrics when passed without a payload (or with :pulse / :static), hides a default preset widget with none, or overrides with custom data (<kind>:<payload>).',
       name: '?special=',
       values: `none | ${SPECIAL_ELEMENT_KINDS.join(' | ')} | <kind>:<payload>`,
-    },
-    {
-      defaultVal: '~service preset',
-      description: `All standard badge query params (${standardBadgeParams}) apply; An empty ?icon= keeps the preset icon.`,
-      name: '?variant= / ?color= / …',
-      values: `${formatVariantValues()} (and ${THEME_COLOR_NAMES.length} colors)`,
     }
   );
   return rows;

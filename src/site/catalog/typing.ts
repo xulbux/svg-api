@@ -67,7 +67,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'IDE Code Editor Typing',
-        path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&icon=ts&title=${DEFAULT_IDE_TITLE}&hint=TS`,
+        path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&title=${DEFAULT_IDE_TITLE}&icon=ts&hint=TS`,
       },
     ],
     subtitle: `Code editor window with a seamless active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}), top accent bar, subtle line-number gutter, and JetBrains Mono syntax.`,
@@ -89,7 +89,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Frameless Typing',
-        path: '/typing/Passionate+Coder;UX+Design+Aficionado;Creative+Technologist?layout=none&size=xl&color=indigo',
+        path: '/typing/Passionate+Coder;UX+Design+Aficionado;Creative+Technologist?layout=none&color=indigo&size=xl',
       },
     ],
     subtitle:
@@ -114,7 +114,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Secondary Tinted Block Cursor',
-        path: '/typing/cargo+build+--release;cargo+test+--all-targets?variant=2&color=orange&cursor=block&icon=rust&title=cargo',
+        path: '/typing/cargo+build+--release;cargo+test+--all-targets?variant=2&color=orange&title=cargo&icon=rust&cursor=block',
       },
     ],
     subtitle:
@@ -125,7 +125,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Tertiary Neutral Underscore Cursor',
-        path: '/typing/git+commit+-m+"feat:+typing+svg";git+push+origin+main?variant=3&color=sky&cursor=underscore&anim=sheen&title=git',
+        path: '/typing/git+commit+-m+"feat:+typing+svg";git+push+origin+main?variant=3&color=sky&title=git&cursor=underscore&anim=sheen',
       },
     ],
     subtitle:
@@ -140,7 +140,7 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Select Erase Mode',
-        path: '/typing/Select+All+%2B+Clear;Instant+Highlight+Erase;Clean+Transition?layout=prompt&erase=select&color=violet',
+        path: '/typing/Select+All+%2B+Clear;Instant+Highlight+Erase;Clean+Transition?layout=prompt&color=violet&erase=select',
       },
     ],
     subtitle:
@@ -151,7 +151,7 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Fade Erase Mode',
-        path: '/typing/Smooth+Whole-Line+Fade;Proportional+Geist+Sans;Subtle+Editorial+Cadence?layout=prompt&erase=fade&color=rose&icon=wand-sparkles',
+        path: '/typing/Smooth+Whole-Line+Fade;Proportional+Geist+Sans;Subtle+Editorial+Cadence?layout=prompt&color=rose&icon=wand-sparkles&erase=fade',
       },
     ],
     subtitle:
@@ -162,7 +162,7 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Realistic Human Typo',
-        path: '/typing/Building+resilient+systems;Crafting+delightful+interfaces?typo=true&color=amber&title=human-typing.ts',
+        path: '/typing/Building+resilient+systems;Crafting+delightful+interfaces?color=amber&title=human-typing.ts&typo=true',
       },
     ],
     subtitle:
@@ -229,6 +229,39 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(TYPING_FONT_SIZE_RANGE)}`,
     },
     {
+      defaultVal: '~auto-fit',
+      description:
+        'Explicit container width in pixels; Automatically fits the longest line when omitted.',
+      name: '?width=',
+      values: formatRange(TYPING_WIDTH_RANGE),
+    },
+    {
+      defaultVal: `${DEFAULT_TYPING_ALIGN} (framed) / center (none)`,
+      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align ${DEFAULT_TYPING_ALIGN}); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
+      name: '?align= / ?center=',
+      values: TYPING_ALIGN_TOKENS.join(' | '),
+    },
+    {
+      defaultVal: `~none (window) / ${DEFAULT_IDE_TITLE} (ide)`,
+      description:
+        'Centered header bar title on window layout or active file tab name on ide layout.',
+      name: '?title=',
+      values: `~any string (e.g., zsh, ${DEFAULT_IDE_TITLE})`,
+    },
+    {
+      defaultVal: '~none',
+      description: `Optional ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
+      name: '?icon=',
+      values: 'terminal | search | sparkles | rust | ts | none',
+    },
+    {
+      defaultVal: '~none',
+      description:
+        'Optional pill badge in the header bar (window, ide), borderless badge in the omnibox (browser), or recessed 3D keycap badge (prompt); Supports text, an icon (icon:<slug>), or both (icon:<slug>+<text>).',
+      name: '?hint=',
+      values: 'UTF-8 | icon:corner-down-left | icon:command+K | TS | none',
+    },
+    {
       defaultVal: DEFAULT_TYPING_CURSOR,
       description:
         'Caret cursor shape; Stays solid while actively typing or backspacing and blinks smoothly during reading pauses.',
@@ -243,37 +276,11 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: TYPING_ERASE_TOKENS.join(' | '),
     },
     {
-      defaultVal: `${DEFAULT_TYPING_ALIGN} (framed) / center (none)`,
-      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align ${DEFAULT_TYPING_ALIGN}); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
-      name: '?align= / ?center=',
-      values: TYPING_ALIGN_TOKENS.join(' | '),
-    },
-    {
       defaultVal: '~false',
       description:
         'When enabled, simulates an occasional QWERTY neighbor key slip followed by a brief pause and backspace correction.',
       name: '?typo=',
       values: TRUTHY_FLAG_LIST.join(' | '),
-    },
-    {
-      defaultVal: '~none',
-      description: `Optional ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
-      name: '?icon=',
-      values: 'terminal | search | sparkles | rust | ts | none',
-    },
-    {
-      defaultVal: `~none (window) / ${DEFAULT_IDE_TITLE} (ide)`,
-      description:
-        'Centered header bar title on window layout or active file tab name on ide layout.',
-      name: '?title=',
-      values: `~any string (e.g., zsh, ${DEFAULT_IDE_TITLE})`,
-    },
-    {
-      defaultVal: '~none',
-      description:
-        'Optional pill badge in the header bar (window, ide), borderless badge in the omnibox (browser), or recessed 3D keycap badge (prompt); Supports text, an icon (icon:<slug>), or both (icon:<slug>+<text>).',
-      name: '?hint=',
-      values: 'UTF-8 | icon:corner-down-left | icon:command+K | TS | none',
     },
     {
       defaultVal: String(TYPING_DURATION_RANGE.default),
@@ -287,13 +294,6 @@ export function buildTypingParamRows(): ParamTableRow[] {
       description: 'Reading hold pause in milliseconds after each line finishes typing.',
       name: '?pause=',
       values: formatRange(TYPING_PAUSE_RANGE),
-    },
-    {
-      defaultVal: '~auto-fit',
-      description:
-        'Explicit container width in pixels; Automatically fits the longest line when omitted.',
-      name: '?width=',
-      values: formatRange(TYPING_WIDTH_RANGE),
     },
     buildSheenAnimParamRow(
       'Periodic diagonal sheen sweep across the container surface, or none for a static reduced-motion snapshot.'

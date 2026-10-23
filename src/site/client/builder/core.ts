@@ -3,6 +3,8 @@
  */
 
 import { filterIconCatalog } from '@/site/client/builder/iconSearch';
+import { createTypingLinesController } from '@/site/client/builder/typingLines';
+import type { TypingLinesControllerOptions } from '@/site/client/builder/typingLines';
 import {
   BRAND_SLUG_CLEAN_RX,
   buildAltText,
@@ -226,6 +228,9 @@ export const core: BuilderClientCore = {
   computeGridFocusIndex,
   createAsyncCache,
   createIconResolver,
+  createTypingLinesController(options) {
+    return createTypingLinesController(options as unknown as TypingLinesControllerOptions);
+  },
   decodeSegment,
   encodeSegment,
   filterIconCatalog,

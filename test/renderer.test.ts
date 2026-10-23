@@ -17,7 +17,12 @@ import {
   renderButton,
   renderIcon,
 } from '@/svg/renderer';
-import { escapeXml, prepareDisplayText, sliceAtCodePoint } from '@/svg/shared';
+import {
+  ACTIVE_ICON_MOTION_TOKENS,
+  escapeXml,
+  prepareDisplayText,
+  sliceAtCodePoint,
+} from '@/svg/shared';
 import { resolveStackIconColor, STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
 import {
   MAX_TYPING_LINES,
@@ -57,6 +62,17 @@ const WATERMARK_TRANSFORM_RX =
 
 /** Matches the `id` attribute of a `<clipPath>` element and captures its value. */
 const CLIP_PATH_ID_RX = /clipPath id="(?<id>[^"]+)"/;
+
+/** Matches every SMIL `<animate>` or `<animateTransform>` opening tag. */
+const SMIL_TAG_RX = /<animate(?:Transform)?\s[^>]+>/g;
+
+/** Matches traffic-light `<circle>` dots and captures their center X coordinate and radius. */
+const TRAFFIC_LIGHT_CIRCLE_RX =
+  /<circle cx="(?<cx>[\d.]+)" cy="[\d.]+" r="(?<radius>[\d.]+)" fill="#/g;
+
+/** Matches the recessed omnibox well `<rect>` in `browser` typing layout and captures its X coordinate. */
+const BROWSER_OMNIBOX_RECT_RX =
+  /<rect x="(?<wellX>[\d.]+)" y="[\d.]+" width="[\d.]+" height="[\d.]+" rx="[\d.]+" fill="rgba\(9,10,15,0\.52\)" stroke=/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -108,6 +124,94 @@ function measureMaxTextInkX(svg: string): number {
     }
   }
   return maxInkX;
+}
+
+/** Read a single XML attribute value from an opening SVG/SMIL tag. */
+function readTagAttr(tag: string, attrName: string): string | undefined {
+  return new RegExp(`\\s${attrName}="(?<val>[^"]*)"`).exec(tag)?.groups?.val;
+}
+
+/** Verify that every SMIL animation in `svg` uses valid, strictly monotonic `calcMode="spline"` easing (except continuous 360° `spin`). */
+function assertSmoothSmilTimelines(svg: string, contextLabel: string): void {
+  const tags = [...svg.matchAll(SMIL_TAG_RX)].map((match) => match[0]);
+  expect(tags.length, contextLabel).toBeGreaterThan(0);
+
+  for (const tag of tags) {
+    const label = `${contextLabel}: ${tag}`;
+    if (readTagAttr(tag, 'from') !== undefined || readTagAttr(tag, 'to') !== undefined) {
+      expect(tag, label).toContain('type="rotate" from="0 12 12" to="360 12 12"');
+    } else {
+      expect(readTagAttr(tag, 'calcMode'), label).toBe('spline');
+      const valuesList = (readTagAttr(tag, 'values') ?? '').split(';');
+      const keyTimesList = (readTagAttr(tag, 'keyTimes') ?? '').split(';').map(Number);
+      const keySplinesList = (readTagAttr(tag, 'keySplines') ?? '').split(';');
+
+      expect(valuesList.length, label).toBeGreaterThanOrEqual(2);
+      expect(keyTimesList).toHaveLength(valuesList.length);
+      expect(keySplinesList).toHaveLength(valuesList.length - 1);
+      expect(keyTimesList[0], label).toBe(0);
+      expect(keyTimesList[keyTimesList.length - 1], label).toBe(1);
+
+      for (let i = 1; i < keyTimesList.length; i += 1) {
+        const previousKeyTime = keyTimesList[i - 1] ?? 0;
+        const currentKeyTime = keyTimesList[i] ?? 0;
+        expect(Number.isFinite(currentKeyTime), label).toBe(true);
+        expect(currentKeyTime, label).toBeGreaterThan(previousKeyTime);
+      }
+
+      for (const splineSegment of keySplinesList) {
+        const coords = splineSegment.trim().split(/\s+/).map(Number);
+        expect(coords, `${label} (${splineSegment})`).toHaveLength(4);
+        for (const coord of coords) {
+          expect(Number.isFinite(coord), label).toBe(true);
+          expect(coord, label).toBeGreaterThanOrEqual(0);
+          expect(coord, label).toBeLessThanOrEqual(1);
+        }
+      }
+    }
+  }
+}
+
+/** Linearly sample a numeric SMIL `(keyTimes, values)` timeline at `targetTime` (`0`..`1`). */
+function sampleNumericTimeline(
+  keyTimes: readonly number[],
+  values: readonly number[],
+  targetTime: number
+): number {
+  for (let i = 1; i < keyTimes.length; i += 1) {
+    const startT = keyTimes[i - 1] ?? 0;
+    const endT = keyTimes[i] ?? 1;
+    if (targetTime <= endT) {
+      const span = endT - startT;
+      const ratio = span > 0 ? (targetTime - startT) / span : 0;
+      const startVal = values[i - 1] ?? 0;
+      const endVal = values[i] ?? startVal;
+      return startVal + (endVal - startVal) * ratio;
+    }
+  }
+  return values[values.length - 1] ?? 0;
+}
+
+/** Verify that every leftward cursor reset in a `fade`-erase typing SVG occurs while cursor `opacity` is `0`. */
+function assertFadeCursorResetsWhileInvisible(typingSvg: string): void {
+  const cursorMatch =
+    /<rect [^>]*><animate attributeName="x" values="(?<xVals>[^"]+)" keyTimes="(?<xTimes>[^"]+)"[^>]*\/><animate attributeName="opacity" values="(?<opVals>[^"]+)" keyTimes="(?<opTimes>[^"]+)"[^>]*\/><\/rect>/.exec(
+      typingSvg
+    );
+  expect(cursorMatch).toBeDefined();
+  const xValues = (cursorMatch?.groups?.xVals ?? '').split(';').map(Number);
+  const xTimes = (cursorMatch?.groups?.xTimes ?? '').split(';').map(Number);
+  const opValues = (cursorMatch?.groups?.opVals ?? '').split(';').map(Number);
+  const opTimes = (cursorMatch?.groups?.opTimes ?? '').split(';').map(Number);
+  let resetCount = 0;
+  for (let i = 1; i < xValues.length; i += 1) {
+    if ((xValues[i] ?? 0) < (xValues[i - 1] ?? 0) - 4) {
+      resetCount += 1;
+      expect(sampleNumericTimeline(opTimes, opValues, xTimes[i - 1] ?? 0)).toBeCloseTo(0, 5);
+      expect(sampleNumericTimeline(opTimes, opValues, xTimes[i] ?? 0)).toBeCloseTo(0, 5);
+    }
+  }
+  expect(resetCount).toBeGreaterThanOrEqual(2);
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -538,7 +642,7 @@ describe('renderIcon', () => {
 
     const floatIconSvg = renderIcon({ anim: 'auto', color: 'emerald', icon: 'package' });
     expect(floatIconSvg).toContain(
-      'type="translate" values="0 0;0 -1.5;0 0;0 1.2;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
+      'type="translate" values="0 0;0 -1.5;0 0;0 1.5;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
     );
 
     const animatedIconSvg = renderIcon({ anim: 'auto', color: 'teal', icon: 'refresh-cw' });
@@ -555,7 +659,7 @@ describe('renderIcon', () => {
 
     const breatheIconSvg = renderIcon({ anim: 'breathe', color: 'orange', icon: 'flame' });
     expect(breatheIconSvg).toContain(
-      'type="scale" values="1;1.14;1;0.92;1" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
+      'type="scale" values="1;1.11;1;0.89;1" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34"'
     );
 
     const clampedIconSvg = renderIcon({
@@ -1445,6 +1549,90 @@ describe('rendering regressions', () => {
     expect(dotOnlyPrimaryBadge).toContain(`fill="${DOT_COLORS.sky}"`);
     expect(dotOnlyPrimaryBadge).not.toContain('url(#grad-sky)');
   });
+
+  it('uses strictly monotonic spline-eased SMIL timelines across all animated SVG elements and hides fade-erase cursor resets (regression: abrupt linear velocity kinks and visible fade cursor slides)', () => {
+    for (const dot of ['green', 'amber', 'orange', 'red', 'sky'] as const) {
+      assertSmoothSmilTimelines(
+        renderBadge({ color: 'emerald', dot, label: 'status', value: 'live', variant: '2' }),
+        `badge dot=${dot}`
+      );
+    }
+
+    const animatedSpecials: readonly BadgeSpecialElement[] = [
+      { type: 'bar', value: 76 },
+      { hasPulse: true, type: 'ring', value: 84 },
+      { type: 'delta', value: '+14%' },
+      { type: 'sparkline', values: [2, 6, 4, 9] },
+      { type: 'bars', values: [3, 7, 5, 8] },
+      { done: 3, total: 5, type: 'steps' },
+      { states: ['9', '9', '8', '0'] satisfies StripTickState[], type: 'strip' },
+    ];
+    for (const special of animatedSpecials) {
+      assertSmoothSmilTimelines(
+        renderBadge({
+          anim: 'sheen',
+          color: 'indigo',
+          label: 'metric',
+          special,
+          value: 'ok',
+          variant: '2',
+        }),
+        `badge special=${special.type}`
+      );
+    }
+
+    assertSmoothSmilTimelines(
+      renderButton({
+        anim: 'sheen,pulse,nudge',
+        color: 'indigo',
+        icon: 'sparkles,arrow-right',
+        label: 'Launch',
+        variant: '1',
+      }),
+      'button sheen+icons'
+    );
+
+    for (const motion of [...ACTIVE_ICON_MOTION_TOKENS, 'sheen'] as const) {
+      assertSmoothSmilTimelines(
+        renderIcon({ anim: motion, color: 'indigo', icon: 'rocket' }),
+        `icon anim=${motion}`
+      );
+    }
+
+    for (const stackAnim of ['wave', 'float', 'pulse', 'sheen', 'sheen,wave'] as const) {
+      assertSmoothSmilTimelines(
+        renderStack({ anim: stackAnim, icons: ['ts', 'rust', 'go'] }),
+        `stack anim=${stackAnim}`
+      );
+    }
+
+    assertSmoothSmilTimelines(
+      renderQuote({ anim: 'sheen', author: 'Ada', color: 'violet', text: 'Smooth motion.' }),
+      'quote sheen'
+    );
+
+    for (const erase of ['backspace', 'select', 'fade'] as const) {
+      const typingSvg = renderTyping({
+        align: 'center',
+        anim: 'sheen',
+        color: 'indigo',
+        erase,
+        hasTypo: true,
+        lines: 'First line here;Second much longer centered line;Third line',
+      });
+      assertSmoothSmilTimelines(typingSvg, `typing erase=${erase}`);
+    }
+
+    const fadeSvg = renderTyping({
+      align: 'center',
+      color: 'indigo',
+      erase: 'fade',
+      hasTypo: false,
+      lines: 'First line here;Second much longer centered line;Third line',
+    });
+    expect(fadeSvg).toContain('calcMode="spline"');
+    assertFadeCursorResetsWhileInvisible(fadeSvg);
+  });
 });
 
 describe('documentation drift guards', () => {
@@ -1695,5 +1883,31 @@ describe('renderTyping', () => {
     expect(useOpeningTags.length).toBeGreaterThan(2);
     expect(useOpeningTags[0]).not.toContain('opacity="0"');
     expect(useOpeningTags.some((tag) => tag.includes('opacity="0"'))).toBe(true);
+  });
+
+  it('aligns browser layout left dot margin with the gap before the search omnibox across all size presets (regression: wider left body gap than dot-to-omnibox gap)', () => {
+    const sizes: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
+    for (const size of sizes) {
+      const svg = renderTyping({
+        color: 'indigo',
+        icon: 'sparkles',
+        layout: 'browser',
+        lines: 'Full-Stack Developer',
+        size,
+      });
+      const circles = [...svg.matchAll(TRAFFIC_LIGHT_CIRCLE_RX)];
+      expect(circles, size).toHaveLength(3);
+      const firstDotCx = Number(circles[0]?.groups?.cx);
+      const thirdDotCx = Number(circles[2]?.groups?.cx);
+      const dotRadius = Number(circles[0]?.groups?.radius);
+      const wellX = Number(BROWSER_OMNIBOX_RECT_RX.exec(svg)?.groups?.wellX);
+
+      // Clear space from inner body border edge (`x = 1`) to first dot's left edge:
+      const leftClearGap = firstDotCx - dotRadius - 1;
+      // Clear space from third dot's right edge to outer left border edge of the `1px`-stroked omnibox (`wellX - 0.5`):
+      const middleClearGap = wellX - 0.5 - (thirdDotCx + dotRadius);
+      expect(leftClearGap, size).toBeGreaterThan(0);
+      expect(leftClearGap, size).toBeCloseTo(middleClearGap, 5);
+    }
   });
 });

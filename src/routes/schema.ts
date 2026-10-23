@@ -642,13 +642,13 @@ function buildButtonFields(): BuilderField[] {
       maxLength: MAX_LABEL_LENGTH,
     },
     buildVariantField(DEFAULT_BUTTON_VARIANT),
+    buildColorField(),
     buildSizePresetField(
       presetHeights,
       BUTTON_HEIGHT_RANGE,
       'md',
       'Height preset or custom pixel height.'
     ),
-    buildColorField(),
     buildIconPairField('Leading icon, trailing icon, or both.'),
     buildAnimField('pair'),
   ];
@@ -658,11 +658,11 @@ function buildButtonFields(): BuilderField[] {
 function buildIconFields(): BuilderField[] {
   return [
     { control: 'icon', id: 'icon', isRequired: true, label: 'Icon' },
+    buildColorField(),
     buildNumberField('size', 'Size (px)', ICON_SIZE_RANGE),
     buildNumberField('stroke', 'Stroke width', ICON_STROKE_RANGE, {
       description: 'Applies to Lucide stroke icons only.',
     }),
-    buildColorField(),
     buildAnimField('single'),
   ];
 }
@@ -717,20 +717,20 @@ function buildQuoteFields(): BuilderField[] {
   }
   return [
     {
-      aliases: ['author'],
-      control: 'text',
-      id: 'author',
-      label: 'Author',
-      maxLength: MAX_LABEL_LENGTH,
-      placeholder: 'optional',
-    },
-    {
       aliases: ['text', 'quote'],
       control: 'textarea',
       id: 'text',
       isRequired: true,
       label: 'Quote',
       maxLength: MAX_QUOTE_TEXT_LENGTH,
+    },
+    {
+      aliases: ['author'],
+      control: 'text',
+      id: 'author',
+      label: 'Author',
+      maxLength: MAX_LABEL_LENGTH,
+      placeholder: 'optional',
     },
     {
       aliases: ['type'],
@@ -742,6 +742,7 @@ function buildQuoteFields(): BuilderField[] {
       param: 'layout',
     },
     buildVariantField(DEFAULT_QUOTE_VARIANT),
+    buildColorField(),
     buildSizePresetField(
       QUOTE_SIZE_MAP,
       QUOTE_FONT_SIZE_RANGE,
@@ -749,7 +750,6 @@ function buildQuoteFields(): BuilderField[] {
       `Typography preset or custom font size (defaults to ${DEFAULT_HORIZONTAL_QUOTE_SIZE}, or ${DEFAULT_VERTICAL_QUOTE_SIZE} for vertical cards).`,
       { horizontal: DEFAULT_HORIZONTAL_QUOTE_SIZE, vertical: DEFAULT_VERTICAL_QUOTE_SIZE }
     ),
-    buildColorField(),
     buildNumberField('width', 'Width (px)', QUOTE_WIDTH_RANGE, {
       description: `Defaults to ${QUOTE_WIDTH_RANGE.default}px (horizontal) or ${DEFAULT_VERTICAL_QUOTE_WIDTH}px (vertical) and grows with text sizes above the layout's default.`,
       placeholder: 'auto',
@@ -781,6 +781,15 @@ function buildTypingFields(): BuilderField[] {
 
   return [
     {
+      aliases: ['lines', 'text'],
+      control: 'typingLines',
+      id: 'lines',
+      isRequired: true,
+      label: 'Typed lines',
+      max: MAX_TYPING_LINES,
+      maxLength: MAX_TYPING_LINE_LENGTH,
+    },
+    {
       aliases: ['prefix', 'prompt'],
       control: 'text',
       description:
@@ -789,15 +798,6 @@ function buildTypingFields(): BuilderField[] {
       label: 'Prefix',
       maxLength: MAX_TYPING_PREFIX_LENGTH,
       placeholder: `${DEFAULT_WINDOW_PROMPT} (${DEFAULT_TYPING_LAYOUT} default)`,
-    },
-    {
-      aliases: ['lines', 'text'],
-      control: 'typingLines',
-      id: 'lines',
-      isRequired: true,
-      label: 'Typed lines',
-      max: MAX_TYPING_LINES,
-      maxLength: MAX_TYPING_LINE_LENGTH,
     },
     {
       aliases: ['frame', 'type'],
@@ -825,6 +825,45 @@ function buildTypingFields(): BuilderField[] {
       'md',
       'Typography preset or custom font size in pixels.'
     ),
+    buildNumberField('width', 'Width (px)', TYPING_WIDTH_RANGE, {
+      description: 'Auto-fits the longest line when left empty.',
+      placeholder: 'auto',
+    }),
+    {
+      control: 'select',
+      defaultValue: 'left',
+      id: 'align',
+      label: 'Alignment',
+      options: alignOptions,
+      param: 'align',
+    },
+    {
+      control: 'text',
+      description: 'Optional header bar or active tab title on titled layouts.',
+      id: 'title',
+      label: 'Window / tab title',
+      layoutDefaults: { ide: DEFAULT_IDE_TITLE },
+      maxLength: MAX_TYPING_TITLE_LENGTH,
+      param: 'title',
+      placeholder: 'optional (e.g., zsh)',
+    },
+    {
+      control: 'icon',
+      description: 'Optional icon rendered in the active container frame or header.',
+      id: 'icon',
+      label: 'Icon',
+      param: 'icon',
+      placeholder: 'none',
+    },
+    {
+      control: 'hint',
+      description: 'Optional icon and/or label inside the trailing hint or keycap badge.',
+      id: 'hint',
+      label: 'Keycap / hint',
+      maxLength: MAX_TYPING_HINT_LENGTH,
+      param: 'hint',
+      placeholder: 'optional (e.g., UTF-8)',
+    },
     {
       control: 'select',
       defaultValue: DEFAULT_TYPING_CURSOR,
@@ -844,14 +883,6 @@ function buildTypingFields(): BuilderField[] {
     },
     {
       control: 'select',
-      defaultValue: 'left',
-      id: 'align',
-      label: 'Alignment',
-      options: alignOptions,
-      param: 'align',
-    },
-    {
-      control: 'select',
       defaultValue: '',
       description:
         'Simulates an occasional QWERTY neighbor key slip + immediate backspace correction.',
@@ -863,39 +894,8 @@ function buildTypingFields(): BuilderField[] {
       ],
       param: 'typo',
     },
-    {
-      control: 'icon',
-      description: 'Optional icon rendered in the active container frame or header.',
-      id: 'icon',
-      label: 'Icon',
-      param: 'icon',
-      placeholder: 'none',
-    },
-    {
-      control: 'text',
-      description: 'Optional header bar or active tab title on titled layouts.',
-      id: 'title',
-      label: 'Window / tab title',
-      layoutDefaults: { ide: DEFAULT_IDE_TITLE },
-      maxLength: MAX_TYPING_TITLE_LENGTH,
-      param: 'title',
-      placeholder: 'optional (e.g., zsh)',
-    },
-    {
-      control: 'hint',
-      description: 'Optional icon and/or label inside the trailing hint or keycap badge.',
-      id: 'hint',
-      label: 'Keycap / hint',
-      maxLength: MAX_TYPING_HINT_LENGTH,
-      param: 'hint',
-      placeholder: 'optional (e.g., UTF-8)',
-    },
     buildNumberField('duration', 'Typing speed (ms)', TYPING_DURATION_RANGE),
     buildNumberField('pause', 'Hold pause (ms)', TYPING_PAUSE_RANGE),
-    buildNumberField('width', 'Width (px)', TYPING_WIDTH_RANGE, {
-      description: 'Auto-fits the longest line when left empty.',
-      placeholder: 'auto',
-    }),
     buildAnimField('typing'),
   ];
 }

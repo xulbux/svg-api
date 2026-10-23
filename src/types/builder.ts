@@ -322,6 +322,16 @@ export interface IconCatalogFilterResult {
   matches: IconMatch[];
 }
 
+/** Public controller interface returned by `createTypingLinesController`. */
+export interface TypingLinesController {
+  /** Bind add, remove, keyboard navigation, pointer reorder, and multi-line paste listeners. */
+  bind: () => void;
+  /** Read and serialize the non-empty line inputs into `;`-separated form and sync `#field-lines`. */
+  readValue: () => string;
+  /** Rebuild the line input rows from a `;`- or newline-separated lines string. */
+  syncFromValue: (rawValue: string) => void;
+}
+
 /** Pure helpers exposed on `globalThis.svgBuilderCore` when the builder client runs without a DOM. */
 export interface BuilderClientCore {
   /** Build a human-readable default alt text for the current element state. */
@@ -370,6 +380,8 @@ export interface BuilderClientCore {
   createAsyncCache: <T>(load: (key: string) => Promise<T>) => (key: string) => Promise<T>;
   /** Create an icon slug resolver from the icon picker index. */
   createIconResolver: (index: IconPickerIndex, maxSlugLength: number) => IconResolver;
+  /** Create the interactive line-by-line list controller for `/builder/typing`. */
+  createTypingLinesController: (options: Record<string, unknown>) => TypingLinesController;
   /** Decode a URL path segment (`+` to space, percent-encoding to UTF-8). */
   decodeSegment: (raw: string) => string;
   /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */

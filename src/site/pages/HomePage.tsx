@@ -60,20 +60,20 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Status Operational',
-        path: '/badge/Status/Operational?dot=green&color=emerald&variant=2',
+        path: '/badge/Status/Operational?variant=2&color=emerald&dot=green',
       },
       { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
       {
         alt: 'Coverage',
-        path: '/badge/Coverage/99.4%25?icon=shield-check&color=emerald&variant=2&special=bar:99.4',
+        path: '/badge/Coverage/99.4%25?variant=2&color=emerald&icon=shield-check&special=bar:99.4',
       },
       {
         alt: 'Edge Latency',
-        path: '/badge/Latency/11ms?icon=zap&color=cyan&variant=2&special=sparkline:19,16,18,15,14,15,12,11',
+        path: '/badge/Latency/11ms?variant=2&color=cyan&icon=zap&special=sparkline:19,16,18,15,14,15,12,11',
       },
       {
         alt: 'Uptime',
-        path: '/badge/Uptime/99.98%25?icon=activity&color=violet&variant=3&special=strip:9998997999',
+        path: '/badge/Uptime/99.98%25?variant=3&color=violet&icon=activity&special=strip:9998997999',
       },
       {
         alt: 'Explore Docs',
@@ -86,14 +86,14 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
   },
   {
     items: [
-      { alt: 'Loading', path: '/icon/loader?size=32&color=sky&anim=spin' },
-      { alt: 'Heart', path: '/icon/heart?size=32&color=rose&anim=pulse' },
-      { alt: 'Notifications', path: '/icon/bell?size=32&color=amber&anim=shake' },
-      { alt: 'Launch', path: '/icon/rocket?size=32&color=indigo&anim=nudge' },
-      { alt: 'Cloud', path: '/icon/cloud?size=32&color=cyan&anim=float' },
-      { alt: 'Rust', path: '/icon/rust?size=32&color=orange&anim=sheen' },
-      { alt: 'TypeScript', path: '/icon/ts?size=32&color=blue' },
-      { alt: 'Vue.js', path: '/icon/vue?size=32&color=emerald' },
+      { alt: 'Loading', path: '/icon/loader?color=sky&size=32&anim=spin' },
+      { alt: 'Heart', path: '/icon/heart?color=rose&size=32&anim=pulse' },
+      { alt: 'Notifications', path: '/icon/bell?color=amber&size=32&anim=shake' },
+      { alt: 'Launch', path: '/icon/rocket?color=indigo&size=32&anim=nudge' },
+      { alt: 'Cloud', path: '/icon/cloud?color=cyan&size=32&anim=float' },
+      { alt: 'Rust', path: '/icon/rust?color=orange&size=32&anim=sheen' },
+      { alt: 'TypeScript', path: '/icon/ts?color=blue&size=32' },
+      { alt: 'Vue.js', path: '/icon/vue?color=emerald&size=32' },
     ],
     subtitle: `${ICON_SOURCE_SETS.stroke[0]} stroke icons and ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos with OKLCH colors, custom sizing, and SMIL motions.`,
     title: 'Standalone Icons (/icon/:icon)',

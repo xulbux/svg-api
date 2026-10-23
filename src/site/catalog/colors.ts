@@ -17,11 +17,11 @@ export function buildColorSwatchCards(): ShowcaseCardConfig[] {
   for (const colorName of THEME_COLOR_NAMES) {
     primaryItems.push({
       alt: `${colorName} primary`,
-      path: `/badge/Color/${colorName}?icon=sparkles&color=${colorName}&variant=1`,
+      path: `/badge/Color/${colorName}?variant=1&color=${colorName}&icon=sparkles`,
     });
     secondaryItems.push({
       alt: `${colorName} secondary`,
-      path: `/badge/Theme/${colorName}?icon=sparkles&color=${colorName}&variant=2`,
+      path: `/badge/Theme/${colorName}?variant=2&color=${colorName}&icon=sparkles`,
     });
   }
   const colorCount = THEME_COLOR_NAMES.length;

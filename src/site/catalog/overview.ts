@@ -27,10 +27,10 @@ export const URL_ANATOMY_PARTS: readonly UrlAnatomyPart[] = [
   { className: 'hl-p', label: 'Origin', text: SITE_ORIGIN },
   { className: 'hl-url', label: 'Endpoint', text: '/badge' },
   { className: 'hl-path', label: 'Path segments', text: '/Build+Status/Passing' },
-  { className: 'hl-key', label: 'Query keys', text: '?icon=' },
-  { className: 'hl-val', label: 'Query values', text: 'circle-check' },
-  { className: 'hl-key', text: '&color=' },
-  { className: 'hl-val', text: 'emerald' },
+  { className: 'hl-key', label: 'Query keys', text: '?color=' },
+  { className: 'hl-val', label: 'Query values', text: 'emerald' },
+  { className: 'hl-key', text: '&icon=' },
+  { className: 'hl-val', text: 'circle-check' },
 ];
 
 /** Path segment encoding rules (every example is a working, documented path). */
@@ -103,7 +103,7 @@ export const CACHING_COLUMNS: ParamTableRow = {
 export const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
-      { alt: 'Build Status', path: '/badge/Build+Status/Passing?icon=circle-check&color=emerald' },
+      { alt: 'Build Status', path: '/badge/Build+Status/Passing?color=emerald&icon=circle-check' },
     ],
     subtitle:
       'Paste the Markdown image snippet into any README; GitHub proxies and caches the SVG through its image CDN.',
@@ -152,16 +152,16 @@ export function buildSharedParamRows(): ParamTableRow[] {
   const extraStackMotions = ACTIVE_STACK_MOTION_TOKENS.filter((token) => !iconMotionSet.has(token));
   return [
     {
-      defaultVal: formatSupportingEndpoints('color'),
-      description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
-      name: '?color=',
-      values: formatColorValues(),
-    },
-    {
       defaultVal: formatSupportingEndpoints('variant'),
       description: `Visual hierarchy tier: ${formatVariantTierSummary()}.`,
       name: '?variant=',
       values: formatVariantValues(),
+    },
+    {
+      defaultVal: formatSupportingEndpoints('color'),
+      description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
+      name: '?color=',
+      values: formatColorValues(),
     },
     {
       defaultVal: formatSupportingEndpoints('icon'),
