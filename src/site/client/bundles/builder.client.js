@@ -328,6 +328,53 @@
       }
     }
   }
+  function composeIconPair(left, right, hasPresetIcon) {
+    const rawLeft = left.trim();
+    const rawRight = right.trim();
+    const leftSlug = !hasPresetIcon && rawLeft.toLowerCase() === 'none' ? '' : rawLeft;
+    const rightSlug = rawRight.toLowerCase() === 'none' ? '' : rawRight;
+    if (!rightSlug) {
+      return leftSlug;
+    }
+    return `${leftSlug || (hasPresetIcon ? '' : 'none')},${rightSlug}`;
+  }
+  function splitIconPair(value, hasPresetIcon) {
+    const commaIndex = value.indexOf(',');
+    if (commaIndex === -1) {
+      const single = value.trim();
+      return [!hasPresetIcon && single.toLowerCase() === 'none' ? '' : single, ''];
+    }
+    const rawLeft = value.slice(0, commaIndex).trim();
+    const rawRight = value.slice(commaIndex + 1).trim();
+    const left = !hasPresetIcon && rawLeft.toLowerCase() === 'none' ? '' : rawLeft;
+    const right = rawRight.toLowerCase() === 'none' ? '' : rawRight;
+    return [left, right];
+  }
+  function composeHint(icon, text) {
+    const cleanIcon = icon.trim();
+    const cleanText = text.trim();
+    if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
+      return cleanText;
+    }
+    return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
+  }
+  function splitHint(value) {
+    const trimmed = value.trim();
+    if (!trimmed || trimmed.toLowerCase() === 'none') {
+      return { icon: '', text: '' };
+    }
+    if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
+      const rest = trimmed.slice(5).trim();
+      if (!rest) {
+        return { icon: '', text: '' };
+      }
+      const match = HINT_ICON_REST_RX.exec(rest);
+      const icon = (match?.groups?.slug ?? '').trim();
+      const text = (match?.groups?.text ?? '').trim();
+      return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
+    }
+    return { icon: '', text: trimmed };
+  }
   function isTypingFieldActiveForLayout(fieldId, layoutValue) {
     const effectiveLayout = layoutValue.trim().toLowerCase() || 'window';
     if (fieldId === 'title') {
@@ -341,15 +388,148 @@
     }
     return true;
   }
+  function resolveActiveServiceMetric(schema, state) {
+    const service = findService(schema, readState(state, 'service')) ?? schema.services?.[0];
+    const metric = findOption(service?.metrics, readState(state, 'metric')) ?? service?.metrics[0];
+    return { metric, service };
+  }
+  function resolveServiceFieldDefault(schema, state, field) {
+    const { metric, service } = resolveActiveServiceMetric(schema, state);
+    if (field.id === 'service') {
+      return service?.key ?? '';
+    }
+    if (!metric) {
+      return undefined;
+    }
+    const metricDefaults = {
+      color: metric.hasDynamicColor ? '' : metric.defaultColor,
+      dot: metric.hasDynamicDot ? '' : 'none',
+      label: metric.defaultLabel,
+      metric: metric.value,
+      special: metric.defaultSpecial ?? 'none',
+    };
+    return Object.hasOwn(metricDefaults, field.id) ? metricDefaults[field.id] : undefined;
+  }
+  function resolveLayoutFieldDefault(schema, state, field) {
+    const effectiveLayout =
+      readState(state, 'layout').toLowerCase() || (findField(schema, 'layout')?.defaultValue ?? '');
+    if (schema.kind === 'typing' && field.id === 'align') {
+      const hasPrefix = Boolean(readState(state, 'prefix'));
+      const rawIcon = readState(state, 'icon').toLowerCase();
+      const hasIcon = Boolean(rawIcon && rawIcon !== 'none');
+      return effectiveLayout === 'none' && !hasPrefix && !hasIcon
+        ? 'center'
+        : (field.defaultValue ?? 'left');
+    }
+    if (field.layoutDefaults && Object.hasOwn(field.layoutDefaults, effectiveLayout)) {
+      return field.layoutDefaults[effectiveLayout] ?? field.defaultValue ?? '';
+    }
+    return undefined;
+  }
+  function resolveEffectiveFieldDefault(schema, state, field) {
+    if (schema.kind === 'service') {
+      const serviceDefault = resolveServiceFieldDefault(schema, state, field);
+      if (serviceDefault !== undefined) {
+        return serviceDefault;
+      }
+    }
+    if (schema.kind === 'quote' || schema.kind === 'typing') {
+      const layoutDefault = resolveLayoutFieldDefault(schema, state, field);
+      if (layoutDefault !== undefined) {
+        return layoutDefault;
+      }
+    }
+    return field.defaultValue ?? '';
+  }
+  function normalizeIconPairFieldValue(schema, state, field, rawValue) {
+    const hasPresetIcon = Boolean(field.hasPresetValue);
+    const [rawLeft, right] = splitIconPair(rawValue, hasPresetIcon);
+    if (schema.kind !== 'service') {
+      return composeIconPair(rawLeft, right, hasPresetIcon);
+    }
+    const { metric } = resolveActiveServiceMetric(schema, state);
+    const isRedundantPresetLeft =
+      Boolean(metric && !metric.hasDynamicIcon) &&
+      rawLeft.toLowerCase() === (metric?.defaultIcon ?? '').toLowerCase();
+    return composeIconPair(isRedundantPresetLeft ? '' : rawLeft, right, hasPresetIcon);
+  }
+  function isMatchingDefaultOptionAlias(options, lowerValue, lowerDefault) {
+    if (!options) {
+      return false;
+    }
+    for (const option of options) {
+      if (option.value.toLowerCase() === lowerDefault) {
+        return (
+          lowerValue === lowerDefault ||
+          Boolean(option.aliases?.some((alias) => alias.toLowerCase() === lowerValue))
+        );
+      }
+    }
+    return false;
+  }
+  function isValueEqualToEffectiveDefault(field, value, effectiveDefault) {
+    const lowerValue = value.toLowerCase();
+    const lowerDefault = effectiveDefault.toLowerCase();
+    if (isMatchingDefaultOptionAlias(field.options, lowerValue, lowerDefault)) {
+      return true;
+    }
+    if (!effectiveDefault) {
+      return false;
+    }
+    if (field.control === 'number' || field.id === 'perline') {
+      const numericValue = Number(value);
+      return Number.isFinite(numericValue) && numericValue === Number(effectiveDefault);
+    }
+    if (field.control === 'text' || field.control === 'textarea') {
+      return value === effectiveDefault;
+    }
+    return lowerValue === lowerDefault;
+  }
+  function normalizeQueryFieldValue(schema, state, field, rawValue) {
+    const lowerValue = rawValue.toLowerCase();
+    if (field.control === 'iconPair') {
+      return normalizeIconPairFieldValue(schema, state, field, rawValue);
+    }
+    if (field.control === 'icon') {
+      return lowerValue === 'none' ? '' : rawValue;
+    }
+    if (field.control === 'hint') {
+      const parsedHint = splitHint(rawValue);
+      return composeHint(parsedHint.icon, parsedHint.text);
+    }
+    if (field.control === 'special' && !field.hasPresetValue && lowerValue === 'none') {
+      return '';
+    }
+    if (
+      field.control === 'anim' &&
+      schema.kind === 'button' &&
+      (lowerValue === 'none' || lowerValue === 'none,none')
+    ) {
+      return '';
+    }
+    if (
+      schema.kind === 'typing' &&
+      field.id === 'title' &&
+      (readState(state, 'layout').toLowerCase() || 'window') === 'window' &&
+      lowerValue === 'none'
+    ) {
+      return '';
+    }
+    const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
+    return isValueEqualToEffectiveDefault(field, rawValue, effectiveDefault) ? '' : rawValue;
+  }
   function buildQuery(schema, state) {
     const pairs = [];
     const typingLayout = schema.kind === 'typing' ? readState(state, 'layout') : '';
     for (const field of schema.fields) {
-      const value = (state[field.id] ?? '').trim();
+      const rawValue = (state[field.id] ?? '').trim();
       const isFieldActive =
         schema.kind !== 'typing' || isTypingFieldActiveForLayout(field.id, typingLayout);
-      if (field.param && value && isFieldActive) {
-        pairs.push(`${field.param}=${encodeSegment(value)}`);
+      if (field.param && rawValue && isFieldActive) {
+        const normalizedValue = normalizeQueryFieldValue(schema, state, field, rawValue);
+        if (normalizedValue) {
+          pairs.push(`${field.param}=${encodeSegment(normalizedValue)}`);
+        }
       }
     }
     return pairs.length > 0 ? `?${pairs.join('&')}` : '';
@@ -575,48 +755,6 @@
       }
     }
     return template.replaceAll('{owner}', owner).replaceAll('{target}', target);
-  }
-  function composeIconPair(left, right, hasPresetIcon) {
-    const leftSlug = left.trim();
-    const rightSlug = right.trim();
-    if (!rightSlug) {
-      return leftSlug;
-    }
-    return `${leftSlug || (hasPresetIcon ? '' : 'none')},${rightSlug}`;
-  }
-  function splitIconPair(value, hasPresetIcon) {
-    const commaIndex = value.indexOf(',');
-    if (commaIndex === -1) {
-      return [value.trim(), ''];
-    }
-    const left = value.slice(0, commaIndex).trim();
-    const right = value.slice(commaIndex + 1).trim();
-    return [left === 'none' && !hasPresetIcon ? '' : left, right];
-  }
-  function composeHint(icon, text) {
-    const cleanIcon = icon.trim();
-    const cleanText = text.trim();
-    if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
-      return cleanText;
-    }
-    return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
-  }
-  function splitHint(value) {
-    const trimmed = value.trim();
-    if (!trimmed || trimmed.toLowerCase() === 'none') {
-      return { icon: '', text: '' };
-    }
-    if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
-      const rest = trimmed.slice(5).trim();
-      if (!rest) {
-        return { icon: '', text: '' };
-      }
-      const match = HINT_ICON_REST_RX.exec(rest);
-      const icon = (match?.groups?.slug ?? '').trim();
-      const text = (match?.groups?.text ?? '').trim();
-      return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
-    }
-    return { icon: '', text: trimmed };
   }
   function composeSpecial(kind, payload, modifier, isAutoAllowed = false) {
     if (!kind) {
@@ -986,6 +1124,7 @@
     encodeSegment,
     isTypingFieldActiveForLayout,
     parsePath,
+    resolveEffectiveFieldDefault,
     splitAnim,
     splitHint,
     splitIconPair,
@@ -1032,6 +1171,48 @@
     prefixMatches.push(...substringMatches, ...tagMatches);
     return prefixMatches;
   }
+  function resolveTriggerEffectiveSlug(trigger, rawSlug, hasDynamicFallback) {
+    const trimmed = rawSlug.trim();
+    if (trimmed.toLowerCase() === 'none') {
+      return '';
+    }
+    if (trimmed) {
+      return trimmed;
+    }
+    if (!trigger || (trigger.dataset.presetDynamic === 'true' && !hasDynamicFallback)) {
+      return '';
+    }
+    return trigger.dataset.presetIcon?.trim() ?? '';
+  }
+  function resolveIconSelectDisplay(trigger, rawSlug, placeholder) {
+    const trimmed = rawSlug.trim();
+    if (trimmed.toLowerCase() === 'none') {
+      return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+    }
+    if (trimmed) {
+      return { displayLabel: trimmed, glyphSlug: trimmed, isPlaceholder: false };
+    }
+    const presetIcon = trigger?.dataset.presetIcon?.trim() ?? '';
+    if (presetIcon) {
+      const isPresetDynamic = trigger?.dataset.presetDynamic === 'true';
+      return {
+        displayLabel: isPresetDynamic ? 'Auto' : presetIcon,
+        glyphSlug: presetIcon,
+        isPlaceholder: false,
+      };
+    }
+    return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+  }
+  function insertPickedSlugAtCursor(target, slug) {
+    const cursor = target.selectionStart ?? target.value.length;
+    const before = target.value.slice(0, cursor);
+    const after = target.value.slice(target.selectionEnd ?? cursor);
+    const needsSeparator = before.length > 0 && !TRAILING_STACK_SEPARATOR_RX.test(before);
+    const insertion = `${needsSeparator ? ',' : ''}${slug}`;
+    target.value = `${before}${insertion}${after}`;
+    const cursorAfter = before.length + insertion.length;
+    target.setSelectionRange(cursorAfter, cursorAfter);
+  }
   function createIconPickerController(options) {
     const {
       form,
@@ -1040,7 +1221,6 @@
       picker,
       pickerEmpty,
       pickerGrid,
-      pickerNoneButton,
       pickerSearch,
       pickerStatus,
       schema,
@@ -1166,18 +1346,29 @@
     }
     function syncIconSelects(scope) {
       for (const trigger of scope.querySelectorAll('.icon-select-trigger')) {
-        const inputId = trigger instanceof HTMLElement ? (trigger.dataset.iconTarget ?? '') : '';
+        const triggerElement = trigger instanceof HTMLElement ? trigger : undefined;
+        const inputId = triggerElement?.dataset.iconTarget ?? '';
         const input = document.getElementById(inputId);
         const valueElement = trigger.querySelector('.icon-select-value');
         if (input instanceof HTMLInputElement && valueElement instanceof HTMLElement) {
-          const slug = input.value.trim();
-          valueElement.textContent = slug || (valueElement.dataset.placeholder ?? '');
-          valueElement.classList.toggle('is-placeholder', !slug);
-          form.querySelector(`[data-icon-clear="${inputId}"]`)?.toggleAttribute('hidden', !slug);
+          const display = resolveIconSelectDisplay(
+            triggerElement,
+            input.value,
+            valueElement.dataset.placeholder ?? ''
+          );
+          valueElement.textContent = display.displayLabel;
+          valueElement.classList.toggle('is-placeholder', display.isPlaceholder);
+          form
+            .querySelector(`[data-icon-clear="${inputId}"]`)
+            ?.toggleAttribute('hidden', display.isPlaceholder);
           const glyph = trigger.querySelector('[data-glyph-for]');
-          if (glyph instanceof HTMLElement && iconResolver && glyph.dataset.slug !== slug) {
-            glyph.dataset.slug = slug;
-            renderInputGlyph(glyph, slug);
+          if (
+            glyph instanceof HTMLElement &&
+            iconResolver &&
+            glyph.dataset.slug !== display.glyphSlug
+          ) {
+            glyph.dataset.slug = display.glyphSlug;
+            renderInputGlyph(glyph, display.glyphSlug);
           }
         }
       }
@@ -1343,9 +1534,10 @@
         return;
       }
       pickerSearchFrame = 0;
-      const currentSlug =
+      const rawSlug =
         !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
-      pickerSelectedSlug = iconResolver?.locate(currentSlug, schema.isBrandFirst)?.slug ?? '';
+      const activeSlug = resolveTriggerEffectiveSlug(pickerTrigger, rawSlug, false);
+      pickerSelectedSlug = iconResolver?.locate(activeSlug, schema.isBrandFirst)?.slug ?? '';
       pickerMatches = computePickerMatches(iconIndex, pickerCatalog);
       pickerRendered = 0;
       tileObserver?.disconnect();
@@ -1382,25 +1574,27 @@
       cancelAnimationFrame(pickerSearchFrame);
       pickerSearchFrame = requestAnimationFrame(() => renderPicker(false));
     }
+    function resolveStaticPresetCanonical() {
+      const presetIcon = pickerTrigger?.dataset.presetIcon?.trim() ?? '';
+      if (!presetIcon || pickerTrigger?.dataset.presetDynamic === 'true') {
+        return '';
+      }
+      return (
+        iconResolver?.locate(presetIcon, schema.isBrandFirst)?.slug ?? presetIcon.toLowerCase()
+      );
+    }
     function applyPickedSlug(slug) {
       const target = pickerTarget;
       if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
         return;
       }
       if (isPickerInsertMode) {
-        const cursor = target.selectionStart ?? target.value.length;
-        const before = target.value.slice(0, cursor);
-        const after = target.value.slice(target.selectionEnd ?? cursor);
-        const needsSeparator = before.length > 0 && !TRAILING_STACK_SEPARATOR_RX.test(before);
-        const insertion = `${needsSeparator ? ',' : ''}${slug}`;
-        target.value = `${before}${insertion}${after}`;
-        const cursorAfter = before.length + insertion.length;
-        target.setSelectionRange(cursorAfter, cursorAfter);
-        target.dispatchEvent(new Event('input', { bubbles: true }));
+        insertPickedSlugAtCursor(target, slug);
       } else {
-        target.value = slug;
-        target.dispatchEvent(new Event('input', { bubbles: true }));
+        const presetCanonical = resolveStaticPresetCanonical();
+        target.value = presetCanonical && slug.toLowerCase() === presetCanonical ? '' : slug;
       }
+      target.dispatchEvent(new Event('input', { bubbles: true }));
       if (picker) {
         site?.closePopover(picker);
       }
@@ -1416,11 +1610,11 @@
       pickerTarget = document.getElementById(button.dataset.iconTarget ?? '') ?? undefined;
       pickerTrigger = button;
       isPickerInsertMode = button.dataset.iconInsert === 'true';
-      pickerNoneButton?.toggleAttribute('hidden', button.dataset.iconNone !== 'true');
     }
     function syncPickerTabForTarget() {
-      const currentSlug =
+      const rawSlug =
         !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
+      const currentSlug = resolveTriggerEffectiveSlug(pickerTrigger, rawSlug, true);
       const targetSet =
         iconResolver?.locate(currentSlug, schema.isBrandFirst)?.set ??
         (schema.isBrandFirst ? 'brands' : 'lucide');
@@ -1576,7 +1770,6 @@
         }
       });
       gridElement.addEventListener('keydown', handlePickerGridKeydown);
-      pickerNoneButton?.addEventListener('click', () => applyPickedSlug('none'));
       gridElement.addEventListener('focusin', showTileSlug);
       gridElement.addEventListener('pointerover', showTileSlug);
     }
@@ -2127,6 +2320,36 @@
       }
     }
   }
+  function trySwapDraggedRowOnce(draggedRow, visualCenterY) {
+    const previousSibling = draggedRow.previousElementSibling;
+    if (previousSibling instanceof HTMLElement) {
+      const previousRect = previousSibling.getBoundingClientRect();
+      if (visualCenterY < previousRect.top + previousRect.height / 2) {
+        previousSibling.before(draggedRow);
+        return true;
+      }
+    }
+    const nextSibling = draggedRow.nextElementSibling;
+    if (nextSibling instanceof HTMLElement) {
+      const nextRect = nextSibling.getBoundingClientRect();
+      if (visualCenterY > nextRect.top + nextRect.height / 2) {
+        nextSibling.after(draggedRow);
+        return true;
+      }
+    }
+    return false;
+  }
+  function swapDraggedRowWithNeighbors(draggedRow, visualCenterY) {
+    let hasSwapped = false;
+    let isCheckingNeighbors = true;
+    while (isCheckingNeighbors) {
+      isCheckingNeighbors = trySwapDraggedRowOnce(draggedRow, visualCenterY);
+      if (isCheckingNeighbors) {
+        hasSwapped = true;
+      }
+    }
+    return hasSwapped;
+  }
   function createTypingLinesController(options) {
     const { addButton, editorElement, hiddenInput, listElement } = options;
     const maxLines = Number(editorElement?.dataset.maxLines) || 12;
@@ -2166,6 +2389,14 @@
           const indexBadge = row.querySelector('.typing-line-index');
           if (indexBadge) {
             indexBadge.textContent = String(lineNumber);
+          }
+          const dragHandle = row.querySelector('[data-typing-line-handle]');
+          if (dragHandle instanceof HTMLButtonElement) {
+            dragHandle.disabled = isSingleRow;
+            dragHandle.setAttribute(
+              'aria-label',
+              `Reorder line ${lineNumber} (drag or use Up and Down arrow keys)`
+            );
           }
           const input = row.querySelector('.typing-line-input');
           if (input instanceof HTMLInputElement) {
@@ -2240,19 +2471,59 @@
       refreshRowMetadata();
       readValue();
     }
-    function handleKeydown(event) {
-      const input =
-        event.target instanceof HTMLInputElement &&
-        event.target.classList.contains('typing-line-input')
-          ? event.target
-          : undefined;
-      const row = input?.closest('[data-typing-line-row]');
-      if (!input || !row) {
+    function moveRowToIndex(row, targetIndex, focusTarget) {
+      const rows = getRows();
+      const currentIndex = rows.indexOf(row);
+      const clampedIndex = Math.max(0, Math.min(rows.length - 1, targetIndex));
+      const referenceRow = rows[clampedIndex];
+      if (currentIndex === -1 || currentIndex === clampedIndex || !referenceRow) {
+        return;
+      }
+      if (clampedIndex < currentIndex) {
+        referenceRow.before(row);
+      } else {
+        referenceRow.after(row);
+      }
+      refreshRowMetadata();
+      if (focusTarget === 'handle') {
+        const handle = row.querySelector('[data-typing-line-handle]');
+        if (handle instanceof HTMLButtonElement) {
+          handle.focus();
+        }
+      } else {
+        focusRowInput(row, true);
+      }
+      notifyChange();
+    }
+    function handleDragHandleKeydown(event, handle) {
+      const handleRow = handle.closest('[data-typing-line-row]');
+      if (!handleRow) {
+        return;
+      }
+      const rows = getRows();
+      const rowIndex = rows.indexOf(handleRow);
+      const targetByKey = {
+        ArrowDown: rowIndex + 1,
+        ArrowUp: rowIndex - 1,
+        End: rows.length - 1,
+        Home: 0,
+      };
+      if (Object.hasOwn(targetByKey, event.key)) {
+        event.preventDefault();
+        moveRowToIndex(handleRow, targetByKey[event.key] ?? rowIndex, 'handle');
+      }
+    }
+    function handleLineInputKeydown(event, input) {
+      const row = input.closest('[data-typing-line-row]');
+      if (!row) {
         return;
       }
       const rows = getRows();
       const rowIndex = rows.indexOf(row);
-      if (event.key === 'Enter') {
+      if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        event.preventDefault();
+        moveRowToIndex(row, rowIndex + (event.key === 'ArrowUp' ? -1 : 1), 'input');
+      } else if (event.key === 'Enter') {
         event.preventDefault();
         if (rows.length < maxLines) {
           const newRow = createRow('');
@@ -2268,8 +2539,7 @@
         event.preventDefault();
         row.remove();
         refreshRowMetadata();
-        const remainingRows = getRows();
-        focusRowInput(remainingRows[Math.max(0, rowIndex - 1)], true);
+        focusRowInput(getRows()[Math.max(0, rowIndex - 1)], true);
         notifyChange();
       } else if (event.key === 'ArrowUp' && rowIndex > 0) {
         event.preventDefault();
@@ -2277,6 +2547,22 @@
       } else if (event.key === 'ArrowDown' && rowIndex + 1 < rows.length) {
         event.preventDefault();
         focusRowInput(rows[rowIndex + 1], true);
+      }
+    }
+    function handleKeydown(event) {
+      const handle =
+        event.target instanceof Element
+          ? event.target.closest('[data-typing-line-handle]')
+          : undefined;
+      if (handle) {
+        handleDragHandleKeydown(event, handle);
+        return;
+      }
+      if (
+        event.target instanceof HTMLInputElement &&
+        event.target.classList.contains('typing-line-input')
+      ) {
+        handleLineInputKeydown(event, event.target);
       }
     }
     function handlePaste(event) {
@@ -2315,6 +2601,88 @@
       refreshRowMetadata();
       focusRowInput(anchorRow, true);
       notifyChange();
+    }
+    let activeDragRow = undefined;
+    let activeDragHandle = undefined;
+    let activePointerId = undefined;
+    let dragInitialIndex = -1;
+    let dragGrabOffsetY = 0;
+    function finishPointerDrag() {
+      if (!activeDragRow || !listElement) {
+        return;
+      }
+      const finishedRow = activeDragRow;
+      const finishedHandle = activeDragHandle;
+      const finishedPointerId = activePointerId;
+      activeDragRow = undefined;
+      activeDragHandle = undefined;
+      activePointerId = undefined;
+      finishedRow.style.removeProperty('translate');
+      finishedRow.classList.remove('is-dragging');
+      listElement.classList.remove('is-reordering');
+      if (
+        finishedHandle &&
+        finishedPointerId !== undefined &&
+        finishedHandle.hasPointerCapture(finishedPointerId)
+      ) {
+        finishedHandle.releasePointerCapture(finishedPointerId);
+      }
+      refreshRowMetadata();
+      if (getRows().indexOf(finishedRow) !== dragInitialIndex) {
+        notifyChange();
+      }
+      dragInitialIndex = -1;
+    }
+    function handlePointerDown(event) {
+      if (!listElement || activeDragRow || (event.pointerType === 'mouse' && event.button !== 0)) {
+        return;
+      }
+      const handle =
+        event.target instanceof Element
+          ? event.target.closest('[data-typing-line-handle]')
+          : undefined;
+      const row = handle?.closest('[data-typing-line-row]');
+      if (!handle || handle.disabled || !row) {
+        return;
+      }
+      const rows = getRows();
+      if (rows.length <= 1) {
+        return;
+      }
+      event.preventDefault();
+      handle.focus();
+      handle.setPointerCapture(event.pointerId);
+      const rowRect = row.getBoundingClientRect();
+      activeDragRow = row;
+      activeDragHandle = handle;
+      activePointerId = event.pointerId;
+      dragInitialIndex = rows.indexOf(row);
+      dragGrabOffsetY = event.clientY - rowRect.top;
+      listElement.classList.add('is-reordering');
+      row.classList.add('is-dragging');
+    }
+    function handlePointerMove(event) {
+      if (!listElement || !activeDragRow || event.pointerId !== activePointerId) {
+        return;
+      }
+      event.preventDefault();
+      const rowHeight = activeDragRow.offsetHeight;
+      const desiredTop = event.clientY - dragGrabOffsetY;
+      const visualCenterY = desiredTop + rowHeight / 2;
+      if (swapDraggedRowWithNeighbors(activeDragRow, visualCenterY)) {
+        refreshRowMetadata();
+      }
+      const listRect = listElement.getBoundingClientRect();
+      const minTop = listRect.top;
+      const maxTop = Math.max(minTop, listRect.bottom - rowHeight);
+      const clampedTop = Math.max(minTop, Math.min(maxTop, desiredTop));
+      const naturalTop = listRect.top + activeDragRow.offsetTop;
+      activeDragRow.style.translate = `0 ${Math.round(clampedTop - naturalTop)}px`;
+    }
+    function handlePointerUp(event) {
+      if (event.pointerId === activePointerId) {
+        finishPointerDrag();
+      }
     }
     function bind() {
       if (!listElement || !rowTemplate) {
@@ -2358,6 +2726,11 @@
         focusRowInput(remainingRows[Math.min(rowIndex, remainingRows.length - 1)]);
         notifyChange();
       });
+      listElement.addEventListener('pointerdown', (event) => handlePointerDown(event));
+      listElement.addEventListener('pointermove', (event) => handlePointerMove(event));
+      listElement.addEventListener('pointerup', (event) => handlePointerUp(event));
+      listElement.addEventListener('pointercancel', (event) => handlePointerUp(event));
+      listElement.addEventListener('lostpointercapture', finishPointerDrag);
       listElement.addEventListener('keydown', (event) => handleKeydown(event));
       listElement.addEventListener('paste', (event) => handlePaste(event));
     }
@@ -2413,7 +2786,6 @@
     const pickerGrid = document.getElementById('icon-picker-grid');
     const pickerSearch = document.getElementById('icon-picker-search');
     const pickerStatus = document.getElementById('icon-picker-status');
-    const pickerNoneButton = document.getElementById('icon-picker-none');
     const glyphTemplates = document.getElementById('icon-glyph-templates');
     const stackCatalog = document.getElementById('stack-catalog');
     const stackCategorySearch = document.getElementById('stack-category-search');
@@ -2464,7 +2836,6 @@
       picker,
       pickerEmpty,
       pickerGrid,
-      pickerNoneButton,
       pickerSearch,
       pickerStatus,
       schema,
@@ -2494,13 +2865,22 @@
       hiddenInput: document.getElementById('field-lines'),
       listElement: document.getElementById('typing-lines-list'),
     });
-    function getActiveAutoSpecials() {
+    function getActiveServiceMetric() {
       if (schema.kind !== 'service') {
-        return [];
+        return undefined;
       }
-      const service = findService(schema, state.service);
-      const metric = findOption(service?.metrics, state.metric ?? '');
-      return metric?.autoSpecials ?? [];
+      const service = findService(schema, state.service) ?? schema.services?.[0];
+      return findOption(service?.metrics, state.metric ?? '') ?? service?.metrics[0];
+    }
+    function getActiveAutoSpecials() {
+      return getActiveServiceMetric()?.autoSpecials ?? [];
+    }
+    function normalizeDefaultSelection(field, rawValue, isCustomSize = false) {
+      if (!field.param || isCustomSize) {
+        return rawValue;
+      }
+      const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
+      return rawValue.toLowerCase() === effectiveDefault.toLowerCase() ? '' : rawValue;
     }
     function readFieldValue(field, fieldElement) {
       function readPartValue(part) {
@@ -2517,7 +2897,8 @@
         }
         case 'color': {
           const checked = fieldElement.querySelector('input:checked');
-          return checked instanceof HTMLInputElement ? checked.value : '';
+          const checkedValue = checked instanceof HTMLInputElement ? checked.value : '';
+          return normalizeDefaultSelection(field, checkedValue);
         }
         case 'hint': {
           return composeHint(readPartValue('icon'), readPartValue('text'));
@@ -2530,22 +2911,25 @@
         }
         case 'size': {
           const preset = readPartValue('preset');
-          return preset === 'custom' ? readPartValue('custom').trim() : preset;
+          const rawSize = preset === 'custom' ? readPartValue('custom').trim() : preset;
+          return normalizeDefaultSelection(field, rawSize, preset === 'custom');
         }
         case 'special': {
           const kind = readPartValue('kind');
-          return composeSpecial(
+          const composedSpecial = composeSpecial(
             kind,
             readPartValue('payload'),
             readPartValue('modifier'),
             Boolean(kind && getActiveAutoSpecials().includes(kind))
           );
+          return normalizeDefaultSelection(field, composedSpecial);
         }
         case 'typingLines': {
           return typingLinesController.readValue();
         }
         default: {
-          return getControl(field.id)?.value ?? '';
+          const rawValue = getControl(field.id)?.value ?? '';
+          return field.control === 'select' ? normalizeDefaultSelection(field, rawValue) : rawValue;
         }
       }
     }
@@ -2556,15 +2940,15 @@
           ? `Uses live upstream data when Data is left empty; Manual: ${baseHint}`
           : baseHint;
       }
-      if (!kind && schema.kind === 'service') {
-        const service = findService(schema, state.service);
-        const metric = findOption(service?.metrics, state.metric ?? '');
+      if (schema.kind === 'service') {
+        const metric = getActiveServiceMetric();
         if (metric?.defaultSpecial) {
-          return `Uses the metric's default ${metric.defaultSpecial} widget; Pick another Auto widget or enter custom Data.`;
+          return `Hides the default ${metric.defaultSpecial} widget of this metric.`;
         }
-        if (getActiveAutoSpecials().length === 0) {
-          return 'Optional inline chart, gauge, or delta pill next to the badge value.';
+        if (getActiveAutoSpecials().length > 0) {
+          return 'Auto-marked widgets use live upstream data when Data is left empty.';
         }
+        return 'Optional inline chart, gauge, or delta pill next to the badge value.';
       }
       return baseHint;
     }
@@ -2597,33 +2981,171 @@
         .querySelector('[data-special-part="modifier"]')
         ?.toggleAttribute('hidden', modifiers.length === 0);
     }
+    function resolveWritableEffectiveValue(field, value) {
+      if (value) {
+        return value;
+      }
+      const isSelectableDefault =
+        Boolean(field.param) &&
+        (field.control === 'select' ||
+          field.control === 'color' ||
+          field.control === 'size' ||
+          field.control === 'special');
+      return isSelectableDefault ? resolveEffectiveFieldDefault(schema, state, field) : '';
+    }
+    function writeScalarOrSelectControl(field, value, effectiveValue) {
+      const control = getControl(field.id);
+      if (control instanceof HTMLSelectElement) {
+        control.value = effectiveValue;
+        if (control.selectedIndex < 0 && control.options.length > 0) {
+          control.selectedIndex = 0;
+        }
+      } else if (control) {
+        control.value = value;
+      }
+      if (field.control === 'stackGroups') {
+        stackCatalogController?.syncFromDsl(value);
+      }
+    }
+    function writeFieldValue(field, value) {
+      const fieldElement = fieldElements.get(field.id);
+      if (!fieldElement) {
+        return;
+      }
+      const effectiveValue = resolveWritableEffectiveValue(field, value);
+      switch (field.control) {
+        case 'anim': {
+          const anim = splitAnim(value, field.options);
+          const sheen = getPart(fieldElement, 'sheen');
+          if (sheen instanceof HTMLInputElement) {
+            sheen.checked = anim.hasSheen;
+          }
+          setPartValue(fieldElement, 'left', anim.left);
+          setPartValue(fieldElement, 'right', anim.right);
+          break;
+        }
+        case 'color': {
+          setRadioGroupValue(fieldElement, effectiveValue);
+          break;
+        }
+        case 'hint': {
+          const hint = splitHint(value);
+          setPartValue(fieldElement, 'icon', hint.icon);
+          setPartValue(fieldElement, 'text', hint.text);
+          break;
+        }
+        case 'icon': {
+          setPartValue(fieldElement, 'main', value);
+          break;
+        }
+        case 'iconPair': {
+          const [left, right] = splitIconPair(value, hasPresetIcon);
+          setPartValue(fieldElement, 'left', left);
+          setPartValue(fieldElement, 'right', right);
+          break;
+        }
+        case 'size': {
+          const size = splitSize(effectiveValue, field.options ?? []);
+          setPartValue(fieldElement, 'preset', size.preset);
+          setPartValue(fieldElement, 'custom', size.custom);
+          syncSizeParts(fieldElement);
+          break;
+        }
+        case 'special': {
+          const special = splitSpecial(effectiveValue, field.options ?? []);
+          setPartValue(fieldElement, 'kind', special.kind);
+          setPartValue(fieldElement, 'payload', special.payload);
+          syncSpecialParts(field, fieldElement, special.modifier);
+          break;
+        }
+        case 'typingLines': {
+          typingLinesController.syncFromValue(value);
+          break;
+        }
+        default: {
+          writeScalarOrSelectControl(field, value, effectiveValue);
+        }
+      }
+    }
     function syncServiceSpecialOptions() {
       const specialField = fieldsById.get('special');
       const specialElement = fieldElements.get('special');
       if (!specialField || !specialElement) {
         return;
       }
-      const service = findService(schema, state.service);
-      const metric = findOption(service?.metrics, state.metric ?? '');
       const autoSpecials = getActiveAutoSpecials();
       const kindSelect = getPart(specialElement, 'kind');
       if (kindSelect instanceof HTMLSelectElement) {
         for (const option of kindSelect.options) {
-          if (!option.value) {
-            option.text = metric?.defaultSpecial ? `Default (${metric.defaultSpecial})` : 'Default';
-          } else if (autoSpecials.includes(option.value)) {
+          if (option.value && autoSpecials.includes(option.value)) {
             option.dataset.badge = 'Auto';
           } else {
             delete option.dataset.badge;
           }
         }
+      }
+      if (!state.special) {
+        writeFieldValue(specialField, '');
+      } else {
+        const modifier = getPart(specialElement, 'modifier')?.value ?? '';
+        syncSpecialParts(specialField, specialElement, modifier);
+      }
+      if (kindSelect instanceof HTMLSelectElement) {
         const wrapper = kindSelect.closest('[data-select]');
         if (wrapper) {
           syncSelect(wrapper);
         }
       }
-      const modifier = getPart(specialElement, 'modifier')?.value ?? '';
-      syncSpecialParts(specialField, specialElement, modifier);
+    }
+    function syncServiceDotOptions(hasDynamicDot) {
+      const dotField = fieldsById.get('dot');
+      const dotControl = getControl('dot');
+      if (!dotField || !(dotControl instanceof HTMLSelectElement)) {
+        return;
+      }
+      const dotOptions = [];
+      for (const option of dotField.options ?? []) {
+        if (hasDynamicDot || option.value !== '') {
+          dotOptions.push(option);
+        }
+      }
+      const targetDotValue = state.dot || resolveEffectiveFieldDefault(schema, state, dotField);
+      setSelectOptions(dotControl, dotOptions, targetDotValue);
+      state.dot = normalizeDefaultSelection(dotField, dotControl.value);
+    }
+    function syncServicePresetIconTrigger(defaultIcon, hasDynamicIcon) {
+      const leftIconTrigger = form.querySelector('[data-icon-target="field-icon-left"]');
+      if (!(leftIconTrigger instanceof HTMLElement)) {
+        return;
+      }
+      if (defaultIcon) {
+        leftIconTrigger.dataset.presetIcon = defaultIcon;
+      } else {
+        delete leftIconTrigger.dataset.presetIcon;
+      }
+      if (hasDynamicIcon) {
+        leftIconTrigger.dataset.presetDynamic = 'true';
+      } else {
+        delete leftIconTrigger.dataset.presetDynamic;
+      }
+    }
+    function syncServiceMetricPresentation() {
+      const metric = getActiveServiceMetric();
+      const labelControl = getControl('label');
+      if (labelControl instanceof HTMLInputElement) {
+        labelControl.placeholder = metric?.defaultLabel || 'preset label';
+      }
+      fieldElements
+        .get('color')
+        ?.querySelector('[data-color-auto]')
+        ?.toggleAttribute('hidden', !metric?.hasDynamicColor);
+      const colorField = fieldsById.get('color');
+      if (colorField && !state.color) {
+        writeFieldValue(colorField, '');
+      }
+      syncServiceDotOptions(Boolean(metric?.hasDynamicDot));
+      syncServicePresetIconTrigger(metric?.defaultIcon, Boolean(metric?.hasDynamicIcon));
+      syncServiceSpecialOptions();
     }
     function labelServiceSegment(id, label, segmentName, placeholder, isRequired) {
       const fieldElement = fieldElements.get(id);
@@ -2670,76 +3192,15 @@
       if (metricControl instanceof HTMLSelectElement) {
         setSelectOptions(metricControl, metrics, state.metric ?? '');
       }
-      syncServiceSpecialOptions();
+      syncServiceMetricPresentation();
     }
-    function writeFieldValue(field, value) {
-      const fieldElement = fieldElements.get(field.id);
-      if (!fieldElement) {
+    function syncQuoteFields() {
+      if (schema.kind !== 'quote') {
         return;
       }
-      switch (field.control) {
-        case 'anim': {
-          const anim = splitAnim(value, field.options);
-          const sheen = getPart(fieldElement, 'sheen');
-          if (sheen instanceof HTMLInputElement) {
-            sheen.checked = anim.hasSheen;
-          }
-          setPartValue(fieldElement, 'left', anim.left);
-          setPartValue(fieldElement, 'right', anim.right);
-          break;
-        }
-        case 'color': {
-          setRadioGroupValue(fieldElement, value);
-          break;
-        }
-        case 'hint': {
-          const hint = splitHint(value);
-          setPartValue(fieldElement, 'icon', hint.icon);
-          setPartValue(fieldElement, 'text', hint.text);
-          break;
-        }
-        case 'icon': {
-          setPartValue(fieldElement, 'main', value);
-          break;
-        }
-        case 'iconPair': {
-          const [left, right] = splitIconPair(value, hasPresetIcon);
-          setPartValue(fieldElement, 'left', left);
-          setPartValue(fieldElement, 'right', right);
-          break;
-        }
-        case 'size': {
-          const size = splitSize(value, field.options ?? []);
-          setPartValue(fieldElement, 'preset', size.preset);
-          setPartValue(fieldElement, 'custom', size.custom);
-          syncSizeParts(fieldElement);
-          break;
-        }
-        case 'special': {
-          const special = splitSpecial(value, field.options ?? []);
-          setPartValue(fieldElement, 'kind', special.kind);
-          setPartValue(fieldElement, 'payload', special.payload);
-          syncSpecialParts(field, fieldElement, special.modifier);
-          break;
-        }
-        case 'typingLines': {
-          typingLinesController.syncFromValue(value);
-          break;
-        }
-        default: {
-          const control = getControl(field.id);
-          if (control instanceof HTMLSelectElement) {
-            control.value = value;
-            if (control.selectedIndex < 0 && control.options.length > 0) {
-              control.selectedIndex = 0;
-            }
-          } else if (control) {
-            control.value = value;
-          }
-          if (field.control === 'stackGroups') {
-            stackCatalogController?.syncFromDsl(value);
-          }
-        }
+      const sizeField = fieldsById.get('size');
+      if (sizeField && !state.size) {
+        writeFieldValue(sizeField, '');
       }
     }
     function syncTypingFields() {
@@ -2771,6 +3232,14 @@
       if (hintTextControl instanceof HTMLInputElement) {
         hintTextControl.placeholder =
           effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
+      }
+      const fontField = fieldsById.get('font');
+      if (fontField && !state.font) {
+        writeFieldValue(fontField, '');
+      }
+      const alignField = fieldsById.get('align');
+      if (alignField && !state.align) {
+        writeFieldValue(alignField, '');
       }
     }
     function writeState() {
@@ -2916,7 +3385,7 @@
       if (field.id === 'service') {
         syncServiceFields();
       } else if (field.id === 'metric') {
-        syncServiceSpecialOptions();
+        syncServiceMetricPresentation();
       } else {
         return;
       }
@@ -2924,6 +3393,14 @@
       const specialElement = fieldElements.get('special');
       if (specialField && specialElement) {
         state.special = readFieldValue(specialField, specialElement);
+        if (!state.special) {
+          writeFieldValue(specialField, '');
+          const kindSelect = getPart(specialElement, 'kind');
+          const wrapper = kindSelect?.closest('[data-select]');
+          if (wrapper) {
+            syncSelect(wrapper);
+          }
+        }
       }
     }
     function syncControlPartsOnInput(field, fieldElement, target) {
@@ -2976,9 +3453,18 @@
       stackCatalogController?.syncStackFieldChange(field);
       syncServiceFieldChange(field);
       if (field.id === 'layout') {
+        syncQuoteFields();
+        syncTypingFields();
+      } else if (field.id === 'prefix' || field.id === 'icon') {
         syncTypingFields();
       }
-      update(fieldElement);
+      const hasCrossFieldSync =
+        field.id === 'service' ||
+        field.id === 'metric' ||
+        field.id === 'layout' ||
+        field.id === 'prefix' ||
+        field.id === 'icon';
+      update(hasCrossFieldSync ? form : fieldElement);
     }
     function selectTab(tab) {
       const { format } = tab.dataset;
@@ -3109,9 +3595,10 @@
           ? document.getElementById(clearButton.getAttribute('data-icon-clear') ?? '')
           : undefined;
         if (input instanceof HTMLInputElement) {
-          input.value = '';
-          input.dispatchEvent(new Event('input', { bubbles: true }));
           const trigger = form.querySelector(`[data-icon-target="${input.id}"]`);
+          const hasPreset = trigger instanceof HTMLElement && Boolean(trigger.dataset.presetIcon);
+          input.value = hasPreset ? 'none' : '';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
           if (trigger instanceof HTMLElement) {
             trigger.focus();
           }

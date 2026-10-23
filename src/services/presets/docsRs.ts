@@ -67,7 +67,13 @@ export const DOCSRS_SERVICE = defineService({
   metrics: {
     docs: createMetric(
       DOCSRS_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'docsdotrs', defaultLabel: 'docs.rs' },
+      {
+        defaultColor: 'emerald',
+        defaultIcon: 'docsdotrs',
+        defaultLabel: 'docs.rs',
+        hasDynamicColor: true,
+        hasDynamicIcon: true,
+      },
       transformDocsRsStatus
     ),
     v: createVersionMetric(

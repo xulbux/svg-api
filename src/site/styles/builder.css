@@ -750,30 +750,6 @@
   font-size: 0.85rem;
 }
 
-.icon-picker-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.icon-picker-none {
-  padding: 3px 6px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 600;
-  color: var(--c-text-2);
-  background: transparent;
-  cursor: pointer;
-  transition: color var(--duration-fast) ease;
-}
-
-.icon-picker-none:hover {
-  color: var(--c-text-1);
-}
-
 .icon-picker-grid {
   display: grid;
   flex: 1;
@@ -1111,31 +1087,94 @@
 }
 
 .typing-lines-list {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
+.typing-lines-list.is-reordering,
+.typing-lines-list.is-reordering * {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing !important;
+}
+
 .typing-line-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
+  border-radius: var(--radius-md);
 }
 
-.typing-line-index {
+.typing-line-row.is-dragging {
+  z-index: 2;
+  background: var(--c-bg-soft);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+}
+
+.typing-line-handle {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  inline-size: 24px;
-  block-size: 24px;
-  border-radius: var(--radius-sm);
-  font-size: 0.72rem;
+  gap: 2px;
+  min-inline-size: 36px;
+  block-size: 36px;
+  padding-inline: 6px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-size: 0.73rem;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: var(--c-text-3);
   background: var(--c-bg-soft);
+  touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  cursor: grab;
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    color var(--duration-fast) ease;
+}
+
+.typing-line-handle:hover,
+.typing-line-row.is-dragging .typing-line-handle {
+  border-color: var(--c-border-strong);
+  color: var(--c-text-1);
+  background: var(--c-hover);
+}
+
+.typing-line-handle:focus-visible {
+  border-color: var(--c-focus);
+  color: var(--c-text-1);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--c-hover);
+}
+
+.typing-line-handle:disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.typing-line-grip {
+  opacity: 0.65;
+  transition: opacity var(--duration-fast) ease;
+}
+
+.typing-line-handle:hover .typing-line-grip,
+.typing-line-handle:focus-visible .typing-line-grip,
+.typing-line-row.is-dragging .typing-line-grip {
+  opacity: 1;
+}
+
+.typing-line-index {
+  line-height: 1;
 }
 
 .typing-line-remove:disabled {

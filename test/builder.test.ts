@@ -30,18 +30,25 @@ import {
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { getBuilderSchema, resolveBuilderTarget } from '@/routes/schema';
-import { renderSvgPath, resolveSvgPathRedirectUrl, resolveSvgRoute } from '@/routes/svg';
+import {
+  DEFAULT_TYPING_VARIANT,
+  renderSvgPath,
+  resolveSvgPathRedirectUrl,
+  resolveSvgRoute,
+} from '@/routes/svg';
 import { getSiteAsset } from '@/site/assets';
 import builderScript from '@/site/client/bundles/builder.client.js';
 import { BUILDER_PAGES, DOCS_PAGES } from '@/site/navigation';
 import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import { buildMarkdownSnippetTokens } from '@/site/shared';
 import {
+  DEFAULT_ICON_STROKE_WIDTH,
   getIconPickerIndex,
   ICON_SLUG_ALIASES,
   MAX_ICON_SLUG_LENGTH,
   resolveIcon,
 } from '@/svg/icons';
+import { STACK_GAP_RANGE, STACK_PER_LINE_RANGE, STACK_TILE_SIZE_RANGE } from '@/svg/stack';
 import type {
   BuilderKind,
   BuilderOption,
@@ -128,6 +135,12 @@ interface BuilderCore {
   encodeSegment: (text: string) => string;
   /** Parse a relative SVG path and query string into a builder form state. */
   parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
+  /** Resolve the effective default value of a field under the current state. */
+  resolveEffectiveFieldDefault: (
+    schema: BuilderSchema,
+    state: BuilderState,
+    field: BuilderSchema['fields'][number]
+  ) => string;
   /** Split a `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
   splitAnim: (value: string) => { hasSheen: boolean; left: string; right: string };
   /** Split a `?hint=` query value into its optional icon slug and label text. */
@@ -229,17 +242,27 @@ function renderPrefillRoundTrip(
 describe('builder schemas', () => {
   it('reads every option list from the parser and theme (drift guard)', () => {
     const badge = getBuilderSchema('badge');
-    expect(collectOptionValues(badge, 'variant')).toEqual(['', ...VARIANT_TOKENS]);
-    expect(collectOptionValues(badge, 'color')).toEqual(['', ...THEME_COLOR_NAMES]);
+    const service = getBuilderSchema('service');
+    const stack = getBuilderSchema('stack');
+    expect(collectOptionValues(badge, 'variant')).toEqual([...VARIANT_TOKENS]);
+    expect(collectOptionValues(badge, 'color')).toEqual([...THEME_COLOR_NAMES]);
+    expect(collectOptionValues(stack, 'color')).toEqual(['', ...THEME_COLOR_NAMES]);
+    expect(collectOptionValues(service, 'color')).toEqual(['', ...THEME_COLOR_NAMES]);
     expect(collectOptionValues(badge, 'dot')).toEqual(['', ...THEME_COLOR_NAMES]);
+    expect(collectOptionValues(service, 'dot')).toEqual(['', 'none', ...THEME_COLOR_NAMES]);
     expect(collectOptionValues(badge, 'special')).toEqual(['', ...SPECIAL_ELEMENT_KINDS]);
+    expect(collectOptionValues(service, 'special')).toEqual(['none', ...SPECIAL_ELEMENT_KINDS]);
     expect(collectOptionValues(badge, 'anim')).toEqual([
       '',
       ...ICON_MOTION_TOKENS.filter((motion) => motion !== 'default'),
     ]);
-    expect(collectOptionValues(getBuilderSchema('stack'), 'anim')).toEqual([
+    expect(collectOptionValues(getBuilderSchema('icon'), 'anim')).toEqual([
       '',
-      ...STACK_MOTION_TOKENS,
+      ...ICON_MOTION_TOKENS.filter((motion) => motion !== 'default' && motion !== 'none'),
+    ]);
+    expect(collectOptionValues(stack, 'anim')).toEqual([
+      '',
+      ...STACK_MOTION_TOKENS.filter((motion) => motion !== 'none'),
     ]);
     expect(collectOptionValues(getBuilderSchema('typing'), 'anim')).toEqual(['', 'none']);
     for (const kind of BUILDER_KINDS) {
@@ -318,11 +341,11 @@ describe('builder schemas', () => {
 
   it('declares typing option tokens and aliases that match the parser (drift guard)', () => {
     const typing = getBuilderSchema('typing');
-    expect(collectOptionValues(typing, 'layout')).toEqual(['', ...TYPING_LAYOUT_TOKENS]);
-    expect(collectOptionValues(typing, 'font')).toEqual(['', ...TYPING_FONT_TOKENS]);
-    expect(collectOptionValues(typing, 'cursor')).toEqual(['', ...TYPING_CURSOR_TOKENS]);
-    expect(collectOptionValues(typing, 'erase')).toEqual(['', ...TYPING_ERASE_TOKENS]);
-    expect(collectOptionValues(typing, 'align')).toEqual(['', ...TYPING_ALIGN_TOKENS]);
+    expect(collectOptionValues(typing, 'layout')).toEqual([...TYPING_LAYOUT_TOKENS]);
+    expect(collectOptionValues(typing, 'font')).toEqual([...TYPING_FONT_TOKENS]);
+    expect(collectOptionValues(typing, 'cursor')).toEqual([...TYPING_CURSOR_TOKENS]);
+    expect(collectOptionValues(typing, 'erase')).toEqual([...TYPING_ERASE_TOKENS]);
+    expect(collectOptionValues(typing, 'align')).toEqual([...TYPING_ALIGN_TOKENS]);
 
     const resolvers: readonly {
       fieldName: string;
@@ -344,7 +367,7 @@ describe('builder schemas', () => {
       }
     }
 
-    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`:
+    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`; redundant defaults are omitted:
     expect(
       core.buildPath(typing, {
         align: 'center',
@@ -353,7 +376,7 @@ describe('builder schemas', () => {
         lines: 'Hi',
         title: 'zsh',
       }).path
-    ).toBe('/typing/Hi?layout=window&align=center&title=zsh&hint=utf8');
+    ).toBe('/typing/Hi?align=center&title=zsh&hint=utf8');
     expect(
       core.buildPath(typing, {
         align: 'center',
@@ -380,7 +403,16 @@ describe('builder schemas', () => {
         lines: 'Hi',
         title: 'index.ts',
       }).path
-    ).toBe('/typing/Hi?layout=ide&title=index.ts&hint=utf8');
+    ).toBe('/typing/Hi?layout=ide&hint=utf8');
+    expect(
+      core.buildPath(typing, {
+        align: 'center',
+        hint: 'utf8',
+        layout: 'ide',
+        lines: 'Hi',
+        title: 'app.ts',
+      }).path
+    ).toBe('/typing/Hi?layout=ide&title=app.ts&hint=utf8');
     expect(
       core.buildPath(typing, { hint: 'utf8', layout: 'none', lines: 'Hi', title: 'zsh' }).path
     ).toBe('/typing/Hi?layout=none');
@@ -637,7 +669,15 @@ describe('builder client core', () => {
         {
           key: 'multi',
           maxTargetSegments: 3,
-          metrics: [{ label: 'v', value: 'v' }],
+          metrics: [
+            {
+              defaultColor: 'indigo',
+              defaultIcon: 'package',
+              defaultLabel: 'v',
+              label: 'v',
+              value: 'v',
+            },
+          ],
           ownerMode: 'required',
           ownerName: ':owner',
           targetName: ':path',
@@ -658,6 +698,10 @@ describe('builder client core', () => {
     expect(core.composeIconPair('', 'arrow-right', false)).toBe('none,arrow-right');
     expect(core.composeIconPair('', 'star', true)).toBe(',star');
     expect(core.composeIconPair('rocket', '', false)).toBe('rocket');
+    expect(core.composeIconPair('rocket', 'none', false)).toBe('rocket');
+    expect(core.composeIconPair('none', 'none', false)).toBe('');
+    expect(core.splitIconPair('none', false)).toEqual(['', '']);
+    expect(core.splitIconPair('none', true)).toEqual(['none', '']);
     expect(core.splitIconPair('none,arrow-right', false)).toEqual(['', 'arrow-right']);
     expect(core.splitIconPair('none,arrow-right', true)).toEqual(['none', 'arrow-right']);
     expect(core.composeAnim(true, '', 'nudge')).toBe('sheen,default,nudge');
@@ -1064,6 +1108,185 @@ describe('builder client core', () => {
     expect(core.computeGridFocusIndex('Enter', 10, 8, 5000)).toBeUndefined();
     expect(core.computeGridFocusIndex('End', 0, 8, 0)).toBeUndefined();
   });
+
+  it('omits redundant query parameters when fields equal their static, layout, or service metric defaults', () => {
+    const badge = getBuilderSchema('badge');
+    const button = getBuilderSchema('button');
+    const icon = getBuilderSchema('icon');
+    const stack = getBuilderSchema('stack');
+    const quote = getBuilderSchema('quote');
+    const typing = getBuilderSchema('typing');
+    const service = getBuilderSchema('service');
+
+    expect(
+      core.buildPath(badge, {
+        color: 'indigo',
+        dot: 'none',
+        icon: 'none',
+        label: 'Build',
+        special: 'none',
+        value: 'Passing',
+        variant: '1',
+      }).path
+    ).toBe('/badge/Build/Passing');
+
+    expect(
+      core.buildPath(button, {
+        anim: 'none',
+        color: 'indigo',
+        icon: 'none,none',
+        label: 'Docs',
+        size: 'md',
+        variant: '1',
+      }).path
+    ).toBe('/button/Docs');
+    expect(core.buildPath(button, { label: 'Docs', size: '30' }).path).toBe('/button/Docs?size=30');
+
+    expect(
+      core.buildPath(icon, {
+        color: 'indigo',
+        icon: 'rocket',
+        size: '24',
+        stroke: String(DEFAULT_ICON_STROKE_WIDTH),
+      }).path
+    ).toBe('/icon/rocket');
+    expect(core.buildPath(icon, { icon: 'rocket', stroke: '2' }).path).toBe(
+      '/icon/rocket?stroke=2'
+    );
+    expect(renderSvgPath('/icon/rocket')).toBe(
+      renderSvgPath(`/icon/rocket?color=indigo&size=24&stroke=${DEFAULT_ICON_STROKE_WIDTH}`)
+    );
+    expect(renderSvgPath('/typing/Hi?layout=prompt')).toBe(
+      renderSvgPath('/typing/Hi?layout=prompt&font=sans&align=left&cursor=bar&erase=backspace')
+    );
+    expect(renderSvgPath('/typing/Hi?layout=none')).toBe(
+      renderSvgPath('/typing/Hi?layout=none&align=center&font=sans')
+    );
+    expect(renderSvgPath('/quote/Hi?layout=vertical')).toBe(
+      renderSvgPath('/quote/Hi?layout=vertical&size=lg&variant=2')
+    );
+
+    expect(
+      core.buildPath(stack, {
+        gap: String(STACK_GAP_RANGE.default),
+        groups: 'rust,go',
+        perline: String(STACK_PER_LINE_RANGE.default),
+        size: String(STACK_TILE_SIZE_RANGE.default),
+        variant: '2',
+      }).path
+    ).toBe('/stack/rust,go');
+    expect(core.buildPath(stack, { groups: 'rust,go', size: '44' }).path).toBe(
+      '/stack/rust,go?size=44'
+    );
+    expect(core.buildPath(stack, { groupgap: '26', groups: 'rust|go' }).path).toBe(
+      '/stack/rust|go?groupgap=26'
+    );
+
+    expect(
+      core.buildPath(quote, { layout: 'horizontal', size: 'md', text: 'Hi', variant: '2' }).path
+    ).toBe('/quote/Hi');
+    expect(core.buildPath(quote, { layout: 'vertical', size: 'lg', text: 'Hi' }).path).toBe(
+      '/quote/Hi?layout=vertical'
+    );
+    expect(core.buildPath(quote, { layout: 'vertical', size: 'md', text: 'Hi' }).path).toBe(
+      '/quote/Hi?layout=vertical&size=md'
+    );
+    expect(core.buildPath(quote, { text: 'Hi', width: '560' }).path).toBe('/quote/Hi?width=560');
+
+    expect(
+      core.buildPath(typing, {
+        align: 'left',
+        color: 'indigo',
+        cursor: 'bar',
+        erase: 'backspace',
+        font: 'mono',
+        hint: 'icon:none',
+        icon: 'none',
+        layout: 'window',
+        lines: 'Hi',
+        title: 'none',
+        typo: 'false',
+        variant: DEFAULT_TYPING_VARIANT,
+      }).path
+    ).toBe('/typing/Hi');
+    expect(core.buildPath(typing, { layout: 'terminal', lines: 'Hi' }).path).toBe('/typing/Hi');
+    expect(core.buildPath(typing, { font: 'sans', layout: 'prompt', lines: 'Hi' }).path).toBe(
+      '/typing/Hi?layout=prompt'
+    );
+    expect(core.buildPath(typing, { font: 'mono', layout: 'prompt', lines: 'Hi' }).path).toBe(
+      '/typing/Hi?layout=prompt&font=mono'
+    );
+    expect(core.buildPath(typing, { align: 'center', layout: 'none', lines: 'Hi' }).path).toBe(
+      '/typing/Hi?layout=none'
+    );
+    expect(
+      core.buildPath(typing, { align: 'center', layout: 'none', lines: 'Hi', prefix: '$' }).path
+    ).toBe('/typing/%24/Hi?layout=none&align=center');
+    expect(
+      core.buildPath(typing, { align: 'left', layout: 'none', lines: 'Hi', prefix: '$' }).path
+    ).toBe('/typing/%24/Hi?layout=none');
+    expect(core.buildPath(typing, { layout: 'ide', lines: 'Hi', title: 'none' }).path).toBe(
+      '/typing/Hi?layout=ide&title=none'
+    );
+
+    const npmVersionMetric = SERVICES_CONFIG.npm?.metrics.v;
+    expect(
+      core.buildPath(service, {
+        color: npmVersionMetric?.defaultColor ?? 'red',
+        dot: 'none',
+        icon: npmVersionMetric?.defaultIcon ?? 'npm',
+        label: npmVersionMetric?.defaultLabel ?? 'npm',
+        metric: 'v',
+        service: 'npm',
+        special: 'none',
+        target: 'hono',
+        variant: '1',
+      }).path
+    ).toBe('/badge/npm/hono/v');
+    expect(
+      core.buildPath(service, { icon: 'none', metric: 'v', service: 'npm', target: 'hono' }).path
+    ).toBe('/badge/npm/hono/v?icon=none');
+    expect(
+      core.buildPath(service, { label: 'NPM', metric: 'v', service: 'npm', target: 'hono' }).path
+    ).toBe('/badge/npm/hono/v?label=NPM');
+    expect(
+      core.buildPath(service, {
+        metric: 'c',
+        owner: 'honojs',
+        service: 'codecov',
+        special: 'ring',
+        target: 'hono',
+      }).path
+    ).toBe('/badge/codecov/honojs/hono/c');
+    expect(
+      core.buildPath(service, {
+        color: 'emerald',
+        metric: 'c',
+        owner: 'honojs',
+        service: 'codecov',
+        special: 'none',
+        target: 'hono',
+      }).path
+    ).toBe('/badge/codecov/honojs/hono/c?color=emerald&special=none');
+    expect(
+      core.buildPath(service, {
+        dot: 'none',
+        metric: 'stage',
+        owner: 'gradio',
+        service: 'hf-space',
+        target: 'hello_world',
+      }).path
+    ).toBe('/badge/hf-space/gradio/hello_world/stage?dot=none');
+    expect(
+      core.buildPath(service, {
+        icon: 'huggingface',
+        metric: 'sdk',
+        owner: 'gradio',
+        service: 'hf-space',
+        target: 'hello_world',
+      }).path
+    ).toBe('/badge/hf-space/gradio/hello_world/sdk?icon=huggingface');
+  });
 });
 
 /************************************* Icon picker **************************************/
@@ -1160,11 +1383,18 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(serviceHtml).toContain('<option value="docker">Docker Hub (docker)</option>');
     expect(serviceHtml).toContain('<option value="dl" data-badge="Auto">');
     expect(serviceHtml).toContain('<option value="v" selected>v · npm</option>');
+    expect(serviceHtml).toContain('data-preset-icon="npm"');
+    expect(serviceHtml).toContain('id="field-icon-left-value" data-placeholder="none">npm</span>');
+    expect(serviceHtml).not.toContain('data-icon-clear="field-icon-left" hidden');
+    expect(serviceHtml).toContain('data-color-auto="true" hidden');
     expect(serviceHtml).toContain('id="special-help-trigger"');
     expect(serviceHtml).toContain('id="special-syntax-help" popover role="dialog"');
     expect(builderScript).toContain("querySelector('.builder-label-text')");
     expect(builderScript).toContain('resolveSpecialHint(');
     expect(builderScript).not.toContain('labelElement.textContent');
+    const stackHtml = renderBuilderHtml('stack');
+    expect(stackHtml).toContain('title="Brand colors"');
+    expect(stackHtml).toContain('<span class="visually-hidden">Brand colors</span>');
     const badgeHtml = renderBuilderHtml('badge');
     expect(badgeHtml).toContain('id="special-help-trigger"');
     expect(badgeHtml).toContain('id="special-syntax-help" popover role="dialog"');
@@ -1187,9 +1417,8 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toMatch(
       /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><a class="section-action" href="\/docs\/badges" tabindex="0">/
     );
-    expect(html).toContain(
-      '<button type="button" class="icon-picker-none" id="icon-picker-none" hidden>No icon</button>'
-    );
+    expect(html).not.toContain('id="icon-picker-none"');
+    expect(html).not.toContain('icon-picker-row');
     expect(html).not.toContain('code-drawer-toolbar');
     expect(html).not.toContain('id="builder-code-label"');
     const actionsHtml = html.slice(
@@ -1287,18 +1516,23 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toContain('value="Design-Driven Engineering" maxlength="80"');
     expect(html).toContain('value="Edge Systems Architect" maxlength="80"');
     expect(html).toContain('id="typing-line-add"');
+    expect(html).toContain('data-typing-line-handle');
+    expect(html).toContain('href="#ui-grip-vertical"');
+    expect(html).toContain('aria-label="Reorder line 1 (drag or use Up and Down arrow keys)"');
     expect(html).toContain('data-field="hint" data-control="hint"');
     expect(html).toContain('id="field-hint-icon" data-part="icon"');
     expect(html).toContain('id="field-hint-text" type="text" data-part="text"');
     expect(core.composeHint('corner-down-left', '')).toBe('icon:corner-down-left');
     expect(core.composeHint('command', 'K')).toBe('icon:command K');
     expect(core.composeHint('', 'utf8')).toBe('utf8');
+    expect(core.composeHint('none', '')).toBe('');
     expect(core.splitHint('icon:command K')).toEqual({ icon: 'command', text: 'K' });
     expect(core.splitHint('icon:corner-down-left')).toEqual({ icon: 'corner-down-left', text: '' });
     expect(core.splitHint('utf8')).toEqual({ icon: '', text: 'utf8' });
     expect(builderScript).toContain('createTypingLinesController(');
     expect(builderScript).toContain('typingLinesController.syncFromValue(value)');
     expect(builderScript).toContain('typingLinesController.readValue()');
+    expect(builderScript).toContain('setPointerCapture');
   });
 
   it('links every docs preview to a builder whose prefill renders the identical SVG', () => {

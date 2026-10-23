@@ -201,6 +201,8 @@ export const READ_THE_DOCS_SERVICE = defineService({
         defaultColor: 'emerald',
         defaultIcon: 'readthedocs',
         defaultLabel: 'Docs',
+        hasDynamicColor: true,
+        hasDynamicIcon: true,
       },
       transformReadTheDocsBuild
     ),

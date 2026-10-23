@@ -360,6 +360,81 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
 }
 
 /**
+ * Compose an `?icon=` value from its left and right slugs (`none,right` or the `,right` preset shorthand).
+ * @param left            Left slug (`''` for none).
+ * @param right           Right slug (`''` for none).
+ * @param hasPresetIcon   Whether an empty left slug keeps a preset icon.
+ * @returns Serialized `?icon=` value.
+ */
+function composeIconPair(left: string, right: string, hasPresetIcon: boolean): string {
+  const rawLeft = left.trim();
+  const rawRight = right.trim();
+  const leftSlug = !hasPresetIcon && rawLeft.toLowerCase() === 'none' ? '' : rawLeft;
+  const rightSlug = rawRight.toLowerCase() === 'none' ? '' : rawRight;
+  if (!rightSlug) {
+    return leftSlug;
+  }
+  return `${leftSlug || (hasPresetIcon ? '' : 'none')},${rightSlug}`;
+}
+
+/**
+ * Split an `?icon=` value into its left and right slugs.
+ * @param value           Serialized value.
+ * @param hasPresetIcon   Whether `none` is meaningful on the left.
+ * @returns `[left, right]` icon slugs.
+ */
+function splitIconPair(value: string, hasPresetIcon: boolean): [left: string, right: string] {
+  const commaIndex = value.indexOf(',');
+  if (commaIndex === -1) {
+    const single = value.trim();
+    return [!hasPresetIcon && single.toLowerCase() === 'none' ? '' : single, ''];
+  }
+  const rawLeft = value.slice(0, commaIndex).trim();
+  const rawRight = value.slice(commaIndex + 1).trim();
+  const left = !hasPresetIcon && rawLeft.toLowerCase() === 'none' ? '' : rawLeft;
+  const right = rawRight.toLowerCase() === 'none' ? '' : rawRight;
+  return [left, right];
+}
+
+/**
+ * Compose a `?hint=` value from an optional icon slug and optional label text (`icon:<slug>[ <text>]` or `<text>`).
+ * @param icon   Icon slug (`''` for none).
+ * @param text   Hint label text (`''` for none).
+ * @returns Serialized `?hint=` value.
+ */
+function composeHint(icon: string, text: string): string {
+  const cleanIcon = icon.trim();
+  const cleanText = text.trim();
+  if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
+    return cleanText;
+  }
+  return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
+}
+
+/**
+ * Split a `?hint=` value into its optional icon slug and label text.
+ * @param value   Serialized `?hint=` value.
+ * @returns `{ icon, text }` parts.
+ */
+function splitHint(value: string): { icon: string; text: string } {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.toLowerCase() === 'none') {
+    return { icon: '', text: '' };
+  }
+  if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
+    const rest = trimmed.slice(5).trim();
+    if (!rest) {
+      return { icon: '', text: '' };
+    }
+    const match = HINT_ICON_REST_RX.exec(rest);
+    const icon = (match?.groups?.slug ?? '').trim();
+    const text = (match?.groups?.text ?? '').trim();
+    return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
+  }
+  return { icon: '', text: trimmed };
+}
+
+/**
  * Check whether a typing builder field applies to the currently selected container layout.
  * @param fieldId       Builder field ID.
  * @param layoutValue   Current `layout` field value.
@@ -379,16 +454,201 @@ function isTypingFieldActiveForLayout(fieldId: string, layoutValue: string): boo
   return true;
 }
 
-/** Build the query string of every non-empty query parameter field. */
+/** Resolve the active service and metric options for a `service` builder state. */
+function resolveActiveServiceMetric(schema: BuilderSchema, state: BuilderState) {
+  const service = findService(schema, readState(state, 'service')) ?? schema.services?.[0];
+  const metric = findOption(service?.metrics, readState(state, 'metric')) ?? service?.metrics[0];
+  return { metric, service };
+}
+
+/** Resolve metric-dependent defaults on `/builder/service` (`undefined` when `field` uses its static default). */
+function resolveServiceFieldDefault(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField
+): string | undefined {
+  const { metric, service } = resolveActiveServiceMetric(schema, state);
+  if (field.id === 'service') {
+    return service?.key ?? '';
+  }
+  if (!metric) {
+    return undefined;
+  }
+  const metricDefaults: Readonly<Record<string, string>> = {
+    color: metric.hasDynamicColor ? '' : metric.defaultColor,
+    dot: metric.hasDynamicDot ? '' : 'none',
+    label: metric.defaultLabel,
+    metric: metric.value,
+    special: metric.defaultSpecial ?? 'none',
+  };
+  return Object.hasOwn(metricDefaults, field.id) ? metricDefaults[field.id] : undefined;
+}
+
+/** Resolve layout-dependent defaults on `/builder/quote` and `/builder/typing`. */
+function resolveLayoutFieldDefault(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField
+): string | undefined {
+  const effectiveLayout =
+    readState(state, 'layout').toLowerCase() || (findField(schema, 'layout')?.defaultValue ?? '');
+  if (schema.kind === 'typing' && field.id === 'align') {
+    const hasPrefix = Boolean(readState(state, 'prefix'));
+    const rawIcon = readState(state, 'icon').toLowerCase();
+    const hasIcon = Boolean(rawIcon && rawIcon !== 'none');
+    return effectiveLayout === 'none' && !hasPrefix && !hasIcon
+      ? 'center'
+      : (field.defaultValue ?? 'left');
+  }
+  if (field.layoutDefaults && Object.hasOwn(field.layoutDefaults, effectiveLayout)) {
+    return field.layoutDefaults[effectiveLayout] ?? field.defaultValue ?? '';
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the effective default value of `field` under the current `state` (including service metric and layout defaults).
+ * @param schema   Builder schema.
+ * @param state    Current builder state.
+ * @param field    Target builder field.
+ * @returns Effective default value (`''` when empty/auto is the default).
+ */
+function resolveEffectiveFieldDefault(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField
+): string {
+  if (schema.kind === 'service') {
+    const serviceDefault = resolveServiceFieldDefault(schema, state, field);
+    if (serviceDefault !== undefined) {
+      return serviceDefault;
+    }
+  }
+  if (schema.kind === 'quote' || schema.kind === 'typing') {
+    const layoutDefault = resolveLayoutFieldDefault(schema, state, field);
+    if (layoutDefault !== undefined) {
+      return layoutDefault;
+    }
+  }
+  return field.defaultValue ?? '';
+}
+
+/** Normalize an `iconPair` query field value, omitting redundant static preset icons on `/builder/service`. */
+function normalizeIconPairFieldValue(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField,
+  rawValue: string
+): string {
+  const hasPresetIcon = Boolean(field.hasPresetValue);
+  const [rawLeft, right] = splitIconPair(rawValue, hasPresetIcon);
+  if (schema.kind !== 'service') {
+    return composeIconPair(rawLeft, right, hasPresetIcon);
+  }
+  const { metric } = resolveActiveServiceMetric(schema, state);
+  const isRedundantPresetLeft =
+    Boolean(metric && !metric.hasDynamicIcon) &&
+    rawLeft.toLowerCase() === (metric?.defaultIcon ?? '').toLowerCase();
+  return composeIconPair(isRedundantPresetLeft ? '' : rawLeft, right, hasPresetIcon);
+}
+
+/** Check whether `lowerValue` matches the option or aliases of `lowerDefault` in `options`. */
+function isMatchingDefaultOptionAlias(
+  options: readonly BuilderOption[] | undefined,
+  lowerValue: string,
+  lowerDefault: string
+): boolean {
+  if (!options) {
+    return false;
+  }
+  for (const option of options) {
+    if (option.value.toLowerCase() === lowerDefault) {
+      return (
+        lowerValue === lowerDefault ||
+        Boolean(option.aliases?.some((alias) => alias.toLowerCase() === lowerValue))
+      );
+    }
+  }
+  return false;
+}
+
+/** Check whether `value` matches `effectiveDefault` under the comparison semantics of `field`. */
+function isValueEqualToEffectiveDefault(
+  field: BuilderField,
+  value: string,
+  effectiveDefault: string
+): boolean {
+  const lowerValue = value.toLowerCase();
+  const lowerDefault = effectiveDefault.toLowerCase();
+  if (isMatchingDefaultOptionAlias(field.options, lowerValue, lowerDefault)) {
+    return true;
+  }
+  if (!effectiveDefault) {
+    return false;
+  }
+  if (field.control === 'number' || field.id === 'perline') {
+    const numericValue = Number(value);
+    return Number.isFinite(numericValue) && numericValue === Number(effectiveDefault);
+  }
+  if (field.control === 'text' || field.control === 'textarea') {
+    return value === effectiveDefault;
+  }
+  return lowerValue === lowerDefault;
+}
+
+/** Normalize a query parameter field value and return `''` when it is redundant with the effective default. */
+function normalizeQueryFieldValue(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField,
+  rawValue: string
+): string {
+  const lowerValue = rawValue.toLowerCase();
+  if (field.control === 'iconPair') {
+    return normalizeIconPairFieldValue(schema, state, field, rawValue);
+  }
+  if (field.control === 'icon') {
+    return lowerValue === 'none' ? '' : rawValue;
+  }
+  if (field.control === 'hint') {
+    const parsedHint = splitHint(rawValue);
+    return composeHint(parsedHint.icon, parsedHint.text);
+  }
+  if (field.control === 'special' && !field.hasPresetValue && lowerValue === 'none') {
+    return '';
+  }
+  if (
+    field.control === 'anim' &&
+    schema.kind === 'button' &&
+    (lowerValue === 'none' || lowerValue === 'none,none')
+  ) {
+    return '';
+  }
+  if (
+    schema.kind === 'typing' &&
+    field.id === 'title' &&
+    (readState(state, 'layout').toLowerCase() || 'window') === 'window' &&
+    lowerValue === 'none'
+  ) {
+    return '';
+  }
+  const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
+  return isValueEqualToEffectiveDefault(field, rawValue, effectiveDefault) ? '' : rawValue;
+}
+
+/** Build the query string of every non-default query parameter field. */
 function buildQuery(schema: BuilderSchema, state: BuilderState): string {
   const pairs: string[] = [];
   const typingLayout = schema.kind === 'typing' ? readState(state, 'layout') : '';
   for (const field of schema.fields) {
-    const value = (state[field.id] ?? '').trim();
+    const rawValue = (state[field.id] ?? '').trim();
     const isFieldActive =
       schema.kind !== 'typing' || isTypingFieldActiveForLayout(field.id, typingLayout);
-    if (field.param && value && isFieldActive) {
-      pairs.push(`${field.param}=${encodeSegment(value)}`);
+    if (field.param && rawValue && isFieldActive) {
+      const normalizedValue = normalizeQueryFieldValue(schema, state, field, rawValue);
+      if (normalizedValue) {
+        pairs.push(`${field.param}=${encodeSegment(normalizedValue)}`);
+      }
     }
   }
   return pairs.length > 0 ? `?${pairs.join('&')}` : '';
@@ -661,6 +921,8 @@ function buildServiceRedirectUrl(schema: BuilderSchema, state: BuilderState): st
 
 export {
   composeAnim,
+  composeHint,
+  composeIconPair,
   decodeSegment,
   encodeSegment,
   findField,
@@ -669,81 +931,11 @@ export {
   isTypingFieldActiveForLayout,
   normalizeStackGroups,
   readState,
+  resolveEffectiveFieldDefault,
   splitAnim,
+  splitHint,
+  splitIconPair,
 };
-
-/**
- * Compose an `?icon=` value from its left and right slugs (`none,right` or the `,right` preset shorthand).
- * @param left            Left slug (`''` for none).
- * @param right           Right slug (`''` for none).
- * @param hasPresetIcon   Whether an empty left slug keeps a preset icon.
- * @returns Serialized `?icon=` value.
- */
-export function composeIconPair(left: string, right: string, hasPresetIcon: boolean): string {
-  const leftSlug = left.trim();
-  const rightSlug = right.trim();
-  if (!rightSlug) {
-    return leftSlug;
-  }
-  return `${leftSlug || (hasPresetIcon ? '' : 'none')},${rightSlug}`;
-}
-
-/**
- * Split an `?icon=` value into its left and right slugs.
- * @param value           Serialized value.
- * @param hasPresetIcon   Whether `none` is meaningful on the left.
- * @returns `[left, right]` icon slugs.
- */
-export function splitIconPair(
-  value: string,
-  hasPresetIcon: boolean
-): [left: string, right: string] {
-  const commaIndex = value.indexOf(',');
-  if (commaIndex === -1) {
-    return [value.trim(), ''];
-  }
-  const left = value.slice(0, commaIndex).trim();
-  const right = value.slice(commaIndex + 1).trim();
-  return [left === 'none' && !hasPresetIcon ? '' : left, right];
-}
-
-/**
- * Compose a `?hint=` value from an optional icon slug and optional label text (`icon:<slug>[ <text>]` or `<text>`).
- * @param icon   Icon slug (`''` for none).
- * @param text   Hint label text (`''` for none).
- * @returns Serialized `?hint=` value.
- */
-export function composeHint(icon: string, text: string): string {
-  const cleanIcon = icon.trim();
-  const cleanText = text.trim();
-  if (!cleanIcon || cleanIcon.toLowerCase() === 'none') {
-    return cleanText;
-  }
-  return cleanText ? `icon:${cleanIcon} ${cleanText}` : `icon:${cleanIcon}`;
-}
-
-/**
- * Split a `?hint=` value into its optional icon slug and label text.
- * @param value   Serialized `?hint=` value.
- * @returns `{ icon, text }` parts.
- */
-export function splitHint(value: string): { icon: string; text: string } {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'none') {
-    return { icon: '', text: '' };
-  }
-  if (trimmed.slice(0, 5).toLowerCase() === 'icon:') {
-    const rest = trimmed.slice(5).trim();
-    if (!rest) {
-      return { icon: '', text: '' };
-    }
-    const match = HINT_ICON_REST_RX.exec(rest);
-    const icon = (match?.groups?.slug ?? '').trim();
-    const text = (match?.groups?.text ?? '').trim();
-    return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
-  }
-  return { icon: '', text: trimmed };
-}
 
 /**
  * Compose a `?special=` value from the widget kind, payload, and modifier.

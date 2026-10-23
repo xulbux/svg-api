@@ -20,6 +20,7 @@ import {
   renderDocsHtml,
   renderHomeHtml,
   renderNotFoundHtml,
+  renderServerErrorHtml,
 } from '@/site/pages';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
@@ -405,21 +406,30 @@ describe('documentation pages – head metadata & client script', () => {
     expect(renderDocsHtml('badges')).not.toContain('Interactive SVG preview studio');
   });
 
-  it('keeps the HTML Content-Security-Policy SHA-256 hash synchronized with the inline head script and renders accessible 404 pages without canonical metadata (drift guard)', async () => {
+  it('keeps the HTML Content-Security-Policy SHA-256 hash synchronized with the inline head script and renders accessible 404 and 500 status pages without canonical metadata (drift guard)', async () => {
     const scriptBytes = new TextEncoder().encode(getHeadScriptBody());
     const digestBuffer = await crypto.subtle.digest('SHA-256', scriptBytes);
     const digestBase64 = btoa(String.fromCodePoint(...new Uint8Array(digestBuffer)));
     expect(HTML_SECURITY_HEADERS['Content-Security-Policy']).toContain(`'sha256-${digestBase64}'`);
 
-    const notFoundHtml = renderNotFoundHtml();
-    expect(notFoundHtml).toContain('<meta name="robots" content="noindex" />');
-    expect(notFoundHtml).not.toContain('rel="canonical"');
-    expect(notFoundHtml).not.toContain('property="og:url"');
-    expect(notFoundHtml).not.toContain('<script type="application/ld+json">');
-    const ids = collectGroups(notFoundHtml, ID_ATTRIBUTE_RX, 'id');
-    expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
-    for (const anchorMatch of notFoundHtml.matchAll(/<a\s[^>]*href="[^"]+"[^>]*>/g)) {
-      expect(anchorMatch[0]).toContain('tabindex="0"');
+    const statusPages: readonly [html: string, titleHeading: string][] = [
+      [renderNotFoundHtml(), '<span class="hero-accent">404</span> Page Not Found'],
+      [renderServerErrorHtml(), '<span class="hero-accent">500</span> Internal Server Error'],
+    ];
+    for (const [statusHtml, titleHeading] of statusPages) {
+      expect(statusHtml).toContain(titleHeading);
+      expect(statusHtml).toContain('Back to Home');
+      expect(statusHtml).toContain('<meta name="robots" content="noindex" />');
+      expect(statusHtml).not.toContain('rel="canonical"');
+      expect(statusHtml).not.toContain('property="og:url"');
+      expect(statusHtml).not.toContain('<script type="application/ld+json">');
+      const ctaLinks = collectGroups(statusHtml, CTA_LINK_RX, 'href');
+      expect(ctaLinks).toEqual(['/']);
+      const ids = collectGroups(statusHtml, ID_ATTRIBUTE_RX, 'id');
+      expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+      for (const anchorMatch of statusHtml.matchAll(/<a\s[^>]*href="[^"]+"[^>]*>/g)) {
+        expect(anchorMatch[0]).toContain('tabindex="0"');
+      }
     }
   });
 

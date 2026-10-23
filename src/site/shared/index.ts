@@ -30,6 +30,7 @@ export {
   normalizeStackGroups,
   parsePath,
   readState,
+  resolveEffectiveFieldDefault,
   splitAnim,
   splitIconPair,
   splitSize,

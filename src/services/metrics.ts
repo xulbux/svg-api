@@ -1114,7 +1114,12 @@ export function createScoreMetric<P>(
 ): ServiceMetricConfig {
   return createMetric(
     endpoint,
-    { autoSpecials: SCORE_SPECIALS, defaultSpecial: 'ring', ...presentation },
+    {
+      autoSpecials: SCORE_SPECIALS,
+      defaultSpecial: 'ring',
+      ...(thresholds ? { hasDynamicColor: true } : {}),
+      ...presentation,
+    },
     (payload) => {
       const [achieved, maximum] = readScore(payload);
       return buildScoreResult(achieved, maximum, format, thresholds);
@@ -1138,7 +1143,12 @@ export function createPercentScoreMetric<P>(
 ): ServiceMetricConfig {
   return createMetric(
     endpoint,
-    { autoSpecials: SCORE_SPECIALS, defaultSpecial: 'ring', ...presentation },
+    {
+      autoSpecials: SCORE_SPECIALS,
+      defaultSpecial: 'ring',
+      ...(thresholds ? { hasDynamicColor: true } : {}),
+      ...presentation,
+    },
     (payload) => buildScoreResult(readPercent(payload), MAX_PERCENT, formatPercent, thresholds)
   );
 }
@@ -1222,6 +1232,7 @@ export function createScorecardMetric<P>(
     defaultIcon: 'shield-check',
     defaultLabel: 'OpenSSF Scorecard',
     defaultSpecial: 'ring',
+    hasDynamicColor: true,
   };
   return createMetric(endpoint, presentation, (payload) => {
     const base = buildScoreResult(

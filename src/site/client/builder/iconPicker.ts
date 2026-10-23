@@ -34,8 +34,6 @@ export interface IconPickerOptions {
   pickerEmpty: HTMLElement | null;
   /** `#icon-picker-grid` element. */
   pickerGrid: HTMLElement | null;
-  /** `#icon-picker-none` button element. */
-  pickerNoneButton: HTMLElement | null;
   /** `#icon-picker-search` input element. */
   pickerSearch: HTMLInputElement | null;
   /** `#icon-picker-status` footer status element. */
@@ -136,6 +134,65 @@ function computeSetMatches(
   return prefixMatches;
 }
 
+/** Resolve the effective icon slug represented by `trigger` and `rawSlug`. */
+function resolveTriggerEffectiveSlug(
+  trigger: HTMLElement | undefined,
+  rawSlug: string,
+  hasDynamicFallback: boolean
+): string {
+  const trimmed = rawSlug.trim();
+  if (trimmed.toLowerCase() === 'none') {
+    return '';
+  }
+  if (trimmed) {
+    return trimmed;
+  }
+  if (!trigger || (trigger.dataset.presetDynamic === 'true' && !hasDynamicFallback)) {
+    return '';
+  }
+  return trigger.dataset.presetIcon?.trim() ?? '';
+}
+
+/** Resolve the label, placeholder state, and glyph slug of an icon selector trigger. */
+function resolveIconSelectDisplay(
+  trigger: HTMLElement | undefined,
+  rawSlug: string,
+  placeholder: string
+): { displayLabel: string; glyphSlug: string; isPlaceholder: boolean } {
+  const trimmed = rawSlug.trim();
+  if (trimmed.toLowerCase() === 'none') {
+    return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+  }
+  if (trimmed) {
+    return { displayLabel: trimmed, glyphSlug: trimmed, isPlaceholder: false };
+  }
+  const presetIcon = trigger?.dataset.presetIcon?.trim() ?? '';
+  if (presetIcon) {
+    const isPresetDynamic = trigger?.dataset.presetDynamic === 'true';
+    return {
+      displayLabel: isPresetDynamic ? 'Auto' : presetIcon,
+      glyphSlug: presetIcon,
+      isPlaceholder: false,
+    };
+  }
+  return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+}
+
+/** Insert `slug` at the current caret or selection inside `target` (adding a comma separator when needed). */
+function insertPickedSlugAtCursor(
+  target: HTMLInputElement | HTMLTextAreaElement,
+  slug: string
+): void {
+  const cursor = target.selectionStart ?? target.value.length;
+  const before = target.value.slice(0, cursor);
+  const after = target.value.slice(target.selectionEnd ?? cursor);
+  const needsSeparator = before.length > 0 && !TRAILING_STACK_SEPARATOR_RX.test(before);
+  const insertion = `${needsSeparator ? ',' : ''}${slug}`;
+  target.value = `${before}${insertion}${after}`;
+  const cursorAfter = before.length + insertion.length;
+  target.setSelectionRange(cursorAfter, cursorAfter);
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -150,7 +207,6 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     picker,
     pickerEmpty,
     pickerGrid,
-    pickerNoneButton,
     pickerSearch,
     pickerStatus,
     schema,
@@ -289,19 +345,30 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
 
   function syncIconSelects(scope: ParentNode): void {
     for (const trigger of scope.querySelectorAll('.icon-select-trigger')) {
-      const inputId = trigger instanceof HTMLElement ? (trigger.dataset.iconTarget ?? '') : '';
+      const triggerElement = trigger instanceof HTMLElement ? trigger : undefined;
+      const inputId = triggerElement?.dataset.iconTarget ?? '';
       const input = document.getElementById(inputId);
       const valueElement = trigger.querySelector('.icon-select-value');
       if (input instanceof HTMLInputElement && valueElement instanceof HTMLElement) {
-        const slug = input.value.trim();
-        valueElement.textContent = slug || (valueElement.dataset.placeholder ?? '');
-        valueElement.classList.toggle('is-placeholder', !slug);
-        form.querySelector(`[data-icon-clear="${inputId}"]`)?.toggleAttribute('hidden', !slug);
+        const display = resolveIconSelectDisplay(
+          triggerElement,
+          input.value,
+          valueElement.dataset.placeholder ?? ''
+        );
+        valueElement.textContent = display.displayLabel;
+        valueElement.classList.toggle('is-placeholder', display.isPlaceholder);
+        form
+          .querySelector(`[data-icon-clear="${inputId}"]`)
+          ?.toggleAttribute('hidden', display.isPlaceholder);
         const glyph = trigger.querySelector('[data-glyph-for]');
         // Glyphs need the icon index; they are rendered again once it has loaded:
-        if (glyph instanceof HTMLElement && iconResolver && glyph.dataset.slug !== slug) {
-          glyph.dataset.slug = slug;
-          renderInputGlyph(glyph, slug);
+        if (
+          glyph instanceof HTMLElement &&
+          iconResolver &&
+          glyph.dataset.slug !== display.glyphSlug
+        ) {
+          glyph.dataset.slug = display.glyphSlug;
+          renderInputGlyph(glyph, display.glyphSlug);
         }
       }
     }
@@ -481,9 +548,10 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       return;
     }
     pickerSearchFrame = 0;
-    const currentSlug =
+    const rawSlug =
       !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
-    pickerSelectedSlug = iconResolver?.locate(currentSlug, schema.isBrandFirst)?.slug ?? '';
+    const activeSlug = resolveTriggerEffectiveSlug(pickerTrigger, rawSlug, false);
+    pickerSelectedSlug = iconResolver?.locate(activeSlug, schema.isBrandFirst)?.slug ?? '';
     pickerMatches = computePickerMatches(iconIndex, pickerCatalog);
     pickerRendered = 0;
     // Disconnect before dropping the old tiles, so detached tiles are never kept alive by the observers:
@@ -523,25 +591,26 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     pickerSearchFrame = requestAnimationFrame(() => renderPicker(false));
   }
 
+  function resolveStaticPresetCanonical(): string {
+    const presetIcon = pickerTrigger?.dataset.presetIcon?.trim() ?? '';
+    if (!presetIcon || pickerTrigger?.dataset.presetDynamic === 'true') {
+      return '';
+    }
+    return iconResolver?.locate(presetIcon, schema.isBrandFirst)?.slug ?? presetIcon.toLowerCase();
+  }
+
   function applyPickedSlug(slug: string): void {
     const target = pickerTarget;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) {
       return;
     }
     if (isPickerInsertMode) {
-      const cursor = target.selectionStart ?? target.value.length;
-      const before = target.value.slice(0, cursor);
-      const after = target.value.slice(target.selectionEnd ?? cursor);
-      const needsSeparator = before.length > 0 && !TRAILING_STACK_SEPARATOR_RX.test(before);
-      const insertion = `${needsSeparator ? ',' : ''}${slug}`;
-      target.value = `${before}${insertion}${after}`;
-      const cursorAfter = before.length + insertion.length;
-      target.setSelectionRange(cursorAfter, cursorAfter);
-      target.dispatchEvent(new Event('input', { bubbles: true }));
+      insertPickedSlugAtCursor(target, slug);
     } else {
-      target.value = slug;
-      target.dispatchEvent(new Event('input', { bubbles: true }));
+      const presetCanonical = resolveStaticPresetCanonical();
+      target.value = presetCanonical && slug.toLowerCase() === presetCanonical ? '' : slug;
     }
+    target.dispatchEvent(new Event('input', { bubbles: true }));
     if (picker) {
       site?.closePopover(picker);
     }
@@ -559,12 +628,12 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     pickerTarget = document.getElementById(button.dataset.iconTarget ?? '') ?? undefined;
     pickerTrigger = button;
     isPickerInsertMode = button.dataset.iconInsert === 'true';
-    pickerNoneButton?.toggleAttribute('hidden', button.dataset.iconNone !== 'true');
   }
 
   function syncPickerTabForTarget(): void {
-    const currentSlug =
+    const rawSlug =
       !isPickerInsertMode && pickerTarget instanceof HTMLInputElement ? pickerTarget.value : '';
+    const currentSlug = resolveTriggerEffectiveSlug(pickerTrigger, rawSlug, true);
     const targetSet =
       iconResolver?.locate(currentSlug, schema.isBrandFirst)?.set ??
       (schema.isBrandFirst ? 'brands' : 'lucide');
@@ -727,7 +796,6 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       }
     });
     gridElement.addEventListener('keydown', handlePickerGridKeydown);
-    pickerNoneButton?.addEventListener('click', () => applyPickedSlug('none'));
     gridElement.addEventListener('focusin', showTileSlug);
     gridElement.addEventListener('pointerover', showTileSlug);
   }

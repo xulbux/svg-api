@@ -193,12 +193,25 @@ export const HUGGING_FACE_SPACE_SERVICE: ServiceDefinition = defineService({
     ),
     sdk: createMetric(
       HUGGING_FACE_SPACE_ENDPOINT,
-      { defaultColor: 'amber', defaultIcon: 'huggingface', defaultLabel: 'Space SDK' },
+      {
+        defaultColor: 'amber',
+        defaultIcon: 'huggingface',
+        defaultLabel: 'Space SDK',
+        hasDynamicColor: true,
+        hasDynamicIcon: true,
+      },
       transformSpaceSdk
     ),
     stage: createMetric(
       HUGGING_FACE_SPACE_ENDPOINT,
-      { defaultColor: 'emerald', defaultIcon: 'huggingface', defaultLabel: 'Space' },
+      {
+        defaultColor: 'emerald',
+        defaultIcon: 'huggingface',
+        defaultLabel: 'Space',
+        hasDynamicColor: true,
+        hasDynamicDot: true,
+        hasDynamicIcon: true,
+      },
       transformSpaceStage
     ),
   },

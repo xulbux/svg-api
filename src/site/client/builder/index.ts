@@ -19,6 +19,7 @@ import {
   isTypingFieldActiveForLayout,
   parsePath,
   readState,
+  resolveEffectiveFieldDefault,
   splitAnim,
   splitHint,
   splitIconPair,
@@ -39,6 +40,7 @@ import type {
   BuilderField,
   BuilderOption,
   BuilderSchema,
+  BuilderServiceMetric,
   BuilderState,
   HighlightToken,
   SnippetSet,
@@ -112,7 +114,6 @@ function initBuilderDom(): void {
   const pickerGrid = document.getElementById('icon-picker-grid');
   const pickerSearch = document.getElementById('icon-picker-search') as HTMLInputElement | null;
   const pickerStatus = document.getElementById('icon-picker-status');
-  const pickerNoneButton = document.getElementById('icon-picker-none');
   const glyphTemplates = document.getElementById('icon-glyph-templates');
   const stackCatalog = document.getElementById('stack-catalog');
   const stackCategorySearch = document.getElementById(
@@ -174,7 +175,6 @@ function initBuilderDom(): void {
     picker,
     pickerEmpty,
     pickerGrid,
-    pickerNoneButton,
     pickerSearch,
     pickerStatus,
     schema,
@@ -207,13 +207,28 @@ function initBuilderDom(): void {
     listElement: document.getElementById('typing-lines-list'),
   });
 
-  function getActiveAutoSpecials(): readonly string[] {
+  function getActiveServiceMetric(): BuilderServiceMetric | undefined {
     if (schema.kind !== 'service') {
-      return [];
+      return undefined;
     }
-    const service = findService(schema, state.service);
-    const metric = findOption(service?.metrics, state.metric ?? '');
-    return metric?.autoSpecials ?? [];
+    const service = findService(schema, state.service) ?? schema.services?.[0];
+    return findOption(service?.metrics, state.metric ?? '') ?? service?.metrics[0];
+  }
+
+  function getActiveAutoSpecials(): readonly string[] {
+    return getActiveServiceMetric()?.autoSpecials ?? [];
+  }
+
+  function normalizeDefaultSelection(
+    field: BuilderField,
+    rawValue: string,
+    isCustomSize = false
+  ): string {
+    if (!field.param || isCustomSize) {
+      return rawValue;
+    }
+    const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
+    return rawValue.toLowerCase() === effectiveDefault.toLowerCase() ? '' : rawValue;
   }
 
   function readFieldValue(field: BuilderField, fieldElement: Element): string {
@@ -231,7 +246,8 @@ function initBuilderDom(): void {
       }
       case 'color': {
         const checked = fieldElement.querySelector('input:checked');
-        return checked instanceof HTMLInputElement ? checked.value : '';
+        const checkedValue = checked instanceof HTMLInputElement ? checked.value : '';
+        return normalizeDefaultSelection(field, checkedValue);
       }
       case 'hint': {
         return composeHint(readPartValue('icon'), readPartValue('text'));
@@ -244,22 +260,25 @@ function initBuilderDom(): void {
       }
       case 'size': {
         const preset = readPartValue('preset');
-        return preset === 'custom' ? readPartValue('custom').trim() : preset;
+        const rawSize = preset === 'custom' ? readPartValue('custom').trim() : preset;
+        return normalizeDefaultSelection(field, rawSize, preset === 'custom');
       }
       case 'special': {
         const kind = readPartValue('kind');
-        return composeSpecial(
+        const composedSpecial = composeSpecial(
           kind,
           readPartValue('payload'),
           readPartValue('modifier'),
           Boolean(kind && getActiveAutoSpecials().includes(kind))
         );
+        return normalizeDefaultSelection(field, composedSpecial);
       }
       case 'typingLines': {
         return typingLinesController.readValue();
       }
       default: {
-        return getControl(field.id)?.value ?? '';
+        const rawValue = getControl(field.id)?.value ?? '';
+        return field.control === 'select' ? normalizeDefaultSelection(field, rawValue) : rawValue;
       }
     }
   }
@@ -276,15 +295,15 @@ function initBuilderDom(): void {
         ? `Uses live upstream data when Data is left empty; Manual: ${baseHint}`
         : baseHint;
     }
-    if (!kind && schema.kind === 'service') {
-      const service = findService(schema, state.service);
-      const metric = findOption(service?.metrics, state.metric ?? '');
+    if (schema.kind === 'service') {
+      const metric = getActiveServiceMetric();
       if (metric?.defaultSpecial) {
-        return `Uses the metric's default ${metric.defaultSpecial} widget; Pick another Auto widget or enter custom Data.`;
+        return `Hides the default ${metric.defaultSpecial} widget of this metric.`;
       }
-      if (getActiveAutoSpecials().length === 0) {
-        return 'Optional inline chart, gauge, or delta pill next to the badge value.';
+      if (getActiveAutoSpecials().length > 0) {
+        return 'Auto-marked widgets use live upstream data when Data is left empty.';
       }
+      return 'Optional inline chart, gauge, or delta pill next to the badge value.';
     }
     return baseHint;
   }
@@ -319,33 +338,187 @@ function initBuilderDom(): void {
       ?.toggleAttribute('hidden', modifiers.length === 0);
   }
 
+  function resolveWritableEffectiveValue(field: BuilderField, value: string): string {
+    if (value) {
+      return value;
+    }
+    const isSelectableDefault =
+      Boolean(field.param) &&
+      (field.control === 'select' ||
+        field.control === 'color' ||
+        field.control === 'size' ||
+        field.control === 'special');
+    return isSelectableDefault ? resolveEffectiveFieldDefault(schema, state, field) : '';
+  }
+
+  function writeScalarOrSelectControl(
+    field: BuilderField,
+    value: string,
+    effectiveValue: string
+  ): void {
+    const control = getControl(field.id);
+    if (control instanceof HTMLSelectElement) {
+      control.value = effectiveValue;
+      if (control.selectedIndex < 0 && control.options.length > 0) {
+        control.selectedIndex = 0;
+      }
+    } else if (control) {
+      control.value = value;
+    }
+    if (field.control === 'stackGroups') {
+      stackCatalogController?.syncFromDsl(value);
+    }
+  }
+
+  function writeFieldValue(field: BuilderField, value: string): void {
+    const fieldElement = fieldElements.get(field.id);
+    if (!fieldElement) {
+      return;
+    }
+    const effectiveValue = resolveWritableEffectiveValue(field, value);
+
+    switch (field.control) {
+      case 'anim': {
+        const anim = splitAnim(value, field.options);
+        const sheen = getPart(fieldElement, 'sheen');
+        if (sheen instanceof HTMLInputElement) {
+          sheen.checked = anim.hasSheen;
+        }
+        setPartValue(fieldElement, 'left', anim.left);
+        setPartValue(fieldElement, 'right', anim.right);
+        break;
+      }
+      case 'color': {
+        setRadioGroupValue(fieldElement, effectiveValue);
+        break;
+      }
+      case 'hint': {
+        const hint = splitHint(value);
+        setPartValue(fieldElement, 'icon', hint.icon);
+        setPartValue(fieldElement, 'text', hint.text);
+        break;
+      }
+      case 'icon': {
+        setPartValue(fieldElement, 'main', value);
+        break;
+      }
+      case 'iconPair': {
+        const [left, right] = splitIconPair(value, hasPresetIcon);
+        setPartValue(fieldElement, 'left', left);
+        setPartValue(fieldElement, 'right', right);
+        break;
+      }
+      case 'size': {
+        const size = splitSize(effectiveValue, field.options ?? []);
+        setPartValue(fieldElement, 'preset', size.preset);
+        setPartValue(fieldElement, 'custom', size.custom);
+        syncSizeParts(fieldElement);
+        break;
+      }
+      case 'special': {
+        const special = splitSpecial(effectiveValue, field.options ?? []);
+        setPartValue(fieldElement, 'kind', special.kind);
+        setPartValue(fieldElement, 'payload', special.payload);
+        syncSpecialParts(field, fieldElement, special.modifier);
+        break;
+      }
+      case 'typingLines': {
+        typingLinesController.syncFromValue(value);
+        break;
+      }
+      default: {
+        writeScalarOrSelectControl(field, value, effectiveValue);
+      }
+    }
+  }
+
   function syncServiceSpecialOptions(): void {
     const specialField = fieldsById.get('special');
     const specialElement = fieldElements.get('special');
     if (!specialField || !specialElement) {
       return;
     }
-    const service = findService(schema, state.service);
-    const metric = findOption(service?.metrics, state.metric ?? '');
     const autoSpecials = getActiveAutoSpecials();
     const kindSelect = getPart(specialElement, 'kind');
     if (kindSelect instanceof HTMLSelectElement) {
       for (const option of kindSelect.options) {
-        if (!option.value) {
-          option.text = metric?.defaultSpecial ? `Default (${metric.defaultSpecial})` : 'Default';
-        } else if (autoSpecials.includes(option.value)) {
+        if (option.value && autoSpecials.includes(option.value)) {
           option.dataset.badge = 'Auto';
         } else {
           delete option.dataset.badge;
         }
       }
+    }
+    if (!state.special) {
+      writeFieldValue(specialField, '');
+    } else {
+      const modifier = getPart(specialElement, 'modifier')?.value ?? '';
+      syncSpecialParts(specialField, specialElement, modifier);
+    }
+    if (kindSelect instanceof HTMLSelectElement) {
       const wrapper = kindSelect.closest('[data-select]');
       if (wrapper) {
         syncSelect(wrapper);
       }
     }
-    const modifier = getPart(specialElement, 'modifier')?.value ?? '';
-    syncSpecialParts(specialField, specialElement, modifier);
+  }
+
+  function syncServiceDotOptions(hasDynamicDot: boolean): void {
+    const dotField = fieldsById.get('dot');
+    const dotControl = getControl('dot');
+    if (!dotField || !(dotControl instanceof HTMLSelectElement)) {
+      return;
+    }
+    const dotOptions: BuilderOption[] = [];
+    for (const option of dotField.options ?? []) {
+      if (hasDynamicDot || option.value !== '') {
+        dotOptions.push(option);
+      }
+    }
+    const targetDotValue = state.dot || resolveEffectiveFieldDefault(schema, state, dotField);
+    setSelectOptions(dotControl, dotOptions, targetDotValue);
+    state.dot = normalizeDefaultSelection(dotField, dotControl.value);
+  }
+
+  function syncServicePresetIconTrigger(
+    defaultIcon: string | undefined,
+    hasDynamicIcon: boolean
+  ): void {
+    const leftIconTrigger = form.querySelector('[data-icon-target="field-icon-left"]');
+    if (!(leftIconTrigger instanceof HTMLElement)) {
+      return;
+    }
+    if (defaultIcon) {
+      leftIconTrigger.dataset.presetIcon = defaultIcon;
+    } else {
+      delete leftIconTrigger.dataset.presetIcon;
+    }
+    if (hasDynamicIcon) {
+      leftIconTrigger.dataset.presetDynamic = 'true';
+    } else {
+      delete leftIconTrigger.dataset.presetDynamic;
+    }
+  }
+
+  function syncServiceMetricPresentation(): void {
+    const metric = getActiveServiceMetric();
+    const labelControl = getControl('label');
+    if (labelControl instanceof HTMLInputElement) {
+      labelControl.placeholder = metric?.defaultLabel || 'preset label';
+    }
+
+    fieldElements
+      .get('color')
+      ?.querySelector('[data-color-auto]')
+      ?.toggleAttribute('hidden', !metric?.hasDynamicColor);
+    const colorField = fieldsById.get('color');
+    if (colorField && !state.color) {
+      writeFieldValue(colorField, '');
+    }
+
+    syncServiceDotOptions(Boolean(metric?.hasDynamicDot));
+    syncServicePresetIconTrigger(metric?.defaultIcon, Boolean(metric?.hasDynamicIcon));
+    syncServiceSpecialOptions();
   }
 
   function labelServiceSegment(
@@ -400,78 +573,16 @@ function initBuilderDom(): void {
     if (metricControl instanceof HTMLSelectElement) {
       setSelectOptions(metricControl, metrics, state.metric ?? '');
     }
-    syncServiceSpecialOptions();
+    syncServiceMetricPresentation();
   }
 
-  function writeFieldValue(field: BuilderField, value: string): void {
-    const fieldElement = fieldElements.get(field.id);
-    if (!fieldElement) {
+  function syncQuoteFields(): void {
+    if (schema.kind !== 'quote') {
       return;
     }
-
-    switch (field.control) {
-      case 'anim': {
-        const anim = splitAnim(value, field.options);
-        const sheen = getPart(fieldElement, 'sheen');
-        if (sheen instanceof HTMLInputElement) {
-          sheen.checked = anim.hasSheen;
-        }
-        setPartValue(fieldElement, 'left', anim.left);
-        setPartValue(fieldElement, 'right', anim.right);
-        break;
-      }
-      case 'color': {
-        setRadioGroupValue(fieldElement, value);
-        break;
-      }
-      case 'hint': {
-        const hint = splitHint(value);
-        setPartValue(fieldElement, 'icon', hint.icon);
-        setPartValue(fieldElement, 'text', hint.text);
-        break;
-      }
-      case 'icon': {
-        setPartValue(fieldElement, 'main', value);
-        break;
-      }
-      case 'iconPair': {
-        const [left, right] = splitIconPair(value, hasPresetIcon);
-        setPartValue(fieldElement, 'left', left);
-        setPartValue(fieldElement, 'right', right);
-        break;
-      }
-      case 'size': {
-        const size = splitSize(value, field.options ?? []);
-        setPartValue(fieldElement, 'preset', size.preset);
-        setPartValue(fieldElement, 'custom', size.custom);
-        syncSizeParts(fieldElement);
-        break;
-      }
-      case 'special': {
-        const special = splitSpecial(value, field.options ?? []);
-        setPartValue(fieldElement, 'kind', special.kind);
-        setPartValue(fieldElement, 'payload', special.payload);
-        syncSpecialParts(field, fieldElement, special.modifier);
-        break;
-      }
-      case 'typingLines': {
-        typingLinesController.syncFromValue(value);
-        break;
-      }
-      default: {
-        const control = getControl(field.id);
-        if (control instanceof HTMLSelectElement) {
-          control.value = value;
-          if (control.selectedIndex < 0 && control.options.length > 0) {
-            control.selectedIndex = 0;
-          }
-        } else if (control) {
-          control.value = value;
-        }
-        if (field.control === 'stackGroups') {
-          stackCatalogController?.syncFromDsl(value);
-        }
-      }
+    const sizeField = fieldsById.get('size');
+    if (sizeField && !state.size) {
+      writeFieldValue(sizeField, '');
     }
   }
 
@@ -505,6 +616,15 @@ function initBuilderDom(): void {
     if (hintTextControl instanceof HTMLInputElement) {
       hintTextControl.placeholder =
         effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
+    }
+
+    const fontField = fieldsById.get('font');
+    if (fontField && !state.font) {
+      writeFieldValue(fontField, '');
+    }
+    const alignField = fieldsById.get('align');
+    if (alignField && !state.align) {
+      writeFieldValue(alignField, '');
     }
   }
 
@@ -661,7 +781,7 @@ function initBuilderDom(): void {
     if (field.id === 'service') {
       syncServiceFields();
     } else if (field.id === 'metric') {
-      syncServiceSpecialOptions();
+      syncServiceMetricPresentation();
     } else {
       return;
     }
@@ -669,6 +789,14 @@ function initBuilderDom(): void {
     const specialElement = fieldElements.get('special');
     if (specialField && specialElement) {
       state.special = readFieldValue(specialField, specialElement);
+      if (!state.special) {
+        writeFieldValue(specialField, '');
+        const kindSelect = getPart(specialElement, 'kind');
+        const wrapper = kindSelect?.closest('[data-select]');
+        if (wrapper) {
+          syncSelect(wrapper);
+        }
+      }
     }
   }
 
@@ -727,9 +855,18 @@ function initBuilderDom(): void {
     stackCatalogController?.syncStackFieldChange(field);
     syncServiceFieldChange(field);
     if (field.id === 'layout') {
+      syncQuoteFields();
+      syncTypingFields();
+    } else if (field.id === 'prefix' || field.id === 'icon') {
       syncTypingFields();
     }
-    update(fieldElement);
+    const hasCrossFieldSync =
+      field.id === 'service' ||
+      field.id === 'metric' ||
+      field.id === 'layout' ||
+      field.id === 'prefix' ||
+      field.id === 'icon';
+    update(hasCrossFieldSync ? form : fieldElement);
   }
 
   function selectTab(tab: HTMLElement): void {
@@ -870,9 +1007,10 @@ function initBuilderDom(): void {
         ? document.getElementById(clearButton.getAttribute('data-icon-clear') ?? '')
         : undefined;
       if (input instanceof HTMLInputElement) {
-        input.value = '';
-        input.dispatchEvent(new Event('input', { bubbles: true }));
         const trigger = form.querySelector(`[data-icon-target="${input.id}"]`);
+        const hasPreset = trigger instanceof HTMLElement && Boolean(trigger.dataset.presetIcon);
+        input.value = hasPreset ? 'none' : '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
         if (trigger instanceof HTMLElement) {
           trigger.focus();
         }

@@ -81,7 +81,7 @@ export const AUR_SERVICE = defineService({
     ),
     v: createMetric(
       AUR_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'archlinux', defaultLabel: 'AUR' },
+      { defaultColor: 'sky', defaultIcon: 'archlinux', defaultLabel: 'AUR', hasDynamicColor: true },
       transformAurVersion
     ),
     votes: createCommunityMetric(AUR_ENDPOINT, 'votes', 'archlinux', (info) => info.NumVotes),

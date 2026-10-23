@@ -7,7 +7,7 @@
 
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
-import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
+import { DEFAULT_THEME_COLOR, DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import {
   FALSY_FLAG_LIST,
   ICON_MOTION_ALIASES,
@@ -30,7 +30,15 @@ import {
   VARIANT_TOKENS,
   VERTICAL_LAYOUT_TOKENS,
 } from '@/routes/params';
-import { findSvgRoute, resolveSvgRoute } from '@/routes/svg';
+import {
+  DEFAULT_BADGE_VARIANT,
+  DEFAULT_BUTTON_VARIANT,
+  DEFAULT_QUOTE_VARIANT,
+  DEFAULT_STACK_VARIANT,
+  DEFAULT_TYPING_VARIANT,
+  findSvgRoute,
+  resolveSvgRoute,
+} from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import {
   capitalizeWord,
@@ -42,6 +50,7 @@ import {
 import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
   DEFAULT_HORIZONTAL_QUOTE_SIZE,
+  DEFAULT_QUOTE_LAYOUT,
   DEFAULT_VERTICAL_QUOTE_SIZE,
   DEFAULT_VERTICAL_QUOTE_WIDTH,
   MAX_QUOTE_TEXT_LENGTH,
@@ -64,6 +73,10 @@ import {
   STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
 import {
+  DEFAULT_IDE_TITLE,
+  DEFAULT_LAYOUT_FONTS,
+  DEFAULT_TYPING_CURSOR,
+  DEFAULT_TYPING_ERASE,
   DEFAULT_TYPING_LAYOUT,
   DEFAULT_WINDOW_PROMPT,
   MAX_TYPING_HINT_LENGTH,
@@ -78,6 +91,7 @@ import {
   TYPING_WIDTH_RANGE,
 } from '@/svg/typing';
 import type {
+  BadgeVariant,
   BuilderAnimScope,
   BuilderField,
   BuilderKind,
@@ -93,6 +107,16 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Options for `buildColorField`. */
+interface ColorFieldOptions {
+  /** Effective default value (`DEFAULT_THEME_COLOR` when `leadingLabel` is omitted). */
+  defaultValue?: string;
+  /** Optional helper description below the swatch picker. */
+  description?: string;
+  /** Optional leading non-theme swatch label (e.g., `'Auto'` or `'Brand colors'`). */
+  leadingLabel?: string;
+}
 
 /** Owner and target values of one redirect template probe. */
 interface RedirectProbe {
@@ -158,21 +182,37 @@ function collectAliasesForValue(
 }
 
 /** Build the `?variant=` field. */
-function buildVariantField(): BuilderField {
-  const options: BuilderOption[] = [buildDefaultOption()];
+function buildVariantField(defaultValue: BadgeVariant = DEFAULT_BADGE_VARIANT): BuilderField {
+  const options: BuilderOption[] = [];
   for (const variant of VARIANT_TOKENS) {
     options.push({ label: `${variant} · ${VARIANT_TIERS[variant].name}`, value: variant });
   }
-  return { control: 'select', id: 'variant', label: 'Variant', options, param: 'variant' };
+  return {
+    control: 'select',
+    defaultValue,
+    id: 'variant',
+    label: 'Variant',
+    options,
+    param: 'variant',
+  };
 }
 
 /** Build the `?color=` swatch field. */
-function buildColorField(description?: string): BuilderField {
-  const options: BuilderOption[] = [buildDefaultOption()];
+function buildColorField(fieldOptions: ColorFieldOptions = {}): BuilderField {
+  const { defaultValue, description, leadingLabel } = fieldOptions;
+  const options: BuilderOption[] = leadingLabel ? [buildDefaultOption(leadingLabel)] : [];
   for (const colorName of THEME_COLOR_NAMES) {
     options.push({ label: colorName, swatch: THEMES[colorName].glowColor, value: colorName });
   }
-  return { control: 'color', description, id: 'color', label: 'Color', options, param: 'color' };
+  return {
+    control: 'color',
+    defaultValue: leadingLabel ? defaultValue : (defaultValue ?? DEFAULT_THEME_COLOR),
+    description,
+    id: 'color',
+    label: 'Color',
+    options,
+    param: 'color',
+  };
 }
 
 /** Build the `?icon=left,right` icon pair field (`hasPresetValue`: An empty slug keeps the service preset icon). */
@@ -184,17 +224,26 @@ function buildIconPairField(description: string, hasPresetValue = false): Builde
     id: 'icon',
     label: 'Icons',
     param: 'icon',
-    placeholder: hasPresetValue ? 'preset' : 'none',
+    placeholder: 'none',
   };
 }
 
 /** Build the `?dot=` status dot field. */
-function buildDotField(): BuilderField {
-  const options: BuilderOption[] = [{ aliases: ['none'], label: 'None', value: '' }];
+function buildDotField(hasDynamicPreset = false): BuilderField {
+  const options: BuilderOption[] = hasDynamicPreset
+    ? [buildDefaultOption('Auto'), { label: 'None', value: 'none' }]
+    : [{ aliases: ['none'], label: 'None', value: '' }];
   for (const colorName of THEME_COLOR_NAMES) {
     options.push({ label: colorName, swatch: DOT_COLORS[colorName], value: colorName });
   }
-  return { control: 'select', id: 'dot', label: 'Status dot', options, param: 'dot' };
+  return {
+    control: 'select',
+    defaultValue: hasDynamicPreset ? undefined : '',
+    id: 'dot',
+    label: 'Status dot',
+    options,
+    param: 'dot',
+  };
 }
 
 /** Build the `?special=` inline data widget field. */
@@ -203,20 +252,13 @@ function buildSpecialField(hasPresetValue = false): BuilderField {
     ? 'Auto-marked widgets use live upstream data when Data is left empty.'
     : 'Optional inline chart, gauge, or delta pill next to the badge value.';
   const options: BuilderOption[] = hasPresetValue
-    ? [
-        { ...buildDefaultOption(), description: defaultDescription },
-        {
-          description: 'Hides any default inline widget of the selected metric.',
-          label: 'none (remove preset widget)',
-          value: 'none',
-        },
-      ]
+    ? [{ description: 'Hides any inline widget on the badge.', label: 'None', value: 'none' }]
     : [{ ...buildDefaultOption('None'), description: defaultDescription }];
   for (const kind of SPECIAL_ELEMENT_KINDS) {
     const detail = SPECIAL_KIND_DETAILS[kind];
     const modifiers: BuilderOption[] = [];
     if (detail.modifiers.length > 0) {
-      modifiers.push(buildDefaultOption());
+      modifiers.push(buildDefaultOption(detail.defaultModifierLabel ?? 'Default'));
       for (const modifier of detail.modifiers) {
         modifiers.push({ label: capitalizeWord(modifier), value: modifier });
       }
@@ -231,6 +273,7 @@ function buildSpecialField(hasPresetValue = false): BuilderField {
   }
   return {
     control: 'special',
+    defaultValue: hasPresetValue ? undefined : '',
     description: defaultDescription,
     hasPresetValue,
     id: 'special',
@@ -244,9 +287,14 @@ function buildSpecialField(hasPresetValue = false): BuilderField {
 function buildAnimField(scope: BuilderAnimScope): BuilderField {
   const options: BuilderOption[] = [];
   if (scope === 'pair' || scope === 'single') {
-    options.push(buildDefaultOption('Static'));
+    const isNoneOmitted = scope === 'single';
+    options.push(
+      isNoneOmitted
+        ? { aliases: ['none'], label: 'Static', value: '' }
+        : buildDefaultOption('Static')
+    );
     for (const motion of ICON_MOTION_TOKENS) {
-      if (motion !== 'default') {
+      if (motion !== 'default' && (!isNoneOmitted || motion !== 'none')) {
         options.push({
           aliases: collectAliasesForValue(ICON_MOTION_ALIASES, motion),
           label: capitalizeWord(motion),
@@ -255,16 +303,18 @@ function buildAnimField(scope: BuilderAnimScope): BuilderField {
       }
     }
   } else if (scope === 'stack') {
-    options.push(buildDefaultOption('Static'));
+    options.push({ aliases: ['none'], label: 'Static', value: '' });
     for (const motion of STACK_MOTION_TOKENS) {
-      options.push({
-        aliases: collectAliasesForValue(STACK_MOTION_ALIASES, motion),
-        label: capitalizeWord(motion),
-        value: motion,
-      });
+      if (motion !== 'none') {
+        options.push({
+          aliases: collectAliasesForValue(STACK_MOTION_ALIASES, motion),
+          label: capitalizeWord(motion),
+          value: motion,
+        });
+      }
     }
   } else if (scope === 'typing') {
-    options.push(buildDefaultOption('Typing (default)'), { label: 'Static (none)', value: 'none' });
+    options.push(buildDefaultOption('Typing'), { label: 'Static (none)', value: 'none' });
   } else {
     options.push(buildDefaultOption('Static'));
   }
@@ -279,6 +329,7 @@ function buildAnimField(scope: BuilderAnimScope): BuilderField {
   return {
     animScope: scope,
     control: 'anim',
+    defaultValue: '',
     description: descriptions[scope],
     id: 'anim',
     label: 'Animation',
@@ -294,8 +345,10 @@ function buildNumberField(
   range: NumericRange,
   extra: Partial<BuilderField> = {}
 ): BuilderField {
+  const isAutoComputed = extra.placeholder === 'auto';
   return {
     control: 'number',
+    defaultValue: isAutoComputed ? undefined : String(range.default),
     id,
     label,
     max: range.max,
@@ -311,17 +364,21 @@ function buildNumberField(
 function buildSizePresetField(
   presets: Readonly<Record<string, number>>,
   range: NumericRange,
-  description: string
+  defaultValue: string,
+  description: string,
+  layoutDefaults?: Readonly<Record<string, string>>
 ): BuilderField {
-  const options: BuilderOption[] = [buildDefaultOption()];
+  const options: BuilderOption[] = [];
   for (const [presetName, presetValue] of Object.entries(presets)) {
     options.push({ label: `${presetName} (${presetValue}px)`, value: presetName });
   }
   return {
     control: 'size',
+    defaultValue,
     description,
     id: 'size',
     label: 'Size',
+    layoutDefaults,
     max: range.max,
     min: range.min,
     options,
@@ -420,7 +477,13 @@ function buildServiceOptions(): BuilderServiceOption[] {
     for (const [metric, config] of Object.entries(service.metrics)) {
       metrics.push({
         autoSpecials: config.autoSpecials,
+        defaultColor: config.defaultColor,
+        defaultIcon: config.defaultIcon,
+        defaultLabel: config.defaultLabel,
         defaultSpecial: config.defaultSpecial,
+        hasDynamicColor: config.hasDynamicColor,
+        hasDynamicDot: config.hasDynamicDot,
+        hasDynamicIcon: config.hasDynamicIcon,
         label: `${metric} · ${config.defaultLabel}`,
         redirect: deriveRedirectTemplate(config, service, defaultOwner),
         value: metric,
@@ -479,7 +542,7 @@ function buildBadgeFields(): BuilderField[] {
       maxLength: MAX_LABEL_LENGTH,
       placeholder: 'Passing',
     },
-    buildVariantField(),
+    buildVariantField(DEFAULT_BADGE_VARIANT),
     buildColorField(),
     buildIconPairField(
       'Left icon, right icon, or both; Leave the left one empty for a right-only icon.'
@@ -519,13 +582,13 @@ function buildServiceFields(): BuilderField[] {
       param: 'label',
       placeholder: 'preset label',
     },
-    buildVariantField(),
-    buildColorField('Overrides the preset color.'),
+    buildVariantField(DEFAULT_BADGE_VARIANT),
+    buildColorField({ description: 'Overrides the preset color.', leadingLabel: 'Auto' }),
     buildIconPairField(
-      'Overrides the preset icon; Set only the right icon to keep the preset icon on the left, or pick No icon to remove it.',
+      'Overrides the preset icon; Set only the right icon to keep the preset icon on the left, or clear the left icon to hide it.',
       true
     ),
-    buildDotField(),
+    buildDotField(true),
     buildSpecialField(true),
     buildAnimField('pair'),
   ];
@@ -553,10 +616,11 @@ function buildButtonFields(): BuilderField[] {
       label: 'Value',
       maxLength: MAX_LABEL_LENGTH,
     },
-    buildVariantField(),
+    buildVariantField(DEFAULT_BUTTON_VARIANT),
     buildSizePresetField(
       presetHeights,
       BUTTON_HEIGHT_RANGE,
+      'md',
       'Height preset or custom pixel height.'
     ),
     buildColorField(),
@@ -588,10 +652,15 @@ function buildStackFields(): BuilderField[] {
       isRequired: true,
       label: 'Icon groups',
     },
-    buildVariantField(),
-    buildColorField('Uniform tile color (defaults to each brand color).'),
+    buildVariantField(DEFAULT_STACK_VARIANT),
+    buildColorField({
+      defaultValue: '',
+      description: 'Uniform tile color (defaults to each brand color).',
+      leadingLabel: 'Brand colors',
+    }),
     {
       control: 'text',
+      defaultValue: String(STACK_PER_LINE_RANGE.default),
       description: `Fallback columns per row (${STACK_PER_LINE_RANGE.min} to ${STACK_PER_LINE_RANGE.max}), or one value per group (e.g., 8,6,4).`,
       id: 'perline',
       label: 'Columns',
@@ -613,7 +682,7 @@ function buildQuoteFields(): BuilderField[] {
   const verticalAliases = [...VERTICAL_LAYOUT_TOKENS]
     .filter((token) => token !== 'vertical')
     .toSorted();
-  const layoutOptions: BuilderOption[] = [buildDefaultOption()];
+  const layoutOptions: BuilderOption[] = [];
   for (const layoutToken of QUOTE_LAYOUT_TOKENS) {
     layoutOptions.push({
       aliases: layoutToken === 'vertical' ? verticalAliases : undefined,
@@ -641,16 +710,19 @@ function buildQuoteFields(): BuilderField[] {
     {
       aliases: ['type'],
       control: 'select',
+      defaultValue: DEFAULT_QUOTE_LAYOUT,
       id: 'layout',
       label: 'Layout',
       options: layoutOptions,
       param: 'layout',
     },
-    buildVariantField(),
+    buildVariantField(DEFAULT_QUOTE_VARIANT),
     buildSizePresetField(
       QUOTE_SIZE_MAP,
       QUOTE_FONT_SIZE_RANGE,
-      `Typography preset or custom font size (defaults to ${DEFAULT_HORIZONTAL_QUOTE_SIZE}, or ${DEFAULT_VERTICAL_QUOTE_SIZE} for vertical cards).`
+      DEFAULT_HORIZONTAL_QUOTE_SIZE,
+      `Typography preset or custom font size (defaults to ${DEFAULT_HORIZONTAL_QUOTE_SIZE}, or ${DEFAULT_VERTICAL_QUOTE_SIZE} for vertical cards).`,
+      { horizontal: DEFAULT_HORIZONTAL_QUOTE_SIZE, vertical: DEFAULT_VERTICAL_QUOTE_SIZE }
     ),
     buildColorField(),
     buildNumberField('width', 'Width (px)', QUOTE_WIDTH_RANGE, {
@@ -670,7 +742,7 @@ function buildTypingFields(): BuilderField[] {
     prompt: 'Prompt',
     window: 'Window',
   };
-  const layoutOptions: BuilderOption[] = [buildDefaultOption()];
+  const layoutOptions: BuilderOption[] = [];
   for (const token of TYPING_LAYOUT_TOKENS) {
     layoutOptions.push({
       aliases: collectAliasesForValue(TYPING_LAYOUT_MAP, token),
@@ -679,7 +751,7 @@ function buildTypingFields(): BuilderField[] {
     });
   }
 
-  const fontOptions: BuilderOption[] = [buildDefaultOption()];
+  const fontOptions: BuilderOption[] = [];
   for (const token of TYPING_FONT_TOKENS) {
     fontOptions.push({
       aliases: collectAliasesForValue(TYPING_FONT_MAP, token),
@@ -688,7 +760,7 @@ function buildTypingFields(): BuilderField[] {
     });
   }
 
-  const cursorOptions: BuilderOption[] = [buildDefaultOption()];
+  const cursorOptions: BuilderOption[] = [];
   for (const token of TYPING_CURSOR_TOKENS) {
     cursorOptions.push({
       aliases: collectAliasesForValue(TYPING_CURSOR_MAP, token),
@@ -697,7 +769,7 @@ function buildTypingFields(): BuilderField[] {
     });
   }
 
-  const eraseOptions: BuilderOption[] = [buildDefaultOption()];
+  const eraseOptions: BuilderOption[] = [];
   for (const token of TYPING_ERASE_TOKENS) {
     eraseOptions.push({
       aliases: collectAliasesForValue(TYPING_ERASE_MAP, token),
@@ -706,7 +778,7 @@ function buildTypingFields(): BuilderField[] {
     });
   }
 
-  const alignOptions: BuilderOption[] = [buildDefaultOption()];
+  const alignOptions: BuilderOption[] = [];
   for (const token of TYPING_ALIGN_TOKENS) {
     alignOptions.push({
       aliases: collectAliasesForValue(TYPING_ALIGN_MAP, token),
@@ -740,31 +812,57 @@ function buildTypingFields(): BuilderField[] {
     {
       aliases: ['frame', 'type'],
       control: 'select',
+      defaultValue: DEFAULT_TYPING_LAYOUT,
       id: 'layout',
       label: 'Layout',
       options: layoutOptions,
       param: 'layout',
     },
-    buildVariantField(),
+    buildVariantField(DEFAULT_TYPING_VARIANT),
     buildColorField(),
-    { control: 'select', id: 'font', label: 'Font', options: fontOptions, param: 'font' },
+    {
+      control: 'select',
+      defaultValue: DEFAULT_LAYOUT_FONTS[DEFAULT_TYPING_LAYOUT],
+      id: 'font',
+      label: 'Font',
+      layoutDefaults: DEFAULT_LAYOUT_FONTS,
+      options: fontOptions,
+      param: 'font',
+    },
     buildSizePresetField(
       TYPING_SIZE_MAP,
       TYPING_FONT_SIZE_RANGE,
+      'md',
       'Typography preset or custom font size in pixels.'
     ),
-    { control: 'select', id: 'cursor', label: 'Cursor', options: cursorOptions, param: 'cursor' },
+    {
+      control: 'select',
+      defaultValue: DEFAULT_TYPING_CURSOR,
+      id: 'cursor',
+      label: 'Cursor',
+      options: cursorOptions,
+      param: 'cursor',
+    },
     {
       aliases: ['delete'],
       control: 'select',
+      defaultValue: DEFAULT_TYPING_ERASE,
       id: 'erase',
       label: 'Erase mode',
       options: eraseOptions,
       param: 'erase',
     },
-    { control: 'select', id: 'align', label: 'Alignment', options: alignOptions, param: 'align' },
     {
       control: 'select',
+      defaultValue: 'left',
+      id: 'align',
+      label: 'Alignment',
+      options: alignOptions,
+      param: 'align',
+    },
+    {
+      control: 'select',
+      defaultValue: '',
       description:
         'Simulates an occasional QWERTY neighbor key slip + immediate backspace correction.',
       id: 'typo',
@@ -788,6 +886,7 @@ function buildTypingFields(): BuilderField[] {
       description: 'Optional header bar or active tab title on titled layouts.',
       id: 'title',
       label: 'Window / tab title',
+      layoutDefaults: { ide: DEFAULT_IDE_TITLE },
       maxLength: MAX_TYPING_TITLE_LENGTH,
       param: 'title',
       placeholder: 'optional (e.g., zsh)',

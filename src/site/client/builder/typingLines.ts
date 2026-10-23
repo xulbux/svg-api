@@ -51,6 +51,40 @@ function focusRowInput(row: HTMLElement | undefined, hasCaretAtEnd = false): voi
   }
 }
 
+/** Swap `draggedRow` with an adjacent row when `visualCenterY` crosses its vertical midpoint. */
+function trySwapDraggedRowOnce(draggedRow: HTMLElement, visualCenterY: number): boolean {
+  const previousSibling = draggedRow.previousElementSibling;
+  if (previousSibling instanceof HTMLElement) {
+    const previousRect = previousSibling.getBoundingClientRect();
+    if (visualCenterY < previousRect.top + previousRect.height / 2) {
+      previousSibling.before(draggedRow);
+      return true;
+    }
+  }
+  const nextSibling = draggedRow.nextElementSibling;
+  if (nextSibling instanceof HTMLElement) {
+    const nextRect = nextSibling.getBoundingClientRect();
+    if (visualCenterY > nextRect.top + nextRect.height / 2) {
+      nextSibling.after(draggedRow);
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Swap `draggedRow` across any crossed neighbor midpoints and report whether DOM order changed. */
+function swapDraggedRowWithNeighbors(draggedRow: HTMLElement, visualCenterY: number): boolean {
+  let hasSwapped = false;
+  let isCheckingNeighbors = true;
+  while (isCheckingNeighbors) {
+    isCheckingNeighbors = trySwapDraggedRowOnce(draggedRow, visualCenterY);
+    if (isCheckingNeighbors) {
+      hasSwapped = true;
+    }
+  }
+  return hasSwapped;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -103,6 +137,14 @@ export function createTypingLinesController(
         const indexBadge = row.querySelector('.typing-line-index');
         if (indexBadge) {
           indexBadge.textContent = String(lineNumber);
+        }
+        const dragHandle = row.querySelector('[data-typing-line-handle]');
+        if (dragHandle instanceof HTMLButtonElement) {
+          dragHandle.disabled = isSingleRow;
+          dragHandle.setAttribute(
+            'aria-label',
+            `Reorder line ${lineNumber} (drag or use Up and Down arrow keys)`
+          );
         }
         const input = row.querySelector('.typing-line-input');
         if (input instanceof HTMLInputElement) {
@@ -181,19 +223,65 @@ export function createTypingLinesController(
     readValue();
   }
 
-  function handleKeydown(event: KeyboardEvent): void {
-    const input =
-      event.target instanceof HTMLInputElement &&
-      event.target.classList.contains('typing-line-input')
-        ? event.target
-        : undefined;
-    const row = input?.closest<HTMLElement>('[data-typing-line-row]');
-    if (!input || !row) {
+  function moveRowToIndex(
+    row: HTMLElement,
+    targetIndex: number,
+    focusTarget: 'handle' | 'input'
+  ): void {
+    const rows = getRows();
+    const currentIndex = rows.indexOf(row);
+    const clampedIndex = Math.max(0, Math.min(rows.length - 1, targetIndex));
+    const referenceRow = rows[clampedIndex];
+    if (currentIndex === -1 || currentIndex === clampedIndex || !referenceRow) {
+      return;
+    }
+    if (clampedIndex < currentIndex) {
+      referenceRow.before(row);
+    } else {
+      referenceRow.after(row);
+    }
+    refreshRowMetadata();
+    if (focusTarget === 'handle') {
+      const handle = row.querySelector('[data-typing-line-handle]');
+      if (handle instanceof HTMLButtonElement) {
+        handle.focus();
+      }
+    } else {
+      focusRowInput(row, true);
+    }
+    notifyChange();
+  }
+
+  function handleDragHandleKeydown(event: KeyboardEvent, handle: HTMLButtonElement): void {
+    const handleRow = handle.closest<HTMLElement>('[data-typing-line-row]');
+    if (!handleRow) {
+      return;
+    }
+    const rows = getRows();
+    const rowIndex = rows.indexOf(handleRow);
+    const targetByKey: Readonly<Record<string, number>> = {
+      ArrowDown: rowIndex + 1,
+      ArrowUp: rowIndex - 1,
+      End: rows.length - 1,
+      Home: 0,
+    };
+    if (Object.hasOwn(targetByKey, event.key)) {
+      event.preventDefault();
+      moveRowToIndex(handleRow, targetByKey[event.key] ?? rowIndex, 'handle');
+    }
+  }
+
+  function handleLineInputKeydown(event: KeyboardEvent, input: HTMLInputElement): void {
+    const row = input.closest<HTMLElement>('[data-typing-line-row]');
+    if (!row) {
       return;
     }
     const rows = getRows();
     const rowIndex = rows.indexOf(row);
-    if (event.key === 'Enter') {
+    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      moveRowToIndex(row, rowIndex + (event.key === 'ArrowUp' ? -1 : 1), 'input');
+    } else if (event.key === 'Enter') {
       event.preventDefault();
       if (rows.length < maxLines) {
         const newRow = createRow('');
@@ -209,8 +297,7 @@ export function createTypingLinesController(
       event.preventDefault();
       row.remove();
       refreshRowMetadata();
-      const remainingRows = getRows();
-      focusRowInput(remainingRows[Math.max(0, rowIndex - 1)], true);
+      focusRowInput(getRows()[Math.max(0, rowIndex - 1)], true);
       notifyChange();
     } else if (event.key === 'ArrowUp' && rowIndex > 0) {
       event.preventDefault();
@@ -218,6 +305,23 @@ export function createTypingLinesController(
     } else if (event.key === 'ArrowDown' && rowIndex + 1 < rows.length) {
       event.preventDefault();
       focusRowInput(rows[rowIndex + 1], true);
+    }
+  }
+
+  function handleKeydown(event: KeyboardEvent): void {
+    const handle =
+      event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>('[data-typing-line-handle]')
+        : undefined;
+    if (handle) {
+      handleDragHandleKeydown(event, handle);
+      return;
+    }
+    if (
+      event.target instanceof HTMLInputElement &&
+      event.target.classList.contains('typing-line-input')
+    ) {
+      handleLineInputKeydown(event, event.target);
     }
   }
 
@@ -257,6 +361,98 @@ export function createTypingLinesController(
     refreshRowMetadata();
     focusRowInput(anchorRow, true);
     notifyChange();
+  }
+
+  let activeDragRow: HTMLElement | undefined = undefined;
+  let activeDragHandle: HTMLButtonElement | undefined = undefined;
+  let activePointerId: number | undefined = undefined;
+  let dragInitialIndex = -1;
+  let dragGrabOffsetY = 0;
+
+  function finishPointerDrag(): void {
+    if (!activeDragRow || !listElement) {
+      return;
+    }
+    const finishedRow = activeDragRow;
+    const finishedHandle = activeDragHandle;
+    const finishedPointerId = activePointerId;
+    activeDragRow = undefined;
+    activeDragHandle = undefined;
+    activePointerId = undefined;
+
+    finishedRow.style.removeProperty('translate');
+    finishedRow.classList.remove('is-dragging');
+    listElement.classList.remove('is-reordering');
+
+    if (
+      finishedHandle &&
+      finishedPointerId !== undefined &&
+      finishedHandle.hasPointerCapture(finishedPointerId)
+    ) {
+      finishedHandle.releasePointerCapture(finishedPointerId);
+    }
+    refreshRowMetadata();
+    if (getRows().indexOf(finishedRow) !== dragInitialIndex) {
+      notifyChange();
+    }
+    dragInitialIndex = -1;
+  }
+
+  function handlePointerDown(event: PointerEvent): void {
+    if (!listElement || activeDragRow || (event.pointerType === 'mouse' && event.button !== 0)) {
+      return;
+    }
+    const handle =
+      event.target instanceof Element
+        ? event.target.closest<HTMLButtonElement>('[data-typing-line-handle]')
+        : undefined;
+    const row = handle?.closest<HTMLElement>('[data-typing-line-row]');
+    if (!handle || handle.disabled || !row) {
+      return;
+    }
+    const rows = getRows();
+    if (rows.length <= 1) {
+      return;
+    }
+    event.preventDefault();
+    handle.focus();
+    handle.setPointerCapture(event.pointerId);
+
+    const rowRect = row.getBoundingClientRect();
+    activeDragRow = row;
+    activeDragHandle = handle;
+    activePointerId = event.pointerId;
+    dragInitialIndex = rows.indexOf(row);
+    dragGrabOffsetY = event.clientY - rowRect.top;
+
+    listElement.classList.add('is-reordering');
+    row.classList.add('is-dragging');
+  }
+
+  function handlePointerMove(event: PointerEvent): void {
+    if (!listElement || !activeDragRow || event.pointerId !== activePointerId) {
+      return;
+    }
+    event.preventDefault();
+    const rowHeight = activeDragRow.offsetHeight;
+    const desiredTop = event.clientY - dragGrabOffsetY;
+    const visualCenterY = desiredTop + rowHeight / 2;
+    if (swapDraggedRowWithNeighbors(activeDragRow, visualCenterY)) {
+      refreshRowMetadata();
+    }
+
+    const listRect = listElement.getBoundingClientRect();
+    const minTop = listRect.top;
+    const maxTop = Math.max(minTop, listRect.bottom - rowHeight);
+    const clampedTop = Math.max(minTop, Math.min(maxTop, desiredTop));
+    const naturalTop = listRect.top + activeDragRow.offsetTop;
+    activeDragRow.style.translate = `0 ${Math.round(clampedTop - naturalTop)}px`;
+  }
+
+  function handlePointerUp(event: PointerEvent): void {
+    if (event.pointerId === activePointerId) {
+      finishPointerDrag();
+    }
   }
 
   function bind(): void {
@@ -303,6 +499,17 @@ export function createTypingLinesController(
       notifyChange();
     });
 
+    listElement.addEventListener('pointerdown', (event) =>
+      handlePointerDown(event as PointerEvent)
+    );
+    listElement.addEventListener('pointermove', (event) =>
+      handlePointerMove(event as PointerEvent)
+    );
+    listElement.addEventListener('pointerup', (event) => handlePointerUp(event as PointerEvent));
+    listElement.addEventListener('pointercancel', (event) =>
+      handlePointerUp(event as PointerEvent)
+    );
+    listElement.addEventListener('lostpointercapture', finishPointerDrag);
     listElement.addEventListener('keydown', (event) => handleKeydown(event as KeyboardEvent));
     listElement.addEventListener('paste', (event) => handlePaste(event as ClipboardEvent));
   }

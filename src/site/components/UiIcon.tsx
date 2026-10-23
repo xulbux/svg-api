@@ -63,6 +63,7 @@ const UI_SPRITE_ICON_SLUGS: ReadonlySet<string> = new Set([
   'chevron-left',
   'chevron-right',
   'copy',
+  'grip-vertical',
   'layout-grid',
   'sparkles',
   'x',

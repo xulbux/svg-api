@@ -112,6 +112,7 @@ const RATING_PRESENTATION: MetricPresentation = {
   defaultColor: 'slate',
   defaultIcon: 'sonarcloud',
   defaultLabel: 'Rating',
+  hasDynamicColor: true,
 };
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -237,7 +238,7 @@ function createIssueCountMetric(
 ): ServiceMetricConfig {
   return createMetric(
     MEASURES_ENDPOINT,
-    { ...presentation, autoSpecials: ISSUE_SPECIALS },
+    { ...presentation, autoSpecials: ISSUE_SPECIALS, hasDynamicColor: true },
     (measures) => {
       const count = toFiniteNumber(measures[key]);
       const newCount = toFiniteNumber(measures[newKey]);
@@ -354,6 +355,8 @@ export const SONARCLOUD_SERVICE = defineService({
         defaultColor: 'emerald',
         defaultIcon: 'sonarcloud',
         defaultLabel: 'Quality Gate',
+        hasDynamicColor: true,
+        hasDynamicIcon: true,
       },
       transformQualityGate
     ),

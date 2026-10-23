@@ -82,7 +82,12 @@ export const ARCH_SERVICE = defineService({
     ),
     v: createMetric(
       ARCH_ENDPOINT,
-      { defaultColor: 'sky', defaultIcon: 'archlinux', defaultLabel: 'Arch Linux' },
+      {
+        defaultColor: 'sky',
+        defaultIcon: 'archlinux',
+        defaultLabel: 'Arch Linux',
+        hasDynamicColor: true,
+      },
       transformArchVersion
     ),
   },

@@ -28,6 +28,7 @@ export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
   bar: {
+    defaultModifierLabel: 'Shimmer',
     description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 92).`,
     example: '92',
     label: 'Progress bar',
@@ -49,6 +50,7 @@ export const SPECIAL_KIND_DETAILS: Readonly<
     summary: 'Delta pill (+ emerald, - rose)',
   },
   ring: {
+    defaultModifierLabel: 'Static',
     description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 84).`,
     example: '84',
     label: 'Donut ring',

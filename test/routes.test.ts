@@ -1177,16 +1177,45 @@ describe('unexpected errors', () => {
     expect(consoleErrorSpy).toHaveBeenCalledOnce();
   });
 
-  it('answers failing HTML routes with a plain-text 500', async () => {
+  it('answers failing site routes with a branded 500 HTML page and non-HTML routes with plain-text 500', async () => {
     muteConsoleError();
-    const request = new Request('https://svg.xul.is/docs');
-    vi.spyOn(request.headers, 'get').mockImplementation(() => {
+    const htmlRequest = new Request('https://svg.xul.is/docs');
+    vi.spyOn(htmlRequest.headers, 'get').mockImplementation(() => {
       throw new Error('header read failed');
     });
-    const response = await app.fetch(request, TEST_ENV);
-    expect(response.status).toBe(500);
-    expect(response.headers.get('Content-Type')).toContain('text/plain');
-    expect(response.headers.get('Cache-Control')).toBe('no-store');
-    expect(await response.text()).toBe('Internal Server Error');
+    const htmlResponse = await app.fetch(htmlRequest, TEST_ENV);
+    expect(htmlResponse.status).toBe(500);
+    expect(htmlResponse.headers.get('Content-Type')).toContain('text/html');
+    expect(htmlResponse.headers.get('Cache-Control')).toBe('no-store');
+    expect(htmlResponse.headers.get('Content-Security-Policy')).toBe(
+      HTML_SECURITY_HEADERS['Content-Security-Policy']
+    );
+    const htmlBody = await htmlResponse.text();
+    expect(htmlBody).toContain('<span class="hero-accent">500</span> Internal Server Error');
+    expect(htmlBody).toContain('<meta name="robots" content="noindex" />');
+    expect(htmlBody).toContain('Back to Home');
+
+    const nonHtmlUrls = [
+      'https://svg.xul.is/assets/site.css',
+      'https://svg.xul.is/robots.txt',
+    ] as const;
+    const nonHtmlResponses = await Promise.all(
+      nonHtmlUrls.map((nonHtmlUrl) => {
+        const nonHtmlRequest = new Request(nonHtmlUrl);
+        vi.spyOn(nonHtmlRequest.headers, 'get').mockImplementation(() => {
+          throw new Error('header read failed');
+        });
+        return app.fetch(nonHtmlRequest, TEST_ENV);
+      })
+    );
+    const nonHtmlBodies = await Promise.all(
+      nonHtmlResponses.map((nonHtmlResponse) => nonHtmlResponse.text())
+    );
+    for (const [i, nonHtmlResponse] of nonHtmlResponses.entries()) {
+      expect(nonHtmlResponse.status, nonHtmlUrls[i]).toBe(500);
+      expect(nonHtmlResponse.headers.get('Content-Type'), nonHtmlUrls[i]).toContain('text/plain');
+      expect(nonHtmlResponse.headers.get('Cache-Control'), nonHtmlUrls[i]).toBe('no-store');
+      expect(nonHtmlBodies[i], nonHtmlUrls[i]).toBe('Internal Server Error');
+    }
   });
 });

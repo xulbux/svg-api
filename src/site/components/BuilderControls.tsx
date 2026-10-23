@@ -7,7 +7,22 @@ import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
 import { UiIcon } from '@/site/components/UiIcon';
 import { SPECIAL_KIND_DETAILS } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
-import type { BuilderControl, BuilderField, BuilderOption, BuilderSchema } from '@/types';
+import {
+  findOption,
+  findService,
+  resolveEffectiveFieldDefault,
+  splitAnim,
+  splitIconPair,
+  splitSize,
+  splitSpecial,
+} from '@/site/shared';
+import type {
+  BuilderControl,
+  BuilderField,
+  BuilderOption,
+  BuilderSchema,
+  BuilderServiceMetric,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -17,6 +32,24 @@ export interface BuilderFieldViewProps {
   readonly field: BuilderField;
   /** Enclosing builder schema. */
   readonly schema: BuilderSchema;
+}
+
+/** Options for `renderIconSelect`. */
+interface IconSelectOptions {
+  /** Builder field schema definition. */
+  readonly field: BuilderField;
+  /** Optional ID of the field description hint. */
+  readonly hintId?: string;
+  /** Initial hidden input value. */
+  readonly initialValue?: string;
+  /** Whether `presetIcon` is chosen dynamically from live upstream data (`Auto`). */
+  readonly isPresetDynamic?: boolean;
+  /** Control part name. */
+  readonly part: string;
+  /** Optional preset icon slug rendered when the hidden input is empty (`service` left icon). */
+  readonly presetIcon?: string;
+  /** Optional sublabel rendered above the selector. */
+  readonly sublabel?: string;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -46,10 +79,16 @@ function buildFieldId(field: BuilderField, part?: string): string {
 }
 
 /** Render `<option>` elements (with optional `data-swatch` colors and `data-badge="Auto"` pills), selecting `selectedValue`. */
-function renderOptions(options: readonly BuilderOption[], selectedValue: string): HtmlFragment[] {
+function renderOptions(
+  options: readonly BuilderOption[],
+  selectedValue: string,
+  autoBadgeValues?: ReadonlySet<string>
+): HtmlFragment[] {
   const optionNodes: HtmlFragment[] = [];
   for (const option of options) {
-    const hasAutoBadge = option.autoSpecials !== undefined && option.autoSpecials.length > 0;
+    const hasAutoBadge =
+      (option.autoSpecials !== undefined && option.autoSpecials.length > 0) ||
+      Boolean(option.value && autoBadgeValues?.has(option.value));
     optionNodes.push(
       <option
         value={option.value}
@@ -74,7 +113,8 @@ function renderCustomSelect(
   options: readonly BuilderOption[],
   selectedValue: string,
   part?: string,
-  hintId?: string
+  hintId?: string,
+  autoBadgeValues?: ReadonlySet<string>
 ): HtmlFragment {
   const selected = options.find((option) => option.value === selectedValue) ?? options[0];
   const swatchElement = selected?.swatch ? (
@@ -99,7 +139,7 @@ function renderCustomSelect(
   return (
     <div class="select" data-select={selectId}>
       <select class="select-native" id={selectId} data-part={part} tabindex="-1" aria-hidden="true">
-        {renderOptions(options, selectedValue)}
+        {renderOptions(options, selectedValue, autoBadgeValues)}
       </select>
       <button
         type="button"
@@ -131,6 +171,15 @@ function renderCustomSelect(
   );
 }
 
+/** Resolve the initial active service metric of the `service` builder schema. */
+function resolveInitialServiceMetric(schema: BuilderSchema): BuilderServiceMetric | undefined {
+  if (schema.kind !== 'service') {
+    return undefined;
+  }
+  const service = findService(schema, schema.initialState.service) ?? schema.services?.[0];
+  return findOption(service?.metrics, schema.initialState.metric ?? '') ?? service?.metrics[0];
+}
+
 /** Render the service options of the service badge builder (`PyPI (pypi)`), marking services that support automatic inline widgets. */
 function buildServiceSelectOptions(schema: BuilderSchema): BuilderOption[] {
   const options: BuilderOption[] = [];
@@ -156,10 +205,22 @@ function resolveSelectOptions(
     return buildServiceSelectOptions(schema);
   }
   if (schema.kind === 'service' && field.id === 'metric') {
-    const initialService = schema.services?.find(
-      (service) => service.key === schema.initialState.service
-    );
+    const initialService = findService(schema, schema.initialState.service) ?? schema.services?.[0];
     return initialService?.metrics ?? [];
+  }
+  if (schema.kind === 'service' && field.id === 'dot') {
+    const initialMetric = resolveInitialServiceMetric(schema);
+    const dotOptions = field.options ?? [];
+    if (initialMetric?.hasDynamicDot) {
+      return dotOptions;
+    }
+    const filteredOptions: BuilderOption[] = [];
+    for (const option of dotOptions) {
+      if (option.value !== '') {
+        filteredOptions.push(option);
+      }
+    }
+    return filteredOptions;
   }
   return field.options ?? [];
 }
@@ -169,18 +230,27 @@ function resolveSelectOptions(
  * (the slug is stored in a hidden input), plus a clear button. Icon pair parts get a sublabel; A single icon
  * selector is labeled by its field label.
  */
-function renderIconSelect(
-  field: BuilderField,
-  part: string,
-  sublabel?: string,
-  hintId?: string
-): HtmlFragment {
+function renderIconSelect(options: IconSelectOptions): HtmlFragment {
+  const { field, hintId, initialValue, isPresetDynamic, part, presetIcon, sublabel } = options;
   const inputId = buildFieldId(field, part);
   const validationId = `${inputId}-validation`;
   const describedBy = hintId ? `${validationId} ${hintId}` : validationId;
   const placeholder = field.placeholder ?? 'none';
   const labelId = sublabel ? `${inputId}-label` : `${buildFieldId(field)}-label`;
   const clearLabel = (sublabel ?? field.label).toLowerCase();
+  const rawSlug = (initialValue ?? '').trim();
+  const isExplicitNone = rawSlug.toLowerCase() === 'none';
+
+  let displayLabel = placeholder;
+  let isPlaceholder = true;
+  if (!isExplicitNone && rawSlug) {
+    displayLabel = rawSlug;
+    isPlaceholder = false;
+  } else if (!isExplicitNone && presetIcon) {
+    displayLabel = isPresetDynamic ? 'Auto' : presetIcon;
+    isPlaceholder = false;
+  }
+
   return (
     <div class="icon-input">
       {sublabel ? (
@@ -189,22 +259,23 @@ function renderIconSelect(
         </span>
       ) : undefined}
       <div class="icon-select">
-        <input type="hidden" id={inputId} data-part={part} />
+        <input type="hidden" id={inputId} data-part={part} value={rawSlug || undefined} />
         <button
           type="button"
           class="builder-input icon-select-trigger"
           data-icon-target={inputId}
-          data-icon-none={field.hasPresetValue ? 'true' : undefined}
+          data-preset-icon={presetIcon}
+          data-preset-dynamic={isPresetDynamic ? 'true' : undefined}
           popovertarget="icon-picker"
           aria-haspopup="dialog"
           aria-labelledby={`${labelId} ${inputId}-value`}
           aria-describedby={describedBy}>
           <span class="icon-input-glyph" aria-hidden="true" data-glyph-for={inputId}></span>
           <span
-            class="icon-select-value is-placeholder"
+            class={isPlaceholder ? 'icon-select-value is-placeholder' : 'icon-select-value'}
             id={`${inputId}-value`}
             data-placeholder={placeholder}>
-            {placeholder}
+            {displayLabel}
           </span>
           <UiIcon slug="layout-grid" size={14} extraClass="icon-select-grid" />
         </button>
@@ -214,7 +285,7 @@ function renderIconSelect(
           data-icon-clear={inputId}
           aria-label={`Clear ${clearLabel}`}
           title="Clear"
-          hidden={true}>
+          hidden={isPlaceholder}>
           <UiIcon slug="x" size={14} />
         </button>
       </div>
@@ -230,14 +301,21 @@ function renderIconSelect(
 /** Render the swatch radio group of a `color` field. */
 function renderColorControl(
   field: BuilderField,
+  schema: BuilderSchema,
   selectedValue: string,
   hintId: string | undefined
 ): HtmlFragment {
+  const initialMetric = resolveInitialServiceMetric(schema);
   const swatches: HtmlFragment[] = [];
   for (const option of field.options ?? []) {
-    const label = option.value ? option.label : 'Default';
+    const { label } = option;
+    const isServiceAutoSwatch = schema.kind === 'service' && !option.value;
     swatches.push(
-      <label class="swatch" title={label}>
+      <label
+        class="swatch"
+        title={label}
+        data-color-auto={isServiceAutoSwatch ? 'true' : undefined}
+        hidden={isServiceAutoSwatch && !initialMetric?.hasDynamicColor ? true : undefined}>
         <input
           class="swatch-input"
           type="radio"
@@ -270,56 +348,75 @@ function renderSubSelect(
   part: string,
   label: string,
   options: readonly BuilderOption[],
-  extraClass = ''
+  selectedValue = '',
+  extraClass = '',
+  isHidden = false,
+  autoBadgeValues?: ReadonlySet<string>
 ): HtmlFragment {
   const selectId = buildFieldId(field, part);
   return (
     <div
       class={`builder-subfield${extraClass}`}
-      data-special-part={part === 'modifier' ? 'modifier' : undefined}>
+      data-special-part={part === 'modifier' ? 'modifier' : undefined}
+      hidden={isHidden ? true : undefined}>
       <span class="builder-sublabel" id={`${selectId}-label`}>
         {label}
       </span>
-      {renderCustomSelect(selectId, `${selectId}-label`, options, '', part)}
+      {renderCustomSelect(
+        selectId,
+        `${selectId}-label`,
+        options,
+        selectedValue,
+        part,
+        undefined,
+        autoBadgeValues
+      )}
     </div>
   );
 }
 
 /** Render the composite controls of an `anim` field (sheen toggle plus motion dropdowns). */
-function renderAnimControl(field: BuilderField): HtmlFragment {
+function renderAnimControl(field: BuilderField, initialValue: string): HtmlFragment {
   const sheenId = buildFieldId(field, 'sheen');
   const motionOptions = field.options ?? [];
+  const initialAnim = splitAnim(initialValue, motionOptions);
   let motionsFragment: HtmlFragment | undefined = undefined;
   if (field.animScope === 'pair') {
     motionsFragment = (
       <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Left icon motion', motionOptions)}
-        {renderSubSelect(field, 'right', 'Right icon motion', motionOptions)}
+        {renderSubSelect(field, 'left', 'Left icon motion', motionOptions, initialAnim.left)}
+        {renderSubSelect(field, 'right', 'Right icon motion', motionOptions, initialAnim.right)}
       </div>
     );
   } else if (field.animScope === 'single') {
     motionsFragment = (
       <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Icon motion', motionOptions)}
+        {renderSubSelect(field, 'left', 'Icon motion', motionOptions, initialAnim.left)}
       </div>
     );
   } else if (field.animScope === 'stack') {
     motionsFragment = (
       <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Tile motion', motionOptions)}
+        {renderSubSelect(field, 'left', 'Tile motion', motionOptions, initialAnim.left)}
       </div>
     );
   } else if (field.animScope === 'typing') {
     motionsFragment = (
       <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Typing motion', motionOptions)}
+        {renderSubSelect(field, 'left', 'Typing motion', motionOptions, initialAnim.left)}
       </div>
     );
   }
   return (
     <div class="builder-composite">
       <label class="builder-check" for={sheenId}>
-        <input class="check-input" type="checkbox" id={sheenId} data-part="sheen" />
+        <input
+          class="check-input"
+          type="checkbox"
+          id={sheenId}
+          data-part="sheen"
+          checked={initialAnim.hasSheen}
+        />
         <span class="check-box" aria-hidden="true">
           <UiIcon slug="check" size={12} extraClass="check-icon" />
         </span>
@@ -407,13 +504,39 @@ function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
 }
 
 /** Render the composite controls of a `special` field (widget kind, payload, and modifier). */
-function renderSpecialControl(field: BuilderField, hintId: string | undefined): HtmlFragment {
+function renderSpecialControl(
+  field: BuilderField,
+  schema: BuilderSchema,
+  selectedValue: string,
+  hintId: string | undefined
+): HtmlFragment {
   const payloadId = buildFieldId(field, 'payload');
+  const initialSpecial = splitSpecial(selectedValue, field.options ?? []);
+  const kindOption = findOption(field.options, initialSpecial.kind);
+  const modifiers = kindOption?.modifiers ?? [];
+  const initialMetric = resolveInitialServiceMetric(schema);
+  const autoBadgeValues = initialMetric?.autoSpecials
+    ? new Set<string>(initialMetric.autoSpecials)
+    : undefined;
+  const isPayloadHidden = !initialSpecial.kind || initialSpecial.kind === 'none';
+
   return (
     <>
       <div class="builder-inline">
-        {renderSubSelect(field, 'kind', 'Widget', field.options ?? [])}
-        <div class="builder-subfield is-grow" data-special-part="payload">
+        {renderSubSelect(
+          field,
+          'kind',
+          'Widget',
+          field.options ?? [],
+          initialSpecial.kind,
+          '',
+          false,
+          autoBadgeValues
+        )}
+        <div
+          class="builder-subfield is-grow"
+          data-special-part="payload"
+          hidden={isPayloadHidden ? true : undefined}>
           <label class="builder-sublabel" for={payloadId}>
             Data
           </label>
@@ -422,11 +545,21 @@ function renderSpecialControl(field: BuilderField, hintId: string | undefined): 
             id={payloadId}
             type="text"
             data-part="payload"
+            value={initialSpecial.payload || undefined}
+            placeholder={kindOption?.placeholder}
             aria-describedby={hintId}
             spellcheck={false}
           />
         </div>
-        {renderSubSelect(field, 'modifier', 'Motion', [])}
+        {renderSubSelect(
+          field,
+          'modifier',
+          'Motion',
+          modifiers,
+          initialSpecial.modifier,
+          '',
+          modifiers.length === 0
+        )}
       </div>
       {renderSpecialHelpPopover(field)}
     </>
@@ -434,16 +567,20 @@ function renderSpecialControl(field: BuilderField, hintId: string | undefined): 
 }
 
 /** Render the composite controls of a `size` field (named preset or custom number). */
-function renderSizeControl(field: BuilderField): HtmlFragment {
+function renderSizeControl(field: BuilderField, selectedValue: string): HtmlFragment {
   const customId = buildFieldId(field, 'custom');
   const options: BuilderOption[] = [
     ...(field.options ?? []),
     { label: 'Custom…', value: 'custom' },
   ];
+  const initialSize = splitSize(selectedValue, field.options ?? []);
   return (
     <div class="builder-inline">
-      {renderSubSelect(field, 'preset', 'Preset', options, ' is-grow')}
-      <div class="builder-subfield" data-size-part="custom" hidden={true}>
+      {renderSubSelect(field, 'preset', 'Preset', options, initialSize.preset, ' is-grow')}
+      <div
+        class="builder-subfield"
+        data-size-part="custom"
+        hidden={initialSize.preset !== 'custom'}>
         <label class="builder-sublabel" for={customId}>
           Pixels
         </label>
@@ -452,6 +589,7 @@ function renderSizeControl(field: BuilderField): HtmlFragment {
           id={customId}
           type="number"
           data-part="custom"
+          value={initialSize.custom || undefined}
           min={field.min}
           max={field.max}
           step={field.step ?? 1}
@@ -690,9 +828,18 @@ function renderTypingLinesControl(
     const lineNumber = i + 1;
     rows.push(
       <div class="typing-line-row" data-typing-line-row={true}>
-        <span class="typing-line-index" aria-hidden="true">
-          {lineNumber}
-        </span>
+        <button
+          type="button"
+          class="typing-line-handle"
+          data-typing-line-handle={true}
+          aria-label={`Reorder line ${lineNumber} (drag or use Up and Down arrow keys)`}
+          title="Drag or use arrow keys to reorder"
+          disabled={isSingleLine}>
+          <UiIcon slug="grip-vertical" size={13} extraClass="typing-line-grip" />
+          <span class="typing-line-index" aria-hidden="true">
+            {lineNumber}
+          </span>
+        </button>
         <input
           class="builder-input typing-line-input"
           type="text"
@@ -739,6 +886,116 @@ function renderTypingLinesControl(
   );
 }
 
+/** Render the left/right icon pair control of a badge, button, or service field. */
+function renderIconPairControl(
+  field: BuilderField,
+  schema: BuilderSchema,
+  initialValue: string
+): HtmlFragment {
+  const [initialLeft, initialRight] = splitIconPair(initialValue, Boolean(field.hasPresetValue));
+  const initialMetric = resolveInitialServiceMetric(schema);
+  return (
+    <div class="builder-inline is-pair">
+      {renderIconSelect({
+        field,
+        initialValue: initialLeft,
+        isPresetDynamic: initialMetric?.hasDynamicIcon,
+        part: 'left',
+        presetIcon: initialMetric?.defaultIcon,
+        sublabel: 'Left icon',
+      })}
+      {renderIconSelect({
+        field,
+        initialValue: initialRight,
+        part: 'right',
+        sublabel: 'Right icon',
+      })}
+    </div>
+  );
+}
+
+/** Render the hint icon + text pair control on `/builder/typing`. */
+function renderHintControl(field: BuilderField): HtmlFragment {
+  const textId = buildFieldId(field, 'text');
+  return (
+    <div class="builder-inline is-pair">
+      {renderIconSelect({ field, part: 'icon', sublabel: 'Hint icon' })}
+      <div class="builder-subfield is-grow">
+        <label class="builder-sublabel" for={textId}>
+          Hint text
+        </label>
+        <input
+          class="builder-input"
+          id={textId}
+          type="text"
+          data-part="text"
+          maxlength={field.maxLength}
+          placeholder={field.placeholder}
+          spellcheck={false}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Render a plain text, number, or textarea input control. */
+function renderScalarInputControl(
+  field: BuilderField,
+  schema: BuilderSchema,
+  controlId: string,
+  initialValue: string,
+  effectiveDefault: string,
+  hintId: string | undefined
+): HtmlFragment {
+  if (field.control === 'number') {
+    return (
+      <input
+        class="builder-input"
+        id={controlId}
+        type="number"
+        min={field.min}
+        max={field.max}
+        step={field.step ?? 1}
+        value={initialValue}
+        placeholder={field.placeholder}
+        aria-describedby={hintId}
+        inputmode="decimal"
+      />
+    );
+  }
+  if (field.control === 'textarea') {
+    return (
+      <textarea
+        class="builder-input builder-textarea"
+        id={controlId}
+        rows="4"
+        maxlength={field.maxLength}
+        placeholder={field.placeholder}
+        aria-describedby={hintId}
+        aria-required={field.isRequired ? 'true' : undefined}>
+        {initialValue}
+      </textarea>
+    );
+  }
+  const textPlaceholder =
+    schema.kind === 'service' && field.id === 'label'
+      ? effectiveDefault || field.placeholder
+      : field.placeholder;
+  return (
+    <input
+      class="builder-input"
+      id={controlId}
+      type="text"
+      value={initialValue}
+      maxlength={field.maxLength}
+      placeholder={textPlaceholder}
+      aria-describedby={hintId}
+      aria-required={field.isRequired ? 'true' : undefined}
+      spellcheck={false}
+    />
+  );
+}
+
 /** Render the control(s) of a builder field. */
 function renderFieldControl(
   field: BuilderField,
@@ -747,111 +1004,55 @@ function renderFieldControl(
 ): HtmlFragment {
   const controlId = buildFieldId(field);
   const initialValue = schema.initialState[field.id] ?? '';
+  const effectiveDefault = resolveEffectiveFieldDefault(schema, schema.initialState, field);
+  const selectedValue = initialValue || effectiveDefault;
+
   switch (field.control) {
     case 'anim': {
-      return renderAnimControl(field);
+      return renderAnimControl(field, selectedValue);
     }
     case 'color': {
-      return renderColorControl(field, initialValue, hintId);
+      return renderColorControl(field, schema, selectedValue, hintId);
     }
     case 'hint': {
-      const textId = buildFieldId(field, 'text');
-      return (
-        <div class="builder-inline is-pair">
-          {renderIconSelect(field, 'icon', 'Hint icon')}
-          <div class="builder-subfield is-grow">
-            <label class="builder-sublabel" for={textId}>
-              Hint text
-            </label>
-            <input
-              class="builder-input"
-              id={textId}
-              type="text"
-              data-part="text"
-              maxlength={field.maxLength}
-              placeholder={field.placeholder}
-              spellcheck={false}
-            />
-          </div>
-        </div>
-      );
+      return renderHintControl(field);
     }
     case 'icon': {
-      return renderIconSelect(field, 'main', undefined, hintId);
+      return renderIconSelect({ field, hintId, initialValue, part: 'main' });
     }
     case 'iconPair': {
-      return (
-        <div class="builder-inline is-pair">
-          {renderIconSelect(field, 'left', 'Left icon')}
-          {renderIconSelect(field, 'right', 'Right icon')}
-        </div>
-      );
-    }
-    case 'number': {
-      return (
-        <input
-          class="builder-input"
-          id={controlId}
-          type="number"
-          min={field.min}
-          max={field.max}
-          step={field.step ?? 1}
-          value={initialValue}
-          placeholder={field.placeholder}
-          aria-describedby={hintId}
-          inputmode="decimal"
-        />
-      );
+      return renderIconPairControl(field, schema, initialValue);
     }
     case 'select': {
       return renderCustomSelect(
         controlId,
         `${controlId}-label`,
         resolveSelectOptions(field, schema),
-        initialValue,
+        selectedValue,
         undefined,
         hintId
       );
     }
     case 'size': {
-      return renderSizeControl(field);
+      return renderSizeControl(field, selectedValue);
     }
     case 'special': {
-      return renderSpecialControl(field, hintId);
+      return renderSpecialControl(field, schema, selectedValue, hintId);
     }
     case 'stackGroups': {
       return renderStackGroupsControl(controlId, initialValue, field.isRequired);
-    }
-    case 'textarea': {
-      return (
-        <textarea
-          class="builder-input builder-textarea"
-          id={controlId}
-          rows="4"
-          maxlength={field.maxLength}
-          placeholder={field.placeholder}
-          aria-describedby={hintId}
-          aria-required={field.isRequired ? 'true' : undefined}>
-          {initialValue}
-        </textarea>
-      );
     }
     case 'typingLines': {
       return renderTypingLinesControl(field, controlId, initialValue);
     }
     default: {
-      return (
-        <input
-          class="builder-input"
-          id={controlId}
-          type="text"
-          value={initialValue}
-          maxlength={field.maxLength}
-          placeholder={field.placeholder}
-          aria-describedby={hintId}
-          aria-required={field.isRequired ? 'true' : undefined}
-          spellcheck={false}
-        />
+      return renderScalarInputControl(
+        field,
+        schema,
+        controlId,
+        initialValue,
+        effectiveDefault,
+        hintId
       );
     }
   }

@@ -171,6 +171,12 @@ export interface MetricPresentation {
   defaultLabel: string;
   /** Default inline data widget kind rendered when `?special=` is omitted. */
   defaultSpecial?: BadgeSpecialKind;
+  /** Whether the metric transform overrides `defaultColor` dynamically from live upstream status or thresholds. */
+  hasDynamicColor?: boolean;
+  /** Whether the metric transform adds a status dot dynamically from live upstream status. */
+  hasDynamicDot?: boolean;
+  /** Whether the metric transform overrides `defaultIcon` dynamically from live upstream status. */
+  hasDynamicIcon?: boolean;
 }
 
 /** Minimum percentage at which a score or coverage badge switches to a theme color. */

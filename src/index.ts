@@ -40,6 +40,7 @@ import {
   renderDocsHtml,
   renderHomeHtml,
   renderNotFoundHtml,
+  renderServerErrorHtml,
 } from '@/site/pages';
 import { renderLlmsTxt, renderOgImageSvg, renderRobotsTxt, renderSitemapXml } from '@/site/seo';
 import { hashBytes } from '@/svg/shared';
@@ -92,12 +93,30 @@ const SERVICE_REDIRECT_HEADERS: Readonly<Record<string, string>> = {
   Vary: SERVICE_VARY_HEADER,
 };
 
-/** Headers of the plain-text `500` response for failed non-SVG requests. */
+/** Headers of the branded `500` HTML error page for failed site routes. */
+const SERVER_ERROR_HTML_HEADERS: Readonly<Record<string, string>> = {
+  ...HTML_SECURITY_HEADERS,
+  'Cache-Control': 'no-store',
+  'Content-Type': 'text/html; charset=utf-8',
+};
+
+/** Headers of the plain-text `500` response for failed non-HTML and fallback error paths. */
 const INTERNAL_ERROR_HEADERS: Readonly<Record<string, string>> = {
   ...HTML_SECURITY_HEADERS,
   'Cache-Control': 'no-store',
   'Content-Type': 'text/plain; charset=utf-8',
 };
+
+/** Non-HTML root routes (favicons, social cards, and crawler documents) that keep plain-text error responses. */
+const NON_HTML_ROOT_PATHS: ReadonlySet<string> = new Set([
+  '/favicon.ico',
+  '/favicon.svg',
+  '/llms.txt',
+  '/og.png',
+  '/og.svg',
+  '/robots.txt',
+  '/sitemap.xml',
+]);
 
 /** Headers of the plain-text `414 URI Too Long` response. */
 const URI_TOO_LONG_HEADERS: Readonly<Record<string, string>> = {
@@ -453,19 +472,27 @@ function handleNotFound(context: AppContext): Response {
   return buildNotFoundHtmlResponse(context);
 }
 
-/** Log an unexpected failure and answer SVG routes with an error badge (embeds stay intact) and other routes with a plain `500`. */
+/** Log an unexpected failure and answer SVG routes with an error badge, site pages with a branded `500` HTML page, and assets/crawler endpoints with a plain `500`. */
 function handleAppError(error: Error, context: AppContext): Response {
   if (error instanceof HTTPException) {
     return error.getResponse();
   }
   // oxlint-disable-next-line no-console -- Surface unexpected failures in Workers Logs (observability).
   console.error(`Unhandled ${context.req.method} ${context.req.url}:`, error);
-  const prefix = getRawPathname(context.req.raw).split('/')[1] ?? '';
+  const pathname = getRawPathname(context.req.raw);
+  const prefix = pathname.split('/')[1] ?? '';
   if (findSvgRoute(prefix)) {
     try {
       return buildSvgResponse(renderInternalErrorBadge(), SERVICE_ERROR_TTL_SECONDS);
     } catch {
       // Rendering the error badge failed as well; fall back to the plain-text response below.
+    }
+  } else if (prefix !== 'assets' && !NON_HTML_ROOT_PATHS.has(pathname)) {
+    try {
+      const page = getMemoizedPage('500', renderServerErrorHtml);
+      return new Response(page.html, { headers: SERVER_ERROR_HTML_HEADERS, status: 500 });
+    } catch {
+      // Rendering the error page failed as well; fall back to the plain-text response below.
     }
   }
   return new Response('Internal Server Error', { headers: INTERNAL_ERROR_HEADERS, status: 500 });

@@ -81,13 +81,8 @@ export function renderIconPickerHtml(): string {
               autocomplete="off"
             />
           </div>
-          <div class="icon-picker-row">
-            <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">
-              {tabs}
-            </div>
-            <button type="button" class="icon-picker-none" id="icon-picker-none" hidden={true}>
-              No icon
-            </button>
+          <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">
+            {tabs}
           </div>
         </div>
         <div

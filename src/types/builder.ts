@@ -6,6 +6,7 @@ import type { BadgeSpecialKind } from './badge';
 import type { IconPickerSetId } from './icon';
 import type { ServiceOwnerMode } from './service';
 import type { BuilderKind, HighlightToken } from './site';
+import type { ThemeColorName } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -53,8 +54,20 @@ export interface BuilderOption {
 
 /** Metric option of a service preset. */
 export interface BuilderServiceMetric extends BuilderOption {
+  /** Default theme color token when `?color=` is omitted. */
+  defaultColor: ThemeColorName;
+  /** Default icon slug when `?icon=` is omitted. */
+  defaultIcon: string;
+  /** Default left-side badge label when `?label=` is omitted. */
+  defaultLabel: string;
   /** Default inline data widget kind rendered when `?special=` is omitted. */
   defaultSpecial?: BadgeSpecialKind;
+  /** Whether the metric transform overrides `defaultColor` dynamically from live upstream data. */
+  hasDynamicColor?: boolean;
+  /** Whether the metric transform adds a status dot dynamically from live upstream data. */
+  hasDynamicDot?: boolean;
+  /** Whether the metric transform overrides `defaultIcon` dynamically from live upstream data. */
+  hasDynamicIcon?: boolean;
   /**
    * Upstream page URL template with `{owner}` and `{target}` placeholders (the effective owner falls back to
    * the service's default owner); Omitted when the upstream URL cannot be expressed as a plain template.
@@ -70,6 +83,8 @@ export interface BuilderField {
   animScope?: BuilderAnimScope;
   /** Form control. */
   control: BuilderControl;
+  /** Effective default value when the query parameter is omitted (matching selections omit the parameter). */
+  defaultValue?: string;
   /** Help text shown below the control. */
   description?: string;
   /** Whether the client toggles the required state at runtime (service owner segments). */
@@ -82,6 +97,8 @@ export interface BuilderField {
   isRequired?: boolean;
   /** Visible field label. */
   label: string;
+  /** Layout-dependent effective defaults keyed by canonical layout token (overrides `defaultValue`). */
+  layoutDefaults?: Readonly<Record<string, string>>;
   /** Maximum numeric value. */
   max?: number;
   /** Maximum text length in characters. */
@@ -155,6 +172,8 @@ export interface VariantTier {
 
 /** Display label, payload example, descriptions, and modifiers of an inline data widget kind (`?special=`). */
 export interface SpecialKindDetail {
+  /** Label of the default (omitted) motion modifier when `modifiers` is non-empty. */
+  defaultModifierLabel?: string;
   /** Concise payload format description shown when this widget kind is selected. */
   description: string;
   /** Valid payload example (builder placeholder and docs value). */

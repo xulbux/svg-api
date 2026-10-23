@@ -1,5 +1,5 @@
 /**
- * 404 Not Found page – Branded `noindex` HTML error page (`<NotFoundPage />` and `renderNotFoundHtml`) for unknown documentation, builder, and site paths.
+ * HTTP status error pages – Branded `noindex` HTML error pages (`<NotFoundPage />` and `<ServerErrorPage />`) for unmatched site paths and unexpected server errors.
  */
 
 import { SITE_HOST } from '@/config/site';
@@ -7,45 +7,49 @@ import { PageLayout } from '@/site/components/PageLayout';
 import { UiIcon } from '@/site/components/UiIcon';
 import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
-import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/site/navigation';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Props for the shared `<StatusPage />` component. */
+interface StatusPageProps {
+  /** Numeric HTTP status code rendered in the accent color. */
+  readonly code: number;
+  /** Meta description for the document `<head>`. */
+  readonly description: string;
+  /** Primary status heading rendered next to `code`. */
+  readonly heading: string;
+  /** Concise explanation shown below the status heading. */
+  readonly message: string;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Memoized `404` HTML document (`undefined` until first rendered). */
 let notFoundHtmlCache: string | undefined = undefined;
 
-// -------------------------------------- PUBLIC API -------------------------------------
+/** Memoized `500` HTML document (`undefined` until first rendered). */
+let serverErrorHtmlCache: string | undefined = undefined;
 
-/**
- * Render the branded `404 Not Found` HTML page as a JSX component.
- * @returns Complete `<PageLayout />` JSX document fragment marked `noindex`.
- */
-export function NotFoundPage(): HtmlFragment {
-  const builderPath = buildBuilderPath(DEFAULT_BUILDER_KIND);
-  const docsPath = buildDocsPath('overview');
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Render a branded `noindex` HTTP status page with an accent status code and a `Back to Home` button. */
+function StatusPage(props: StatusPageProps): HtmlFragment {
+  const { code, description, heading, message } = props;
   return (
     <PageLayout
       activeNav="none"
-      description={`The requested page could not be found on ${SITE_HOST}.`}
+      description={description}
       isNoIndex={true}
-      title={`404 Not Found · ${SITE_HOST}`}>
+      title={`${code} ${heading} · ${SITE_HOST}`}>
       <section class="hero">
         <h1 class="hero-title">
-          404 <span class="hero-accent">Page Not Found</span>
+          <span class="hero-accent">{code}</span> {heading}
         </h1>
-        <p class="hero-lead">
-          That documentation section or URL does not exist. Open the interactive URL Builder or
-          browse the endpoint documentation below.
-        </p>
+        <p class="hero-lead">{message}</p>
         <div class="hero-cta-row">
-          <a href={builderPath} class="btn-primary" tabindex="0">
-            <UiIcon slug="wand-sparkles" size={16} />
-            Open URL Builder
-            <UiIcon slug="arrow-right" size={16} />
-          </a>
-          <a href={docsPath} class="btn-secondary" tabindex="0">
-            <UiIcon slug="book-open" size={16} />
-            Browse Documentation
+          <a href="/" class="btn-primary" tabindex="0">
+            <UiIcon slug="arrow-left" size={16} />
+            Back to Home
           </a>
         </div>
       </section>
@@ -53,11 +57,52 @@ export function NotFoundPage(): HtmlFragment {
   );
 }
 
+// -------------------------------------- PUBLIC API -------------------------------------
+
 /**
- * Render (once per isolate) the branded `404 Not Found` HTML document.
+ * Render the branded `404 Page Not Found` HTML page as a JSX component.
+ * @returns Complete `<PageLayout />` JSX document fragment marked `noindex`.
+ */
+export function NotFoundPage(): HtmlFragment {
+  return (
+    <StatusPage
+      code={404}
+      description={`The requested page could not be found on ${SITE_HOST}.`}
+      heading="Page Not Found"
+      message="The page you requested doesn't exist or may have been moved."
+    />
+  );
+}
+
+/**
+ * Render the branded `500 Internal Server Error` HTML page as a JSX component.
+ * @returns Complete `<PageLayout />` JSX document fragment marked `noindex`.
+ */
+export function ServerErrorPage(): HtmlFragment {
+  return (
+    <StatusPage
+      code={500}
+      description={`An unexpected server error occurred on ${SITE_HOST}.`}
+      heading="Internal Server Error"
+      message="Something went wrong while loading this page. Please try again in a moment."
+    />
+  );
+}
+
+/**
+ * Render (once per isolate) the branded `404 Page Not Found` HTML document.
  * @returns Complete HTML document string.
  */
 export function renderNotFoundHtml(): string {
   notFoundHtmlCache ??= renderHtml(<NotFoundPage />);
   return notFoundHtmlCache;
+}
+
+/**
+ * Render (once per isolate) the branded `500 Internal Server Error` HTML document.
+ * @returns Complete HTML document string.
+ */
+export function renderServerErrorHtml(): string {
+  serverErrorHtmlCache ??= renderHtml(<ServerErrorPage />);
+  return serverErrorHtmlCache;
 }
