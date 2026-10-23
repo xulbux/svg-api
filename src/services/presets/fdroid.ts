@@ -1,5 +1,5 @@
 /**
- * F-Droid service preset – Suggested app version from the F-Droid repository (`/badge/fdroid/:appId/:metric`).
+ * F-Droid service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -22,7 +22,7 @@ function projectFdroidPackage(data: unknown): FdroidPackageProjection | undefine
   }
   const builds = data.packages;
   if (!Array.isArray(builds)) {
-    return { version: undefined };
+    return undefined;
   }
   let newestVersion: string | undefined = undefined;
   for (const build of builds) {

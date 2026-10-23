@@ -1,5 +1,5 @@
 /**
- * Vitest configuration – Mirrors the Wrangler module rules (`.ttf` binaries as `ArrayBuffer`, `*.css` and `*.client.js` as text) and the `@/` path alias for the test suite.
+ * Vitest configuration – Mirrors the Wrangler module rules (`.ttf` and `.png` binaries as `ArrayBuffer`, `*.css` and `*.client.js` as text) and the `@/` path alias for the test suite.
  */
 
 import { readFileSync } from 'node:fs';
@@ -24,11 +24,11 @@ const TEXT_MODULE_RX = /\.(?:css|client\.js)$/;
 export default defineConfig({
   plugins: [
     {
-      // Mirror Wrangler's `Data` module rule; `*.ttf` imports default-export an `ArrayBuffer`. The
-      // generated module reads the file itself instead of inlining (and re-parsing) a base64 copy:
+      // Mirror Wrangler's `Data` module rule; `*.ttf` and `*.png` imports default-export an `ArrayBuffer`.
+      // The generated module reads the file itself instead of inlining (and re-parsing) a base64 copy:
       enforce: 'pre',
       load(id) {
-        if (!id.endsWith('.ttf')) {
+        if (!id.endsWith('.ttf') && !id.endsWith('.png')) {
           return undefined;
         }
         this.addWatchFile(id);

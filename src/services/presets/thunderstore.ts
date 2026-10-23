@@ -1,5 +1,5 @@
 /**
- * Thunderstore service preset – Mod downloads, rating score, and latest version (`/badge/thunderstore/:namespace/:pkg/:metric`).
+ * Thunderstore service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

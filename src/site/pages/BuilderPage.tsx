@@ -2,6 +2,7 @@
  * Builder page – Renders the `/builder/:kind` URL builder pages (`<BuilderPage />` and `renderBuilderHtml`).
  */
 
+import { SITE_HOST } from '@/config/site';
 import { getBuilderSchema } from '@/routes/schema';
 import { getSiteAssetUrl } from '@/site/assets';
 import { BuilderFieldView } from '@/site/components/BuilderControls';
@@ -18,6 +19,7 @@ import {
   buildDocsPath,
   getBuilderPageMeta,
 } from '@/site/navigation';
+import { buildBuilderJsonLd } from '@/site/seo';
 import type { BuilderKind } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -29,17 +31,6 @@ export interface BuilderPageProps {
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Documentation page linked from each builder (parameter reference). */
-const BUILDER_DOCS_SLUGS = {
-  badge: 'badges',
-  button: 'buttons',
-  icon: 'icons',
-  quote: 'quotes',
-  service: 'services',
-  stack: 'stack',
-  typing: 'typing',
-} as const satisfies Readonly<Record<BuilderKind, string>>;
 
 /** Memoized builder pages keyed by element kind. */
 const BUILDER_HTML_CACHE = new Map<BuilderKind, string>();
@@ -59,8 +50,10 @@ export function BuilderPage(props: BuilderPageProps): HtmlFragment {
   for (const field of schema.fields) {
     fieldViews.push(<BuilderFieldView field={field} schema={schema} />);
   }
-  const docsHref = buildDocsPath(BUILDER_DOCS_SLUGS[kind]);
-  const referenceHtml = renderHtml(
+  const docsHref = buildDocsPath(meta.docsSlug);
+  const canonicalPath = buildBuilderPath(kind);
+  const pageTitle = `${meta.title} · ${SITE_HOST}`;
+  const referenceAction = (
     <a class="section-action" href={docsHref} tabindex="0">
       <UiIcon slug="book-open" size={14} />
       Reference
@@ -79,14 +72,15 @@ export function BuilderPage(props: BuilderPageProps): HtmlFragment {
   return (
     <PageLayout
       activeNav="builder"
-      canonicalPath={buildBuilderPath(kind)}
+      canonicalPath={canonicalPath}
       description={meta.description}
       extraBody={extraBody}
+      jsonLd={buildBuilderJsonLd(pageTitle, meta.description, canonicalPath)}
       sidebar={buildBuilderSidebar(kind)}
-      title={`${meta.title} · svg.xul.is`}>
+      title={pageTitle}>
       <section class="doc-section builder" id="builder" data-builder-kind={kind}>
         <SectionHeader
-          actionHtml={referenceHtml}
+          action={referenceAction}
           description={`${meta.description} Click any preview in the docs to open it here.`}
           title={meta.title}
         />

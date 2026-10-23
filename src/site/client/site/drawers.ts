@@ -54,6 +54,11 @@ export function initCodeDrawers(
     }
   });
 
+  for (const openPre of document.querySelectorAll('details.code-drawer[open] .code-pre')) {
+    codeResizeObserver.observe(openPre);
+    updateScrollButtons(openPre.closest('.code-drawer-body'));
+  }
+
   document.addEventListener(
     'toggle',
     (event) => {

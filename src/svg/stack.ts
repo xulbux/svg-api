@@ -1,9 +1,10 @@
 /**
- * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles (`svg.xul.is/stack/:icons`).
+ * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles.
  */
 
+import { WHITE } from '@/config/palette';
 import { resolveStackBrandColor, resolveStackIconTitle } from '@/config/stack';
-import { resolveOptionalColor, THEMES } from '@/config/theme';
+import { DEFAULT_THEME_COLOR, resolveOptionalColor, THEMES } from '@/config/theme';
 import {
   BRAND_SLUG_CLEAN_RX,
   DEFAULT_ICON_SLUG,
@@ -31,12 +32,13 @@ import {
   truncateText,
 } from '@/svg/shared';
 import type {
-  AnimationMode,
   BadgeVariant,
   NumericRange,
   ResolvedIcon,
+  StackAnimationMode,
   StackGroup,
   StackRenderOptions,
+  StackTileMotion,
   ThemeColorName,
 } from '@/types';
 
@@ -44,7 +46,7 @@ import type {
 
 /** A single resolved stack tile. */
 interface StackTile {
-  /** Resolved theme color for this tile (per-tile `@color`, curated meta, brand color, or default `'indigo'`). */
+  /** Resolved theme color for this tile (per-tile override, curated meta, brand color, or fallback). */
   color: ThemeColorName;
   /** Inline `@<color>` override on this tile (`undefined` when none). */
   colorOverride: ThemeColorName | undefined;
@@ -116,6 +118,10 @@ interface StackTileContext {
   iconSize: number;
   /** Tile corner radius in pixels. */
   radius: number;
+  /** Grid step pitch (`tileSize + gap`) in pixels used for staggered motion delays. */
+  stepPitch: number;
+  /** Active per-tile motion mode. */
+  tileMotion: StackTileMotion;
   /** Tile width and height in pixels. */
   tileSize: number;
   /** Primary theme colors whose `<linearGradient>` must be emitted (collected while rendering). */
@@ -152,19 +158,19 @@ interface TileTokenParts {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Tile width and height bounds in pixels for `/stack/:icons?size=`. */
+/** Tile width and height bounds in pixels. */
 export const STACK_TILE_SIZE_RANGE: NumericRange = { default: 42, max: 96, min: 24 };
 
-/** Intra-group gap bounds in pixels between adjacent stack tiles (`?gap=`). */
+/** Intra-group gap bounds in pixels between adjacent stack tiles. */
 export const STACK_GAP_RANGE: NumericRange = { default: 8, max: 24, min: 2 };
 
-/** Inter-group gap bounds in pixels between distinct groups (`?groupgap=`; Defaults to `round(gap * 3.25)`, clamped). */
+/** Inter-group gap bounds in pixels between distinct groups (defaults to `round(gap * GROUP_GAP_RATIO)`, clamped). */
 export const STACK_GROUP_GAP_RANGE: NumericRange = { default: 26, max: 64, min: 8 };
 
 /** Ratio of the default inter-group gap to the intra-group gap. */
 export const GROUP_GAP_RATIO = 3.25;
 
-/** Tiles-per-row bounds when not specified per group (`?perline=`). */
+/** Tiles-per-row bounds when not specified per group. */
 export const STACK_PER_LINE_RANGE: NumericRange = { default: 8, max: 20, min: 1 };
 
 /** Maximum total icons rendered across an entire stack SVG. */
@@ -183,14 +189,26 @@ const MAX_TILE_TITLE_LENGTH = 64;
 /** Maximum length of a single tile token (`<slug>@<color>`) in characters. */
 const MAX_STACK_TOKEN_LENGTH = MAX_ICON_SLUG_LENGTH + 16;
 
-/** Theme color of uncurated stack icons without a uniform `?color=` override. */
-const DEFAULT_STACK_ICON_COLOR: ThemeColorName = 'indigo';
+/** Theme color of uncurated stack icons without a uniform color override. */
+const DEFAULT_STACK_ICON_COLOR: ThemeColorName = DEFAULT_THEME_COLOR;
 
 /** Prefix of the content-addressed stack icon body IDs (`stack-icon-<hash>`). */
 const STACK_ICON_ID_PREFIX = 'stack-icon';
 
-/** Stroke width of Lucide icons on stack tiles in `24x24` icon units. */
+/** Stroke width of stroked icons on stack tiles in `24x24` icon units. */
 const STACK_ICON_STROKE_WIDTH = 2.1;
+
+/** Cycle duration in seconds for staggered `'wave'` and `'pulse'` tile animations. */
+const STACK_WAVE_CYCLE_SECONDS = 2.8;
+
+/** Cycle duration in seconds for continuous staggered `'float'` tile animations. */
+const STACK_FLOAT_CYCLE_SECONDS = 3.6;
+
+/** Per-step stagger offset in seconds for `'wave'` and `'pulse'` tile animations. */
+const STACK_WAVE_STEP_SECONDS = 0.12;
+
+/** Per-step phase offset in seconds for continuous `'float'` tile animations. */
+const STACK_FLOAT_STEP_SECONDS = 0.45;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -368,6 +386,49 @@ function resolveStackTileIcon(tile: StackTile, context: StackTileContext): Stack
   return { bodyId, data, isFallback };
 }
 
+/** Extract the active per-tile motion token from a `StackAnimationMode`. */
+function resolveStackTileMotion(animMode: StackAnimationMode): StackTileMotion {
+  const motionPart = animMode.startsWith('sheen,') ? animMode.slice(6) : animMode;
+  if (motionPart === 'wave' || motionPart === 'float' || motionPart === 'pulse') {
+    return motionPart;
+  }
+  return motionPart === 'none' ? 'none' : 'default';
+}
+
+/** Build the optional `<animateTransform>` vertical translation markup for `'wave'` or `'float'` at `(tileX, tileY)`. */
+function buildTileTranslateAnimation(tileMotion: StackTileMotion, diagonalStep: number): string {
+  if (tileMotion === 'wave') {
+    const beginSec = roundCoord(
+      (diagonalStep * STACK_WAVE_STEP_SECONDS) % STACK_WAVE_CYCLE_SECONDS
+    );
+    return `<animateTransform attributeName="transform" type="translate" values="0 0;0 -3;0 0;0 0" keyTimes="0;0.18;0.38;1" calcMode="spline" keySplines="0.33 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="${STACK_WAVE_CYCLE_SECONDS}s" begin="${beginSec}s" repeatCount="indefinite" />`;
+  }
+  if (tileMotion === 'float') {
+    const phaseSec = roundCoord(
+      (diagonalStep * STACK_FLOAT_STEP_SECONDS) % STACK_FLOAT_CYCLE_SECONDS
+    );
+    const beginAttr = phaseSec === 0 ? '0s' : `-${phaseSec}s`;
+    return `<animateTransform attributeName="transform" type="translate" values="0 0;0 -2;0 0;0 2;0 0" keyTimes="0;0.25;0.5;0.75;1" calcMode="spline" keySplines="0.36 0.66 0.64 1;0.36 0 0.64 0.34;0.36 0.66 0.64 1;0.36 0 0.64 0.34" dur="${STACK_FLOAT_CYCLE_SECONDS}s" begin="${beginAttr}" repeatCount="indefinite" />`;
+  }
+  return '';
+}
+
+/** Wrap a `24x24` `<use>` icon reference in a staggered scale pulse around `(iconCenterX, 12)` when `tileMotion === 'pulse'`. */
+function wrapTileIconUse(
+  bodyId: string,
+  iconData: ResolvedIcon,
+  tileMotion: StackTileMotion,
+  diagonalStep: number
+): string {
+  const useMarkup = `<use href="#${bodyId}" />`;
+  if (tileMotion !== 'pulse') {
+    return useMarkup;
+  }
+  const beginSec = roundCoord((diagonalStep * STACK_WAVE_STEP_SECONDS) % STACK_WAVE_CYCLE_SECONDS);
+  const iconCenterX = roundCoord((iconData.minX + iconData.maxX) / 2);
+  return `<g transform="translate(${iconCenterX}, 12)"><g><animateTransform attributeName="transform" type="scale" values="1;1.15;1;1" keyTimes="0;0.18;0.42;1" calcMode="spline" keySplines="0.33 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="${STACK_WAVE_CYCLE_SECONDS}s" begin="${beginSec}s" repeatCount="indefinite" /><g transform="translate(${-iconCenterX}, -12)">${useMarkup}</g></g></g>`;
+}
+
 /**
  * Render a single Kumo 3D stack tile `<g>` with its `<title>` tooltip, surface layers, and an icon centered
  * by its visible bounds (unknown/fallback tiles draw a hollow transparent frame with a translucent red stroke and standalone red `!` icon).
@@ -376,9 +437,11 @@ function renderSingleStackTile(
   tile: StackTile,
   tileX: number,
   tileY: number,
+  translateAnimation: string,
+  diagonalStep: number,
   context: StackTileContext
 ): string {
-  const { iconScale, iconSize, radius, tileSize, variant } = context;
+  const { iconScale, iconSize, radius, tileMotion, tileSize, variant } = context;
   const icon = resolveStackTileIcon(tile, context);
   // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile:
   const visualCenterX = ((icon.data.minX + icon.data.maxX) / 2) * iconScale;
@@ -388,18 +451,19 @@ function renderSingleStackTile(
     iconScale === 1
       ? `translate(${iconX}, ${iconY})`
       : `translate(${iconX}, ${iconY}) scale(${iconScale})`;
+  const innerUseMarkup = wrapTileIconUse(icon.bodyId, icon.data, tileMotion, diagonalStep);
 
   if (icon.isFallback) {
     const placeholderColor = THEMES.red.iconColor;
     const hollowFrame = `<rect x="${tileX + 0.5}" y="${tileY + 0.5}" width="${tileSize - 1}" height="${tileSize - 1}" rx="${radius - 0.5}" stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" stroke-width="1" />`;
     const placeholderIcon = renderIconGroup({
       color: placeholderColor,
-      innerSvg: `<use href="#${icon.bodyId}" />`,
+      innerSvg: innerUseMarkup,
       strokeWidth: STACK_ICON_STROKE_WIDTH,
       transform: iconTransform,
       type: icon.data.type,
     });
-    return `<g><title>${escapeXml(tile.title)}</title>${hollowFrame}${placeholderIcon}</g>`;
+    return `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${hollowFrame}${placeholderIcon}</g>`;
   }
 
   const themeColor = tile.colorOverride ?? context.colorOverride ?? tile.color;
@@ -416,17 +480,25 @@ function renderSingleStackTile(
     variant,
     width: tileSize,
   });
+  let pulseGlowMarkup = '';
+  if (tileMotion === 'pulse') {
+    const beginSec = roundCoord(
+      (diagonalStep * STACK_WAVE_STEP_SECONDS) % STACK_WAVE_CYCLE_SECONDS
+    );
+    const pulseGlowColor = isOnPrimary ? WHITE : THEMES[themeColor].iconColor;
+    pulseGlowMarkup = `<rect x="${tileX + 1}" y="${tileY + 1}" width="${tileSize - 2}" height="${tileSize - 2}" rx="${Math.max(1, radius - 1)}" fill="${pulseGlowColor}" opacity="0"><animate attributeName="opacity" values="0;0.14;0;0" keyTimes="0;0.18;0.42;1" calcMode="spline" keySplines="0.33 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="${STACK_WAVE_CYCLE_SECONDS}s" begin="${beginSec}s" repeatCount="indefinite" /></rect>`;
+  }
   const iconPaint = resolveForegroundPaint(isOnPrimary, THEMES[themeColor].iconColor);
   const iconMarkup = renderIconGroup({
     color: iconPaint.color,
-    innerSvg: `<use href="#${icon.bodyId}" />`,
+    innerSvg: innerUseMarkup,
     opacity: iconPaint.opacity,
     strokeWidth: STACK_ICON_STROKE_WIDTH,
     transform: iconTransform,
     type: icon.data.type,
   });
 
-  return `<g><title>${escapeXml(tile.title)}</title>${surfaceMarkup}${iconMarkup}</g>`;
+  return `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${surfaceMarkup}${pulseGlowMarkup}${iconMarkup}</g>`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -435,7 +507,7 @@ function renderSingleStackTile(
  * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug or `<slug>@<color>` token.
  * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'cpu@emerald'`).
  * @param fallback   Optional explicit theme color override.
- * @returns The resolved `ThemeColorName` (`'indigo'` for uncurated non-brand slugs).
+ * @returns The resolved `ThemeColorName` (`DEFAULT_THEME_COLOR` for uncurated non-brand slugs).
  */
 export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
   const { colorOverride, slug: cleanSlug } = splitTileToken(slug);
@@ -448,9 +520,9 @@ export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): 
  * - `;` separates vertical group rows (bands stacked top-to-bottom).
  * - `|` separates side-by-side groups placed on the same horizontal band.
  * - `:N` at the end of a group specifies that group's `perLine` column limit (e.g., `figma,ai,blender,ps,pr,ae:3`).
- * - `perLineList` optionally supplies per-group `perLine` values by group index (e.g., from `?perline=8,6,6,4,3,3`).
+ * - `perLineList` optionally supplies per-group `perLine` values by group index (e.g., `8,6,6,4,3,3`).
  * @param rawInput      Raw decoded stack path/query string.
- * @param perLineList   Optional positional array of per-group `perLine` numbers from `?perline=` (`undefined` holes use the default).
+ * @param perLineList   Optional positional array of per-group `perLine` numbers (`undefined` holes use the default).
  * @returns 2D array of `StackGroup` bands (`StackGroup[][]`).
  */
 export function parseStackGroups(
@@ -491,8 +563,8 @@ export function parseStackGroups(
 }
 
 /**
- * Render a standalone SVG tech stack icon row, grid, or multi-group layout (`svg.xul.is/stack/:icons`).
- * @param options   Stack grid rendering configuration (`icons`, `groups`, `perLine`, `size`, `gap`, `groupGap`, `variant`, `color`, `anim`).
+ * Render a standalone SVG tech stack icon row, grid, or multi-group layout.
+ * @param options   Stack grid rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderStack(options: StackRenderOptions): string {
@@ -505,7 +577,8 @@ export function renderStack(options: StackRenderOptions): string {
   );
   const defaultPerLine = clampInt(options.perLine, STACK_PER_LINE_RANGE);
   const variant: BadgeVariant = options.variant ?? '2';
-  const animMode: AnimationMode = options.anim ?? 'default';
+  const animMode: StackAnimationMode = options.anim ?? 'default';
+  const tileMotion = resolveStackTileMotion(animMode);
   const hasSheen = isSheenMode(animMode);
 
   const rawBands =
@@ -528,6 +601,7 @@ export function renderStack(options: StackRenderOptions): string {
 
   const radius = Math.max(5, Math.round(tileSize * 0.24));
   const iconSize = Math.round(tileSize * (24 / 42));
+  const stepPitch = tileSize + gap;
   const tileContext: StackTileContext = {
     colorOverride: options.color,
     iconBodyIds: new Set<string>(),
@@ -536,6 +610,8 @@ export function renderStack(options: StackRenderOptions): string {
     iconScale: roundScale(iconSize / 24),
     iconSize,
     radius,
+    stepPitch,
+    tileMotion,
     tileSize,
     usedPrimaryColors: new Set<ThemeColorName>(),
     variant,
@@ -557,15 +633,26 @@ export function renderStack(options: StackRenderOptions): string {
         const columnIndex = i % group.perLine;
         const rowCount = Math.min(group.perLine, group.tiles.length - rowIndex * group.perLine);
         const rowOffsetX =
-          group.rows > 1 ? roundTenths(((group.cols - rowCount) * (tileSize + gap)) / 2) : 0;
+          group.rows > 1 ? roundTenths(((group.cols - rowCount) * stepPitch) / 2) : 0;
 
-        const tileX = roundTenths(groupOriginX + rowOffsetX + columnIndex * (tileSize + gap));
-        const tileY = roundTenths(groupOriginY + rowIndex * (tileSize + gap));
+        const tileX = roundTenths(groupOriginX + rowOffsetX + columnIndex * stepPitch);
+        const tileY = roundTenths(groupOriginY + rowIndex * stepPitch);
+        const diagonalStep = (tileX + tileY) / stepPitch;
+        const translateAnimation = buildTileTranslateAnimation(tileMotion, diagonalStep);
 
-        tilesMarkup += renderSingleStackTile(tile, tileX, tileY, tileContext);
+        tilesMarkup += renderSingleStackTile(
+          tile,
+          tileX,
+          tileY,
+          translateAnimation,
+          diagonalStep,
+          tileContext
+        );
 
         if (hasSheen) {
-          clipRects += `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
+          clipRects += translateAnimation
+            ? `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}">${translateAnimation}</rect>`
+            : `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
         }
       }
 
@@ -575,11 +662,20 @@ export function renderStack(options: StackRenderOptions): string {
     bandOriginY = roundTenths(bandOriginY + band.height + groupGap);
   }
 
+  let padY = 0;
+  if (tileMotion === 'wave') {
+    padY = 3;
+  } else if (tileMotion === 'float') {
+    padY = 2;
+  }
+  const svgHeight = totalHeight + padY * 2;
+  const viewBox = padY > 0 ? `0 ${-padY} ${totalWidth} ${svgHeight}` : undefined;
+
   const gradientDefs = renderSurfaceGradientDefs(variant !== '1', tileContext.usedPrimaryColors);
   const sheen = renderSheenOverlay({
     animMode,
     clipContent: clipRects,
-    height: totalHeight,
+    height: svgHeight,
     idPrefix: 'stack-sheen',
     radius,
     width: totalWidth,
@@ -589,7 +685,8 @@ export function renderStack(options: StackRenderOptions): string {
     ariaLabel: `tech stack: ${allTitles.join(', ')}`,
     body: `${tilesMarkup}${sheen.overlay}`,
     defs: `${gradientDefs}${tileContext.iconDefs}${sheen.clipDef}`,
-    height: totalHeight,
+    height: svgHeight,
+    viewBox,
     width: totalWidth,
   });
 }

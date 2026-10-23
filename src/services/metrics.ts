@@ -120,8 +120,8 @@ const SPDX_PART_OVERRIDES: Readonly<Record<string, string>> = {
   zlib: 'Zlib',
 };
 
-/** Coverage color thresholds: `>= 80%` emerald, `>= 60%` amber, otherwise rose. */
-const COVERAGE_THRESHOLDS: readonly ScoreColorThreshold[] = [
+/** Coverage color thresholds in descending order. */
+export const COVERAGE_THRESHOLDS: readonly ScoreColorThreshold[] = [
   { color: 'emerald', minPercent: 80 },
   { color: 'amber', minPercent: 60 },
   { color: 'rose', minPercent: 0 },
@@ -131,10 +131,10 @@ const COVERAGE_THRESHOLDS: readonly ScoreColorThreshold[] = [
 const MAX_PERCENT = 100;
 
 /** Maximum OpenSSF Scorecard score. */
-const MAX_SCORECARD_SCORE = 10;
+export const MAX_SCORECARD_SCORE = 10;
 
-/** OpenSSF Scorecard color thresholds: `>= 7.0` emerald, `>= 4.0` amber, otherwise rose. */
-const SCORECARD_THRESHOLDS: readonly ScoreColorThreshold[] = [
+/** OpenSSF Scorecard color thresholds in descending order. */
+export const SCORECARD_THRESHOLDS: readonly ScoreColorThreshold[] = [
   { color: 'emerald', minPercent: 70 },
   { color: 'amber', minPercent: 40 },
   { color: 'rose', minPercent: 0 },
@@ -181,7 +181,7 @@ const COMMUNITY_KINDS: Readonly<Record<CommunityMetricKind, ThemeColorName>> = {
 /** Star rating vote keys in ascending order (`1★` through `5★`). */
 const STAR_KEYS = ['1', '2', '3', '4', '5'] as const;
 
-/** Automatic inline widget kinds supported by score and coverage metrics (`ring` by default, plus `bar` and `steps`). */
+/** Automatic inline widget kinds supported by score and coverage metrics. */
 const SCORE_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
 
 /** Automatic inline widget kinds supported by OpenSSF Scorecard metrics with check breakdowns. */
@@ -194,10 +194,10 @@ const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
   'sparkline',
 ];
 
-/** Automatic inline widget kinds supported by star rating metrics (`ring`, `bar`, `steps`). */
+/** Automatic inline widget kinds supported by star rating metrics. */
 const RATING_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
 
-/** Automatic inline widget kinds supported by star rating metrics with a vote distribution (`bars`, `sparkline`, `ring`, `bar`, `steps`). */
+/** Automatic inline widget kinds supported by star rating metrics with a vote distribution. */
 const RATING_HISTOGRAM_SPECIALS: readonly BadgeSpecialKind[] = [
   'bars',
   'sparkline',
@@ -249,9 +249,11 @@ function formatWithUnits(
   units: readonly (readonly [threshold: number, suffix: string])[],
   separator: string
 ): string | undefined {
+  const absNum = Math.abs(num);
+  const sign = num < 0 ? '-' : '';
   for (const [threshold, suffix] of units) {
-    if (num >= threshold * (1 - UNIT_PROMOTION_TOLERANCE)) {
-      return `${(num / threshold).toFixed(1).replace(TRAILING_ZERO_DECIMAL_RX, '')}${separator}${suffix}`;
+    if (absNum >= threshold * (1 - UNIT_PROMOTION_TOLERANCE)) {
+      return `${sign}${(absNum / threshold).toFixed(1).replace(TRAILING_ZERO_DECIMAL_RX, '')}${separator}${suffix}`;
     }
   }
   return undefined;
@@ -353,16 +355,16 @@ function buildScoreResult(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Automatic inline widget kinds supported by time-series metrics with period-over-period delta (`sparkline`, `bars`, `delta`). */
+/** Automatic inline widget kinds supported by time-series metrics with period-over-period delta. */
 export const SERIES_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars', 'delta'];
 
-/** Automatic inline widget kinds supported by period-over-period delta metrics (`delta`). */
+/** Automatic inline widget kinds supported by period-over-period delta metrics. */
 export const DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['delta'];
 
-/** Automatic inline widget kinds supported by part-of-whole ratio metrics (`bar`, `ring`). */
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics. */
 export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
 
-/** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps (`bar`, `ring`, `steps`). */
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps. */
 export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
 
 /** Default presentation for repository fork metrics (`forks`). */
@@ -490,7 +492,7 @@ export function formatPercent(percent: number): string {
 }
 
 /**
- * Format a raw currency amount compactly, prefixing known currency symbols (`$`, `€`, `£`) and
+ * Format a raw currency amount compactly, prefixing known currency symbols (`CURRENCY_SYMBOLS`) and
  * appending any other ISO 4217 code (e.g., `'$177.5k/yr'`, `'€640.85/wk'`, `'1.2k CHF/mo'`).
  * @param raw        Raw amount in major currency units (number or numeric string).
  * @param currency   ISO 4217 currency code (e.g., `'USD'`).
@@ -506,15 +508,17 @@ export function formatCurrency(
   if (amount === undefined) {
     return MISSING_VALUE;
   }
+  const absAmount = Math.abs(amount);
+  const sign = amount < 0 ? '-' : '';
   const formatted =
-    amount < CURRENCY_CENTS_THRESHOLD && !Number.isInteger(amount)
-      ? amount.toFixed(2)
-      : formatCompactNumber(amount);
+    absAmount < CURRENCY_CENTS_THRESHOLD && !Number.isInteger(absAmount)
+      ? absAmount.toFixed(2)
+      : formatCompactNumber(absAmount);
   const code = (currency ?? '').toUpperCase();
   if (Object.hasOwn(CURRENCY_SYMBOLS, code)) {
-    return `${CURRENCY_SYMBOLS[code]}${formatted}${suffix}`;
+    return `${sign}${CURRENCY_SYMBOLS[code]}${formatted}${suffix}`;
   }
-  return code ? `${formatted} ${code}${suffix}` : `${formatted}${suffix}`;
+  return code ? `${sign}${formatted} ${code}${suffix}` : `${sign}${formatted}${suffix}`;
 }
 
 /**
@@ -615,7 +619,7 @@ export function formatLicense(rawLicense: string | null | undefined): string {
 }
 
 /**
- * Read a license name from an SPDX string, a string array, or a `{ type }` / `{ id }` license object (npm, CocoaPods, Zenodo).
+ * Read a license name from an SPDX string, a string array, or a `{ type }` / `{ id }` license object.
  * @param rawLicense   Upstream `license` or `licenses` field.
  * @returns License name, or `undefined` when missing.
  */
@@ -702,7 +706,7 @@ export function bucketSeries(values: readonly number[], bucketCount: number): nu
 
 /**
  * Extract a chronological numeric series from an ISO-date-keyed counts map (`{ 'YYYY-MM-DD': count }`).
- * @param dates   Raw date-to-count JSON object (e.g., Flathub `countries`, jsDelivr `dates`).
+ * @param dates   Raw date-to-count JSON object.
  * @returns Chronological daily counts (empty when `dates` is not an object).
  */
 export function readDateKeyedSeries(dates: unknown): number[] {
@@ -718,7 +722,7 @@ export function readDateKeyedSeries(dates: unknown): number[] {
 
 /**
  * Extract 1-star through 5-star vote counts from a `{ '1': n, …, '5': n }` rating breakdown object.
- * @param rawVotes   Raw star vote breakdown object (e.g., JetBrains `votes`, WordPress `ratings`).
+ * @param rawVotes   Raw star vote breakdown object.
  * @returns Five-element `[1★, 2★, 3★, 4★, 5★]` array, or `undefined` when missing or all zero.
  */
 export function readStarHistogram(rawVotes: unknown): number[] | undefined {
@@ -798,10 +802,10 @@ export function buildWindowDeltaSpecials(
 }
 
 /**
- * Build candidate `bar` and `ring` (and optional 10-step `steps`) widgets from a `part / whole` ratio.
+ * Build candidate gauge (and optional step pill) widgets from a `part / whole` ratio.
  * @param part       Numerator value (`>= 0`).
  * @param whole      Denominator value (`> 0`).
- * @param hasSteps   Whether to also include a 10-segment `steps` widget.
+ * @param hasSteps   Whether to also include a discrete `steps` widget.
  * @returns Candidate widget map, or `undefined` when the ratio cannot be computed.
  */
 export function buildRatioSpecials(
@@ -1072,11 +1076,11 @@ export function createRatingMetric<P>(
     : RATING;
   return createMetric(endpoint, presentation, (payload) => {
     const [rawRating, maximum] = readRating(payload);
-    const rating = typeof rawRating === 'number' && Number.isFinite(rawRating) ? rawRating : 0;
+    const rating = toFiniteNumber(rawRating as RawCount) ?? 0;
     if (rating <= 0 || maximum <= 0) {
       return { value: 'unrated' };
     }
-    const scaled = (rating / maximum) * 5;
+    const scaled = Math.min(5, Math.max(0, (rating / maximum) * 5));
     const percent = Math.min(MAX_PERCENT, Math.round((rating / maximum) * 100));
     const specials: BadgeSpecialMap = {
       bar: { type: 'bar', value: percent },
@@ -1140,8 +1144,7 @@ export function createPercentScoreMetric<P>(
 }
 
 /**
- * Create a test coverage metric (`coverage`) with a ring gauge, colored by threshold
- * (`>= 80%` emerald, `>= 60%` amber, otherwise rose).
+ * Create a test coverage metric (`coverage`) with a ring gauge, colored by `COVERAGE_THRESHOLDS`.
  * @param endpoint      Upstream endpoint.
  * @param icon          Default icon slug (e.g., `'codecov'`).
  * @param readPercent   Reads the raw coverage percentage (`0`–`100`) from the projected payload.
@@ -1181,9 +1184,9 @@ export function createCoverageMetric<P>(
 }
 
 /**
- * Extract valid `0`–`10` check scores from an OpenSSF Scorecard `checks` array.
+ * Extract valid check scores from an OpenSSF Scorecard `checks` array.
  * @param rawChecks   Upstream `checks` array (`[{ score: number }, …]`).
- * @returns Array of valid check scores (`0`–`10`), or `undefined` when fewer than 2 checks are present.
+ * @returns Array of valid check scores (`0` to `MAX_SCORECARD_SCORE`), or `undefined` when fewer than 2 checks are present.
  */
 export function readScorecardCheckScores(rawChecks: unknown): number[] | undefined {
   if (!Array.isArray(rawChecks)) {
@@ -1202,11 +1205,10 @@ export function readScorecardCheckScores(rawChecks: unknown): number[] | undefin
 }
 
 /**
- * Create an OpenSSF Scorecard score metric (`0`–`10`, e.g., `'8.3/10'`) with a ring gauge, colored
- * by threshold (`>= 7.0` emerald, `>= 4.0` amber, otherwise rose).
+ * Create an OpenSSF Scorecard score metric with a ring gauge, colored by `SCORECARD_THRESHOLDS`.
  * @param endpoint     Upstream endpoint.
  * @param readScore    Reads the raw aggregate score from the projected payload.
- * @param readChecks   Optional reader returning valid `0`–`10` check scores for `strip`, `bars`, `sparkline`, and `steps`.
+ * @param readChecks   Optional reader returning valid check scores for multi-check widgets.
  * @returns Metric rendering the score plus ring, or `'n/a'` when missing.
  */
 export function createScorecardMetric<P>(
@@ -1259,10 +1261,10 @@ export function createScorecardMetric<P>(
 }
 
 /**
- * Create a test coverage service preset for a GitHub repository (`/badge/:service/:owner/:repo/coverage`),
- * colored by threshold (`>= 80%` emerald, `>= 60%` amber, otherwise rose).
+ * Create a test coverage service preset for a repository (`/badge/:service/:owner/:repo/coverage`),
+ * colored by `COVERAGE_THRESHOLDS`.
  * @param options   Upstream URL templates, coverage reader, icon, and docs metadata.
- * @returns Coverage service definition (`coverage` metric with a `cov` alias).
+ * @returns Coverage service definition.
  */
 export function createCoverageService<P extends object>(
   options: CoverageServiceOptions<P>

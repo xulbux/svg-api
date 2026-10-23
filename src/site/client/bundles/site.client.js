@@ -111,6 +111,10 @@
         updateScrollButtons(entry.target.closest('.code-drawer-body'));
       }
     });
+    for (const openPre of document.querySelectorAll('details.code-drawer[open] .code-pre')) {
+      codeResizeObserver.observe(openPre);
+      updateScrollButtons(openPre.closest('.code-drawer-body'));
+    }
     document.addEventListener(
       'toggle',
       (event) => {
@@ -159,9 +163,14 @@
   var VIEWPORT_MARGIN = 8;
   function computePopoverPlacement(anchorRect, popoverSize, viewportSize, options) {
     const gap = options.gap ?? VIEWPORT_MARGIN;
-    const width = options.isWidthMatched
-      ? Math.max(popoverSize.width, anchorRect.width)
-      : popoverSize.width;
+    const maxViewportWidth = Math.max(0, viewportSize.width - VIEWPORT_MARGIN * 2);
+    const matchedMinWidth = options.isWidthMatched
+      ? Math.min(anchorRect.width, maxViewportWidth)
+      : undefined;
+    const width =
+      matchedMinWidth === undefined
+        ? popoverSize.width
+        : Math.max(popoverSize.width, matchedMinWidth);
     let top = anchorRect.bottom + gap;
     const hasRoomBelow = top + popoverSize.height <= viewportSize.height - VIEWPORT_MARGIN;
     const aboveTop = anchorRect.top - gap - popoverSize.height;
@@ -175,7 +184,7 @@
       VIEWPORT_MARGIN,
       Math.min(preferredLeft, viewportSize.width - VIEWPORT_MARGIN - width)
     );
-    return { left, minWidth: options.isWidthMatched ? anchorRect.width : undefined, top };
+    return { left, minWidth: matchedMinWidth, top };
   }
 
   // src/site/client/site/sidebar.ts
@@ -183,6 +192,7 @@
     if (!sidebarDrawer) {
       return;
     }
+    const sidebarToggle = document.querySelector('.sidebar-toggle');
     const sidebarBgElements = document.querySelectorAll(
       '.skip-link, .site-header, .page-main, .site-footer'
     );
@@ -197,11 +207,14 @@
       }
       if (drawerQuery.matches) {
         sidebarDrawer.setAttribute('popover', '');
-        setSidebarBgInert(isPopoverOpen(sidebarDrawer));
+        const isOpen = isPopoverOpen(sidebarDrawer);
+        setSidebarBgInert(isOpen);
+        sidebarToggle?.setAttribute('aria-expanded', String(isOpen));
       } else {
         closePopover(sidebarDrawer);
         sidebarDrawer.removeAttribute('popover');
         setSidebarBgInert(false);
+        sidebarToggle?.setAttribute('aria-expanded', 'false');
       }
     }
     syncSidebarDrawer();
@@ -209,6 +222,7 @@
     sidebarDrawer.addEventListener('toggle', (event) => {
       const isOpen = event.newState === 'open';
       setSidebarBgInert(isOpen && drawerQuery.matches);
+      sidebarToggle?.setAttribute('aria-expanded', String(isOpen && drawerQuery.matches));
       if (isOpen) {
         const focusTarget = sidebarDrawer.querySelector(
           '.sidebar-link.is-active, .sidebar-link, .sidebar-close'
@@ -216,6 +230,14 @@
         if (focusTarget instanceof HTMLElement) {
           focusTarget.focus();
         }
+      } else if (
+        drawerQuery.matches &&
+        sidebarToggle &&
+        (document.activeElement === null ||
+          document.activeElement === document.body ||
+          sidebarDrawer.contains(document.activeElement))
+      ) {
+        sidebarToggle.focus();
       }
     });
     sidebarDrawer.addEventListener('focusout', (event) => {
@@ -298,7 +320,7 @@
         if (previewSvg instanceof SVGSVGElement) {
           if (reducedMotionQuery.matches) {
             previewSvg.pauseAnimations();
-            previewSvg.setCurrentTime(0);
+            previewSvg.setCurrentTime(Number(previewSvg.dataset.restTime) || 0);
           } else {
             previewSvg.unpauseAnimations();
           }
@@ -344,6 +366,9 @@
   }
 
   // src/site/client/site/index.ts
+  function dispatchFallbackToggle(popover, newState) {
+    popover.dispatchEvent(Object.assign(new Event('toggle'), { newState }));
+  }
   function initSiteClient() {
     if (typeof document === 'undefined') {
       globalThis.svgSiteCore = { computePopoverPlacement };
@@ -361,6 +386,20 @@
         ? popover.matches(':popover-open')
         : popover.classList.contains('is-open');
     }
+    function openPopover(popover) {
+      if (isPopoverOpen(popover)) {
+        return;
+      }
+      if (hasPopoverApi) {
+        popover.showPopover();
+        return;
+      }
+      popover.classList.add('is-open');
+      document
+        .querySelector(`[popovertarget="${popover.id}"]`)
+        ?.setAttribute('aria-expanded', 'true');
+      dispatchFallbackToggle(popover, 'open');
+    }
     function closePopover(popover) {
       if (!isPopoverOpen(popover)) {
         return;
@@ -373,6 +412,7 @@
       document
         .querySelector(`[popovertarget="${popover.id}"]`)
         ?.setAttribute('aria-expanded', 'false');
+      dispatchFallbackToggle(popover, 'closed');
     }
     function placePopover(popover, anchor, options = {}) {
       activePopover = { anchor, options, popover };
@@ -390,7 +430,7 @@
       }
     }
     const copyText = createClipboardController();
-    globalThis.svgSite = { closePopover, copyText, isPopoverOpen, placePopover };
+    globalThis.svgSite = { closePopover, copyText, isPopoverOpen, openPopover, placePopover };
     initThemeAndMotion(siteConfig, rootElement, reducedMotionQuery);
     if (!hasPopoverApi) {
       for (const trigger of document.querySelectorAll('[popovertarget]')) {
@@ -403,8 +443,11 @@
           if (popover instanceof HTMLElement) {
             const isOwnTrigger = trigger?.getAttribute('popovertarget') === popover.id;
             if (isOwnTrigger) {
-              const isOpen = popover.classList.toggle('is-open');
-              trigger?.setAttribute('aria-expanded', String(isOpen));
+              if (isPopoverOpen(popover)) {
+                closePopover(popover);
+              } else {
+                openPopover(popover);
+              }
             } else if (!(target instanceof Node && popover.contains(target))) {
               closePopover(popover);
             }
@@ -428,6 +471,13 @@
     }
     initSidebarDrawer(sidebarDrawer, drawerQuery, isPopoverOpen, closePopover);
     initCodeDrawers(reducedMotionQuery, copyText, resolveCopySource);
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => {
+        if (activePopover && isPopoverOpen(activePopover.popover)) {
+          placePopover(activePopover.popover, activePopover.anchor, activePopover.options);
+        }
+      }).observe(rootElement);
+    }
     document.addEventListener(
       'scroll',
       (event) => {

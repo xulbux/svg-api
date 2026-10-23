@@ -3,23 +3,18 @@
  */
 
 export { BuilderFieldView } from './BuilderControls';
-export { BuilderOutputPanel, renderOutputPanelHtml } from './BuilderOutputPanel';
-export { DocsPager, renderDocsPager } from './DocsPager';
+export { BuilderOutputPanel } from './BuilderOutputPanel';
+export { DocsPager } from './DocsPager';
 export type { DocsPagerProps } from './DocsPager';
 export { Footer, renderFooter } from './Footer';
 export { HeaderNav, renderHeaderNav } from './HeaderNav';
 export { IconPickerPopover, renderIconPickerHtml } from './IconPickerPopover';
-export { PageLayout, renderFaviconSvg, renderPageLayout } from './PageLayout';
+export { getHeadScriptBody, PageLayout, renderFaviconSvg } from './PageLayout';
 export { AliasList, ParamTable, renderAliasList, renderParamTable } from './ParamTable';
-export {
-  RoutePills,
-  SectionHeader,
-  SectionSubhead,
-  renderSectionHeader,
-  renderSectionSubhead,
-} from './SectionHeader';
-export { CardGrid, ShowcaseCard, renderCardsHtml, renderShowcaseCard } from './ShowcaseCard';
-export { Sidebar, renderSidebar } from './Sidebar';
+export { RoutePills, SectionHeader, SectionSubhead } from './SectionHeader';
+export type { RoutePillsProps, SectionHeaderProps, SectionSubheadProps } from './SectionHeader';
+export { CardGrid, ShowcaseCard } from './ShowcaseCard';
+export { Sidebar } from './Sidebar';
 export {
   AnchorLink,
   BRAND_FILL_ATTRS,
@@ -29,11 +24,10 @@ export {
   UiIcon,
   UiSprite,
   formatInlineMarkupHtml,
-  renderCopyButton,
   renderUiIcon,
   renderUiSprite,
   serializeInlineJson,
   slugifyText,
   stripInlineMarkup,
 } from './UiIcon';
-export { UrlAnatomy, renderUrlAnatomyHtml } from './UrlAnatomy';
+export { UrlAnatomy } from './UrlAnatomy';

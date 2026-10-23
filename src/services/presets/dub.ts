@@ -1,5 +1,5 @@
 /**
- * DUB service preset – D package version, license, total/monthly/weekly/daily downloads, and package score (`/badge/dub/:pkg/:metric`).
+ * DUB service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

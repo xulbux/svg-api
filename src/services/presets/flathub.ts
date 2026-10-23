@@ -1,5 +1,5 @@
 /**
- * Flathub service preset – Flatpak app version and license from AppStream plus total/monthly/weekly install statistics (`/badge/flathub/:app/:metric`).
+ * Flathub service preset – Live upstream metrics and redirect transformations.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

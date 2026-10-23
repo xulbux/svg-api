@@ -1,5 +1,5 @@
 /**
- * Homebrew service presets – Formula and cask version, license, and 30/90/365-day install analytics (`/badge/brew/:formula/:metric`, `/badge/cask/:cask/:metric`).
+ * Homebrew service presets – Live upstream metrics and redirect transformations.
  *
  * Install counts sum every analytics key of a period, so option variants (e.g., `wget --HEAD`)
  * count towards the formula total. Names containing `+` must be percent-encoded in the badge path

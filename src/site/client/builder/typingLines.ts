@@ -129,7 +129,13 @@ export function createTypingLinesController(
     for (const input of listElement.querySelectorAll('.typing-line-input')) {
       if (input instanceof HTMLInputElement) {
         if (input.value.includes(';')) {
+          const isFocused = document.activeElement === input;
+          const selectionStart = isFocused ? (input.selectionStart ?? undefined) : undefined;
+          const selectionEnd = isFocused ? (input.selectionEnd ?? undefined) : undefined;
           input.value = input.value.replace(SEMICOLON_RX, ' ');
+          if (isFocused && selectionStart !== undefined && selectionEnd !== undefined) {
+            input.setSelectionRange(selectionStart, selectionEnd);
+          }
         }
         const trimmedLine = input.value.trim();
         if (trimmedLine) {

@@ -2,6 +2,11 @@
  * Site navigation – Single source of truth for the header tabs, the grouped documentation and builder sidebars, page titles, meta descriptions, and the docs pager order.
  */
 
+import { SITE_HOST } from '@/config/site';
+import { STACK_MOTION_TOKENS, TYPING_LAYOUT_TOKENS } from '@/routes/params';
+import { formatConjunctionList } from '@/site/glossary';
+import { ICON_SOURCE_SETS } from '@/svg/icons';
+import { BADGE_HEIGHT } from '@/svg/renderer';
 import type {
   BuilderKind,
   BuilderPageMeta,
@@ -15,6 +20,9 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
+
+/** Active stack tile motion tokens (excluding `'none'`) for navigation copy. */
+const ACTIVE_STACK_MOTIONS = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
 
 /** Sidebar groups in display order (shared by the documentation and builder sidebars; Empty groups are skipped). */
 const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
@@ -30,8 +38,7 @@ const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
  */
 export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   {
-    description:
-      'Getting started with svg.xul.is: URL anatomy, path segment encoding, shared query parameters, embedding in Markdown and HTML, click-through redirects, and caching.',
+    description: `Getting started with ${SITE_HOST}: URL anatomy, path segment encoding, shared query parameters, embedding in Markdown and HTML, click-through redirects, and caching.`,
     group: 'start',
     navLabel: 'Overview',
     pagerLabel: 'Getting Started',
@@ -39,8 +46,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
     title: 'Getting Started',
   },
   {
-    description:
-      'Static 22px badges with pulsing radar dots, inline data widgets, icons, and micro-animations, plus the full query parameter reference.',
+    description: `Static ${BADGE_HEIGHT}px badges with pulsing radar dots, inline data widgets, icons, and micro-animations, plus the full query parameter reference.`,
     group: 'badges',
     navLabel: 'Static Badges',
     pagerLabel: 'Static Badges',
@@ -66,8 +72,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
     title: 'CTA Buttons',
   },
   {
-    description:
-      'Standalone Lucide UI icons and Simple Icons / Devicon brand logos as tinted SVGs with intrinsic pixel sizing, stroke control, aliases, and animations.',
+    description: `Standalone ${formatConjunctionList(ICON_SOURCE_SETS.stroke)} UI icons and ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos as tinted SVGs with intrinsic pixel sizing, stroke control, aliases, and animations.`,
     group: 'elements',
     navLabel: 'Icons',
     pagerLabel: 'Standalone Icons',
@@ -76,7 +81,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Grouped tech stack icon grids with per-group columns, side-by-side groups, row bands, tile variants, and spacing controls.',
+      'Grouped tech stack icon grids with per-group columns, side-by-side groups, row bands, tile variants, spacing controls, and staggered per-tile micro-animations.',
     group: 'elements',
     navLabel: 'Tech Stack',
     pagerLabel: 'Tech Stack Grids',
@@ -85,7 +90,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Realistic human-cadence SVG typing animations in Kumo 3D terminal windows, command / AI prompt bars, code editors, browser bars, or frameless canvases with blinking cursors, erase transitions, and optional typos.',
+      'Realistic human-cadence SVG typing animations across Kumo 3D container frames and frameless canvases with blinking cursors, erase transitions, and optional typos.',
     group: 'elements',
     navLabel: 'Typing',
     pagerLabel: 'Typing Animations',
@@ -103,7 +108,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across badges, buttons, icons, tech stacks, typing animations, and quote cards.',
+      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across every SVG endpoint.',
     group: 'reference',
     navLabel: 'Colors',
     pagerLabel: 'Theme Colors',
@@ -114,63 +119,74 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
 
 /**
  * Builder pages in sidebar order.
- * Single source of truth for the builder sidebar, page headings, titles, and meta descriptions.
+ * Single source of truth for the builder sidebar, page headings, titles, companion docs links, and meta descriptions.
  */
 export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
   {
     description:
       'Build static badge URLs with labels, icons, colors, status dots, inline data widgets, and animations, then copy the Markdown, HTML, or URL.',
+    docsSlug: 'badges',
     group: 'badges',
     kind: 'badge',
     navLabel: 'Badge',
+    ogLabel: 'Badges',
     title: 'Badge Builder',
   },
   {
     description:
       'Build live service badge URLs for package registries, forges, and CDNs with metric selection, automatic data widgets (marked Auto), label overrides, and styling, previewed with live data.',
+    docsSlug: 'services',
     group: 'badges',
     kind: 'service',
     navLabel: 'Service Badge',
+    ogLabel: 'Live Services',
     title: 'Service Badge Builder',
   },
   {
     description:
       'Build 3D CTA button URLs with size presets, leading and trailing icons, and sheen or icon animations.',
+    docsSlug: 'buttons',
     group: 'elements',
     kind: 'button',
     navLabel: 'Button',
+    ogLabel: 'CTA Buttons',
     title: 'Button Builder',
   },
   {
-    description:
-      'Find any Lucide, Simple Icons, or Devicon icon in a searchable picker and build standalone icon URLs with size, stroke, color, and motion.',
+    description: `Find any ${formatConjunctionList([...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand], 'or')} icon in a searchable picker and build standalone icon URLs with size, stroke, color, and motion.`,
+    docsSlug: 'icons',
     group: 'elements',
     kind: 'icon',
     navLabel: 'Icon',
+    ogLabel: 'Vector Icons',
     title: 'Icon Builder',
   },
   {
-    description:
-      'Build grouped tech stack grid URLs with per-group columns, side-by-side groups, row bands, tile variants, and spacing.',
+    description: `Build grouped tech stack grid URLs with per-group columns, side-by-side groups, row bands, tile variants, spacing, and staggered ${formatConjunctionList(ACTIVE_STACK_MOTIONS, 'or')} animations.`,
+    docsSlug: 'stack',
     group: 'elements',
     kind: 'stack',
     navLabel: 'Tech Stack',
+    ogLabel: 'Tech Stacks',
     title: 'Tech Stack Builder',
   },
   {
-    description:
-      'Build realistic SVG typing animation URLs with container frames (window, prompt, ide, browser, none), cursor shapes, erase modes, fonts, and human keystroke cadence.',
+    description: `Build realistic SVG typing animation URLs with container frames (${TYPING_LAYOUT_TOKENS.join(', ')}), cursor shapes, erase modes, fonts, and human keystroke cadence.`,
+    docsSlug: 'typing',
     group: 'elements',
     kind: 'typing',
     navLabel: 'Typing',
+    ogLabel: 'Typing',
     title: 'Typing Animation Builder',
   },
   {
     description:
       'Build README quote card URLs with author attribution, horizontal or vertical layouts, size presets, widths, and accent colors.',
+    docsSlug: 'quotes',
     group: 'elements',
     kind: 'quote',
     navLabel: 'Quote Card',
+    ogLabel: 'Quotes',
     title: 'Quote Card Builder',
   },
 ];

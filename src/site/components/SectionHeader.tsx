@@ -9,9 +9,7 @@ import {
   stripInlineMarkup,
   UiIcon,
 } from '@/site/components/UiIcon';
-import { raw, renderHtml } from '@/site/jsx';
-import type { HtmlFragment } from '@/site/jsx';
-import type { SectionHeaderOptions } from '@/types';
+import type { HtmlFragment, JsxChild } from '@/site/jsx';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -19,6 +17,20 @@ import type { SectionHeaderOptions } from '@/types';
 export interface RoutePillsProps {
   /** Route pattern strings (e.g., `['/badge/:label/:value']`). */
   readonly patterns: readonly string[];
+}
+
+/** Props for the `<SectionHeader />` component. */
+export interface SectionHeaderProps {
+  /** Optional trailing header action rendered beside the title (e.g., the builder's `Reference` link). */
+  readonly action?: JsxChild;
+  /** Lead description paragraph (supports inline `` `code` `` and `**strong**` markup). */
+  readonly description: string;
+  /** Heading level (`1` on dedicated pages, `2` for secondary homepage sections; defaults to `1`). */
+  readonly headingLevel?: 1 | 2 | undefined;
+  /** Optional route pattern pills displayed below the description. */
+  readonly routes?: readonly string[] | undefined;
+  /** Section heading text (supports inline `` `code` `` and `**strong**` markup). */
+  readonly title: string;
 }
 
 /** Props for the `<SectionSubhead />` component. */
@@ -51,24 +63,24 @@ export function RoutePills(props: RoutePillsProps): HtmlFragment {
 
 /**
  * Render a documentation section header (title, optional header action, lead paragraph, and route pills) as a JSX component.
- * @param options   Section header options (`title`, `description`, optional `actionHtml`, `routes`, and `headingLevel`).
+ * @param props   Section header props (`title`, `description`, optional `action`, `routes`, and `headingLevel`).
  * @returns Rendered `<div class="section-header">` fragment.
  */
-export function SectionHeader(options: SectionHeaderOptions): HtmlFragment {
+export function SectionHeader(props: SectionHeaderProps): HtmlFragment {
   const titleFragment =
-    options.headingLevel === 2 ? (
+    props.headingLevel === 2 ? (
       <h2 class="section-title">
-        <InlineMarkup text={options.title} />
+        <InlineMarkup text={props.title} />
       </h2>
     ) : (
       <h1 class="section-title">
-        <InlineMarkup text={options.title} />
+        <InlineMarkup text={props.title} />
       </h1>
     );
-  const headerTop = options.actionHtml ? (
+  const headerTop = props.action ? (
     <div class="section-title-row">
       {titleFragment}
-      {raw(options.actionHtml)}
+      {props.action}
     </div>
   ) : (
     titleFragment
@@ -77,20 +89,11 @@ export function SectionHeader(options: SectionHeaderOptions): HtmlFragment {
     <div class="section-header">
       {headerTop}
       <p class="section-desc">
-        <InlineMarkup text={options.description} />
+        <InlineMarkup text={props.description} />
       </p>
-      {options.routes ? <RoutePills patterns={options.routes} /> : undefined}
+      {props.routes ? <RoutePills patterns={props.routes} /> : undefined}
     </div>
   );
-}
-
-/**
- * Render a documentation section header (title, optional header action, lead paragraph, and route pills).
- * @param options   Section header options (`title`, `description`, optional `actionHtml`, `routes`, and `headingLevel`).
- * @returns HTML string for the section header.
- */
-export function renderSectionHeader(options: SectionHeaderOptions): string {
-  return renderHtml(<SectionHeader {...options} />);
 }
 
 /**
@@ -112,14 +115,4 @@ export function SectionSubhead(props: SectionSubheadProps): HtmlFragment {
       <AnchorLink targetId={subheadId} label={plainText} />
     </div>
   );
-}
-
-/**
- * Render a section subheading (`<h2>`) with a leading Lucide icon and a hover/focus deep-link anchor.
- * @param iconSlug   Lucide icon slug (e.g., `'layers'`).
- * @param text       Subheading text (supports inline `` `code` `` markup).
- * @returns HTML string for the subheading row.
- */
-export function renderSectionSubhead(iconSlug: string, text: string): string {
-  return renderHtml(<SectionSubhead iconSlug={iconSlug} text={text} />);
 }

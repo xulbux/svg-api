@@ -1,5 +1,5 @@
 /**
- * NuGet service preset – .NET package version and total downloads via the NuGet search API (`/badge/nuget/:pkg/:metric`).
+ * NuGet service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

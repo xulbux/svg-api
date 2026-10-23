@@ -1,5 +1,5 @@
 /**
- * Shared snippet builders – URL syntax highlighting tokenizer and Markdown / HTML / URL snippet generators shared by the server JSX components and the browser builder script.
+ * Shared snippet builders – URL syntax highlighting tokenizer and snippet generators across output formats.
  */
 
 import type { HighlightToken, SnippetSet, SnippetTokenSet } from '@/types';

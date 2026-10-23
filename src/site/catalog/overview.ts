@@ -4,11 +4,21 @@
 
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
-import { SERVICE_ERROR_TTL_SECONDS, SERVICE_TTL_SECONDS, STATIC_TTL_SECONDS } from '@/routes/svg';
+import { ICON_MOTION_TOKENS, STACK_MOTION_TOKENS } from '@/routes/params';
+import {
+  SERVICE_ERROR_TTL_SECONDS,
+  SERVICE_TTL_SECONDS,
+  STATIC_TTL_SECONDS,
+  SVG_ROUTES,
+} from '@/routes/svg';
 import { formatColorValues } from '@/site/catalog/shared';
 import type { UrlAnatomyPart } from '@/site/components/UrlAnatomy';
-import { formatVariantTierSummary, formatVariantValues } from '@/site/glossary';
+import {
+  formatConjunctionList,
+  formatVariantTierSummary,
+  formatVariantValues,
+} from '@/site/glossary';
+import { ICON_SOURCE_SETS } from '@/svg/icons';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -118,42 +128,58 @@ function formatDuration(seconds: number): string {
   return seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds} s`;
 }
 
+/** Join canonical non-alias route prefixes supporting `paramName` (or all canonical prefixes when omitted). */
+function formatSupportingEndpoints(paramName?: string): string {
+  const prefixes: string[] = [];
+  for (const route of SVG_ROUTES) {
+    if (
+      route.aliasOf === undefined &&
+      (paramName === undefined || route.queryParams.includes(paramName))
+    ) {
+      prefixes.push(`/${route.prefix}`);
+    }
+  }
+  return prefixes.join(' | ');
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Build the shared query parameter rows (values read from the parser and theme).
+ * Build the shared query parameter rows (values and endpoints read from the route table, parser, and theme).
  * @returns Parameter table rows.
  */
 export function buildSharedParamRows(): ParamTableRow[] {
+  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
+  const activeStackMotions = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
+  const iconMotionSet = new Set<string>(ICON_MOTION_TOKENS);
+  const extraStackMotions = activeStackMotions.filter((token) => !iconMotionSet.has(token));
   return [
     {
-      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
+      defaultVal: formatSupportingEndpoints('color'),
       description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
       name: '?color=',
       values: formatColorValues(),
     },
     {
-      defaultVal: '/badge | /button | /stack | /typing | /quote',
+      defaultVal: formatSupportingEndpoints('variant'),
       description: `Visual hierarchy tier: ${formatVariantTierSummary()}.`,
       name: '?variant=',
       values: formatVariantValues(),
     },
     {
-      defaultVal: '/badge | /button | /typing',
-      description:
-        'Leading icon, a left,right pair (badges and buttons), or a right-only icon (none,right); Any Lucide, Simple Icons, or Devicon slug.',
+      defaultVal: formatSupportingEndpoints('icon'),
+      description: `Leading icon, a left,right pair, or a right-only icon (none,right); Any ${formatConjunctionList(allIconSets, 'or')} slug.`,
       name: '?icon=',
       values: 'rocket | book-open,arrow-right | none,external-link',
     },
     {
-      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
-      description:
-        'Surface sheen and icon motions (stacks, typing containers, and quote cards support sheen and none); none also stops widget, dot, and typing animations.',
+      defaultVal: formatSupportingEndpoints('anim'),
+      description: `Surface sheen and per-element motions (icon endpoints support per-icon motions; stacks support ${formatConjunctionList(activeStackMotions)}; surface endpoints support sheen and none); none also stops widget, dot, and typing animations.`,
       name: '?anim=',
-      values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')}`,
+      values: `sheen | ${[...ICON_MOTION_TOKENS, ...extraStackMotions].join(' | ')}`,
     },
     {
-      defaultVal: '/badge | /button | /icon | /stack | /typing | /quote',
+      defaultVal: formatSupportingEndpoints(),
       description:
         'Unknown query parameters are ignored per route, so tracking or cache-busting parameters never change the SVG.',
       name: '?<other>=',
@@ -163,15 +189,21 @@ export function buildSharedParamRows(): ParamTableRow[] {
 }
 
 /**
- * Build the edge caching rows (TTLs read from the route dispatcher).
+ * Build the edge caching rows (routes and TTLs read from the route dispatcher).
  * @returns Parameter table rows.
  */
 export function buildCachingRows(): ParamTableRow[] {
+  const staticRouteNames = [
+    '/badge/:label/:value',
+    ...SVG_ROUTES.filter((route) => route.aliasOf === undefined && route.prefix !== 'badge').map(
+      (route) => `/${route.prefix}`
+    ),
+  ].join(', ');
   return [
     {
       defaultVal: '~–',
       description: 'Deterministic SVGs; Identical URLs always render identical output.',
-      name: '/badge/:label/:value, /button, /icon, /stack, /typing, /quote',
+      name: staticRouteNames,
       values: formatDuration(STATIC_TTL_SECONDS),
     },
     {

@@ -1,5 +1,5 @@
 /**
- * SonarCloud service preset – Quality gate, coverage, issue counts, duplication, and ratings of a public SonarCloud project (`/badge/sonarcloud/:component/:metric`).
+ * SonarCloud service preset – Live upstream metrics and redirect transformations.
  *
  * Every metric reads one shared measures request whose measures are projected into a small
  * `metric -> value` map.
@@ -78,7 +78,7 @@ const SONAR_MEASURE_KEYS: readonly SonarMeasureKey[] = [
   'vulnerabilities',
 ];
 
-/** Automatic inline widget kinds supported by SonarCloud issue count metrics (`bugs`, `smells`, `vulnerabilities`). */
+/** Automatic inline widget kinds supported by SonarCloud issue count metrics. */
 const ISSUE_SPECIALS: readonly BadgeSpecialKind[] = ['delta', 'bar', 'ring'];
 
 /** Automatic inline widget kinds supported by SonarCloud letter grade metrics (`A`–`E`). */
@@ -177,11 +177,12 @@ function buildQualityGateSpecials(detailsJson: string | undefined): BadgeSpecial
   const states: StripTickState[] = [];
   let passedCount = 0;
   for (const condition of conditions.slice(0, MAX_STRIP_TICKS)) {
-    if (isJsonObject(condition) && typeof condition.status === 'string') {
-      if (condition.status === 'OK') {
+    const rawLevel = isJsonObject(condition) ? (condition.level ?? condition.status) : undefined;
+    if (typeof rawLevel === 'string') {
+      if (rawLevel === 'OK') {
         states.push('9');
         passedCount += 1;
-      } else if (condition.status === 'WARN') {
+      } else if (rawLevel === 'WARN') {
         states.push('4');
       } else {
         states.push('0');

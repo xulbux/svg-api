@@ -24,7 +24,6 @@ export interface BuilderFieldViewProps {
 /** Controls that render a single labelable form control (`<label for>`), as opposed to a group of parts. */
 const SINGLE_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderControl>([
   'number',
-  'stackGroups',
   'text',
   'textarea',
 ]);
@@ -74,7 +73,8 @@ function renderCustomSelect(
   labelId: string,
   options: readonly BuilderOption[],
   selectedValue: string,
-  part?: string
+  part?: string,
+  hintId?: string
 ): HtmlFragment {
   const selected = options.find((option) => option.value === selectedValue) ?? options[0];
   const swatchElement = selected?.swatch ? (
@@ -107,7 +107,8 @@ function renderCustomSelect(
         id={`${selectId}-trigger`}
         popovertarget={`${selectId}-menu`}
         aria-haspopup="listbox"
-        aria-labelledby={`${labelId} ${selectId}-value`}>
+        aria-labelledby={`${labelId} ${selectId}-value`}
+        aria-describedby={hintId}>
         {swatchElement}
         <span class="select-value" id={`${selectId}-value`}>
           {selected?.label ?? ''}
@@ -117,6 +118,14 @@ function renderCustomSelect(
       <div class="popover-panel select-menu" id={`${selectId}-menu`} popover={true}>
         {searchElement}
         <div class="select-options" role="listbox" aria-labelledby={labelId}></div>
+        <p
+          class="select-empty"
+          data-select-empty={true}
+          role="status"
+          aria-live="polite"
+          hidden={true}>
+          No matches
+        </p>
       </div>
     </div>
   );
@@ -160,8 +169,15 @@ function resolveSelectOptions(
  * (the slug is stored in a hidden input), plus a clear button. Icon pair parts get a sublabel; A single icon
  * selector is labeled by its field label.
  */
-function renderIconSelect(field: BuilderField, part: string, sublabel?: string): HtmlFragment {
+function renderIconSelect(
+  field: BuilderField,
+  part: string,
+  sublabel?: string,
+  hintId?: string
+): HtmlFragment {
   const inputId = buildFieldId(field, part);
+  const validationId = `${inputId}-validation`;
+  const describedBy = hintId ? `${validationId} ${hintId}` : validationId;
   const placeholder = field.placeholder ?? 'none';
   const labelId = sublabel ? `${inputId}-label` : `${buildFieldId(field)}-label`;
   const clearLabel = (sublabel ?? field.label).toLowerCase();
@@ -181,7 +197,8 @@ function renderIconSelect(field: BuilderField, part: string, sublabel?: string):
           data-icon-none={field.hasPresetValue ? 'true' : undefined}
           popovertarget="icon-picker"
           aria-haspopup="dialog"
-          aria-labelledby={`${labelId} ${inputId}-value`}>
+          aria-labelledby={`${labelId} ${inputId}-value`}
+          aria-describedby={describedBy}>
           <span class="icon-input-glyph" aria-hidden="true" data-glyph-for={inputId}></span>
           <span
             class="icon-select-value is-placeholder"
@@ -203,6 +220,7 @@ function renderIconSelect(field: BuilderField, part: string, sublabel?: string):
       </div>
       <p
         class="builder-hint builder-validation"
+        id={validationId}
         data-validation-for={inputId}
         aria-live="polite"></p>
     </div>
@@ -210,7 +228,11 @@ function renderIconSelect(field: BuilderField, part: string, sublabel?: string):
 }
 
 /** Render the swatch radio group of a `color` field. */
-function renderColorControl(field: BuilderField, selectedValue: string): HtmlFragment {
+function renderColorControl(
+  field: BuilderField,
+  selectedValue: string,
+  hintId: string | undefined
+): HtmlFragment {
   const swatches: HtmlFragment[] = [];
   for (const option of field.options ?? []) {
     const label = option.value ? option.label : 'Default';
@@ -232,7 +254,11 @@ function renderColorControl(field: BuilderField, selectedValue: string): HtmlFra
     );
   }
   return (
-    <div class="swatch-grid" role="radiogroup" aria-labelledby={`${buildFieldId(field)}-label`}>
+    <div
+      class="swatch-grid"
+      role="radiogroup"
+      aria-labelledby={`${buildFieldId(field)}-label`}
+      aria-describedby={hintId}>
       {swatches}
     </div>
   );
@@ -277,6 +303,18 @@ function renderAnimControl(field: BuilderField): HtmlFragment {
         {renderSubSelect(field, 'left', 'Icon motion', motionOptions)}
       </div>
     );
+  } else if (field.animScope === 'stack') {
+    motionsFragment = (
+      <div class="builder-inline">
+        {renderSubSelect(field, 'left', 'Tile motion', motionOptions)}
+      </div>
+    );
+  } else if (field.animScope === 'typing') {
+    motionsFragment = (
+      <div class="builder-inline">
+        {renderSubSelect(field, 'left', 'Typing motion', motionOptions)}
+      </div>
+    );
   }
   return (
     <div class="builder-composite">
@@ -308,6 +346,7 @@ function renderHelpButton(
       data-help-popover={popoverId}
       data-help-align={align}
       popovertarget={popoverId}
+      aria-haspopup="dialog"
       aria-label={label}
       title="Syntax help">
       <svg
@@ -368,7 +407,7 @@ function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
 }
 
 /** Render the composite controls of a `special` field (widget kind, payload, and modifier). */
-function renderSpecialControl(field: BuilderField): HtmlFragment {
+function renderSpecialControl(field: BuilderField, hintId: string | undefined): HtmlFragment {
   const payloadId = buildFieldId(field, 'payload');
   return (
     <>
@@ -383,6 +422,7 @@ function renderSpecialControl(field: BuilderField): HtmlFragment {
             id={payloadId}
             type="text"
             data-part="payload"
+            aria-describedby={hintId}
             spellcheck={false}
           />
         </div>
@@ -412,8 +452,8 @@ function renderSizeControl(field: BuilderField): HtmlFragment {
           id={customId}
           type="number"
           data-part="custom"
-          min={field.min ?? ''}
-          max={field.max ?? ''}
+          min={field.min}
+          max={field.max}
           step={field.step ?? 1}
           placeholder={field.placeholder ?? ''}
           inputmode="decimal"
@@ -429,6 +469,7 @@ function renderStackGroupsControl(
   initialValue: string,
   isRequired: boolean | undefined
 ): HtmlFragment {
+  const validationId = `${controlId}-validation`;
   const categorySections: HtmlFragment[] = [];
   for (const category of STACK_CATEGORIES) {
     const chips: HtmlFragment[] = [];
@@ -513,7 +554,12 @@ function renderStackGroupsControl(
         <div class="stack-catalog-wrap">
           <div class="stack-catalog" id="stack-catalog">
             {categorySections}
-            <p class="select-empty stack-catalog-empty" id="stack-catalog-empty" hidden={true}>
+            <p
+              class="select-empty stack-catalog-empty"
+              id="stack-catalog-empty"
+              role="status"
+              aria-live="polite"
+              hidden={true}>
               No matching technologies in the quick categories; Switch to Raw DSL to insert any
               bundled icon.
             </p>
@@ -537,6 +583,8 @@ function renderStackGroupsControl(
             id={controlId}
             rows="4"
             spellcheck={false}
+            aria-labelledby={`${controlId}-label`}
+            aria-describedby={validationId}
             aria-required={isRequired ? 'true' : undefined}>
             {initialValue}
           </textarea>
@@ -597,6 +645,7 @@ function renderStackGroupsControl(
       </div>
       <p
         class="builder-hint builder-validation"
+        id={validationId}
         data-validation-for={controlId}
         aria-live="polite"></p>
       <div class="builder-field-actions" data-stack-raw-actions={true} hidden={true}>
@@ -605,7 +654,8 @@ function renderStackGroupsControl(
           class="btn-secondary btn-small"
           data-icon-target={controlId}
           data-icon-insert="true"
-          popovertarget="icon-picker">
+          popovertarget="icon-picker"
+          aria-haspopup="dialog">
           <UiIcon slug="layout-grid" size={14} />
           Insert icon
         </button>
@@ -690,7 +740,11 @@ function renderTypingLinesControl(
 }
 
 /** Render the control(s) of a builder field. */
-function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFragment {
+function renderFieldControl(
+  field: BuilderField,
+  schema: BuilderSchema,
+  hintId: string | undefined
+): HtmlFragment {
   const controlId = buildFieldId(field);
   const initialValue = schema.initialState[field.id] ?? '';
   switch (field.control) {
@@ -698,7 +752,7 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
       return renderAnimControl(field);
     }
     case 'color': {
-      return renderColorControl(field, initialValue);
+      return renderColorControl(field, initialValue, hintId);
     }
     case 'hint': {
       const textId = buildFieldId(field, 'text');
@@ -723,7 +777,7 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
       );
     }
     case 'icon': {
-      return renderIconSelect(field, 'main');
+      return renderIconSelect(field, 'main', undefined, hintId);
     }
     case 'iconPair': {
       return (
@@ -739,11 +793,12 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
           class="builder-input"
           id={controlId}
           type="number"
-          min={field.min ?? ''}
-          max={field.max ?? ''}
+          min={field.min}
+          max={field.max}
           step={field.step ?? 1}
           value={initialValue}
           placeholder={field.placeholder}
+          aria-describedby={hintId}
           inputmode="decimal"
         />
       );
@@ -753,14 +808,16 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
         controlId,
         `${controlId}-label`,
         resolveSelectOptions(field, schema),
-        initialValue
+        initialValue,
+        undefined,
+        hintId
       );
     }
     case 'size': {
       return renderSizeControl(field);
     }
     case 'special': {
-      return renderSpecialControl(field);
+      return renderSpecialControl(field, hintId);
     }
     case 'stackGroups': {
       return renderStackGroupsControl(controlId, initialValue, field.isRequired);
@@ -773,6 +830,7 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
           rows="4"
           maxlength={field.maxLength}
           placeholder={field.placeholder}
+          aria-describedby={hintId}
           aria-required={field.isRequired ? 'true' : undefined}>
           {initialValue}
         </textarea>
@@ -790,6 +848,7 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
           value={initialValue}
           maxlength={field.maxLength}
           placeholder={field.placeholder}
+          aria-describedby={hintId}
           aria-required={field.isRequired ? 'true' : undefined}
           spellcheck={false}
         />
@@ -808,6 +867,7 @@ function renderFieldControl(field: BuilderField, schema: BuilderSchema): HtmlFra
 export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
   const { field, schema } = props;
   const controlId = buildFieldId(field);
+  const hintId = field.description ? `${controlId}-hint` : undefined;
   const isSingleControl = SINGLE_CONTROL_TYPES.has(field.control);
   // Fields with a runtime requirement (service owners) get a hidden mark the builder script toggles:
   const requiredMark =
@@ -851,13 +911,18 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
       data-field={field.id}
       data-control={field.control}
       role={isGroup ? 'group' : undefined}
-      aria-labelledby={isGroup ? `${controlId}-label` : undefined}>
+      aria-labelledby={isGroup ? `${controlId}-label` : undefined}
+      aria-describedby={isGroup ? hintId : undefined}>
       <div class="builder-label-row">
         {headingElement}
         {field.param ? <code class="builder-param">{`?${field.param}=`}</code> : undefined}
       </div>
-      {renderFieldControl(field, schema)}
-      {field.description ? <p class="builder-hint">{field.description}</p> : undefined}
+      {renderFieldControl(field, schema, hintId)}
+      {hintId ? (
+        <p class="builder-hint" id={hintId}>
+          {field.description}
+        </p>
+      ) : undefined}
     </div>
   );
 }

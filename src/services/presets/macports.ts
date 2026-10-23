@@ -1,8 +1,8 @@
 /**
- * MacPorts service preset – Port version and license (`/badge/macports/:port/:metric`).
+ * MacPorts service preset – Live upstream metrics and redirect transformations.
  *
- * The port API has no field filter (popular ports list their dependents, `~10-35 KB`) and cold
- * lookups are slow, so the projected version and license are cached for an hour.
+ * The port API has no field filter (popular ports list their dependents, `~10–35 KB`) and cold
+ * lookups are slow, so projected fields use an extended cache TTL.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';

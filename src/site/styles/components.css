@@ -149,7 +149,12 @@ button.btn-secondary {
 /* Hover/Focus Deep-Link Anchors */
 
 .anchor-link {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 24px;
+  min-block-size: 24px;
   padding-inline: 4px;
   border-radius: 4px;
   font-weight: 600;
@@ -177,7 +182,7 @@ button.btn-secondary {
 
 @media (max-width: 640px) {
   .anchor-link {
-    opacity: 0.7;
+    opacity: 1;
   }
 }
 
@@ -230,7 +235,7 @@ button.btn-secondary {
   margin-block-start: 20px;
 }
 
-/* Outer Card; distinct divider border + soft surface (shared surface card in `base.css`): */
+/* Outer Card: */
 
 .card {
   display: flex;
@@ -438,6 +443,7 @@ details.code-drawer > summary {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-block-size: 24px;
   padding-block: 2px;
   border-radius: 4px;
   list-style: none;
@@ -504,8 +510,8 @@ details.code-drawer[open] .drawer-chevron {
 
 .scroll-btn {
   display: none;
-  inline-size: 18px;
-  block-size: 18px;
+  inline-size: 24px;
+  block-size: 24px;
 }
 
 .scroll-btn.is-visible {
@@ -517,7 +523,7 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .scroll-btn-right {
-  inset-inline-start: 27px;
+  inset-inline-start: 33px;
 }
 
 .copy-btn {

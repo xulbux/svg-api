@@ -2,21 +2,33 @@
  * Typing animation documentation catalog – Container layout, variant, cursor, and erase-mode showcase configs and parameter reference rows for `/docs/typing`.
  */
 
+import { SITE_HOST } from '@/config/site';
+import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import {
   SIZE_TOKENS,
+  TRUTHY_FLAG_LIST,
   TYPING_ALIGN_TOKENS,
   TYPING_CURSOR_TOKENS,
   TYPING_ERASE_TOKENS,
   TYPING_FONT_TOKENS,
   TYPING_LAYOUT_TOKENS,
 } from '@/routes/params';
+import { DEFAULT_TYPING_VARIANT } from '@/routes/svg';
 import {
   buildColorParamRow,
   buildSheenAnimParamRow,
   buildVariantParamRow,
   formatRange,
 } from '@/site/catalog/shared';
+import { formatConjunctionList } from '@/site/glossary';
+import { ICON_SOURCE_SETS } from '@/svg/icons';
 import {
+  DEFAULT_IDE_TITLE,
+  DEFAULT_LAYOUT_FONTS,
+  DEFAULT_TYPING_CURSOR,
+  DEFAULT_TYPING_ERASE,
+  DEFAULT_TYPING_LAYOUT,
+  DEFAULT_WINDOW_PROMPT,
   TYPING_DURATION_RANGE,
   TYPING_FONT_SIZE_RANGE,
   TYPING_PAUSE_RANGE,
@@ -27,7 +39,7 @@ import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Container layout showcase cards (`window`, `prompt`, `ide`, `browser`, `none`) for `/docs/typing`. */
+/** Container layout showcase cards for `/docs/typing`. */
 export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
@@ -36,8 +48,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
       },
     ],
-    subtitle:
-      'Kumo 3D terminal window with traffic-light controls, centered header title (?title=zsh), rounded pill badge (?hint=UTF-8), and ❯ prompt (Default).',
+    subtitle: `Kumo 3D terminal window with traffic-light controls, centered header title (?title=zsh), rounded pill badge (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt (Default).`,
     title: 'layout=window · Kumo App / Terminal Window (Default)',
   },
   {
@@ -55,18 +66,17 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'IDE Code Editor Typing',
-        path: '/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&icon=ts&title=index.ts&hint=TS',
+        path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&icon=ts&title=${DEFAULT_IDE_TITLE}&hint=TS`,
       },
     ],
-    subtitle:
-      'Code editor window with a seamless active file tab (?icon=ts&title=index.ts), top accent bar, subtle line-number gutter, and JetBrains Mono syntax.',
+    subtitle: `Code editor window with a seamless active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}), top accent bar, subtle line-number gutter, and JetBrains Mono syntax.`,
     title: 'layout=ide · Code Editor Tab & Line Gutter',
   },
   {
     items: [
       {
         alt: 'Browser Omnibox Typing',
-        path: '/typing/svg.xul.is%2Ftyping;cloudflare.com%2Fworkers;github.com%2Fxulbux?layout=browser&color=sky&icon=search&hint=icon:corner-down-left',
+        path: `/typing/${SITE_HOST}%2Ftyping;cloudflare.com%2Fworkers;github.com%2Fxulbux?layout=browser&color=sky&icon=search&hint=icon:corner-down-left`,
       },
     ],
     subtitle:
@@ -93,7 +103,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Primary Brand Typing',
-        path: '/typing/Zero+Cold+Starts;Global+Edge+Caching;Pure+SMIL+Vector+Paths?variant=1&color=indigo&title=svg.xul.is',
+        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Pure+SMIL+Vector+Paths?variant=1&color=indigo&title=${SITE_HOST}`,
       },
     ],
     subtitle: 'Vivid primary brand gradient window with crisp white typography and bar cursor.',
@@ -167,6 +177,11 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildTypingParamRows(): ParamTableRow[] {
+  const fontDefaults = TYPING_FONT_TOKENS.map(
+    (font) =>
+      `${font} (${TYPING_LAYOUT_TOKENS.filter((layout) => DEFAULT_LAYOUT_FONTS[layout] === font).join(', ')})`
+  ).join(' / ');
+  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
   return [
     {
       defaultVal: '~required',
@@ -183,26 +198,25 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: '~any ;-separated string',
     },
     {
-      defaultVal: '❯ (window) / ~none',
-      description:
-        'Static prompt prefix rendered before the typed text in the accent color; Pass none to hide the default prompt on window.',
+      defaultVal: `${DEFAULT_WINDOW_PROMPT} (${DEFAULT_TYPING_LAYOUT}) / ~none`,
+      description: `Static prompt prefix rendered before the typed text in the accent color; Pass none to hide the default prompt on ${DEFAULT_TYPING_LAYOUT}.`,
       name: '?prefix= / ?prompt=',
       values: '~any string | none',
     },
     {
-      defaultVal: 'window',
+      defaultVal: DEFAULT_TYPING_LAYOUT,
       description:
         'Container frame style: window (Kumo terminal window), prompt (command / AI prompt bar), ide (code editor tab + line gutter), browser (search / URL omnibox), or none (frameless transparent canvas).',
       name: '?layout= / ?frame= / ?type=',
       values: TYPING_LAYOUT_TOKENS.join(' | '),
     },
-    buildVariantParamRow('3', 'Surface tier'),
+    buildVariantParamRow(DEFAULT_TYPING_VARIANT, 'Surface tier'),
     buildColorParamRow(
-      'indigo',
+      DEFAULT_THEME_COLOR,
       'Tailwind v4 OKLCH accent color for surface, border, prompt prefix, and cursor.'
     ),
     {
-      defaultVal: 'mono (window, ide) / sans (prompt, browser, none)',
+      defaultVal: fontDefaults,
       description:
         'Bundled OpenType font family: mono (JetBrains Mono) or sans (Geist Sans), converted directly into crisp vector <path> outlines with automatic cross-font symbol fallback.',
       name: '?font=',
@@ -215,14 +229,14 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(TYPING_FONT_SIZE_RANGE)}`,
     },
     {
-      defaultVal: 'bar',
+      defaultVal: DEFAULT_TYPING_CURSOR,
       description:
         'Caret cursor shape; Stays solid while actively typing or backspacing and blinks smoothly during reading pauses.',
       name: '?cursor=',
       values: TYPING_CURSOR_TOKENS.join(' | '),
     },
     {
-      defaultVal: 'backspace',
+      defaultVal: DEFAULT_TYPING_ERASE,
       description:
         'Line erase transition: backspace (rapid OS key-repeat deletion), select (Cmd+A highlight box + clear), or fade (smooth whole-line dissolve).',
       name: '?erase= / ?delete=',
@@ -230,8 +244,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: 'left (framed) / center (none)',
-      description:
-        'Horizontal text alignment on window, prompt, and none layouts (browser and ide always align left); ?center=true (or 1 / yes) is a shorthand for ?align=center.',
+      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align left); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
       name: '?align= / ?center=',
       values: TYPING_ALIGN_TOKENS.join(' | '),
     },
@@ -240,21 +253,20 @@ export function buildTypingParamRows(): ParamTableRow[] {
       description:
         'When enabled, simulates an occasional QWERTY neighbor key slip followed by a brief pause and backspace correction.',
       name: '?typo=',
-      values: 'true | 1 | yes',
+      values: TRUTHY_FLAG_LIST.join(' | '),
     },
     {
       defaultVal: '~none',
-      description:
-        'Optional Lucide, Simple Icons, or Devicon slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).',
+      description: `Optional ${formatConjunctionList(allIconSets, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
       name: '?icon=',
       values: 'terminal | search | sparkles | rust | ts | none',
     },
     {
-      defaultVal: '~none (window) / index.ts (ide)',
+      defaultVal: `~none (window) / ${DEFAULT_IDE_TITLE} (ide)`,
       description:
         'Centered header bar title on window layout or active file tab name on ide layout.',
       name: '?title=',
-      values: '~any string (e.g., zsh, index.ts)',
+      values: `~any string (e.g., zsh, ${DEFAULT_IDE_TITLE})`,
     },
     {
       defaultVal: '~none',

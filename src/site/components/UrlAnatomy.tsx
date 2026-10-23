@@ -1,13 +1,12 @@
 /**
- * URL anatomy component – Syntax-highlighted URL diagram and legend (`<UrlAnatomy />`) on the Getting Started page.
+ * URL anatomy component – Syntax-highlighted URL diagram and legend (`<UrlAnatomy />`).
  */
 
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Highlighted part of the URL anatomy example on the Getting Started page. */
+/** Highlighted part of a URL anatomy example. */
 export interface UrlAnatomyPart {
   /** Syntax highlighting class (`hl-*`). */
   readonly className: string;
@@ -54,13 +53,4 @@ export function UrlAnatomy(props: UrlAnatomyProps): HtmlFragment {
       </figcaption>
     </figure>
   );
-}
-
-/**
- * Render the highlighted URL anatomy example with its legend as an HTML string.
- * @param parts   Highlighted URL parts and legend entries.
- * @returns HTML string for the anatomy figure.
- */
-export function renderUrlAnatomyHtml(parts: readonly UrlAnatomyPart[]): string {
-  return renderHtml(<UrlAnatomy parts={parts} />);
 }

@@ -102,6 +102,7 @@
 
   // src/site/shared/url.ts
   var MAX_STACK_BAND_COLUMNS = 8;
+  var MAX_PER_LINE_COLUMNS = 20;
   var STATIC_ANIM_PAIR = 'anim=none';
   var CENTER_FLAG_VALUES = /* @__PURE__ */ new Set(['1', 'true', 'yes']);
   var READABLE_ESCAPE_RX = /%(?:2C|3A|3B|40|7C)/g;
@@ -203,7 +204,9 @@
       const parsed = cleaned ? Number(cleaned) : Number.NaN;
       const rounded = Math.round(parsed);
       values.push(
-        Number.isFinite(parsed) && parsed >= 1 ? Math.min(20, Math.max(1, rounded)) : undefined
+        Number.isFinite(parsed) && parsed >= 1
+          ? Math.min(MAX_PER_LINE_COLUMNS, Math.max(1, rounded))
+          : undefined
       );
     }
     while (values.length > 0 && values.at(-1) === undefined) {
@@ -363,6 +366,56 @@
   function readSegmentFallback(schema, query, id) {
     return readQueryParam(query, findField(schema, id)?.aliases ?? []);
   }
+  function resolveAnimOptionToken(token, options) {
+    if (token === 'default') {
+      return '';
+    }
+    if (!options) {
+      return token;
+    }
+    for (const option of options) {
+      if (option.value === token || option.aliases?.includes(token)) {
+        return option.value;
+      }
+    }
+    return undefined;
+  }
+  function composeAnim(hasSheen, left, right) {
+    const tokens = hasSheen ? ['sheen'] : [];
+    if (right) {
+      tokens.push(left || 'default', right);
+    } else if (left) {
+      tokens.push(left);
+    }
+    return tokens.join(',');
+  }
+  function splitAnim(value, options) {
+    const motions = [];
+    let hasSheen = false;
+    for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
+      if (token === 'sheen') {
+        if (hasSheen && options) {
+          return { hasSheen: false, left: '', right: '' };
+        }
+        hasSheen = true;
+      } else if (token) {
+        const resolved = resolveAnimOptionToken(token, options);
+        if (resolved === undefined) {
+          return { hasSheen: false, left: '', right: '' };
+        }
+        motions.push(resolved);
+      }
+    }
+    if (options && motions.length > 2) {
+      return { hasSheen: false, left: '', right: '' };
+    }
+    const left = motions[0] ?? '';
+    const right = motions[1] ?? '';
+    if (hasSheen && !right && left === 'none') {
+      return { hasSheen, left: '', right: '' };
+    }
+    return { hasSheen, left, right };
+  }
   function normalizeOptionValue(field, raw) {
     if (field.control === 'number') {
       const clean2 = raw.trim();
@@ -373,6 +426,13 @@
       return clean2 && (findOption(field.options, clean2) || Number.isFinite(Number(clean2)))
         ? clean2
         : '';
+    }
+    if (field.control === 'anim') {
+      const anim = splitAnim(raw, field.options);
+      if (field.animScope === 'stack' && anim.right) {
+        return '';
+      }
+      return composeAnim(anim.hasSheen, anim.left, field.animScope === 'pair' ? anim.right : '');
     }
     if (field.control !== 'select' && field.control !== 'color') {
       return raw;
@@ -557,27 +617,6 @@
       return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
     }
     return { icon: '', text: trimmed };
-  }
-  function composeAnim(hasSheen, left, right) {
-    const tokens = hasSheen ? ['sheen'] : [];
-    if (right) {
-      tokens.push(left || 'default', right);
-    } else if (left) {
-      tokens.push(left);
-    }
-    return tokens.join(',');
-  }
-  function splitAnim(value) {
-    const motions = [];
-    let hasSheen = false;
-    for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
-      if (token === 'sheen') {
-        hasSheen = true;
-      } else if (token) {
-        motions.push(token === 'default' ? '' : token);
-      }
-    }
-    return { hasSheen, left: motions[0] ?? '', right: motions[1] ?? '' };
   }
   function composeSpecial(kind, payload, modifier, isAutoAllowed = false) {
     if (!kind) {
@@ -945,6 +984,7 @@
     createIconResolver,
     decodeSegment,
     encodeSegment,
+    isTypingFieldActiveForLayout,
     parsePath,
     splitAnim,
     splitHint,
@@ -998,6 +1038,7 @@
       glyphTemplates,
       onIndexLoaded,
       picker,
+      pickerEmpty,
       pickerGrid,
       pickerNoneButton,
       pickerSearch,
@@ -1109,10 +1150,19 @@
         ? `Unknown icon${unknown.length > 1 ? 's' : ''}: ${unknown.slice(0, MAX_LISTED_UNKNOWN_ICONS).join(', ')}${more} (renders a fallback).`
         : '';
       hint.classList.toggle('is-warning', hasUnknown);
-      (hint.closest('.icon-input') ?? hint.closest('[data-field]'))?.classList.toggle(
-        'is-invalid',
-        hasUnknown
-      );
+      const invalidContainer = hint.closest('.icon-input') ?? hint.closest('[data-field]');
+      invalidContainer?.classList.toggle('is-invalid', hasUnknown);
+      const interactiveControl =
+        input instanceof HTMLInputElement && input.type === 'hidden'
+          ? form.querySelector(`[data-icon-target="${inputId}"]`)
+          : input;
+      if (interactiveControl instanceof HTMLElement) {
+        if (hasUnknown) {
+          interactiveControl.setAttribute('aria-invalid', 'true');
+        } else if (!interactiveControl.closest('.is-missing')) {
+          interactiveControl.removeAttribute('aria-invalid');
+        }
+      }
     }
     function syncIconSelects(scope) {
       for (const trigger of scope.querySelectorAll('.icon-select-trigger')) {
@@ -1241,6 +1291,8 @@
       if (pickerRendered < pickerMatches.length) {
         const sentinel = document.createElement('div');
         sentinel.className = 'icon-picker-sentinel';
+        sentinel.setAttribute('aria-hidden', 'true');
+        sentinel.setAttribute('role', 'presentation');
         pickerGrid.append(sentinel);
         sentinelObserver?.observe(sentinel);
       }
@@ -1266,18 +1318,19 @@
       }
     }
     function renderPickerEmpty() {
-      const empty = document.createElement('div');
-      empty.className = 'icon-picker-empty';
-      empty.append('No icons found.');
+      if (!pickerEmpty) {
+        return;
+      }
+      pickerEmpty.replaceChildren('No icons found.');
       if (pickerSearch?.value.trim()) {
         const clearButton = document.createElement('button');
         clearButton.type = 'button';
         clearButton.className = 'text-btn';
         clearButton.dataset.pickerClear = 'true';
         clearButton.textContent = 'Clear search';
-        empty.append(' ', clearButton);
+        pickerEmpty.append(' ', clearButton);
       }
-      pickerGrid?.append(empty);
+      pickerEmpty.hidden = false;
     }
     function findSelectedMatchIndex() {
       if (!pickerSelectedSlug) {
@@ -1299,9 +1352,15 @@
       sentinelObserver?.disconnect();
       pickerGrid.replaceChildren();
       pickerGrid.scrollTop = 0;
-      if (pickerMatches.length === 0) {
+      const hasMatches = pickerMatches.length > 0;
+      pickerGrid.hidden = !hasMatches;
+      if (!hasMatches) {
         renderPickerEmpty();
       } else {
+        if (pickerEmpty) {
+          pickerEmpty.hidden = true;
+          pickerEmpty.replaceChildren();
+        }
         const selectedIndex = isOpening ? findSelectedMatchIndex() : -1;
         renderPickerUntil(Math.max(0, selectedIndex));
         const rovingTile = getTileAt(Math.max(0, selectedIndex));
@@ -1501,14 +1560,16 @@
       });
       pickerSearch?.addEventListener('input', scheduleRenderPicker);
       pickerSearch?.addEventListener('keydown', handlePickerSearchKeydown);
-      gridElement.addEventListener('click', (event) => {
+      pickerElement.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : undefined;
         if (target?.closest('[data-picker-clear]') && pickerSearch) {
           pickerSearch.value = '';
           pickerSearch.focus();
           renderPicker(false);
-          return;
         }
+      });
+      gridElement.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : undefined;
         const tile = target?.closest('.icon-tile');
         if (tile instanceof HTMLElement && tile.dataset.slug) {
           applyPickedSlug(tile.dataset.slug);
@@ -1554,6 +1615,7 @@
     let parts = selectPartsCache.get(wrapper);
     if (!parts) {
       parts = {
+        empty: wrapper.querySelector('[data-select-empty]'),
         list: wrapper.querySelector('.select-options'),
         menu: wrapper.querySelector('.select-menu'),
         search: wrapper.querySelector('.select-search-input'),
@@ -1572,7 +1634,7 @@
     return swatch;
   }
   function renderSelectOptions(wrapper) {
-    const { list, search, select } = getSelectParts(wrapper);
+    const { empty, list, search, select } = getSelectParts(wrapper);
     if (!list || !select) {
       return;
     }
@@ -1605,13 +1667,12 @@
         fragment.append(item);
       }
     }
-    if (fragment.childElementCount === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'select-empty';
-      empty.textContent = 'No matches';
-      fragment.append(empty);
-    }
+    const hasMatches = fragment.childElementCount > 0;
     list.replaceChildren(fragment);
+    list.hidden = !hasMatches;
+    if (empty) {
+      empty.hidden = hasMatches;
+    }
   }
   function moveOptionFocus(wrapper, offset) {
     const items = [...wrapper.querySelectorAll('.select-option')];
@@ -1761,9 +1822,9 @@
       });
       search?.addEventListener('input', () => renderSelectOptions(wrapper));
       trigger?.addEventListener('keydown', (event) => {
-        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu?.showPopover) {
+        if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu) {
           event.preventDefault();
-          menu.showPopover();
+          site?.openPopover(menu);
         }
       });
     }
@@ -2019,11 +2080,15 @@
       });
       modeTabList?.addEventListener('keydown', (event) => {
         const keyEvent = event;
-        if (keyEvent.key !== 'ArrowLeft' && keyEvent.key !== 'ArrowRight') {
-          return;
-        }
         const tabs = [...modeTabList.querySelectorAll('.stack-mode-tab')];
-        const next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
+        let next = undefined;
+        if (keyEvent.key === 'ArrowLeft' || keyEvent.key === 'ArrowRight') {
+          next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
+        } else if (keyEvent.key === 'Home') {
+          [next] = tabs;
+        } else if (keyEvent.key === 'End') {
+          next = tabs.at(-1);
+        }
         if (next instanceof HTMLElement) {
           keyEvent.preventDefault();
           selectStackModeTab(next);
@@ -2126,7 +2191,13 @@
       for (const input of listElement.querySelectorAll('.typing-line-input')) {
         if (input instanceof HTMLInputElement) {
           if (input.value.includes(';')) {
+            const isFocused = document.activeElement === input;
+            const selectionStart = isFocused ? (input.selectionStart ?? undefined) : undefined;
+            const selectionEnd = isFocused ? (input.selectionEnd ?? undefined) : undefined;
             input.value = input.value.replace(SEMICOLON_RX, ' ');
+            if (isFocused && selectionStart !== undefined && selectionEnd !== undefined) {
+              input.setSelectionRange(selectionStart, selectionEnd);
+            }
           }
           const trimmedLine = input.value.trim();
           if (trimmedLine) {
@@ -2338,6 +2409,7 @@
     const shareButton = document.getElementById('builder-share');
     const resetButton = document.getElementById('builder-reset');
     const picker = document.getElementById('icon-picker');
+    const pickerEmpty = document.getElementById('icon-picker-empty');
     const pickerGrid = document.getElementById('icon-picker-grid');
     const pickerSearch = document.getElementById('icon-picker-search');
     const pickerStatus = document.getElementById('icon-picker-status');
@@ -2366,6 +2438,7 @@
     let snippetFormat = 'markdown';
     let lastPreviewSrc = '';
     let currentPreviewPath = '';
+    let crossBuilderNotice = '';
     let previewTimer = 0;
     function getControl(id) {
       if (!controlCache.has(id)) {
@@ -2389,6 +2462,7 @@
         stackCatalogController?.flushPendingChips();
       },
       picker,
+      pickerEmpty,
       pickerGrid,
       pickerNoneButton,
       pickerSearch,
@@ -2561,7 +2635,11 @@
       const control = getControl(id);
       if (control instanceof HTMLInputElement) {
         control.placeholder = placeholder;
-        control.toggleAttribute('aria-required', isRequired);
+        if (isRequired) {
+          control.setAttribute('aria-required', 'true');
+        } else {
+          control.removeAttribute('aria-required');
+        }
       }
     }
     function syncServiceFields() {
@@ -2601,7 +2679,7 @@
       }
       switch (field.control) {
         case 'anim': {
-          const anim = splitAnim(value);
+          const anim = splitAnim(value, field.options);
           const sheen = getPart(fieldElement, 'sheen');
           if (sheen instanceof HTMLInputElement) {
             sheen.checked = anim.hasSheen;
@@ -2669,12 +2747,15 @@
         return;
       }
       const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
-      const isTitledLayout = effectiveLayout === 'window' || effectiveLayout === 'ide';
-      const isFrameless = effectiveLayout === 'none';
-      const isCenterableLayout = effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
-      fieldElements.get('title')?.toggleAttribute('hidden', !isTitledLayout);
-      fieldElements.get('hint')?.toggleAttribute('hidden', isFrameless);
-      fieldElements.get('align')?.toggleAttribute('hidden', !isCenterableLayout);
+      fieldElements
+        .get('title')
+        ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('title', effectiveLayout));
+      fieldElements
+        .get('hint')
+        ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('hint', effectiveLayout));
+      fieldElements
+        .get('align')
+        ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('align', effectiveLayout));
       const titleControl = getControl('title');
       if (titleControl instanceof HTMLInputElement) {
         titleControl.placeholder =
@@ -2744,7 +2825,19 @@
         const isRequired =
           field.isRequired || (field.id === 'owner' && service?.ownerMode === 'required');
         const isMissing = isRequired && !readState(state, field.id);
-        fieldElements.get(field.id)?.classList.toggle('is-missing', isMissing);
+        const fieldElement = fieldElements.get(field.id);
+        if (fieldElement) {
+          fieldElement.classList.toggle('is-missing', isMissing);
+          for (const control of fieldElement.querySelectorAll(
+            '.builder-input:not(.select-trigger)'
+          )) {
+            if (isMissing) {
+              control.setAttribute('aria-invalid', 'true');
+            } else if (!control.closest('.is-invalid')) {
+              control.removeAttribute('aria-invalid');
+            }
+          }
+        }
       }
       if (openLink) {
         if (isComplete) {
@@ -2763,9 +2856,9 @@
       outputElement?.classList.toggle('is-incomplete', !isComplete);
       setStatus(
         isComplete
-          ? ''
+          ? crossBuilderNotice
           : `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
-        !isComplete
+        !isComplete || Boolean(crossBuilderNotice)
       );
     }
     function readSnippetOptions() {
@@ -2833,8 +2926,38 @@
         state.special = readFieldValue(specialField, specialElement);
       }
     }
+    function syncControlPartsOnInput(field, fieldElement, target) {
+      if (field.control === 'anim' && field.animScope !== 'pair' && target instanceof Element) {
+        const sheen = getPart(fieldElement, 'sheen');
+        const left = getPart(fieldElement, 'left');
+        if (
+          target.matches('[data-part="left"]') &&
+          left?.value === 'none' &&
+          sheen instanceof HTMLInputElement
+        ) {
+          sheen.checked = false;
+        } else if (
+          target.matches('[data-part="sheen"]') &&
+          sheen instanceof HTMLInputElement &&
+          sheen.checked &&
+          left?.value === 'none'
+        ) {
+          left.value = '';
+        }
+      }
+      if (
+        field.control === 'special' &&
+        target instanceof Element &&
+        target.matches('[data-part="kind"]')
+      ) {
+        syncSpecialParts(field, fieldElement, '');
+      }
+      if (field.control === 'size') {
+        syncSizeParts(fieldElement);
+      }
+    }
     function handleFieldInput(event) {
-      const { target } = event;
+      const target = event.target ?? undefined;
       if (
         (event.type === 'change' && !(target instanceof HTMLSelectElement)) ||
         target === stackCategorySearch ||
@@ -2847,16 +2970,8 @@
       if (!fieldElement || !field) {
         return;
       }
-      if (
-        field.control === 'special' &&
-        target instanceof Element &&
-        target.matches('[data-part="kind"]')
-      ) {
-        syncSpecialParts(field, fieldElement, '');
-      }
-      if (field.control === 'size') {
-        syncSizeParts(fieldElement);
-      }
+      crossBuilderNotice = '';
+      syncControlPartsOnInput(field, fieldElement, target);
       state[field.id] = readFieldValue(field, fieldElement);
       stackCatalogController?.syncStackFieldChange(field);
       syncServiceFieldChange(field);
@@ -2887,6 +3002,9 @@
     }
     function applyState(nextState) {
       state = { ...nextState };
+      if (schema.kind === 'service' && !findService(schema, state.service)) {
+        state.service = schema.services?.[0]?.key ?? '';
+      }
       writeState();
       syncStateFromForm();
       update(form);
@@ -2901,10 +3019,11 @@
       if (linkInput) {
         linkInput.value = pageParams.get('link') ?? '';
       }
+      crossBuilderNotice =
+        sharedPath && !parsedState
+          ? 'The shared link belongs to another builder; Showing the example instead.'
+          : '';
       applyState(parsedState ?? schema.initialState);
-      if (sharedPath && !parsedState) {
-        setStatus('The shared link belongs to another builder; Showing the example instead.', true);
-      }
     }
     function copyShareLink() {
       const options = readSnippetOptions();
@@ -2921,20 +3040,29 @@
       }
     }
     function handleTabKeydown(event) {
-      const offsets = { ArrowLeft: -1, ArrowRight: 1 };
-      const offset = offsets[event.key];
-      if (offset === undefined) {
+      const tabs = [...document.querySelectorAll('.builder-tab')];
+      if (tabs.length === 0) {
         return;
       }
-      const tabs = [...document.querySelectorAll('.builder-tab')];
       let current = 0;
       for (const [i, tab] of tabs.entries()) {
         if (tab.getAttribute('aria-selected') === 'true') {
           current = i;
         }
       }
-      const next = tabs[(current + offset + tabs.length) % tabs.length];
+      let nextIndex = undefined;
+      if (event.key === 'ArrowLeft') {
+        nextIndex = (current - 1 + tabs.length) % tabs.length;
+      } else if (event.key === 'ArrowRight') {
+        nextIndex = (current + 1) % tabs.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = tabs.length - 1;
+      }
+      const next = nextIndex !== undefined ? tabs[nextIndex] : undefined;
       if (next instanceof HTMLElement) {
+        event.preventDefault();
         selectTab(next);
         next.focus();
       }
@@ -2943,15 +3071,21 @@
       form.addEventListener('input', handleFieldInput);
       form.addEventListener('change', handleFieldInput);
       form.addEventListener('submit', (event) => event.preventDefault());
-      altInput?.addEventListener('input', renderOutputs);
-      linkInput?.addEventListener('input', renderOutputs);
+      altInput?.addEventListener('input', () => {
+        crossBuilderNotice = '';
+        renderOutputs();
+      });
+      linkInput?.addEventListener('input', () => {
+        crossBuilderNotice = '';
+        renderOutputs();
+      });
       if (linkInput && schema.kind === 'service') {
         linkInput.placeholder = 'Upstream page of the service';
       }
       previewImage?.addEventListener('load', () => {
         previewImage.classList.remove('is-loading');
         if (buildPath(schema, state).missing.length === 0) {
-          setStatus('');
+          setStatus(crossBuilderNotice, Boolean(crossBuilderNotice));
         }
       });
       previewImage?.addEventListener('error', () => {
@@ -2986,6 +3120,7 @@
       bindSelects(form, site);
       bindHelpPopovers();
       resetButton?.addEventListener('click', () => {
+        crossBuilderNotice = '';
         if (altInput) {
           altInput.value = '';
         }

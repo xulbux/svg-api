@@ -48,7 +48,7 @@ interface UpstreamOutcome {
   isInvalidData?: boolean;
   /** Serialized projected payload size in UTF-16 code units (`0` for failures; Weighs memory cache entries). */
   size: number;
-  /** Upstream HTTP status (`504` for timeouts, `502` for network or JSON errors, `413` for oversized bodies). */
+  /** Upstream HTTP status (synthetic statuses represent timeouts, network/JSON errors, and oversized bodies). */
   status: number;
 }
 
@@ -62,7 +62,7 @@ interface UpstreamBody {
   etag?: string;
   /** Seconds until a rate limit resets (`Retry-After` or `x-ratelimit-reset`). */
   retryAfter?: number;
-  /** Upstream HTTP status (`504` for timeouts, `502` for network errors, `413` for oversized bodies). */
+  /** Upstream HTTP status (synthetic statuses represent timeouts, network errors, and oversized bodies). */
   status: number;
   /** Complete response body (successful responses without a parsed leading value). */
   text?: string;
@@ -86,7 +86,7 @@ interface ResolvedFetchTarget {
   extractKeys?: readonly string[];
   /** Request headers before conditional `If-None-Match` injection. */
   headers: Readonly<Record<string, string>>;
-  /** HTTP method (`'GET'` or `'POST'`). */
+  /** HTTP request method. */
   method: 'GET' | 'POST';
   /** Optional custom HTTP transport (e.g., micro-batched GraphQL queries). */
   send?: UpstreamTransport;
@@ -106,9 +106,9 @@ interface ResolvedServiceContext {
 
 /** Optional overrides of an error badge. */
 interface ErrorResultOptions {
-  /** Theme color token (defaults to `rose`). */
+  /** Theme color token override. */
   color?: ThemeColorName;
-  /** Icon slug (defaults to `circle-alert`). */
+  /** Icon slug override. */
   icon?: string;
   /** Redirect destination (defaults to `FALLBACK_REDIRECT_URL`). */
   redirectUrl?: string;
@@ -184,6 +184,12 @@ const RATE_LIMIT_CACHE_TTL = { max: 900, min: 60 } as const;
  */
 const RATE_LIMIT_RESET_EPOCH_THRESHOLD = 1_000_000_000;
 
+/** Smallest `x-ratelimit-reset` value read as a millisecond epoch timestamp (`2001-09-09T01:46:40.000Z`). */
+const RATE_LIMIT_RESET_EPOCH_MS_THRESHOLD = 1_000_000_000_000;
+
+/** Maximum distinct upstream loads simultaneously in flight per Worker isolate (sheds random-slug cache-busting floods). */
+const MAX_IN_FLIGHT_LOADS = 64;
+
 /** Minimum remaining memory cache lifetime in milliseconds of an edge cache hit. */
 const MIN_MEMORY_LIFETIME = 1000;
 
@@ -194,7 +200,7 @@ const UPSTREAM_TIMEOUT = 8000;
 const MAX_UPSTREAM_BYTES = 2_097_152;
 
 /**
- * Maximum wire bytes scanned by the streaming JSON key extractor (`32 MB`): Unneeded keys are
+ * Maximum wire bytes scanned by the streaming JSON key extractor: Unneeded keys are
  * discarded in `O(1)` memory while streaming, while captured values stay capped at `MAX_UPSTREAM_BYTES`.
  */
 const MAX_STREAM_SCAN_BYTES = 33_554_432;
@@ -211,10 +217,10 @@ const MAX_MEMORY_CACHE_WEIGHT = 4_000_000;
 /** Synthetic origin of Tier-1 JSON edge cache keys (versioned, because entries hold projections). */
 const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/v3/';
 
-/** Physical edge cache retention in seconds (`7 days`) for positive projections, preserving `ETag` and `stale-if-error` data past logical expiry. */
+/** Physical edge cache retention in seconds for positive projections, preserving `ETag` and `stale-if-error` data past logical expiry. */
 const POSITIVE_EDGE_RETENTION_SECONDS = 604_800;
 
-/** Remaining-quota fraction (`10%`) at or below which positive logical TTLs stretch toward the rate-limit reset. */
+/** Remaining-quota fraction at or below which positive logical TTLs stretch toward the rate-limit reset. */
 const LOW_QUOTA_RATIO = 0.1;
 
 /** Maximum adaptive logical TTL in seconds when an upstream rate-limit bucket is running low. */
@@ -241,7 +247,7 @@ const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
 /** HTTP status of unchanged conditional upstream responses (`If-None-Match` hit). */
 const NOT_MODIFIED_STATUS = 304;
 
-/** HTTP status of rate-limited upstream responses (GitHub's `403` + `x-ratelimit-remaining: 0` is normalized to it). */
+/** HTTP status of rate-limited upstream responses (exhausted `403` rate-limit responses are normalized to it). */
 const RATE_LIMITED_STATUS = 429;
 
 /** HTTP status of upstream responses exceeding `MAX_UPSTREAM_BYTES`. */
@@ -281,14 +287,13 @@ const MERGED_HEADERS = new WeakMap<ServiceDefinition, MergedHeadersEntry>();
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /**
- * Matches a safe owner or target path segment: Word characters, dots, hyphens, `@` (npm scopes,
- * Homebrew `python@3.12`), and `+` (Homebrew `gtk+3`), but not dots only (blocks `..` path
- * traversal into other upstream API routes). Slashes never match, so every segment stays atomic.
+ * Matches a safe owner or target path segment: Word characters, dots, hyphens, `@`, and `+`,
+ * rejecting dot-only segments (`..` path traversal) and bare `@` / `@@…` scope prefixes. Slashes never match, so every segment stays atomic.
  */
-const SAFE_SEGMENT_RX = /^(?!\.+$)[\w.@+-]{1,214}$/;
+const SAFE_SEGMENT_RX = /^(?!\.+$)(?!@(?:$|@))[\w.@+-]{1,214}$/;
 
-/** Matches a non-negative integer (delta-seconds `Retry-After` and epoch `x-ratelimit-reset` values). */
-const DIGITS_RX = /^\d+$/;
+/** Matches a non-negative integer or decimal number (e.g., `Retry-After` and `x-ratelimit-*` headers). */
+const NON_NEGATIVE_NUMBER_RX = /^\d+(?:\.\d+)?$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -439,7 +444,7 @@ function isRateLimited(response: Response): boolean {
 function readRetryAfter(response: Response, now: number): number | undefined {
   const retryAfter = response.headers.get('retry-after')?.trim();
   if (retryAfter) {
-    if (DIGITS_RX.test(retryAfter)) {
+    if (NON_NEGATIVE_NUMBER_RX.test(retryAfter)) {
       return Number(retryAfter);
     }
     const retryAt = Date.parse(retryAfter);
@@ -448,16 +453,19 @@ function readRetryAfter(response: Response, now: number): number | undefined {
   const resetHeader = (
     response.headers.get('x-ratelimit-reset') ?? response.headers.get('ratelimit-reset')
   )?.trim();
-  if (!resetHeader || !DIGITS_RX.test(resetHeader)) {
+  if (!resetHeader || !NON_NEGATIVE_NUMBER_RX.test(resetHeader)) {
     return undefined;
   }
   const resetValue = Number(resetHeader);
+  if (resetValue >= RATE_LIMIT_RESET_EPOCH_MS_THRESHOLD) {
+    return (resetValue - now) / 1000;
+  }
   return resetValue < RATE_LIMIT_RESET_EPOCH_THRESHOLD ? resetValue : resetValue - now / 1000;
 }
 
 /**
  * Compute an extended logical TTL in seconds up to the rate-limit window reset (capped at
- * `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` (`10%`) remaining.
+ * `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` remaining.
  */
 function readAdaptiveTtlSeconds(response: Response, now: number): number | undefined {
   const rawLimit = (
@@ -466,7 +474,12 @@ function readAdaptiveTtlSeconds(response: Response, now: number): number | undef
   const rawRemaining = (
     response.headers.get('x-ratelimit-remaining') ?? response.headers.get('ratelimit-remaining')
   )?.trim();
-  if (!rawLimit || !rawRemaining || !DIGITS_RX.test(rawLimit) || !DIGITS_RX.test(rawRemaining)) {
+  if (
+    !rawLimit ||
+    !rawRemaining ||
+    !NON_NEGATIVE_NUMBER_RX.test(rawLimit) ||
+    !NON_NEGATIVE_NUMBER_RX.test(rawRemaining)
+  ) {
     return undefined;
   }
   const limit = Number(rawLimit);
@@ -496,7 +509,7 @@ function resolveFailureTtl(status: number, retryAfter: number | undefined): numb
   return ERROR_CACHE_TTL;
 }
 
-/** Check whether a failed outcome is cached at the edge as a negative marker (`404`, `413`, `429`, `5xx`). */
+/** Check whether a failed outcome is cached at the edge as a negative marker. */
 function isEdgeCacheableFailure(outcome: UpstreamOutcome): boolean {
   const { status } = outcome;
   return (
@@ -698,7 +711,7 @@ function startValueScan(char: string, index: number, scanner: JsonStreamScanner)
   return index;
 }
 
-/** Advance a structural phase (`root`, `first-key-or-end`, `comma-or-end`, `next-key`, `colon`, `value-start`) at `char`. */
+/** Advance a structural phase at `char`. */
 function advanceStructuralPhase(char: string, index: number, scanner: JsonStreamScanner): number {
   switch (scanner.phase) {
     case 'root': {
@@ -1028,6 +1041,10 @@ function classifyGraphQlErrorStatus(parsed: unknown): number | undefined {
   if (!isJsonObject(parsed.data)) {
     return hasNotFound ? 404 : 502;
   }
+  const dataValues = Object.values(parsed.data);
+  if (dataValues.length > 0 && dataValues.every((value) => value === null)) {
+    return hasNotFound ? 404 : 502;
+  }
   return undefined;
 }
 
@@ -1074,14 +1091,16 @@ function buildFetchedOutcome(
   }
   // Keep the verbatim body of unprojected payloads; serialize projections (always small):
   const edgeBody =
-    endpoint.project || fetched.text === undefined ? JSON.stringify(projected) : fetched.text;
+    endpoint.project || fetched.text === undefined || parsed === null
+      ? JSON.stringify(projected)
+      : fetched.text;
   const effectiveTtl = Math.max(endpoint.ttl, fetched.adaptiveTtl ?? 0);
   const outcome: UpstreamOutcome = {
     data: projected,
     etag: fetched.etag,
     expiresAt: Date.now() + effectiveTtl * 1000,
     size: edgeBody.length,
-    status: fetched.status,
+    status: 200,
   };
   return [outcome, edgeBody];
 }
@@ -1270,6 +1289,9 @@ async function loadUpstreamJson(
   if (pending) {
     return pending;
   }
+  if (IN_FLIGHT_LOADS.size >= MAX_IN_FLIGHT_LOADS) {
+    return { expiresAt: 0, size: 0, status: RATE_LIMITED_STATUS };
+  }
 
   const load = loadThroughEdgeCache(endpoint, target, staleMemory, executionCtx)
     // A rejected load must never reject every coalesced request:
@@ -1344,7 +1366,7 @@ function buildMetricResult(
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Clear the in-isolate memory cache and the in-flight request registry (used for test isolation).
+ * Clear the in-isolate memory cache and the in-flight request registry.
  */
 export function resetUpstreamCaches(): void {
   clearLruCache(MEMORY_CACHE);
@@ -1387,7 +1409,7 @@ export function resolveServiceRedirectUrl(request: ServiceRequest): string {
 }
 
 /**
- * Resolve a service preset badge from sample data without any network access (used by the docs previews).
+ * Resolve a service preset badge from sample data without any network access.
  * Applies the exact same request validation, projection, and metric defaults as `resolveServiceMetric`.
  * @param request   Parsed service preset route.
  * @param sample    Sample right-hand value text (e.g., `'4.2M/mo'`) or a sample upstream JSON payload run through the projection and transform.

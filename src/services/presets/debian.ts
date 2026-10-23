@@ -1,8 +1,8 @@
 /**
- * Debian service preset – Source package version for a Debian suite from Debian Sources (`/badge/debian/[:suite/]:pkg/v`).
+ * Debian service preset – Live upstream metrics and redirect transformations.
  *
- * The optional suite segment defaults to `sid` and also accepts the release aliases `stable`
- * (`trixie`), `testing` (`forky`), `unstable` (`sid`), and `oldstable` (`bookworm`).
+ * The optional suite segment falls back to `DEFAULT_DEBIAN_SUITE` and resolves release aliases via
+ * `DEBIAN_SUITE_ALIASES`.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -32,7 +32,7 @@ const DEBIAN_SUITE_ALIASES: Readonly<Record<string, string>> = {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Resolve the default Debian suite (`sid`). */
+/** Resolve the default Debian suite. */
 function resolveDefaultDebianSuite(): string {
   return DEFAULT_DEBIAN_SUITE;
 }
@@ -80,8 +80,7 @@ const DEBIAN_ENDPOINT = createEndpoint({
 /** Debian Sources service preset (`debian`). */
 export const DEBIAN_SERVICE = defineService({
   docs: {
-    description:
-      'Source package version of a Debian suite (omit :suite for sid, or pass stable/trixie/bookworm).',
+    description: `Source package version of a Debian suite (omit :suite for ${DEFAULT_DEBIAN_SUITE}, or pass stable/${DEBIAN_SUITE_ALIASES.stable}/${DEBIAN_SUITE_ALIASES.oldstable}).`,
     title: 'Debian',
   },
   metrics: {

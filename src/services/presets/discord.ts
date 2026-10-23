@@ -1,5 +1,5 @@
 /**
- * Discord service preset – Approximate online and total member counts of a server via a permanent invite code (`/badge/discord/:invite/:metric`).
+ * Discord service preset – Live upstream metrics and redirect transformations.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';

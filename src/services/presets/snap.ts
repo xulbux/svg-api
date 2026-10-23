@@ -1,8 +1,8 @@
 /**
- * Snapcraft service preset – Latest stable snap version and license (`/badge/snap/:snap/:metric`).
+ * Snapcraft service preset – Live upstream metrics and redirect transformations.
  *
- * The Snap Store info API rejects requests without the `Snap-Device-Series: 16` header. The version
- * is read from the stable channel of the snap's default track, preferring the `amd64` build.
+ * The Snap Store info API requires a `Snap-Device-Series` header (`SNAP_HEADERS`). The version is
+ * read from the stable channel of the snap's default track, preferring `PREFERRED_SNAP_ARCHITECTURE`.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -14,7 +14,7 @@ import { createLicenseMetric, createVersionMetric, readText } from '@/services/m
 interface SnapInfoProjection {
   /** SPDX license expression. */
   license?: string;
-  /** Stable default-track version (preferring `amd64`). */
+  /** Stable default-track version (preferring `PREFERRED_SNAP_ARCHITECTURE`). */
   version?: string;
 }
 

@@ -1,5 +1,5 @@
 /**
- * Site client entry point – Initializes theme/background switches, reduced-motion SMIL pausing, mobile sidebar drawer, code drawer scrolling, popovers, and clipboard copying on every `svg.xul.is` page.
+ * Site client entry point – Initializes theme/background switches, reduced-motion SMIL pausing, mobile sidebar drawer, code drawer scrolling, popovers, and clipboard copying across site pages.
  */
 
 import {
@@ -13,6 +13,13 @@ import type { ActivePopoverState } from '@/site/client/site/popover';
 import { initSidebarDrawer } from '@/site/client/site/sidebar';
 import { initThemeAndMotion } from '@/site/client/site/theme';
 import type { PopoverPlacementOptions, SiteClientConfig } from '@/site/client/site/types';
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Dispatch a synthetic `toggle` event for non-Popover-API fallback listeners. */
+function dispatchFallbackToggle(popover: HTMLElement, newState: 'closed' | 'open'): void {
+  popover.dispatchEvent(Object.assign(new Event('toggle'), { newState }));
+}
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -41,6 +48,22 @@ function initSiteClient(): void {
     return hasPopoverApi ? popover.matches(':popover-open') : popover.classList.contains('is-open');
   }
 
+  /** Open a popover element and sync its fallback trigger state. */
+  function openPopover(popover: HTMLElement): void {
+    if (isPopoverOpen(popover)) {
+      return;
+    }
+    if (hasPopoverApi) {
+      popover.showPopover();
+      return;
+    }
+    popover.classList.add('is-open');
+    document
+      .querySelector(`[popovertarget="${popover.id}"]`)
+      ?.setAttribute('aria-expanded', 'true');
+    dispatchFallbackToggle(popover, 'open');
+  }
+
   /** Close a popover element and sync its fallback trigger state. */
   function closePopover(popover: HTMLElement): void {
     if (!isPopoverOpen(popover)) {
@@ -54,6 +77,7 @@ function initSiteClient(): void {
     document
       .querySelector(`[popovertarget="${popover.id}"]`)
       ?.setAttribute('aria-expanded', 'false');
+    dispatchFallbackToggle(popover, 'closed');
   }
 
   /** Position an open popover next to its anchor, clamped to the viewport. */
@@ -78,7 +102,7 @@ function initSiteClient(): void {
   }
 
   const copyText = createClipboardController();
-  globalThis.svgSite = { closePopover, copyText, isPopoverOpen, placePopover };
+  globalThis.svgSite = { closePopover, copyText, isPopoverOpen, openPopover, placePopover };
 
   initThemeAndMotion(siteConfig, rootElement, reducedMotionQuery);
 
@@ -94,8 +118,11 @@ function initSiteClient(): void {
         if (popover instanceof HTMLElement) {
           const isOwnTrigger = trigger?.getAttribute('popovertarget') === popover.id;
           if (isOwnTrigger) {
-            const isOpen = popover.classList.toggle('is-open');
-            trigger?.setAttribute('aria-expanded', String(isOpen));
+            if (isPopoverOpen(popover)) {
+              closePopover(popover);
+            } else {
+              openPopover(popover);
+            }
           } else if (!(target instanceof Node && popover.contains(target))) {
             closePopover(popover);
           }
@@ -120,6 +147,14 @@ function initSiteClient(): void {
 
   initSidebarDrawer(sidebarDrawer, drawerQuery, isPopoverOpen, closePopover);
   initCodeDrawers(reducedMotionQuery, copyText, resolveCopySource);
+
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => {
+      if (activePopover && isPopoverOpen(activePopover.popover)) {
+        placePopover(activePopover.popover, activePopover.anchor, activePopover.options);
+      }
+    }).observe(rootElement);
+  }
 
   document.addEventListener(
     'scroll',

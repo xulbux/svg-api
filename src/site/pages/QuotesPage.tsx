@@ -1,8 +1,8 @@
 /**
- * Quotes documentation page – Renders the Styled README Quote Cards (`/docs/quotes`) section (`<QuotesSection />` and `renderQuotesSectionHtml`).
+ * Quotes documentation page – Renders the Styled README Quote Cards (`/docs/quotes`) section (`<QuotesSection />`).
  */
 
-import { BADGE_VARIANT_DESCRIPTORS } from '@/site/catalog/badges';
+import { QUOTE_LAYOUT_TOKENS, VARIANT_TOKENS } from '@/routes/params';
 import {
   buildQuoteParamRows,
   HORIZONTAL_QUOTE_CARDS,
@@ -11,7 +11,6 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { QUOTE_SIZE_MAP } from '@/svg/quote';
 
@@ -22,10 +21,11 @@ import { QUOTE_SIZE_MAP } from '@/svg/quote';
  * @returns Rendered `<section class="doc-section" id="quotes">` JSX fragment.
  */
 export function QuotesSection(): HtmlFragment {
+  const layoutCodes = QUOTE_LAYOUT_TOKENS.map((token) => `\`${token}\``).join(' or ');
   return (
     <section class="doc-section" id="quotes">
       <SectionHeader
-        description={`Auto-wrapping quote cards in \`vertical\` centered or \`horizontal\` left-bar layouts across ${Object.keys(QUOTE_SIZE_MAP).length} text sizes and ${BADGE_VARIANT_DESCRIPTORS.length} surface tiers.`}
+        description={`Auto-wrapping quote cards in ${layoutCodes} layouts across ${Object.keys(QUOTE_SIZE_MAP).length} text sizes and ${VARIANT_TOKENS.length} surface tiers.`}
         routes={['/quote/:author/:text', '/quote/:text', '/quote?text=:text&author=:author']}
         title="Styled README Quote Cards"
       />
@@ -42,12 +42,4 @@ export function QuotesSection(): HtmlFragment {
       <CardGrid cards={HORIZONTAL_QUOTE_CARDS} />
     </section>
   );
-}
-
-/**
- * Render the Quote Cards (`/quote/*`) documentation section HTML.
- * @returns HTML string for the `/quote/*` documentation and live preview section.
- */
-export function renderQuotesSectionHtml(): string {
-  return renderHtml(<QuotesSection />);
 }

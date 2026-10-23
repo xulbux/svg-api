@@ -3,6 +3,7 @@
  */
 
 import type { ServiceRequest } from './service';
+import type { BuilderKind } from './site';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -37,8 +38,12 @@ export interface ServiceSvgRouteMatch {
 /** Result of dispatching a request URL onto an SVG route. */
 export type SvgRouteMatch = ServiceSvgRouteMatch | StaticSvgRouteMatch;
 
-/** SVG route table entry serving `/<prefix>` and `/<prefix>/*` (drives the Hono registration and the dispatcher). */
+/** SVG route table entry serving `/<prefix>` and `/<prefix>/*`. */
 export interface SvgRouteDefinition {
+  /** Canonical route prefix when this entry is a shorthand alias (e.g., `'button'` for `'btn'`); Omitted on canonical routes. */
+  aliasOf?: string;
+  /** Builder element kind that edits static requests on this route. */
+  builderKind?: BuilderKind;
   /** Maximum number of decoded path segments after the prefix (omitted when the resolver validates the count itself). */
   maxSegments?: number;
   /** First path segment (e.g., `'badge'`, `'icon'`). */

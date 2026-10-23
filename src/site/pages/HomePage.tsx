@@ -1,9 +1,9 @@
 /**
- * Homepage – Renders the `svg.xul.is` homepage (`/`) with the hero section, dynamically computed feature highlight cards, and unified endpoint showcase cards.
+ * Homepage – Renders the public homepage (`/`) with the hero section, dynamically computed feature highlight cards, and unified endpoint showcase cards.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_ORIGIN } from '@/config/site';
+import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ENCODED_CHAOS_QUOTE,
@@ -16,9 +16,13 @@ import { PageLayout } from '@/site/components/PageLayout';
 import { SectionHeader } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
 import { UiIcon } from '@/site/components/UiIcon';
+import { formatConjunctionList } from '@/site/glossary';
 import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/site/navigation';
+import { buildHomeJsonLd } from '@/site/seo';
+import { ICON_SOURCE_SETS } from '@/svg/icons';
+import { BADGE_HEIGHT } from '@/svg/renderer';
 import type { ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -77,7 +81,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=sheen,none,nudge',
       },
     ],
-    subtitle: 'Static 22px badges, live package metrics, inline data widgets, and 3D CTA buttons.',
+    subtitle: `Static ${BADGE_HEIGHT}px badges, live package metrics, inline data widgets, and 3D CTA buttons.`,
     title: 'Badges & CTA Buttons (/badge/*, /button/*)',
   },
   {
@@ -91,8 +95,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'TypeScript', path: '/icon/ts?size=32&color=blue' },
       { alt: 'Vue.js', path: '/icon/vue?size=32&color=emerald' },
     ],
-    subtitle:
-      'Lucide stroke icons and Simple Icons / Devicon brand logos with OKLCH colors, custom sizing, and SMIL motions.',
+    subtitle: `${ICON_SOURCE_SETS.stroke[0]} stroke icons and ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos with OKLCH colors, custom sizing, and SMIL motions.`,
     title: 'Standalone Icons (/icon/:icon)',
   },
   {
@@ -150,12 +153,12 @@ function buildHomeFeatures(): FeatureCardItem[] {
       title: 'Zero Cold Starts',
     },
     {
-      details: `All badges, buttons, icons, stacks, typing animations, and quotes share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
+      details: `All SVG endpoints share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
       icon: 'palette',
       title: 'Unified OKLCH Palette',
     },
     {
-      details: `Combine ${formatCountLowerBound(iconCounts.lucide)} Lucide stroke icons with ${formatCountLowerBound(iconCounts.brand)} Simple Icons and Devicon brand logos.`,
+      details: `Combine ${formatCountLowerBound(iconCounts.lucide)} ${ICON_SOURCE_SETS.stroke[0]} stroke icons with ${formatCountLowerBound(iconCounts.brand)} ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos.`,
       icon: 'layers',
       title: `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Vector Icons`,
     },
@@ -170,7 +173,7 @@ function buildHomeFeatures(): FeatureCardItem[] {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render the `svg.xul.is` homepage as a JSX component.
+ * Render the homepage as a JSX component.
  * @returns Complete homepage JSX document fragment.
  */
 export function HomePage(): HtmlFragment {
@@ -189,18 +192,21 @@ export function HomePage(): HtmlFragment {
     );
   }
 
+  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge for ${SITE_HOST}.`;
+
   return (
     <PageLayout
       activeNav="home"
       canonicalPath="/"
-      description="Zero-cold-start dynamic SVG badge, CTA button, icon, tech stack, typing animation, and quote card engine for svg.xul.is."
-      title="svg.xul.is · Edge SVG Badge, Button, Icon, Tech Stack, Typing & Quote API">
+      description={homeDescription}
+      jsonLd={buildHomeJsonLd(homeDescription)}
+      title={`${SITE_HOST} · Edge SVG Graphics & Live Telemetry Engine`}>
       <section class="hero">
         <h1 class="hero-title">
           One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs & Docs
         </h1>
         <p class="hero-lead">
-          Dynamic badges, CTA buttons, icons, tech stacks, typing animations, and quote cards: Every
+          Dynamic status badges, interactive vector graphics, and live upstream metrics: Every
           element is a plain URL, composed visually in seconds and rendered at the edge; 100% free
           for everyone, with no signup, no API keys, and no rate limits.
         </p>
@@ -242,7 +248,7 @@ export function HomePage(): HtmlFragment {
 }
 
 /**
- * Render (once per isolate) the `svg.xul.is` homepage introducing the API, showcasing live examples, and linking to documentation.
+ * Render (once per isolate) the homepage introducing the API, showcasing live examples, and linking to documentation.
  * @returns Complete HTML document string for the homepage.
  */
 export function renderHomeHtml(): string {

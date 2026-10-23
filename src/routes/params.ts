@@ -1,15 +1,18 @@
 /**
- * Route parameter parsing – Decodes path segments and resolves the readable query DSL (`?variant=`, `?anim=`, `?dot=`, `?special=`, `?size=`, …) into typed render options.
+ * Route parameter parsing – Decodes path segments and resolves query parameters into typed render options.
  */
 
 import { isThemeColorName } from '@/config/theme';
+import { DEFAULT_QUOTE_LAYOUT } from '@/svg/quote';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
   MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
+  MIN_SERIES_POINTS,
 } from '@/svg/renderer';
 import { getOwnValue, isIconMotionMode, isStripTickState } from '@/svg/shared';
+import { DEFAULT_TYPING_CURSOR, DEFAULT_TYPING_ERASE, DEFAULT_TYPING_LAYOUT } from '@/svg/typing';
 import type {
   AnimationMode,
   BadgeSpecialElement,
@@ -17,8 +20,11 @@ import type {
   BadgeSpecialMap,
   BadgeVariant,
   DotState,
+  IconMotionMode,
   QuoteLayout,
   SizePreset,
+  StackAnimationMode,
+  StackTileMotion,
   StripTickState,
   TypingAlign,
   TypingCursor,
@@ -41,19 +47,19 @@ interface AutoSpecialRequest {
 interface ParsedPercentage {
   /** `true` for `:pulse`, `false` for `:static`, `undefined` when no modifier is given. */
   hasPulse?: boolean;
-  /** Parsed percentage (unclamped; The renderer clamps it to `0`–`100`). */
+  /** Parsed percentage (unclamped; The renderer clamps it to its valid range). */
   value: number;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Valid badge, button, stack, and quote variant identifiers in hierarchy order (also listed by the docs and the builder). */
+/** Valid visual hierarchy variant identifiers in tier order. */
 export const VARIANT_TOKENS: readonly BadgeVariant[] = ['1', '2', '3'];
 
 /** Set of valid variant identifiers (derived from `VARIANT_TOKENS`). */
 const VALID_VARIANTS: ReadonlySet<string> = new Set<string>(VARIANT_TOKENS);
 
-/** Inline data widget kinds accepted by `?special=<kind>[:<payload>]` in display order (also listed by the builder). */
+/** Inline data widget kinds accepted by `?special=<kind>[:<payload>]` in display order. */
 export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialKind[] = [
   'sparkline',
   'bars',
@@ -67,33 +73,63 @@ export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialKind[] = [
 /** Set of valid inline data widget kinds (derived from `SPECIAL_ELEMENT_KINDS`). */
 const VALID_SPECIAL_KINDS: ReadonlySet<string> = new Set<string>(SPECIAL_ELEMENT_KINDS);
 
-/** Valid named size presets for buttons and quote cards in ascending size order (also listed by the docs and the builder). */
+/** Valid named size presets in ascending size order. */
 export const SIZE_TOKENS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
 
 /** Set of valid named size presets (derived from `SIZE_TOKENS`). */
 const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
 
-/** Valid per-icon motion tokens for `?anim=`, sorted alphabetically (also listed by the docs; Defined once in `src/svg/shared.ts`). */
+/** Valid per-icon motion tokens, sorted alphabetically. */
 export { ICON_MOTION_TOKENS } from '@/svg/shared';
 
 /** Shorthand aliases mapped to their canonical per-icon motion tokens. */
-const ICON_MOTION_ALIASES: Readonly<Record<string, string>> = {
+export const ICON_MOTION_ALIASES: Readonly<Record<string, IconMotionMode>> = {
   grow: 'breathe',
   scale: 'breathe',
   'spin-smooth': 'whirl',
   twirl: 'turn',
 };
 
+/** Valid per-tile stack motion tokens in display order. */
+export const STACK_MOTION_TOKENS: readonly StackTileMotion[] = ['wave', 'float', 'pulse', 'none'];
+
+/** Set of valid per-tile stack motion tokens (including `'default'`). */
+const VALID_STACK_MOTIONS: ReadonlySet<string> = new Set<string>([
+  'default',
+  ...STACK_MOTION_TOKENS,
+]);
+
+/** Shorthand aliases mapped to their canonical per-tile stack motion tokens. */
+export const STACK_MOTION_ALIASES: Readonly<Record<string, StackTileMotion>> = {
+  auto: 'wave',
+  bob: 'float',
+  bounce: 'wave',
+  breathe: 'pulse',
+  grow: 'pulse',
+  hover: 'float',
+  ripple: 'wave',
+  scale: 'pulse',
+};
+
 /** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
 const MAX_ANIMATION_INPUT_LENGTH = 64;
 
-/** Normalized `?center=` values that switch quote cards to the vertical layout. */
-const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set(['1', 'true', 'yes']);
+/** Truthy boolean query tokens accepted by boolean flag parameters in display order. */
+export const TRUTHY_FLAG_LIST = ['true', '1', 'yes'] as const;
+
+/** Falsy boolean query tokens accepted as explicit disable aliases in builder forms. */
+export const FALSY_FLAG_LIST = ['0', 'false', 'no'] as const;
+
+/** Normalized boolean flag values treated as truthy (derived from `TRUTHY_FLAG_LIST`). */
+const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set<string>(TRUTHY_FLAG_LIST);
+
+/** Canonical quote card layout tokens in display order. */
+export const QUOTE_LAYOUT_TOKENS: readonly QuoteLayout[] = ['horizontal', 'vertical'];
 
 /** Normalized `?layout=` / `?type=` values that select the vertical quote layout. */
-const VERTICAL_LAYOUT_TOKENS: ReadonlySet<string> = new Set(['center', 'v', 'vertical']);
+export const VERTICAL_LAYOUT_TOKENS: ReadonlySet<string> = new Set(['center', 'v', 'vertical']);
 
-/** Valid container layouts for `/typing/*` in display order (also listed by the docs and the builder). */
+/** Valid typing container layouts in display order. */
 export const TYPING_LAYOUT_TOKENS: readonly TypingLayout[] = [
   'window',
   'prompt',
@@ -102,20 +138,20 @@ export const TYPING_LAYOUT_TOKENS: readonly TypingLayout[] = [
   'none',
 ];
 
-/** Valid cursor styles for `/typing/*` in display order (also listed by the docs and the builder). */
+/** Valid typing cursor styles in display order. */
 export const TYPING_CURSOR_TOKENS: readonly TypingCursor[] = ['bar', 'block', 'underscore'];
 
-/** Valid line erase modes for `/typing/*` in display order (also listed by the docs and the builder). */
+/** Valid typing line erase modes in display order. */
 export const TYPING_ERASE_TOKENS: readonly TypingEraseMode[] = ['backspace', 'select', 'fade'];
 
-/** Valid font family tokens for `/typing/*` in display order (also listed by the docs and the builder). */
+/** Valid typing font family tokens in display order. */
 export const TYPING_FONT_TOKENS: readonly TypingFont[] = ['mono', 'sans'];
 
-/** Valid horizontal alignment tokens for `/typing/*` in display order. */
+/** Valid typing horizontal alignment tokens in display order. */
 export const TYPING_ALIGN_TOKENS: readonly TypingAlign[] = ['left', 'center'];
 
 /** Alias map resolving `?layout=` / `?frame=` / `?type=` values to canonical `TypingLayout` tokens. */
-const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
+export const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
   address: 'browser',
   ai: 'prompt',
   app: 'window',
@@ -150,7 +186,7 @@ const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
 };
 
 /** Alias map resolving `?cursor=` values to canonical `TypingCursor` tokens. */
-const TYPING_CURSOR_MAP: Readonly<Record<string, TypingCursor>> = {
+export const TYPING_CURSOR_MAP: Readonly<Record<string, TypingCursor>> = {
   bar: 'bar',
   beam: 'bar',
   block: 'block',
@@ -163,7 +199,7 @@ const TYPING_CURSOR_MAP: Readonly<Record<string, TypingCursor>> = {
 };
 
 /** Alias map resolving `?erase=` / `?delete=` values to canonical `TypingEraseMode` tokens. */
-const TYPING_ERASE_MAP: Readonly<Record<string, TypingEraseMode>> = {
+export const TYPING_ERASE_MAP: Readonly<Record<string, TypingEraseMode>> = {
   backspace: 'backspace',
   clear: 'select',
   del: 'backspace',
@@ -176,7 +212,7 @@ const TYPING_ERASE_MAP: Readonly<Record<string, TypingEraseMode>> = {
 };
 
 /** Alias map resolving `?font=` values to canonical `TypingFont` tokens. */
-const TYPING_FONT_MAP: Readonly<Record<string, TypingFont>> = {
+export const TYPING_FONT_MAP: Readonly<Record<string, TypingFont>> = {
   code: 'mono',
   fira: 'mono',
   geist: 'sans',
@@ -186,6 +222,14 @@ const TYPING_FONT_MAP: Readonly<Record<string, TypingFont>> = {
   proportional: 'sans',
   sans: 'sans',
   ui: 'sans',
+};
+
+/** Alias map resolving `?align=` values to canonical `TypingAlign` tokens. */
+export const TYPING_ALIGN_MAP: Readonly<Record<string, TypingAlign>> = {
+  center: 'center',
+  left: 'left',
+  middle: 'center',
+  start: 'left',
 };
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -256,9 +300,8 @@ function parseStepsPayload(rawPayload: string): { done: number; total: number } 
 }
 
 /**
- * Parse a trimmed 10-stage strip payload (`'0'`–`'9'`, e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into
- * `StripTickState[]` in a single pass: Separated payloads keep only single-digit tokens; Compact
- * payloads keep every digit character.
+ * Parse a trimmed strip payload (e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]`
+ * in a single pass: Separated payloads keep only single-digit tokens; Compact payloads keep every valid character.
  */
 function parseStripStates(rawPayload: string): StripTickState[] | undefined {
   const isSeparated = LIST_SEPARATOR_RX.test(rawPayload);
@@ -322,11 +365,11 @@ function parseSpecialKindAndPayload(
 ): BadgeSpecialElement | undefined {
   switch (kind) {
     case 'sparkline': {
-      const values = parseSeriesNumbers(payload, 2, MAX_SPARKLINE_POINTS);
+      const values = parseSeriesNumbers(payload, MIN_SERIES_POINTS, MAX_SPARKLINE_POINTS);
       return values ? { type: 'sparkline', values } : undefined;
     }
     case 'bars': {
-      const values = parseSeriesNumbers(payload, 2, MAX_BARS_POINTS);
+      const values = parseSeriesNumbers(payload, MIN_SERIES_POINTS, MAX_BARS_POINTS);
       return values ? { type: 'bars', values } : undefined;
     }
     case 'bar':
@@ -353,10 +396,7 @@ function parseSpecialKindAndPayload(
   }
 }
 
-/**
- * Parse a bare or modifier-only `?special=` value (`'sparkline'`, `'bar:static'`, `'ring:pulse'`,
- * `'delta:auto'`, `'bar:auto:static'`) requesting automatic upstream widget data.
- */
+/** Parse a bare or modifier-only `?special=` value requesting automatic upstream widget data. */
 function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefined {
   const colonIndex = trimmed.indexOf(':');
   if (colonIndex === -1) {
@@ -482,8 +522,7 @@ export function resolveSpecialParam(
 }
 
 /**
- * Resolve the requested `?variant=` query parameter to a valid variant (`'1'`, `'2'`, `'3'`).
- * Shared by badges, buttons, stacks, and quote cards (all use `BadgeVariant`).
+ * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant`.
  * @param input      Raw `?variant=` query parameter value.
  * @param fallback   Default variant when `input` is omitted or invalid.
  * @returns Validated variant.
@@ -497,9 +536,7 @@ export function resolveVariant(
 }
 
 /**
- * Resolve the requested `?anim=` query parameter to a valid `AnimationMode`.
- * Supports single modes (`sheen`, `auto`, `breathe`, `float`, `nudge`, `pulse`, `shake`, `spin`, `turn`, `whirl`, `none`),
- * per-icon pairs (`none,nudge`, `shake,nudge`), and combined sheen (`sheen,auto`, `sheen,none,nudge`).
+ * Resolve the requested `?anim=` query parameter to a valid `AnimationMode` (single motion, per-icon pair, `sheen`, or combined `sheen,…`).
  * @param input      Raw `?anim=` query parameter value.
  * @param fallback   Default animation mode when `input` is omitted or invalid.
  * @returns Validated `AnimationMode`.
@@ -548,6 +585,49 @@ export function resolveAnimationMode(
 }
 
 /**
+ * Resolve the requested `?anim=` query parameter for stack grids to a valid `StackAnimationMode`.
+ * @param input      Raw `?anim=` query parameter value.
+ * @param fallback   Default stack animation mode when `input` is omitted or invalid.
+ * @returns Validated `StackAnimationMode`.
+ */
+export function resolveStackAnimationMode(
+  input: string | null | undefined,
+  fallback: StackAnimationMode = 'default'
+): StackAnimationMode {
+  const normalized = normalizeQueryToken(input);
+  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
+    return fallback;
+  }
+
+  let hasSheen = false;
+  let motionToken: StackTileMotion | undefined = undefined;
+  for (const token of normalized.split(LIST_SEPARATOR_RX)) {
+    if (token.length > 0) {
+      if (token === 'sheen') {
+        if (hasSheen) {
+          return fallback;
+        }
+        hasSheen = true;
+      } else {
+        const motion = getOwnValue(STACK_MOTION_ALIASES, token) ?? token;
+        if (!VALID_STACK_MOTIONS.has(motion) || motionToken !== undefined) {
+          return fallback;
+        }
+        motionToken = motion as StackTileMotion;
+      }
+    }
+  }
+
+  if (motionToken === undefined) {
+    return hasSheen ? 'sheen' : fallback;
+  }
+  if (hasSheen && (motionToken === 'none' || motionToken === 'default')) {
+    return 'sheen';
+  }
+  return (hasSheen ? `sheen,${motionToken}` : motionToken) as StackAnimationMode;
+}
+
+/**
  * Resolve a raw `?dot=` query parameter to a valid theme color name (`'none'` removes a preset dot).
  * @param input      Raw `?dot=` query parameter value.
  * @param fallback   Default dot state when `input` is omitted or unknown.
@@ -568,7 +648,7 @@ export function resolveDotState(
 }
 
 /**
- * Resolve a named size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or a custom numeric size from `?size=`.
+ * Resolve a named `SizePreset` token or a custom numeric size from `?size=`.
  * @param raw   Raw `?size=` query parameter value.
  * @returns Size token, custom number, or `undefined` when missing or invalid.
  */
@@ -603,9 +683,8 @@ export function parsePerLineList(
 }
 
 /**
- * Resolve the quote card layout (`'horizontal'` or `'vertical'`) from `?layout=`, `?type=`, or `?center=`.
- * Empty aliases fall through (`?layout=&type=vertical`); `?center=` (`true`, `1`, `yes`) is only
- * consulted when both `?layout=` and `?type=` are empty.
+ * Resolve the quote card layout from `?layout=`, `?type=`, or `?center=`.
+ * Empty aliases fall through (`?layout=&type=vertical`); `?center=` is only consulted when both `?layout=` and `?type=` are empty.
  * @param layoutParam   Raw `?layout=` query parameter value.
  * @param typeParam     Raw `?type=` alias query parameter value.
  * @param centerParam   Raw `?center=` boolean query parameter value.
@@ -620,7 +699,7 @@ export function resolveQuoteLayout(
   const isVertical = candidate
     ? VERTICAL_LAYOUT_TOKENS.has(candidate)
     : TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam));
-  return isVertical ? 'vertical' : 'horizontal';
+  return isVertical ? 'vertical' : DEFAULT_QUOTE_LAYOUT;
 }
 
 /**
@@ -641,11 +720,11 @@ export function resolveIconQueryParam(
 }
 
 /**
- * Resolve the typing container layout (`'window'`, `'prompt'`, `'card'`, or `'none'`) from `?layout=`, `?frame=`, or `?type=`.
+ * Resolve the typing container layout from `?layout=`, `?frame=`, or `?type=`.
  * @param layoutParam   Raw `?layout=` query parameter value.
  * @param frameParam    Raw `?frame=` alias query parameter value.
  * @param typeParam     Raw `?type=` alias query parameter value.
- * @returns Resolved `TypingLayout` (defaults to `'window'`).
+ * @returns Resolved `TypingLayout`.
  */
 export function resolveTypingLayout(
   layoutParam: string | null | undefined,
@@ -656,34 +735,34 @@ export function resolveTypingLayout(
     normalizeQueryToken(layoutParam) ||
     normalizeQueryToken(frameParam) ||
     normalizeQueryToken(typeParam);
-  return getOwnValue(TYPING_LAYOUT_MAP, candidate) ?? 'window';
+  return getOwnValue(TYPING_LAYOUT_MAP, candidate) ?? DEFAULT_TYPING_LAYOUT;
 }
 
 /**
- * Resolve the typing cursor style (`'bar'`, `'block'`, or `'underscore'`) from `?cursor=`.
+ * Resolve the typing cursor style from `?cursor=`.
  * @param cursorParam   Raw `?cursor=` query parameter value.
- * @returns Resolved `TypingCursor` (defaults to `'bar'`).
+ * @returns Resolved `TypingCursor`.
  */
 export function resolveTypingCursor(cursorParam: string | null | undefined): TypingCursor {
-  return getOwnValue(TYPING_CURSOR_MAP, normalizeQueryToken(cursorParam)) ?? 'bar';
+  return getOwnValue(TYPING_CURSOR_MAP, normalizeQueryToken(cursorParam)) ?? DEFAULT_TYPING_CURSOR;
 }
 
 /**
- * Resolve the typing line erase mode (`'backspace'`, `'select'`, or `'fade'`) from `?erase=` or `?delete=`.
+ * Resolve the typing line erase mode from `?erase=` or `?delete=`.
  * @param eraseParam    Raw `?erase=` query parameter value.
  * @param deleteParam   Raw `?delete=` alias query parameter value.
- * @returns Resolved `TypingEraseMode` (defaults to `'backspace'`).
+ * @returns Resolved `TypingEraseMode`.
  */
 export function resolveTypingEraseMode(
   eraseParam: string | null | undefined,
   deleteParam?: string | null
 ): TypingEraseMode {
   const candidate = normalizeQueryToken(eraseParam) || normalizeQueryToken(deleteParam);
-  return getOwnValue(TYPING_ERASE_MAP, candidate) ?? 'backspace';
+  return getOwnValue(TYPING_ERASE_MAP, candidate) ?? DEFAULT_TYPING_ERASE;
 }
 
 /**
- * Resolve the typing font family (`'mono'` or `'sans'`) from `?font=`.
+ * Resolve the typing font family from `?font=`.
  * Returns `undefined` when omitted or unrecognized so `renderTyping` can apply its layout-aware default.
  * @param fontParam   Raw `?font=` query parameter value.
  * @returns Resolved `TypingFont`, or `undefined`.
@@ -693,7 +772,7 @@ export function resolveTypingFont(fontParam: string | null | undefined): TypingF
 }
 
 /**
- * Resolve the typing text alignment (`'left'` or `'center'`) from `?align=` or `?center=`.
+ * Resolve the typing text alignment from `?align=` or `?center=`.
  * Returns `undefined` when neither is specified so `renderTyping` can apply its layout-aware default.
  * @param alignParam    Raw `?align=` query parameter value.
  * @param centerParam   Raw `?center=` boolean query parameter value.
@@ -703,12 +782,9 @@ export function resolveTypingAlign(
   alignParam: string | null | undefined,
   centerParam?: string | null
 ): TypingAlign | undefined {
-  const cleanAlign = normalizeQueryToken(alignParam);
-  if (cleanAlign === 'center' || cleanAlign === 'middle') {
-    return 'center';
-  }
-  if (cleanAlign === 'left' || cleanAlign === 'start') {
-    return 'left';
+  const mappedAlign = getOwnValue(TYPING_ALIGN_MAP, normalizeQueryToken(alignParam));
+  if (mappedAlign) {
+    return mappedAlign;
   }
   if (TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam))) {
     return 'center';
@@ -717,7 +793,7 @@ export function resolveTypingAlign(
 }
 
 /**
- * Check whether an optional boolean query parameter is set to a truthy token (`'true'`, `'1'`, or `'yes'`).
+ * Check whether an optional boolean query parameter is set to a truthy flag token.
  * @param raw   Raw query parameter value.
  * @returns `true` when `raw` is a truthy flag token.
  */

@@ -4,7 +4,7 @@
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Named Tailwind v4 color tokens supported by the badge engine. */
+/** Named Tailwind v4 color tokens supported across SVG endpoints. */
 export type ThemeColorName =
   | 'amber'
   | 'blue'
@@ -29,13 +29,10 @@ export type ThemeColorName =
   | 'yellow'
   | 'zinc';
 
-/**
- * Visual hierarchy variant shared by badges, buttons, stack tiles, and quote cards
- * (`1` = Primary Brand Gradient, `2` = Secondary Tinted Dark, `3` = Tertiary Neutral Dark).
- */
+/** Visual hierarchy variant tier shared across multi-tier SVG surfaces. */
 export type BadgeVariant = '1' | '2' | '3';
 
-/** Named size scale preset shared by CTA buttons and quote cards (`?size=sm|md|lg|xl`). */
+/** Named typography and geometry scale preset (`?size=`). */
 export type SizePreset = 'lg' | 'md' | 'sm' | 'xl';
 
 /** Animated pulsing status dot color states. */
@@ -54,7 +51,7 @@ export interface SweepTiming {
   sweepEnd: number;
 }
 
-/** Color and optional opacity of a foreground element (icon, arrow, gauge, sparkline, or secondary text). */
+/** Color and optional opacity of a foreground SVG element. */
 export interface ForegroundPaint {
   /** Opaque paint color. */
   color: string;
@@ -80,25 +77,25 @@ export interface BaseDarkPalette {
 export interface ThemePalette {
   /** Bright readable accent text color on dark backgrounds. */
   accentText: string;
-  /** Glowing border color for secondary variants (`variant=2`). */
+  /** Glowing border color for secondary surfaces. */
   borderColor: string;
-  /** Inner top 3D highlight color for primary fills (`color-mix(in oklch, brand, white 30%)`). */
+  /** Inner top 3D specular highlight color for primary fills. */
   emphasisBg: string;
-  /** Outer 1px border ring color for primary fills (`color-mix(in oklch, brand, black 10%)`). */
+  /** Outer 1px border ring color for primary fills. */
   emphasisRing: string;
-  /** Pulsing status dot color (Tailwind shade `500`). */
+  /** Vivid glow and status dot color. */
   glowColor: string;
-  /** Bottom gradient stop for primary fills (`variant=1`). */
+  /** Bottom gradient stop for primary fills. */
   gradEnd: string;
-  /** Top gradient stop for primary fills (`color-mix(in oklch, brand, white 15%)`). */
+  /** Top gradient stop for primary fills. */
   gradStart: string;
   /** Icon tint color on dark backgrounds. */
   iconColor: string;
-  /** Low-opacity fill color for secondary variants (`variant=2`). */
+  /** Low-opacity fill color for secondary surfaces. */
   tintBg: string;
 }
 
-/** Dark and light variant of a scheme-dependent palette color (`src/config/palette.ts`). */
+/** Dark and light variant of a scheme-dependent palette color. */
 export interface SchemeColor {
   /** Value in the dark color scheme. */
   dark: string;

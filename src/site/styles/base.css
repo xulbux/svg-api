@@ -74,7 +74,7 @@
   navigation: auto;
 }
 
-/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated From `getThemeTokens()` in `styles.ts`): */
+/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated at Runtime): */
 
 :root {
   /* Layout Dimensions */
@@ -106,7 +106,7 @@
   scrollbar-color: color-mix(in srgb, var(--c-text-1) 24%, transparent) transparent;
 }
 
-/* Wider Shell for Pages With a Sidebar (Docs, Builder): */
+/* Wider Shell for Pages With a Sidebar: */
 
 .has-sidebar {
   --layout-max: 1480px;
@@ -328,6 +328,17 @@ input[type='search']::-webkit-search-decoration {
   margin: 0;
   opacity: 0;
   cursor: pointer;
+}
+
+/* Forced Colors; preserve semantic color swatches in High Contrast Mode: */
+
+@media (forced-colors: active) {
+  .swatch-dot,
+  .select-swatch,
+  .anatomy-swatch,
+  .bg-swatch {
+    forced-color-adjust: none;
+  }
 }
 
 /* Reduced Motion; no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script): */

@@ -3,7 +3,9 @@
  */
 
 import { SITE_ORIGIN } from '@/config/site';
+import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import { SIZE_TOKENS } from '@/routes/params';
+import { DEFAULT_BUTTON_VARIANT } from '@/routes/svg';
 import {
   buildAnimParamRow,
   buildColorParamRow,
@@ -18,7 +20,7 @@ import type { BadgeVariant, ParamTableRow, ShowcaseCardConfig, ShowcaseItem } fr
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Showcase definitions for the 3 CTA button hierarchy variants (`1`, `2`, `3`). */
+/** Showcase definitions for the CTA button hierarchy variants. */
 export const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: '3D Kumo brand gradient surface with upper-edge specular highlight.',
@@ -41,10 +43,22 @@ export const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
 export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [
-      { alt: 'Small Button', path: '/button/Small+26px?icon=sparkles&size=sm' },
-      { alt: 'Medium Button', path: '/button/Medium+30px?icon=rocket&size=md&color=emerald' },
-      { alt: 'Large Button', path: '/button/Large+36px?icon=zap&size=lg&color=cyan' },
-      { alt: 'XL Hero Button', path: '/button/XL+Hero+42px?icon=flame&size=xl&color=rose' },
+      {
+        alt: 'Small Button',
+        path: `/button/Small+${BUTTON_SIZE_PRESETS.sm.height}px?icon=sparkles&size=sm`,
+      },
+      {
+        alt: 'Medium Button',
+        path: `/button/Medium+${BUTTON_SIZE_PRESETS.md.height}px?icon=rocket&size=md&color=emerald`,
+      },
+      {
+        alt: 'Large Button',
+        path: `/button/Large+${BUTTON_SIZE_PRESETS.lg.height}px?icon=zap&size=lg&color=cyan`,
+      },
+      {
+        alt: 'XL Hero Button',
+        path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?icon=flame&size=xl&color=rose`,
+      },
     ],
     subtitle: `Scale button height, padding, font size, and icon dimensions with ?size=${SIZE_TOKENS.join('|')} or a custom pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
     title: `Button Size Scale (?size=${SIZE_TOKENS.join('|')})`,
@@ -53,7 +67,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Explore Docs',
-        href: `${SITE_ORIGIN}/docs/badges`,
+        href: `${SITE_ORIGIN}/docs`,
         path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=nudge',
       },
       {
@@ -71,7 +85,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Get Started',
-        href: `${SITE_ORIGIN}/docs/badges`,
+        href: `${SITE_ORIGIN}/docs`,
         path: '/button/Get+Started?icon=sparkles,arrow-right&anim=sheen',
       },
       {
@@ -108,12 +122,12 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Build the 4 CTA button items for a `30px` button variant (`1`, `2`, `3`). */
+/** Build the CTA button showcase items for a button variant. */
 function buildButtonVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   return [
     {
       alt: 'Documentation',
-      href: `${SITE_ORIGIN}/docs/badges`,
+      href: `${SITE_ORIGIN}/docs`,
       path: `/button/Documentation?icon=book-open&variant=${variant}`,
     },
     {
@@ -132,7 +146,7 @@ function buildButtonVariantItems(variant: BadgeVariant): ShowcaseItem[] {
 
 /**
  * Build the variant showcase cards for `/docs/buttons`.
- * @returns Showcase card configurations for the 3 button variants.
+ * @returns Showcase card configurations for the button variants.
  */
 export function buildButtonVariantCards(): ShowcaseCardConfig[] {
   return buildVariantCards(BUTTON_VARIANT_DESCRIPTORS, buildButtonVariantItems);
@@ -148,7 +162,7 @@ export function buildButtonParamRows(): ParamTableRow[] {
     presetHeights.push(`${presetName}=${preset.height}px`);
   }
   return [
-    buildVariantParamRow('1', 'Surface tier'),
+    buildVariantParamRow(DEFAULT_BUTTON_VARIANT, 'Surface tier'),
     {
       defaultVal: `md (${BUTTON_SIZE_PRESETS.md.height}px)`,
       description: `Button scale preset (${presetHeights.join(', ')}) or custom pixel height.`,
@@ -156,7 +170,7 @@ export function buildButtonParamRows(): ParamTableRow[] {
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,
     },
     buildColorParamRow(
-      'indigo',
+      DEFAULT_THEME_COLOR,
       'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
     ),
     buildIconQueryParamRow(

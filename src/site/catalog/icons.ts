@@ -2,13 +2,20 @@
  * Icons documentation catalog – Standalone UI/brand icon showcase cards and parameter reference rows for `/docs/icons`.
  */
 
+import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import { ICON_MOTION_TOKENS } from '@/routes/params';
 import { buildColorParamRow, formatRange } from '@/site/catalog/shared';
-import { FALLBACK_ICON_SLUG } from '@/svg/icons';
+import { formatConjunctionList } from '@/site/glossary';
+import { FALLBACK_ICON_SLUG, ICON_SOURCE_SETS } from '@/svg/icons';
 import { ICON_SIZE_RANGE, ICON_STROKE_RANGE } from '@/svg/renderer';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
+
+/** Active non-default, non-none icon motion presets for card subtitles. */
+const ACTIVE_ICON_MOTIONS = ICON_MOTION_TOKENS.filter(
+  (token) => token !== 'default' && token !== 'none'
+);
 
 /** Showcase cards for the dedicated `/docs/icons` page. */
 export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
@@ -24,7 +31,7 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Feedback', path: '/icon/heart-handshake?color=rose&size=28' },
     ],
     subtitle: 'For README section headers (size=28) and inline lists (size=16).',
-    title: 'Lucide UI Stroke Icons (size=16 to 28)',
+    title: `${ICON_SOURCE_SETS.stroke[0]} UI Stroke Icons (size=16 to 28)`,
   },
   {
     items: [
@@ -35,10 +42,8 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Cloudflare', path: '/icon/cloudflare?color=orange&size=28' },
       { alt: 'GitHub', path: '/icon/github?color=slate&size=28' },
     ],
-    subtitle:
-      'Simple Icons, Devicon Plain, and File Icons vector logos tinted with any OKLCH color.',
-    title:
-      'Brand & Technology Vector Icons (@iconify-json/simple-icons, @iconify-json/devicon-plain, @iconify-json/file-icons)',
+    subtitle: `${formatConjunctionList(ICON_SOURCE_SETS.brand)} vector logos tinted with any OKLCH color.`,
+    title: `Brand & Technology Vector Icons (${ICON_SOURCE_SETS.brandPackages.join(', ')})`,
   },
   {
     items: [
@@ -51,8 +56,7 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
       { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
     ],
-    subtitle:
-      'Sheen, icon motion (auto/spin/whirl/turn/shake/nudge/pulse/breathe/float), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.',
+    subtitle: `Sheen, icon motion (${ACTIVE_ICON_MOTIONS.join('/')}), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.`,
     title: 'Animations & Fallback (?anim=)',
   },
 ];
@@ -64,16 +68,16 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildIconParamRows(): ParamTableRow[] {
+  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
   return [
     {
       defaultVal: `~required (unknown slugs fall back to ${FALLBACK_ICON_SLUG})`,
-      description:
-        'Lucide stroke slug, Simple Icons slug, Devicon Plain slug, or one of the slug aliases listed below.',
+      description: `${formatConjunctionList(allIconSets)} slug, or one of the slug aliases listed below.`,
       name: ':icon',
       values: 'rocket | star | python | rust | archlinux | …',
     },
     buildColorParamRow(
-      'indigo',
+      DEFAULT_THEME_COLOR,
       'Tailwind v4 OKLCH theme color applied to the icon stroke or fill.'
     ),
     {

@@ -1,5 +1,5 @@
 /**
- * Icon resolution tests – Lucide stroke icons, Simple Icons brand fills, and full XulbuX tech stack coverage (`src/svg/icons.ts`).
+ * Icon resolution tests – Bundled stroke and brand icon resolution, aliases, bounded caching, and ink bounds (`src/svg/icons.ts`).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -49,7 +49,7 @@ describe('resolveIcon', () => {
     expect(puzzleAlias.type).toBe('lucide');
   });
 
-  it('resolves Iconify brand/tech slugs with unified C/C++/C# hexagon style and all 60+ tech stack slugs', () => {
+  it('resolves brand and tech slugs with unified C/C++/C# hexagon style across the tech stack catalog', () => {
     const cIcon = requireDefined(resolveIcon('c', true), 'c brand icon');
     const cppIcon = requireDefined(resolveIcon('cpp', true), 'cpp brand icon');
     const csIcon = requireDefined(resolveIcon('cs', true), 'cs brand icon');

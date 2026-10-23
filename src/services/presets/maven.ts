@@ -1,5 +1,5 @@
 /**
- * Maven Central service preset – Latest artifact version from the Maven Central Solr search API (`/badge/maven/:group/:artifact/:metric`).
+ * Maven Central service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -15,8 +15,8 @@ interface MavenArtifactProjection {
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches a Maven coordinate identifier (ASCII letters, digits, dots, underscores, and hyphens). */
-const MAVEN_COORD_RX = /^[A-Za-z\d][A-Za-z\d._-]*$/;
+/** Matches a Maven coordinate identifier (ASCII letters, digits, dots, underscores, and hyphens; Excludes Lucene boolean operators). */
+const MAVEN_COORD_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d._-]*$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 

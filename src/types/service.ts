@@ -22,10 +22,7 @@ export interface Env {
 /** Raw numeric upstream value (number or numeric string), possibly missing. */
 export type RawCount = number | string | null | undefined;
 
-/**
- * Canonical download metric keys: `dd` = last day (`/day`), `dw` = last week (`/wk`), `dl` = last
- * month (`/mo`), `dq` = last 90 days (`/90d`), `dy` = last year (`/yr`), `dt` = all-time (no suffix).
- */
+/** Canonical download period metric keys shared across package registries. */
 export type DownloadMetricKey = 'dd' | 'dl' | 'dq' | 'dt' | 'dw' | 'dy';
 
 /**
@@ -96,7 +93,7 @@ export interface UpstreamRequestInit {
   extractKeys?: readonly string[];
   /** Additional request headers merged on top of the service headers. */
   headers?: Readonly<Record<string, string>>;
-  /** HTTP method (`'GET'` or `'POST'`; Defaults to `'GET'`). */
+  /** HTTP method used for the upstream request. */
   method?: 'GET' | 'POST';
   /** Optional custom transport (e.g., micro-batched GraphQL queries or cached short-circuits). */
   send?: UpstreamTransport;
@@ -184,10 +181,7 @@ export interface ScoreColorThreshold {
   minPercent: number;
 }
 
-/**
- * Configuration for a single metric within an upstream service preset (built with the typed
- * factories in `src/services/metrics.ts`, which guarantee that `transform` matches `endpoint`).
- */
+/** Configuration for a single metric within an upstream service preset, pairing an endpoint with a typed payload transform. */
 export interface ServiceMetricConfig extends MetricPresentation {
   /** Upstream endpoint and cache projection. */
   endpoint: MetricEndpoint;
@@ -195,12 +189,7 @@ export interface ServiceMetricConfig extends MetricPresentation {
   transform: MetricTransform;
 }
 
-/**
- * Owner segment handling of a service preset route (derived from `ServiceRoute`, used by the builder).
- * - `'none'`: Only `/badge/:service/:target/:metric` is valid.
- * - `'optional'`: Both 3-segment and 4-segment routes are valid.
- * - `'required'`: Only `/badge/:service/:owner/:target/:metric` is valid.
- */
+/** Owner segment requirement mode of a service preset route. */
 export type ServiceOwnerMode = 'none' | 'optional' | 'required';
 
 /** Owner path segment of a service preset route. */
@@ -245,7 +234,7 @@ export interface ServiceRoute {
   target: ServiceTargetSegment;
 }
 
-/** Documentation metadata used to generate the `/docs/services` route reference table. */
+/** Documentation metadata for a registered service preset. */
 export interface ServiceDocs {
   /** Short explanation of the available metrics. */
   description: string;
@@ -255,16 +244,16 @@ export interface ServiceDocs {
 
 /**
  * Declarative definition for an external service (e.g., `gh`, `pypi`); `M` is the union of
- * canonical metric keys, so alias targets are checked at compile time (see `defineService`).
+ * canonical metric keys, so alias targets are checked at compile time.
  */
 export interface ServiceDefinition<M extends string = string> {
   /** Returns additional upstream request headers (e.g., an `Authorization` token). */
   buildHeaders?: (env: Env) => Readonly<Record<string, string>>;
-  /** Documentation metadata for the `/docs/services` reference table. */
+  /** Documentation metadata for the service reference table. */
   docs: ServiceDocs;
   /**
    * Service-specific alternative metric slugs mapped to their canonical metric slug; They extend
-   * and override the global default aliases of the fetcher (e.g., `l` -> `license`).
+   * and override the global default metric aliases (e.g., `l` -> `license`).
    */
   metricAliases?: Readonly<Record<string, NoInfer<M>>>;
   /** Map of canonical metric slugs to their endpoint and transformer definitions. */

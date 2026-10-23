@@ -20,6 +20,7 @@ export function initSidebarDrawer(
   if (!sidebarDrawer) {
     return;
   }
+  const sidebarToggle = document.querySelector<HTMLElement>('.sidebar-toggle');
   const sidebarBgElements = document.querySelectorAll(
     '.skip-link, .site-header, .page-main, .site-footer'
   );
@@ -44,11 +45,14 @@ export function initSidebarDrawer(
     }
     if (drawerQuery.matches) {
       sidebarDrawer.setAttribute('popover', '');
-      setSidebarBgInert(isPopoverOpen(sidebarDrawer));
+      const isOpen = isPopoverOpen(sidebarDrawer);
+      setSidebarBgInert(isOpen);
+      sidebarToggle?.setAttribute('aria-expanded', String(isOpen));
     } else {
       closePopover(sidebarDrawer);
       sidebarDrawer.removeAttribute('popover');
       setSidebarBgInert(false);
+      sidebarToggle?.setAttribute('aria-expanded', 'false');
     }
   }
 
@@ -57,6 +61,7 @@ export function initSidebarDrawer(
   sidebarDrawer.addEventListener('toggle', (event) => {
     const isOpen = (event as ToggleEvent).newState === 'open';
     setSidebarBgInert(isOpen && drawerQuery.matches);
+    sidebarToggle?.setAttribute('aria-expanded', String(isOpen && drawerQuery.matches));
     if (isOpen) {
       const focusTarget = sidebarDrawer.querySelector(
         '.sidebar-link.is-active, .sidebar-link, .sidebar-close'
@@ -64,6 +69,15 @@ export function initSidebarDrawer(
       if (focusTarget instanceof HTMLElement) {
         focusTarget.focus();
       }
+    } else if (
+      drawerQuery.matches &&
+      sidebarToggle &&
+      (document.activeElement === null ||
+        document.activeElement === document.body ||
+        sidebarDrawer.contains(document.activeElement))
+    ) {
+      // `.site-header` was `inert` during `hidePopover()`, so restore focus to `.sidebar-toggle` once un-inerted:
+      sidebarToggle.focus();
     }
   });
   sidebarDrawer.addEventListener('focusout', (event) => {

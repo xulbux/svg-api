@@ -1,5 +1,5 @@
 /**
- * pub.dev service preset – Dart/Flutter package version, likes, pub points, and 30-day downloads (`/badge/pub/:pkg/:metric`).
+ * pub.dev service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

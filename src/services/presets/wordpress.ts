@@ -1,5 +1,5 @@
 /**
- * WordPress service presets – Plugin and theme version, PHP/WordPress requirements, active installs, all-time downloads, and rating from the WordPress.org API (`/badge/wp/:plugin/:metric`, `/badge/wp-theme/:theme/:metric`).
+ * WordPress service presets – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

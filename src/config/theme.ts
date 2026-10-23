@@ -45,7 +45,7 @@ const CHROMA_SEARCH_STEPS = 24;
 /** Upper bound for OKLCH chroma search. */
 const MAX_SEARCH_CHROMA = 0.4;
 
-/** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */
+/** Official Tailwind CSS v4 OKLCH color scales for every supported chromatic and neutral family, sorted alphabetically. */
 const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> = {
   amber: {
     300: { chroma: 0.169, hue: 91.605, lightness: 87.9 },
@@ -187,8 +187,8 @@ const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> 
 };
 
 /**
- * All 22 Tailwind v4 theme color names in canonical rainbow + neutral order (a literal tuple, so
- * `test/routes.test.ts` can assert at the type level that it covers every `ThemeColorName`).
+ * Every Tailwind v4 theme color name in canonical rainbow + neutral order (a literal tuple, so
+ * tests can assert at the type level that it covers every `ThemeColorName`).
  */
 export const THEME_COLOR_NAMES = [
   'red',
@@ -390,12 +390,15 @@ export const BASE_DARK: BaseDarkPalette = {
   textPrimary: ISOLUX_UI.foreground.dark,
 };
 
+/** Default Tailwind v4 theme color token when `?color=` is omitted or unrecognized. */
+export const DEFAULT_THEME_COLOR: ThemeColorName = 'indigo';
+
 /** Named Tailwind v4 theme color palettes, lazily computed in OKLCH on first access. */
 export const THEMES: Record<ThemeColorName, ThemePalette> = createLazyPaletteMap(
   (palette) => palette
 );
 
-/** Hex colors for animated pulsing status indicator dots across all 22 Tailwind v4 families. */
+/** Hex colors for animated pulsing status indicator dots across every Tailwind v4 family. */
 export const DOT_COLORS: Record<DotState, string> = createLazyPaletteMap(
   (palette) => palette.glowColor
 );
@@ -403,7 +406,7 @@ export const DOT_COLORS: Record<DotState, string> = createLazyPaletteMap(
 /**
  * Check whether an untrusted, already normalized key is a `ThemeColorName` (inherited keys like `constructor` are rejected).
  * @param key   Candidate color token (trimmed and lower-cased by the caller).
- * @returns `true` when `key` names one of the 22 Tailwind v4 color families.
+ * @returns `true` when `key` names a supported Tailwind v4 color family.
  */
 export function isThemeColorName(key: string): key is ThemeColorName {
   return Object.hasOwn(TAILWIND_V4_SCALES, key);
@@ -427,7 +430,7 @@ export function resolveOptionalColor(input?: string | null): ThemeColorName | un
  */
 export function resolveColor(
   input?: string | null,
-  fallback: ThemeColorName = 'indigo'
+  fallback: ThemeColorName = DEFAULT_THEME_COLOR
 ): ThemeColorName {
   return resolveOptionalColor(input) ?? fallback;
 }

@@ -3,7 +3,7 @@
  */
 
 import { WHITE } from '@/config/palette';
-import { SITE_ORIGIN } from '@/config/site';
+import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { getSiteAssetUrl } from '@/site/assets';
 import { Footer } from '@/site/components/Footer';
 import { HeaderNav } from '@/site/components/HeaderNav';
@@ -11,24 +11,29 @@ import { Sidebar } from '@/site/components/Sidebar';
 import { serializeInlineJson, UiSprite } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment, JsxChild } from '@/site/jsx';
+import { OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START, DARK_BG, LIGHT_BG } from '@/site/styles';
 import { resolveIcon } from '@/svg/icons';
-import type { NavPageId, PageLayoutOptions, PageSidebar } from '@/types';
+import type { NavPageId, PageSidebar } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<PageLayout />` document shell component. */
 export interface PageLayoutProps {
-  /** Active top-level navigation tab (`'home'`, `'builder'`, or `'docs'`). */
+  /** Active top-level navigation tab. */
   readonly activeNav: NavPageId;
-  /** Canonical path starting with `/` (e.g., `'/'`, `'/docs'`, `'/docs/badges'`, `'/builder/badge'`). */
-  readonly canonicalPath: string;
+  /** Canonical path starting with `/` (omitted on `noindex` error pages). */
+  readonly canonicalPath?: string | undefined;
   /** Main content children rendered inside `<main id="main-content">`. */
   readonly children?: JsxChild;
   /** Page meta description for `<meta name="description">` and `og:description`. */
   readonly description: string;
   /** Optional extra body nodes or raw HTML placed before `</body>` (e.g., builder schema JSON and script). */
   readonly extraBody?: JsxChild;
+  /** Whether to instruct search engines not to index the page (e.g., `404` responses). */
+  readonly isNoIndex?: boolean | undefined;
+  /** Optional Schema.org JSON-LD graph or entity object serialized into `<script type="application/ld+json">`. */
+  readonly jsonLd?: Readonly<Record<string, unknown>> | undefined;
   /** Optional grouped left sidebar configuration (renders a full-width page when omitted). */
   readonly sidebar?: PageSidebar | undefined;
   /** Full `<title>` and `og:title` text. */
@@ -52,6 +57,12 @@ const THEME_COLORS: Readonly<Record<'dark' | 'light', string>> = { dark: DARK_BG
 /** Allowed preview stage background values (`'auto'` follows the page theme and removes `data-preview-bg`). */
 const PREVIEW_BG_VALUES: readonly string[] = ['auto', 'inverse'];
 
+/** Accessible description of the OpenGraph social preview card. */
+const OG_IMAGE_ALT = `${SITE_HOST} – Dynamic SVG graphics and live repository telemetry at the edge.`;
+
+/** Memoized inline `<head>` script body (`undefined` until first accessed). */
+let headScriptBodyCache: string | undefined = undefined;
+
 /** Memoized blocking `<head>` script (`undefined` until first rendered). */
 let headScriptHtmlCache: string | undefined = undefined;
 
@@ -63,16 +74,22 @@ let faviconSvgCache: string | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Build (once per isolate) the exact JavaScript body inside the `<head>` preference script. */
+function buildHeadScriptBody(): string {
+  if (headScriptBodyCache === undefined) {
+    const previewBgValues = serializeInlineJson(PREVIEW_BG_VALUES);
+    const themeColors = serializeInlineJson(THEME_COLORS);
+    headScriptBodyCache = `try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;document.querySelectorAll('meta[name="theme-color"]').forEach(function(meta){meta.content=${themeColors}[storedScheme];});}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}`;
+  }
+  return headScriptBodyCache;
+}
+
 /**
  * Render (once per isolate) the render-blocking `<head>` script that applies stored, whitelisted preferences
  * (color scheme incl. the `theme-color` meta tags, preview background) before first paint.
  */
 function renderHeadScript(): string {
-  if (headScriptHtmlCache === undefined) {
-    const previewBgValues = serializeInlineJson(PREVIEW_BG_VALUES);
-    const themeColors = serializeInlineJson(THEME_COLORS);
-    headScriptHtmlCache = `<script>try{var storedScheme=localStorage.getItem('${COLOR_SCHEME_STORAGE_KEY}');if(storedScheme==='dark'||storedScheme==='light'){document.querySelector('meta[name="color-scheme"]').content=storedScheme;document.querySelectorAll('meta[name="theme-color"]').forEach(function(meta){meta.content=${themeColors}[storedScheme];});}var storedPreviewBg=localStorage.getItem('${PREVIEW_BG_STORAGE_KEY}');if(${previewBgValues}.indexOf(storedPreviewBg)>0){document.documentElement.setAttribute('data-preview-bg',storedPreviewBg);}}catch{}</script>`;
-  }
+  headScriptHtmlCache ??= `<script>${buildHeadScriptBody()}</script>`;
   return headScriptHtmlCache;
 }
 
@@ -89,6 +106,15 @@ function renderSiteConfig(): string {
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Return (once per isolate) the exact JavaScript body inside the `<head>` color-scheme / preview-bg script
+ * (also hashed by the site security test to guard the `Content-Security-Policy` `script-src` SHA-256 allowlist).
+ * @returns Inline JavaScript source without surrounding `<script>` tags.
+ */
+export function getHeadScriptBody(): string {
+  return buildHeadScriptBody();
+}
 
 /**
  * Render (once per isolate) the standalone `32x32` SVG favicon matching the navbar brand mark (indigo gradient squircle with Lucide `sparkles`).
@@ -124,7 +150,8 @@ export function renderFaviconSvg(): string {
  * @returns Complete `<!DOCTYPE html><html>...</html>` JSX fragment.
  */
 export function PageLayout(props: PageLayoutProps): HtmlFragment {
-  const canonicalUrl = `${SITE_ORIGIN}${props.canonicalPath}`;
+  const canonicalUrl =
+    props.canonicalPath && !props.isNoIndex ? `${SITE_ORIGIN}${props.canonicalPath}` : undefined;
   return (
     <>
       {raw('<!DOCTYPE html>\n')}
@@ -145,16 +172,45 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           />
           {raw(renderHeadScript())}
           <link rel="expect" href="#main-content" blocking="render" />
+          <link
+            rel="preload"
+            href="/assets/Geist-Regular.ttf"
+            as="font"
+            type="font/ttf"
+            crossorigin="anonymous"
+          />
+          <link
+            rel="preload"
+            href="/assets/Geist-Bold.ttf"
+            as="font"
+            type="font/ttf"
+            crossorigin="anonymous"
+          />
           <title>{props.title}</title>
           <meta name="description" content={props.description} />
-          <link rel="canonical" href={canonicalUrl} />
+          {props.isNoIndex ? <meta name="robots" content="noindex" /> : undefined}
+          {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : undefined}
           <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+          <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
           <meta property="og:type" content="website" />
-          <meta property="og:site_name" content="svg.xul.is" />
+          <meta property="og:locale" content="en_US" />
+          <meta property="og:site_name" content={SITE_HOST} />
           <meta property="og:title" content={props.title} />
           <meta property="og:description" content={props.description} />
-          <meta property="og:url" content={canonicalUrl} />
-          <meta name="twitter:card" content="summary" />
+          {canonicalUrl ? <meta property="og:url" content={canonicalUrl} /> : undefined}
+          <meta property="og:image" content={OG_IMAGE_PNG_URL} />
+          <meta property="og:image:type" content="image/png" />
+          <meta property="og:image:width" content={String(OG_IMAGE_WIDTH)} />
+          <meta property="og:image:height" content={String(OG_IMAGE_HEIGHT)} />
+          <meta property="og:image:alt" content={OG_IMAGE_ALT} />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:title" content={props.title} />
+          <meta name="twitter:description" content={props.description} />
+          <meta name="twitter:image" content={OG_IMAGE_PNG_URL} />
+          <meta name="twitter:image:alt" content={OG_IMAGE_ALT} />
+          {props.jsonLd ? (
+            <script type="application/ld+json">{raw(serializeInlineJson(props.jsonLd))}</script>
+          ) : undefined}
           <link rel="stylesheet" href={getSiteAssetUrl('site.css')} />
           <script src={getSiteAssetUrl('site.js')} defer={true}></script>
         </head>
@@ -176,24 +232,5 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
         </body>
       </html>
     </>
-  );
-}
-
-/**
- * Render the complete HTML document shell with FOUC-free color-scheme support, view transitions, social/canonical meta, the header, and an optional sidebar.
- * @param options   Page layout options (`activeNav`, `title`, `description`, `canonicalPath`, `bodyHtml`, optional `sidebar` and `extraBodyHtml`).
- * @returns Complete HTML document string.
- */
-export function renderPageLayout(options: PageLayoutOptions): string {
-  return renderHtml(
-    <PageLayout
-      activeNav={options.activeNav}
-      canonicalPath={options.canonicalPath}
-      description={options.description}
-      extraBody={options.extraBodyHtml ? raw(options.extraBodyHtml) : undefined}
-      sidebar={options.sidebar}
-      title={options.title}>
-      {raw(options.bodyHtml)}
-    </PageLayout>
   );
 }

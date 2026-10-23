@@ -1,5 +1,5 @@
 /**
- * Zenodo service preset – Record version, license, downloads, unique downloads, views, and DOI (`/badge/zenodo/:record/:metric`).
+ * Zenodo service preset – Live upstream metrics and redirect transformations.
  *
  * Statistics cover every version of the record; Concept record ids redirect to the latest version.
  */

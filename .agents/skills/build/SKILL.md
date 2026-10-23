@@ -17,7 +17,7 @@ pnpm run check
 
 ## 2. Local Preview & Documentation Server (`localhost:8787`)
 
-In accordance with `AGENTS.md` Section 4, keep `src/site/` and the builder schemas synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview all routes (`/` homepage, `/docs`, `/docs/:section`, `/builder`, `/builder/:kind`, `/assets/*`, `/preview`, `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/quote/*`) exactly as hosted on `svg.xul.is`:
+In accordance with `AGENTS.md` Section 4, keep `src/site/` and the builder schemas synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview the website, documentation (`DOCS_PAGES`), interactive builders (`BUILDER_PAGES`), static assets, and all live SVG routes (`SVG_ROUTES` in `src/routes/svg.ts`) exactly as hosted on `svg.xul.is`:
 
 ```bash
 pnpm run dev

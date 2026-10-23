@@ -3,7 +3,6 @@
  */
 
 import { UiIcon } from '@/site/components/UiIcon';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import type { PageSidebar } from '@/types';
 
@@ -61,13 +60,4 @@ export function Sidebar(sidebar: PageSidebar): HtmlFragment {
       <nav aria-label={sidebar.label}>{groupSections}</nav>
     </aside>
   );
-}
-
-/**
- * Render the grouped left sidebar as an HTML string.
- * @param sidebar   Sidebar configuration.
- * @returns Sidebar HTML string.
- */
-export function renderSidebar(sidebar: PageSidebar): string {
-  return renderHtml(<Sidebar {...sidebar} />);
 }

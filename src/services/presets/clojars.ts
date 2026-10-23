@@ -1,5 +1,5 @@
 /**
- * Clojars service preset – Clojure artifact version, total downloads, and license (`/badge/clojars/[:group/]:artifact/:metric`).
+ * Clojars service preset – Live upstream metrics and redirect transformations.
  *
  * The group segment may be omitted for artifacts whose group equals the artifact name (e.g., `hiccup`).
  */
@@ -22,11 +22,19 @@ interface ClojarsLicense {
   name?: string;
 }
 
+/** Recent release entry returned by the Clojars artifact API (`recent_versions[]`, newest first). */
+interface ClojarsRecentVersion {
+  /** Downloads of this specific release version. */
+  downloads?: number;
+  /** Release version string. */
+  version?: string;
+}
+
 /** Partial Clojars artifact API payload (`clojars.org/api/artifacts/[:group/]:artifact`). */
 interface ClojarsArtifactPayload {
   /** All-time downloads of every version. */
   downloads: number;
-  /** Per-version download counts (`{ "1.0.0": 4210, … }`). */
+  /** Legacy per-version download counts (`{ "1.0.0": 4210, … }`). */
   downloads_per_version?: Record<string, number>;
   /** Latest non-snapshot release, or `null` when only snapshots exist. */
   latest_release: string | null;
@@ -34,6 +42,8 @@ interface ClojarsArtifactPayload {
   latest_version: string;
   /** Declared licenses. */
   licenses: ClojarsLicense[];
+  /** Recent versions with per-release download counts (newest first). */
+  recent_versions?: ClojarsRecentVersion[];
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -48,19 +58,27 @@ const CLOJARS_ENDPOINT = createEndpoint({
     'latest_release',
     'latest_version',
     'licenses',
+    'recent_versions',
   ]),
 });
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Read the per-version download series and latest-vs-previous release delta from `downloads_per_version`. */
+/** Read the chronological per-version download series and latest-vs-previous release delta from `recent_versions` (or `downloads_per_version`). */
 function buildClojarsDownloadSpecials(artifact: Partial<ClojarsArtifactPayload>) {
-  const map = isJsonObject(artifact.downloads_per_version)
-    ? artifact.downloads_per_version
-    : undefined;
   const series: number[] = [];
-  if (map) {
-    for (const value of Object.values(map)) {
+  if (Array.isArray(artifact.recent_versions)) {
+    for (let i = artifact.recent_versions.length - 1; i >= 0; i -= 1) {
+      const entry = artifact.recent_versions[i];
+      const count = isJsonObject(entry) ? readFiniteNumber(entry.downloads) : undefined;
+      if (count !== undefined) {
+        series.push(count);
+      }
+    }
+  }
+  if (series.length < 2 && isJsonObject(artifact.downloads_per_version)) {
+    series.length = 0;
+    for (const value of Object.values(artifact.downloads_per_version)) {
       const count = readFiniteNumber(value);
       if (count !== undefined) {
         series.push(count);

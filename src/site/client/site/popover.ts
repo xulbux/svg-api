@@ -44,9 +44,14 @@ export function computePopoverPlacement(
   options: PopoverPlacementOptions
 ): PopoverPlacement {
   const gap = options.gap ?? VIEWPORT_MARGIN;
-  const width = options.isWidthMatched
-    ? Math.max(popoverSize.width, anchorRect.width)
-    : popoverSize.width;
+  const maxViewportWidth = Math.max(0, viewportSize.width - VIEWPORT_MARGIN * 2);
+  const matchedMinWidth = options.isWidthMatched
+    ? Math.min(anchorRect.width, maxViewportWidth)
+    : undefined;
+  const width =
+    matchedMinWidth === undefined
+      ? popoverSize.width
+      : Math.max(popoverSize.width, matchedMinWidth);
   let top = anchorRect.bottom + gap;
   const hasRoomBelow = top + popoverSize.height <= viewportSize.height - VIEWPORT_MARGIN;
   const aboveTop = anchorRect.top - gap - popoverSize.height;
@@ -60,5 +65,5 @@ export function computePopoverPlacement(
     VIEWPORT_MARGIN,
     Math.min(preferredLeft, viewportSize.width - VIEWPORT_MARGIN - width)
   );
-  return { left, minWidth: options.isWidthMatched ? anchorRect.width : undefined, top };
+  return { left, minWidth: matchedMinWidth, top };
 }

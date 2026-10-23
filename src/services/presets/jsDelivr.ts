@@ -1,5 +1,5 @@
 /**
- * jsDelivr service preset – CDN request hits for unscoped and scoped npm packages (`/badge/jsdelivr/[:scope/]:pkg/:metric`).
+ * jsDelivr service preset – Live upstream metrics and redirect transformations.
  */
 
 import {
@@ -53,7 +53,7 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const hits = isJsonObject(data.hits) ? data.hits : undefined;
+  const hits = isJsonObject(data.hits) ? data.hits : data;
   const prev = isJsonObject(hits?.prev) ? hits.prev : undefined;
   const total = readFiniteNumber(hits?.total);
   const prevTotal = readFiniteNumber(prev?.total);

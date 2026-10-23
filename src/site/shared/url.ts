@@ -1,5 +1,5 @@
 /**
- * Shared URL builder & parser helpers – Path segment encoding, composite parameter formatting, URL synthesis, and route prefill parsing shared by the builder client and test suite.
+ * Shared URL builder & parser helpers – Path segment encoding, composite parameter formatting, URL synthesis, and route prefill parsing.
  */
 
 import type {
@@ -28,10 +28,13 @@ interface ParsedRoute {
 /** Maximum number of columns packed onto a single horizontal `/stack` band when auto-grouping by category. */
 const MAX_STACK_BAND_COLUMNS = 8;
 
+/** Maximum per-group column count accepted by `?perline=` when composing `/stack` bands. */
+const MAX_PER_LINE_COLUMNS = 20;
+
 /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
 const STATIC_ANIM_PAIR = 'anim=none';
 
-/** Normalized `?center=` values that select the vertical quote layout (mirrors `resolveQuoteLayout`; Drift-tested). */
+/** Normalized `?center=` values treated as truthy layout or alignment flags. */
 const CENTER_FLAG_VALUES: ReadonlySet<string> = new Set(['1', 'true', 'yes']);
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -213,7 +216,7 @@ function formatStackBand(
   return bandGroups.length > 1 && totalCols > maxBandCols ? undefined : groupStrings.join('|');
 }
 
-/** Parse a `?perline=` input into a positional array of clamped (`1..20`) column counts, dropping trailing holes. */
+/** Parse a `?perline=` input into a positional array of clamped column counts, dropping trailing holes. */
 function parsePerLineValues(rawPerLine: string): (number | undefined)[] {
   const values: (number | undefined)[] = [];
   for (const part of rawPerLine.trim().split(LIST_SEPARATOR_RX)) {
@@ -221,7 +224,9 @@ function parsePerLineValues(rawPerLine: string): (number | undefined)[] {
     const parsed = cleaned ? Number(cleaned) : Number.NaN;
     const rounded = Math.round(parsed);
     values.push(
-      Number.isFinite(parsed) && parsed >= 1 ? Math.min(20, Math.max(1, rounded)) : undefined
+      Number.isFinite(parsed) && parsed >= 1
+        ? Math.min(MAX_PER_LINE_COLUMNS, Math.max(1, rounded))
+        : undefined
     );
   }
   while (values.length > 0 && values.at(-1) === undefined) {
@@ -277,7 +282,7 @@ function composeStackWithExplicitPerLine(
   return explicitBands.join(';');
 }
 
-/** Build a `/<prefix>[/:label[/:value]]` path (badges and buttons; Empty trailing segments are omitted). */
+/** Build a `/<prefix>[/:label[/:value]]` path, omitting empty trailing segments. */
 function buildLabelValuePathname(prefix: string, label: string, value: string): string {
   if (!label && !value) {
     return `/${prefix}`;
@@ -354,7 +359,12 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
   }
 }
 
-/** Check whether a typing builder field applies to the currently selected container layout. */
+/**
+ * Check whether a typing builder field applies to the currently selected container layout.
+ * @param fieldId       Builder field ID.
+ * @param layoutValue   Current `layout` field value.
+ * @returns `true` when the field applies to the layout.
+ */
 function isTypingFieldActiveForLayout(fieldId: string, layoutValue: string): boolean {
   const effectiveLayout = layoutValue.trim().toLowerCase() || 'window';
   if (fieldId === 'title') {
@@ -400,6 +410,79 @@ function readSegmentFallback(schema: BuilderSchema, query: URLSearchParams, id: 
   return readQueryParam(query, findField(schema, id)?.aliases ?? []);
 }
 
+/** Resolve a single motion token against optional `anim` field options (case-insensitive, mapping aliases). */
+function resolveAnimOptionToken(
+  token: string,
+  options: readonly BuilderOption[] | undefined
+): string | undefined {
+  if (token === 'default') {
+    return '';
+  }
+  if (!options) {
+    return token;
+  }
+  for (const option of options) {
+    if (option.value === token || option.aliases?.includes(token)) {
+      return option.value;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Compose an `?anim=` value from the sheen toggle and up to two icon motions.
+ * @param hasSheen   Whether the surface sheen is enabled.
+ * @param left       Left (or only) icon motion (`''` for static).
+ * @param right      Right icon motion (`''` for static).
+ * @returns Serialized `?anim=` value.
+ */
+function composeAnim(hasSheen: boolean, left: string, right: string): string {
+  const tokens: string[] = hasSheen ? ['sheen'] : [];
+  if (right) {
+    tokens.push(left || 'default', right);
+  } else if (left) {
+    tokens.push(left);
+  }
+  return tokens.join(',');
+}
+
+/**
+ * Split an `?anim=` value into the sheen toggle and icon motions.
+ * @param value     Serialized `?anim=` value.
+ * @param options   Optional `anim` field options used to canonicalize aliases and reject unknown tokens.
+ * @returns Sheen flag and left/right icon motion tokens.
+ */
+function splitAnim(
+  value: string,
+  options?: readonly BuilderOption[]
+): { hasSheen: boolean; left: string; right: string } {
+  const motions: string[] = [];
+  let hasSheen = false;
+  for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
+    if (token === 'sheen') {
+      if (hasSheen && options) {
+        return { hasSheen: false, left: '', right: '' };
+      }
+      hasSheen = true;
+    } else if (token) {
+      const resolved = resolveAnimOptionToken(token, options);
+      if (resolved === undefined) {
+        return { hasSheen: false, left: '', right: '' };
+      }
+      motions.push(resolved);
+    }
+  }
+  if (options && motions.length > 2) {
+    return { hasSheen: false, left: '', right: '' };
+  }
+  const left = motions[0] ?? '';
+  const right = motions[1] ?? '';
+  if (hasSheen && !right && left === 'none') {
+    return { hasSheen, left: '', right: '' };
+  }
+  return { hasSheen, left, right };
+}
+
 /** Normalize a prefilled option value like the Worker parsers: Case-insensitive, aliases map onto their option. */
 function normalizeOptionValue(field: BuilderField, raw: string): string {
   if (field.control === 'number') {
@@ -411,6 +494,13 @@ function normalizeOptionValue(field: BuilderField, raw: string): string {
     return clean && (findOption(field.options, clean) || Number.isFinite(Number(clean)))
       ? clean
       : '';
+  }
+  if (field.control === 'anim') {
+    const anim = splitAnim(raw, field.options);
+    if (field.animScope === 'stack' && anim.right) {
+      return '';
+    }
+    return composeAnim(anim.hasSheen, anim.left, field.animScope === 'pair' ? anim.right : '');
   }
   if (field.control !== 'select' && field.control !== 'color') {
     return raw;
@@ -570,20 +660,23 @@ function buildServiceRedirectUrl(schema: BuilderSchema, state: BuilderState): st
 // -------------------------------------- PUBLIC API -------------------------------------
 
 export {
+  composeAnim,
   decodeSegment,
   encodeSegment,
   findField,
   findOption,
   findService,
+  isTypingFieldActiveForLayout,
   normalizeStackGroups,
   readState,
+  splitAnim,
 };
 
 /**
  * Compose an `?icon=` value from its left and right slugs (`none,right` or the `,right` preset shorthand).
  * @param left            Left slug (`''` for none).
  * @param right           Right slug (`''` for none).
- * @param hasPresetIcon   Whether an empty left slug keeps a preset icon (service badges).
+ * @param hasPresetIcon   Whether an empty left slug keeps a preset icon.
  * @returns Serialized `?icon=` value.
  */
 export function composeIconPair(left: string, right: string, hasPresetIcon: boolean): string {
@@ -598,7 +691,7 @@ export function composeIconPair(left: string, right: string, hasPresetIcon: bool
 /**
  * Split an `?icon=` value into its left and right slugs.
  * @param value           Serialized value.
- * @param hasPresetIcon   Whether `none` is meaningful on the left (service badges).
+ * @param hasPresetIcon   Whether `none` is meaningful on the left.
  * @returns `[left, right]` icon slugs.
  */
 export function splitIconPair(
@@ -650,41 +743,6 @@ export function splitHint(value: string): { icon: string; text: string } {
     return { icon: icon.toLowerCase() === 'none' ? '' : icon, text };
   }
   return { icon: '', text: trimmed };
-}
-
-/**
- * Compose an `?anim=` value from the sheen toggle and up to two icon motions.
- * @param hasSheen   Whether the surface sheen is enabled.
- * @param left       Left (or only) icon motion (`''` for static).
- * @param right      Right icon motion (`''` for static).
- * @returns Serialized `?anim=` value.
- */
-export function composeAnim(hasSheen: boolean, left: string, right: string): string {
-  const tokens: string[] = hasSheen ? ['sheen'] : [];
-  if (right) {
-    tokens.push(left || 'default', right);
-  } else if (left) {
-    tokens.push(left);
-  }
-  return tokens.join(',');
-}
-
-/**
- * Split an `?anim=` value into the sheen toggle and icon motions.
- * @param value   Serialized `?anim=` value.
- * @returns Sheen flag and left/right icon motion tokens.
- */
-export function splitAnim(value: string): { hasSheen: boolean; left: string; right: string } {
-  const motions: string[] = [];
-  let hasSheen = false;
-  for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
-    if (token === 'sheen') {
-      hasSheen = true;
-    } else if (token) {
-      motions.push(token === 'default' ? '' : token);
-    }
-  }
-  return { hasSheen, left: motions[0] ?? '', right: motions[1] ?? '' };
 }
 
 /**

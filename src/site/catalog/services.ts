@@ -4,14 +4,86 @@
 
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { THEME_COLOR_NAMES } from '@/config/theme';
+import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
+import { BADGE_QUERY_PARAMS } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
+import { COVERAGE_THRESHOLDS, MAX_SCORECARD_SCORE, SCORECARD_THRESHOLDS } from '@/services/metrics';
 import { formatVariantValues } from '@/site/glossary';
-import type { ParamTableRow, ServiceDefinition, ShowcaseCardConfig } from '@/types';
+import type {
+  ParamTableRow,
+  ScoreColorThreshold,
+  ServiceDefinition,
+  ShowcaseCardConfig,
+} from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Generic service preset route shown in the `/docs/services` header (each exact route is listed in its reference table). */
 export const SERVICE_ROUTE_PATTERN = '/badge/:service/[:owner/]:target/:metric';
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Format upper score color thresholds as `'Label >= X color, >= Y color'`. */
+function formatUpperThresholds(
+  label: string,
+  thresholds: readonly ScoreColorThreshold[],
+  scaleMax: number,
+  unitSuffix: string
+): string {
+  const parts: string[] = [];
+  for (const threshold of thresholds) {
+    if (threshold.minPercent > 0) {
+      const scaledValue = (threshold.minPercent / 100) * scaleMax;
+      parts.push(`>= ${scaledValue}${unitSuffix} ${threshold.color}`);
+    }
+  }
+  return `${label} ${parts.join(', ')}`;
+}
+
+/** Build the route pattern of a service preset (e.g., `/badge/npm/[:scope/]:pkg/:metric`). */
+function buildServiceRoutePattern(key: string, service: ServiceDefinition): string {
+  const { owner, target } = service.route;
+  if (!owner) {
+    return `/badge/${key}/${target.placeholder}/:metric`;
+  }
+  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
+  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
+}
+
+/** Format a service's metrics with their effective aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
+function formatServiceMetricValues(service: ServiceDefinition): string {
+  const aliasesByMetric = new Map<string, string[]>();
+  for (const [alias, metric] of listServiceMetricAliases(service)) {
+    const aliases = aliasesByMetric.get(metric);
+    if (aliases) {
+      aliases.push(alias);
+    } else {
+      aliasesByMetric.set(metric, [alias]);
+    }
+  }
+  const metricValues: string[] = [];
+  for (const metric of Object.keys(service.metrics)) {
+    const aliases = aliasesByMetric.get(metric);
+    metricValues.push(aliases ? `${metric} [${aliases.join(', ')}]` : metric);
+  }
+  return metricValues.join(' | ');
+}
+
+/** Format the `Default` cell of a service route row (default owner, optional owner, or required owner). */
+function formatServiceDefaultValue(service: ServiceDefinition): string {
+  const { owner } = service.route;
+  const ownerMode = resolveServiceOwnerMode(service);
+  if (!owner || ownerMode === 'none') {
+    return '~–';
+  }
+  if (ownerMode === 'required') {
+    return `~${owner.placeholder} required`;
+  }
+  const defaultOwner = owner.resolveDefault?.();
+  return defaultOwner ? `${defaultOwner} (${owner.placeholder})` : `~${owner.placeholder} optional`;
+}
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /** Showcase cards for the dedicated `/docs/services` page (sample values; No network access). */
 export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
@@ -36,13 +108,15 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         alt: 'jsDelivr Monthly Hits Delta',
         path: '/badge/jsdelivr/jquery/hm?special=delta',
         sample: {
-          dates: {
-            '2026-03-01': 50_000_000,
-            '2026-03-02': 52_000_000,
-            '2026-03-03': 61_000_000,
-            '2026-03-04': 64_000_000,
+          hits: {
+            dates: {
+              '2026-03-01': 50_000_000,
+              '2026-03-02': 52_000_000,
+              '2026-03-03': 61_000_000,
+              '2026-03-04': 64_000_000,
+            },
+            total: 1_600_000_000,
           },
-          total: 1_600_000_000,
         },
       },
       {
@@ -158,13 +232,19 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Crates.io 90-Day Downloads', path: '/badge/crates/serde/dq', sample: '68.4M/90d' },
       { alt: 'Crates.io MSRV', path: '/badge/crates/serde/msrv', sample: 'v1.56' },
       { alt: 'Crates.io Size', path: '/badge/crates/serde/size', sample: '78.9 kB' },
+      {
+        alt: 'docs.rs Documentation Build',
+        path: '/badge/docsrs/serde/docs',
+        sample: { doc_status: true },
+      },
+      { alt: 'docs.rs Latest Release', path: '/badge/docsrs/serde/v', sample: 'v1.0.219' },
       { alt: 'Docker Pulls', path: '/badge/docker/alpine/pulls', sample: '1B' },
       { alt: 'Docker Stars', path: '/badge/docker/postgres/stars', sample: '14.2k' },
       { alt: 'Docker Last Updated', path: '/badge/docker/alpine/updated', sample: '2d ago' },
     ],
     subtitle:
-      'Rust crates.io package metrics (incl. MSRV and crate size) and Docker Hub container pull, star, and update counters.',
-    title: 'Crates.io & Docker Hub (/badge/crates/*, /badge/docker/*)',
+      'Rust crates.io package metrics (incl. MSRV and crate size), docs.rs documentation build status and latest version, and Docker Hub container pull, star, and update counters.',
+    title: 'Crates.io, docs.rs & Docker Hub (/badge/crates/*, /badge/docsrs/*, /badge/docker/*)',
   },
   {
     items: [
@@ -311,10 +391,25 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/badge/hf-dataset/HuggingFaceFW/fineweb/dl',
         sample: '328.7k/mo',
       },
+      {
+        alt: 'Hugging Face Space Likes',
+        path: '/badge/hf-space/gradio/hello_world/likes',
+        sample: '128',
+      },
+      {
+        alt: 'Hugging Face Space SDK',
+        path: '/badge/hf-space/gradio/hello_world/sdk',
+        sample: { sdk: 'gradio' },
+      },
+      {
+        alt: 'Hugging Face Space Stage',
+        path: '/badge/hf-space/gradio/hello_world/stage',
+        sample: { runtime: { stage: 'RUNNING' } },
+      },
     ],
     subtitle:
-      'Model and dataset downloads (30-day and all-time) and likes from the Hugging Face Hub.',
-    title: 'Hugging Face (/badge/hf/:owner/:model/:metric, /badge/hf-dataset/*)',
+      'Model and dataset downloads (30-day and all-time), likes, and Space SDK and runtime stage from the Hugging Face Hub.',
+    title: 'Hugging Face (/badge/hf/*, /badge/hf-dataset/*, /badge/hf-space/*)',
   },
   {
     items: [
@@ -386,8 +481,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         sample: { covered_percent: 65.88 },
       },
     ],
-    subtitle:
-      'Ring gauges colored by threshold: Coverage >= 80% emerald, >= 60% amber; Scorecard >= 7 emerald, >= 4 amber; Otherwise rose.',
+    subtitle: `${formatUpperThresholds('Ring gauges colored by threshold: Coverage', COVERAGE_THRESHOLDS, 100, '%')}; ${formatUpperThresholds('Scorecard', SCORECARD_THRESHOLDS, MAX_SCORECARD_SCORE, '')}; Otherwise ${COVERAGE_THRESHOLDS.at(-1)?.color ?? 'rose'}.`,
     title:
       'Scorecard, Codecov & Coveralls (/badge/scorecard/*, /badge/codecov/*, /badge/coveralls/*)',
   },
@@ -625,53 +719,6 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
   },
 ];
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Build the route pattern of a service preset (e.g., `/badge/npm/[:scope/]:pkg/:metric`). */
-function buildServiceRoutePattern(key: string, service: ServiceDefinition): string {
-  const { owner, target } = service.route;
-  if (!owner) {
-    return `/badge/${key}/${target.placeholder}/:metric`;
-  }
-  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
-  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
-}
-
-/** Format a service's metrics with their effective aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
-function formatServiceMetricValues(service: ServiceDefinition): string {
-  const aliasesByMetric = new Map<string, string[]>();
-  for (const [alias, metric] of listServiceMetricAliases(service)) {
-    const aliases = aliasesByMetric.get(metric);
-    if (aliases) {
-      aliases.push(alias);
-    } else {
-      aliasesByMetric.set(metric, [alias]);
-    }
-  }
-  const metricValues: string[] = [];
-  for (const metric of Object.keys(service.metrics)) {
-    const aliases = aliasesByMetric.get(metric);
-    metricValues.push(aliases ? `${metric} [${aliases.join(', ')}]` : metric);
-  }
-  return metricValues.join(' | ');
-}
-
-/** Format the `Default` cell of a service route row (default owner, optional owner, or required owner). */
-function formatServiceDefaultValue(service: ServiceDefinition): string {
-  const { owner } = service.route;
-  const ownerMode = resolveServiceOwnerMode(service);
-  if (!owner || ownerMode === 'none') {
-    return '~–';
-  }
-  if (ownerMode === 'required') {
-    return `~${owner.placeholder} required`;
-  }
-  const defaultOwner = owner.resolveDefault?.();
-  return defaultOwner ? `${defaultOwner} (${owner.placeholder})` : `~${owner.placeholder} optional`;
-}
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 /**
  * Build the route and metric reference rows for `/docs/services` from `SERVICES_CONFIG`.
  * @returns Parameter table rows.
@@ -686,6 +733,9 @@ export function buildServiceParamRows(): ParamTableRow[] {
       values: formatServiceMetricValues(service),
     });
   }
+  const standardBadgeParams = BADGE_QUERY_PARAMS.filter((param) => param !== 'label')
+    .map((param) => `?${param}=`)
+    .join(', ');
   rows.push(
     {
       defaultVal: '~service preset',
@@ -698,12 +748,11 @@ export function buildServiceParamRows(): ParamTableRow[] {
       description:
         'Auto-populates an inline widget from live upstream data on supported metrics when passed without a payload (or with :pulse / :static), hides a default preset widget with none, or overrides with custom data (<kind>:<payload>).',
       name: '?special=',
-      values: 'none | sparkline | bars | delta | bar | ring | steps | strip | <kind>:<payload>',
+      values: `none | ${SPECIAL_ELEMENT_KINDS.join(' | ')} | <kind>:<payload>`,
     },
     {
       defaultVal: '~service preset',
-      description:
-        'All standard badge query params (?variant=, ?color=, ?icon=, ?dot=, ?anim=, ?special=) apply; An empty ?icon= keeps the preset icon.',
+      description: `All standard badge query params (${standardBadgeParams}) apply; An empty ?icon= keeps the preset icon.`,
       name: '?variant= / ?color= / …',
       values: `${formatVariantValues()} (and ${THEME_COLOR_NAMES.length} colors)`,
     }

@@ -1,5 +1,5 @@
 /**
- * Elm service preset – Latest Elm package version and license (`/badge/elm/:author/:pkg/:metric`).
+ * Elm service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

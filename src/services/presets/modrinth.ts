@@ -1,5 +1,5 @@
 /**
- * Modrinth service preset – Minecraft project downloads, followers, latest supported game release, and license (`/badge/modrinth/:project/:metric`).
+ * Modrinth service preset – Live upstream metrics and redirect transformations.
  *
  * Every metric reads the compact project document; The multi-megabyte version list endpoint is
  * deliberately avoided.

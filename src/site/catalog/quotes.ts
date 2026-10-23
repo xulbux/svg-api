@@ -2,7 +2,14 @@
  * Quotes documentation catalog – Vertical and horizontal quote card showcase configs and parameter reference rows for `/docs/quotes`.
  */
 
-import { SIZE_TOKENS } from '@/routes/params';
+import { DEFAULT_THEME_COLOR } from '@/config/theme';
+import {
+  QUOTE_LAYOUT_TOKENS,
+  SIZE_TOKENS,
+  TRUTHY_FLAG_LIST,
+  VERTICAL_LAYOUT_TOKENS,
+} from '@/routes/params';
+import { DEFAULT_QUOTE_VARIANT } from '@/routes/svg';
 import {
   buildColorParamRow,
   buildSheenAnimParamRow,
@@ -10,7 +17,11 @@ import {
   ENCODED_CHAOS_QUOTE,
   formatRange,
 } from '@/site/catalog/shared';
+import { formatConjunctionList } from '@/site/glossary';
 import {
+  DEFAULT_HORIZONTAL_QUOTE_SIZE,
+  DEFAULT_QUOTE_LAYOUT,
+  DEFAULT_VERTICAL_QUOTE_SIZE,
   DEFAULT_VERTICAL_QUOTE_WIDTH,
   QUOTE_FONT_SIZE_RANGE,
   QUOTE_SIZE_MAP,
@@ -95,6 +106,7 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildQuoteParamRows(): ParamTableRow[] {
+  const verticalAliases = [...VERTICAL_LAYOUT_TOKENS].filter((token) => token !== 'vertical');
   return [
     {
       defaultVal: '~required',
@@ -116,29 +128,28 @@ export function buildQuoteParamRows(): ParamTableRow[] {
       name: '?text= / ?quote=',
       values: '~any string',
     },
-    buildVariantParamRow('2', 'Surface tier'),
+    buildVariantParamRow(DEFAULT_QUOTE_VARIANT, 'Surface tier'),
     {
-      defaultVal: 'horizontal',
-      description:
-        'Layout mode: horizontal (left accent bar) or vertical (centered watermarks); center and v are vertical aliases, and ?type= is an alias of ?layout= (an empty ?layout= falls through to ?type=).',
+      defaultVal: DEFAULT_QUOTE_LAYOUT,
+      description: `Layout mode: horizontal (left accent bar) or vertical (centered watermarks); ${formatConjunctionList(verticalAliases)} are vertical aliases, and ?type= is an alias of ?layout= (an empty ?layout= falls through to ?type=).`,
       name: '?layout= / ?type=',
-      values: 'horizontal | vertical | center | v',
+      values: [...QUOTE_LAYOUT_TOKENS, ...verticalAliases].join(' | '),
     },
     {
       defaultVal: '~false',
       description:
         'Shorthand for the vertical layout; Only read when ?layout= and ?type= are empty.',
       name: '?center=',
-      values: 'true | 1 | yes',
+      values: TRUTHY_FLAG_LIST.join(' | '),
     },
     {
-      defaultVal: `md (${QUOTE_SIZE_MAP.md}px) / lg (${QUOTE_SIZE_MAP.lg}px, vertical)`,
+      defaultVal: `${DEFAULT_HORIZONTAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_HORIZONTAL_QUOTE_SIZE]}px) / ${DEFAULT_VERTICAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_VERTICAL_QUOTE_SIZE]}px, vertical)`,
       description: 'Typography scale preset or custom pixel size.',
       name: '?size=',
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(QUOTE_FONT_SIZE_RANGE)}`,
     },
     buildColorParamRow(
-      'indigo',
+      DEFAULT_THEME_COLOR,
       'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
     ),
     {

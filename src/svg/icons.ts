@@ -1,5 +1,5 @@
 /**
- * Icon resolver – Resolves Lucide (stroke) and Iconify brand/tech (`@iconify-json/simple-icons`, `@iconify-json/devicon-plain`, and `@iconify-json/file-icons`) SVG paths and their exact horizontal ink bounds.
+ * Icon resolver – Resolves stroke and brand/tech vector icon paths and their exact horizontal ink bounds.
  */
 
 import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
@@ -80,21 +80,32 @@ interface ArcSegment {
 interface LazyIconCache {
   /** Plain stroked circle used when even the fallback slug cannot be resolved. */
   circle?: ResolvedIcon;
-  /** Translucent-ring `!` placeholder icon used for unknown icon slugs on `/icon`, `/badge`, and `/button`. */
+  /** Translucent-ring `!` placeholder icon used for unknown icon slugs outside stack tiles. */
   placeholder?: ResolvedIcon;
-  /** Standalone `!` placeholder icon used inside the translucent frame of unknown `/stack` tiles. */
+  /** Standalone `!` placeholder icon used inside the translucent frame of unknown stack tiles. */
   stackPlaceholder?: ResolvedIcon;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Scale factor normalizing `@iconify-json/devicon-plain`'s `128x128` coordinate space to `24x24` (`24 / 128 = 0.1875`). */
+/** Human-readable display names and package names of the bundled stroke and brand icon sets. */
+export const ICON_SOURCE_SETS = {
+  brand: ['Simple Icons', 'Devicon Plain', 'File Icons'],
+  brandPackages: [
+    '@iconify-json/simple-icons',
+    '@iconify-json/devicon-plain',
+    '@iconify-json/file-icons',
+  ],
+  stroke: ['Lucide'],
+} as const;
+
+/** Scale factor normalizing Devicon Plain's `128x128` coordinate space to `24x24`. */
 const DEVICON_SCALE = 0.1875;
 
-/** Default coordinate box size of `@iconify-json/file-icons` (`512x512`). */
+/** Default coordinate box size of File Icons (`512x512`). */
 const FILE_ICONS_DEFAULT_SIZE = 512;
 
-/** Scale factor normalizing `@iconify-json/file-icons`'s `512x512` coordinate space to `24x24` (`24 / 512 = 0.046875`). */
+/** Scale factor normalizing File Icons' `512x512` coordinate space to `24x24`. */
 const FILE_ICONS_SCALE = 0.046875;
 
 /**
@@ -112,7 +123,7 @@ const DEVICON_PREFERRED_SLUGS: ReadonlySet<string> = new Set([
   'typescript',
 ]);
 
-/** Common icon slug aliases mapped to their canonical Lucide, Simple Icons, or Devicon Plain slugs. */
+/** Common icon slug aliases mapped to their canonical icon set slugs. */
 export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   ae: 'adobeaftereffects',
   ai: 'adobeillustrator',
@@ -150,13 +161,13 @@ export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
   vue: 'vuedotjs',
 };
 
-/** Default Lucide stroke width in `24x24` icon units (badges, buttons, and standalone icons). */
+/** Default stroke width in `24x24` icon units across stroked icons. */
 export const DEFAULT_ICON_STROKE_WIDTH = 2.25;
 
-/** Slug rendered for empty requests: Standalone `/icon/` requests with an empty slug and stacks without any tiles. */
+/** Default icon slug rendered when an icon or tile request omits its slug. */
 export const DEFAULT_ICON_SLUG = 'sparkles';
 
-/** Lucide slug rendered for icon requests whose slug cannot be resolved. */
+/** Fallback stroke icon slug rendered when a requested slug cannot be resolved. */
 export const FALLBACK_ICON_SLUG = 'circle-alert';
 
 /** Stroke opacity of the outer border around unknown-icon placeholders across all SVG elements. */
@@ -165,10 +176,10 @@ export const PLACEHOLDER_BORDER_OPACITY = 0.45;
 /** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
 export const MAX_ICON_SLUG_LENGTH = 64;
 
-/** Inner SVG of the placeholder icon (translucent circle border + standalone `!`) rendered for unknown icon slugs on `/icon`, `/badge`, and `/button`. */
+/** Inner SVG of the placeholder icon (translucent circle border + standalone `!`) rendered for unknown icon slugs outside stack tiles. */
 const PLACEHOLDER_ICON_SVG = `<circle cx="12" cy="12" r="10" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" /><path d="M12 7v5.5" /><path d="M12 16.5h.01" />`;
 
-/** Inner SVG of the standalone `!` placeholder icon rendered inside the translucent frame of unknown `/stack` tiles. */
+/** Inner SVG of the standalone `!` placeholder icon rendered inside the translucent frame of unknown stack tiles. */
 const STACK_PLACEHOLDER_ICON_SVG =
   '<g stroke-width="2.75"><path d="M12 3.5v10.5" /><path d="M12 19.5h.01" /></g>';
 
@@ -178,7 +189,7 @@ const FALLBACK_CIRCLE_SVG = '<circle cx="12" cy="12" r="9" />';
 /** Horizontal bounds used when an icon body contains no measurable geometry. */
 const DEFAULT_ICON_X_BOUNDS: Readonly<IconXBounds> = { maxX: 22, minX: 2 };
 
-/** Half of the default Lucide stroke width added to stroked icon bounds. */
+/** Half of the default stroke width added to stroked icon bounds. */
 const STROKE_BOUNDS_PAD = DEFAULT_ICON_STROKE_WIDTH / 2;
 
 /**
@@ -193,15 +204,14 @@ const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
  */
 const MAX_RESOLVED_ICON_CACHE_WEIGHT = 2_000_000;
 
-/** Number of icons per icon picker body page (`/assets/icons-<set>-<page>.json`). */
+/** Number of icons per icon picker body asset page. */
 const ICON_PICKER_PAGE_SIZE = 120;
 
 /** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
 const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
 
 /**
- * Bounded LRU cache of resolved icons keyed by icon set and the exact slug looked up in it
- * (`b:<slug>` for brand icons, `l:<slug>` for Lucide icons), weighted by body size.
+ * Bounded LRU cache of resolved icons keyed by icon category and exact lookup slug, weighted by body size.
  */
 const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(
   MAX_RESOLVED_ICON_CACHE_SIZE,
@@ -670,7 +680,7 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
  * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
  * Exported from the `PUBLIC API` section; Declared here because the internal icon lookups measure with it.
  * @param svgStr         Inner SVG markup of the icon body.
- * @param isStroke       Whether the icon is stroked (pads the bounds by half the default Lucide stroke width).
+ * @param isStroke       Whether the icon is stroked (pads the bounds by half the default stroke width).
  * @param coordScale     Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
  * @param coordOffsetX   Horizontal offset in `24x24` units applied to the scaled coordinates (defaults to `0`).
  * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
@@ -862,7 +872,7 @@ function mergeBrandIconSet(
   }
 }
 
-/** Build (once per isolate) the icon picker index: Distinct Lucide glyphs, brand slugs, search tags, and every alias. */
+/** Build (once per isolate) the icon picker index: Distinct stroke glyphs, brand slugs, search tags, and every alias. */
 function buildIconPickerIndex(): IconPickerIndex {
   const primaryByGlyph = new Map<string, string>();
   const lucideSlugs: string[] = [];
@@ -999,7 +1009,7 @@ export function normalizeIconSlug(slug: string): string {
 /**
  * Resolve an icon slug and return the resolved data together with its canonical key (normalized once).
  * @param slug           Icon slug (e.g., `'star'`, `'ts'`, `'rust'`) or `'none'`.
- * @param isBrandFirst   When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
+ * @param isBrandFirst   When `true`, checks brand icons before stroke icons.
  * @returns Resolved icon data (`undefined` if `'none'`, empty, too long, or not found) and the canonical key.
  */
 export function resolveIconLookup(slug: string, isBrandFirst = false): IconLookup {
@@ -1009,9 +1019,9 @@ export function resolveIconLookup(slug: string, isBrandFirst = false): IconLooku
 }
 
 /**
- * Resolve an icon slug to its inner SVG markup and horizontal visual bounds from `lucide-static`, `@iconify-json/simple-icons`, or `@iconify-json/devicon-plain`.
+ * Resolve an icon slug to its inner SVG markup and horizontal visual bounds from the bundled stroke and brand icon sets.
  * @param slug           Icon slug (e.g., `'star'`, `'globe-code'`, `'rust'`, `'archlinux'`) or `'none'`.
- * @param isBrandFirst   When `true` (e.g., on `/stack/:icons`), checks brand icons before Lucide stroke icons.
+ * @param isBrandFirst   When `true`, checks brand icons before stroke icons.
  * @returns The resolved icon data, or `undefined` if `'none'`, empty, too long, or not found.
  */
 export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon | undefined {
@@ -1020,7 +1030,7 @@ export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon |
 
 /**
  * Return the lazily built placeholder icon (translucent circle border + standalone `!`) used to flag
- * unknown icon slugs on standalone `/icon/:icon`, `/badge/*`, and `/button/*` elements.
+ * unknown icon slugs outside stack tiles.
  * @returns The resolved placeholder icon data (never `undefined`).
  */
 export function resolvePlaceholderIcon(): ResolvedIcon {
@@ -1035,7 +1045,7 @@ export function resolvePlaceholderIcon(): ResolvedIcon {
 
 /**
  * Return the lazily built standalone `!` placeholder icon rendered inside the translucent frame of
- * unknown `/stack/:icons` tiles.
+ * unknown stack tiles.
  * @returns The resolved stack placeholder icon data (never `undefined`).
  */
 export function resolveStackPlaceholderIcon(): ResolvedIcon {
@@ -1049,10 +1059,10 @@ export function resolveStackPlaceholderIcon(): ResolvedIcon {
 }
 
 /**
- * Resolve an icon slug, falling back to `fallbackSlug` (Lucide-first) and finally to a plain circle so a glyph is always drawn.
+ * Resolve an icon slug, falling back to `fallbackSlug` (stroke-first) and finally to a plain circle so a glyph is always drawn.
  * @param slug           Requested icon slug.
  * @param fallbackSlug   Icon slug rendered when `slug` cannot be resolved (e.g., `FALLBACK_ICON_SLUG`).
- * @param isBrandFirst   When `true`, checks brand icons before Lucide stroke icons for `slug`.
+ * @param isBrandFirst   When `true`, checks brand icons before stroke icons for `slug`.
  * @returns The resolved icon data (never `undefined`).
  */
 export function resolveIconWithFallback(
@@ -1072,8 +1082,8 @@ export function inspectResolvedIconCache(): Readonly<LruCache<ResolvedIcon>> {
 }
 
 /**
- * Build (once per isolate) the icon picker index served at `/assets/icons.json`.
- * @returns Distinct Lucide glyph slugs, brand slugs (Simple Icons and Devicon Plain), Lucide name aliases, and slug aliases.
+ * Build (once per isolate) the icon picker index asset.
+ * @returns Distinct stroke glyph slugs, brand slugs, search tags, and slug aliases.
  */
 export function getIconPickerIndex(): IconPickerIndex {
   iconPickerIndexCache ??= buildIconPickerIndex();
@@ -1082,7 +1092,7 @@ export function getIconPickerIndex(): IconPickerIndex {
 
 /**
  * Collect one page of icon picker bodies (inner SVG markup in `24x24` space, without ink bounds).
- * @param setId   Icon picker set (`'lucide'` or `'brands'`).
+ * @param setId   Icon picker set identifier.
  * @param page    Zero-based page index (`ICON_PICKER_PAGE_SIZE` icons per page).
  * @returns Inner SVG markup keyed by slug, or `undefined` for pages out of range.
  */

@@ -1,5 +1,5 @@
 /**
- * Browser client types – Shared global and helper interfaces for the `svg.xul.is` site and builder client scripts.
+ * Browser client types – Shared global and helper interfaces for the site and builder client scripts.
  */
 
 import type {
@@ -27,6 +27,8 @@ export interface SiteClientHelpers {
   copyText: (text: string, button: Element) => void;
   /** Check whether a popover element is open. */
   isPopoverOpen: (popover: Element) => boolean;
+  /** Open a popover element (native Popover API or the `.is-open` fallback). */
+  openPopover: (popover: HTMLElement) => void;
   /** Position an open popover next to its anchor, clamped to the viewport. */
   placePopover: (popover: HTMLElement, anchor: Element, options?: PopoverPlacementOptions) => void;
 }

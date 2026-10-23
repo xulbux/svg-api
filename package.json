@@ -2,7 +2,7 @@
   "name": "svg-api",
   "version": "1.0.0",
   "private": true,
-  "description": "High-performance, zero-cold-start dynamic SVG badge, micro-button, icon, tech stack, and quote card engine for svg.xul.is.",
+  "description": "High-performance, zero-cold-start dynamic SVG engine on Cloudflare Workers for svg.xul.is.",
   "author": { "name": "XulbuX", "email": "hi@xul.is" },
   "maintainers": ["XulbuX <hi@xul.is>"],
   "repository": { "type": "git", "url": "https://github.com/xulbux/svg-api" },

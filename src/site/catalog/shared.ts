@@ -4,6 +4,7 @@
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { ICON_MOTION_TOKENS } from '@/routes/params';
+import { SVG_ROUTES } from '@/routes/svg';
 import { formatVariantTierSummary, formatVariantValues } from '@/site/glossary';
 import { getIconPickerIndex } from '@/svg/icons';
 import type {
@@ -17,11 +18,11 @@ import type {
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Descriptor for a badge, button, stack, or quote variant showcase card. */
+/** Descriptor for a visual hierarchy variant showcase card. */
 export interface VariantDescriptor {
   /** Short explanation of the visual hierarchy tier. */
   readonly description: string;
-  /** Variant query parameter identifier (`1`, `2`, `3`). */
+  /** Variant query parameter identifier. */
   readonly id: BadgeVariant;
   /** Display title for the variant card. */
   readonly title: string;
@@ -29,15 +30,10 @@ export interface VariantDescriptor {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Public endpoint families listed on the `/` homepage (`/btn/*` is an alias of `/button/*`, `/type/*` is an alias of `/typing/*`). */
-export const ENDPOINT_ROUTES: readonly string[] = [
-  '/badge/*',
-  '/button/*',
-  '/icon/*',
-  '/stack/*',
-  '/typing/*',
-  '/quote/*',
-];
+/** Canonical non-alias endpoint families listed on the `/` homepage and `/docs` overview. */
+export const ENDPOINT_ROUTES: readonly string[] = SVG_ROUTES.filter(
+  (route) => route.aliasOf === undefined
+).map((route) => `/${route.prefix}/*`);
 
 /** Multi-group tech stack DSL example shared by the `/` homepage and `/docs/stack` previews. */
 export const STACK_EXAMPLE_GROUPS =
@@ -106,7 +102,7 @@ export function buildVariantParamRow(defaultVal: BadgeVariant, topic: string): P
 }
 
 /**
- * Build a `?icon=` parameter row for badges and buttons.
+ * Build a `?icon=` parameter row.
  * @param description   Parameter description.
  * @param values        Sample icon values string.
  * @returns Parameter table row.
@@ -116,7 +112,7 @@ export function buildIconQueryParamRow(description: string, values: string): Par
 }
 
 /**
- * Build the full `?anim=` parameter row for badges and buttons (every motion token from the parser).
+ * Build the full `?anim=` parameter row for dual-icon SVG endpoints (every motion token from the parser).
  * @returns Parameter table row.
  */
 export function buildAnimParamRow(): ParamTableRow {
@@ -130,7 +126,7 @@ export function buildAnimParamRow(): ParamTableRow {
 }
 
 /**
- * Build a sheen-only `?anim=` parameter row for stacks and quote cards.
+ * Build a sheen-only `?anim=` parameter row for container surfaces.
  * @param description   Parameter description.
  * @returns Parameter table row.
  */
@@ -140,7 +136,7 @@ export function buildSheenAnimParamRow(description: string): ParamTableRow {
 
 /**
  * Build showcase card configurations for a list of variant descriptors.
- * @param descriptors   Variant descriptors (`1`, `2`, `3`).
+ * @param descriptors   Variant descriptors in hierarchy order.
  * @param buildItems    Callback returning the showcase items for a given variant.
  * @param isCentered    Whether the preview stage is centered.
  * @returns Showcase card configurations.
@@ -163,8 +159,8 @@ export function buildVariantCards(
 }
 
 /**
- * Count (once per isolate) the distinct icons of the bundled Lucide, Simple Icons, Devicon Plain, and File Icons sets.
- * @returns Distinct Lucide and brand icon counts.
+ * Count (once per isolate) the distinct icons of the bundled stroke and brand icon sets.
+ * @returns Distinct stroke and brand icon counts.
  */
 export function getIconSetCounts(): IconSetCounts {
   const { sets } = getIconPickerIndex();

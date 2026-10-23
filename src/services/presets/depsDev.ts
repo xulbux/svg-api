@@ -1,5 +1,5 @@
 /**
- * deps.dev service preset – Stars, forks, open issues, license, and OpenSSF Scorecard score of any public GitHub repository via the token-free Open Source Insights API (`/badge/depsdev/:owner/:repo/:metric`).
+ * deps.dev service preset – Live upstream metrics and redirect transformations.
  *
  * deps.dev mirrors GitHub project metadata roughly once a day, so values may lag behind GitHub.
  */

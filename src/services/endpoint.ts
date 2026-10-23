@@ -25,7 +25,7 @@ import type {
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** URL template with `{owner}` / `{target}` / `{path}` / `{id}` / `{npm}` / `{npm-id}` placeholders, or a custom URL builder. */
+/** URL template with encoded route parameter placeholders, or a custom URL builder. */
 type UrlSource = string | ServiceUrlBuilder;
 
 /** Options of `createEndpoint`. */
@@ -34,11 +34,11 @@ interface EndpointOptions<P> {
   api: UrlSource;
   /** Optional custom HTTP request builder (e.g., an authenticated GraphQL `POST` query). */
   buildRequest?: ServiceRequestBuilder;
-  /** Top-level JSON object keys whose values are the only parts needed (see `MetricEndpoint.extractKeys`). */
+  /** Top-level JSON object keys whose values are the only parts needed. */
   extractKeys?: readonly string[];
-  /** Single top-level JSON object key whose value is the only part needed (see `MetricEndpoint.leadingKey`). */
+  /** Single top-level JSON object key whose value is the only part needed. */
   leadingKey?: string;
-  /** Upstream error statuses reported as not found (see `MetricEndpoint.missingStatuses`). */
+  /** Upstream error statuses reported as not found. */
   missingStatuses?: readonly number[];
   /** Browser redirect URL template or builder. */
   page: UrlSource;
@@ -80,7 +80,7 @@ function joinNpmPackage({ owner, target }: ServiceRouteParams): string {
 }
 
 /**
- * Strip an optional leading `@` from a package scope segment (npm, JSR).
+ * Strip an optional leading `@` from a package scope segment.
  * @param owner   Scope with or without a leading `@` (e.g., `'@std'`, `'std'`).
  * @returns Scope without `@` (e.g., `'std'`).
  */
@@ -147,15 +147,12 @@ function withPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoi
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/**
- * Tier-1 JSON cache TTL presets in seconds: `default` (10 min), `slow` (30 min, rate-limited
- * upstreams), and `daily` (1 h, statistics refreshed at most once a day).
- */
+/** Tier-1 JSON cache TTL presets in seconds for normal, rate-limited, and daily-refreshed upstreams. */
 export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const satisfies Readonly<
   Record<string, number>
 >;
 
-/** Shared route schema for npm-style `[:scope/]:pkg` package services (`npm`, `jsdelivr`, `bundlephobia`). */
+/** Shared route schema for `[:scope/]:pkg` package services. */
 export const NPM_PACKAGE_ROUTE: ServiceRoute = {
   owner: { isRequired: false, placeholder: ':scope' },
   target: { placeholder: ':pkg' },
@@ -228,8 +225,8 @@ export function pickFields<T extends object>(
 }
 
 /**
- * Create a projection that keeps the first object entry of an upstream result list (e.g., AUR
- * `results`, NuGet `data`, cranlogs rows), reporting an empty or missing list as not found.
+ * Create a projection that keeps the first object entry of an upstream result list, reporting an empty
+ * or missing list as not found.
  * @param listKey   Key of the result list in the payload object, or `undefined` when the payload is the list itself.
  * @param fields    Optional entry fields to keep (all fields when omitted).
  * @returns Projection returning the (picked) first entry, or `undefined` when there is none.

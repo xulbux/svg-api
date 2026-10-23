@@ -1,5 +1,5 @@
 /**
- * Docker Hub service preset – Image pull, star, and last-updated badges for official and namespaced images (`/badge/docker/[:owner/]:repo/:metric`).
+ * Docker Hub service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
@@ -34,7 +34,7 @@ const DOCKER_HUB_ENDPOINT = createEndpoint({
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Resolve the default Docker Hub namespace (`library` for official images). */
+/** Resolve the default Docker Hub namespace for official images. */
 function resolveDefaultDockerOwner(): string {
   return OFFICIAL_NAMESPACE;
 }
@@ -44,8 +44,7 @@ function resolveDefaultDockerOwner(): string {
 /** Docker Hub service preset (`docker`). */
 export const DOCKER_SERVICE = defineService({
   docs: {
-    description:
-      'Image pulls, stars, and last-updated age (omit :owner for official library images).',
+    description: `Image pulls, stars, and last-updated age (omit :owner for official ${OFFICIAL_NAMESPACE} images).`,
     title: 'Docker Hub',
   },
   metricAliases: { dl: 'pulls', dt: 'pulls' },

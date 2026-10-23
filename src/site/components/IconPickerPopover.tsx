@@ -1,5 +1,5 @@
 /**
- * Icon picker popover component – Shared searchable icon picker dialog (`<IconPickerPopover />`) with Lucide and Brands tabs, virtualized grid, and glyph templates.
+ * Icon picker popover component – Shared searchable icon picker dialog (`<IconPickerPopover />`) with icon set tabs, virtualized grid, and glyph templates.
  */
 
 import { getSiteAssetUrl } from '@/site/assets';
@@ -12,7 +12,7 @@ import type { IconPickerSetId } from '@/types';
 
 /** Icon set tab of the icon picker. */
 interface IconPickerTab {
-  /** Icon set identifier (`'lucide'` or `'brands'`). */
+  /** Icon set identifier. */
   readonly id: IconPickerSetId;
   /** Visible tab label. */
   readonly label: string;
@@ -96,6 +96,7 @@ export function renderIconPickerHtml(): string {
           role="listbox"
           aria-label="Icons"
           tabindex="-1"></div>
+        <div class="icon-picker-empty" id="icon-picker-empty" hidden={true}></div>
         <p class="icon-picker-foot" id="icon-picker-status" aria-live="polite">
           Loading icons…
         </p>

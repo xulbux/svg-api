@@ -1,5 +1,5 @@
 /**
- * Firefox Add-ons service preset – AMO add-on version, daily users, weekly downloads, rating, and license (`/badge/amo/:addon/:metric`).
+ * Firefox Add-ons service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

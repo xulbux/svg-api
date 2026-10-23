@@ -1,5 +1,5 @@
 /**
- * Artifact Hub service preset – Latest version, app version, and stars of Helm charts and other cloud-native packages (`/badge/artifacthub/:kind/:repo/:pkg/:metric`, e.g., `/badge/artifacthub/helm/bitnami/nginx/v`).
+ * Artifact Hub service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

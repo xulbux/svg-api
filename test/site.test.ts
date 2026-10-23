@@ -6,15 +6,21 @@ import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
+import { HTML_SECURITY_HEADERS } from '@/routes/http';
 import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { getSiteAsset } from '@/site/assets';
 import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/site/catalog';
 import siteScript from '@/site/client/bundles/site.client.js';
-import { renderParamTable } from '@/site/components';
+import { getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/site/navigation';
-import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
+import {
+  renderBuilderHtml,
+  renderDocsHtml,
+  renderHomeHtml,
+  renderNotFoundHtml,
+} from '@/site/pages';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
@@ -304,31 +310,92 @@ describe('documentation pages – accessibility', () => {
     expect(css).toMatch(/:where\(a, button, summary, \[tabindex\]\):focus-visible/);
   });
 
-  it('stops all CSS motion and pauses SMIL previews under prefers-reduced-motion', () => {
+  it('stops all CSS motion and pauses SMIL previews at their readable rest frame under prefers-reduced-motion', () => {
     expect(getSiteStylesheet()).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{[^]*?\*,\s*\*::before,\s*\*::after \{\s*transition: none !important;\s*animation: none !important;/
     );
     const script = readSiteScript();
     expect(script).toContain('previewSvg.pauseAnimations()');
+    expect(script).toContain('previewSvg.dataset.restTime');
     expect(script).toContain("reducedMotionQuery.matches ? 'auto' : 'smooth'");
+    expect(renderHomeHtml()).toContain('data-rest-time="');
+  });
+
+  it('wires builder hints and validation messages via aria-describedby, aria-invalid, and valid aria-required attributes', () => {
+    const badgeBuilderHtml = renderBuilderHtml('badge');
+    expect(badgeBuilderHtml).toContain('id="field-value-hint"');
+    expect(badgeBuilderHtml).toContain('aria-describedby="field-value-hint"');
+    expect(badgeBuilderHtml).toContain('id="field-icon-left-validation"');
+    expect(badgeBuilderHtml).toContain('aria-describedby="field-icon-left-validation"');
+    expect(renderBuilderHtml('icon')).toContain('aria-describedby="field-icon-main-validation"');
+    expect(renderBuilderHtml('typing')).toContain(
+      'aria-describedby="field-icon-main-validation field-icon-hint"'
+    );
+    expect(badgeBuilderHtml).toContain(
+      'class="select-empty" data-select-empty role="status" aria-live="polite" hidden'
+    );
+
+    const stackBuilderHtml = renderBuilderHtml('stack');
+    expect(stackBuilderHtml).toContain('aria-describedby="field-groups-validation"');
+    expect(stackBuilderHtml).toContain(
+      'class="select-empty stack-catalog-empty" id="stack-catalog-empty" role="status" aria-live="polite" hidden'
+    );
+
+    const builderJs = getSiteAsset('builder.js')?.body ?? '';
+    expect(builderJs).toContain("setAttribute('aria-required', 'true')");
+    expect(builderJs).toContain("removeAttribute('aria-required')");
+    expect(builderJs).not.toContain("toggleAttribute('aria-required'");
+    expect(builderJs).toContain("setAttribute('aria-invalid', 'true')");
+    expect(builderJs).toContain("removeAttribute('aria-invalid')");
+    expect(builderJs).toContain("key === 'Home'");
+    expect(builderJs).toContain("key === 'End'");
   });
 });
 
 /********************************* Head & client script *********************************/
 
 describe('documentation pages – head metadata & client script', () => {
-  it('renders a canonical URL, social metadata, theme colors, and a unique meta description per page', () => {
+  it('renders a canonical URL, raster OpenGraph card, font preloads, BreadcrumbList JSON-LD, and a unique meta description per page', () => {
     const descriptions = new Set<string>();
     for (const page of renderAllPages()) {
       expect(page.html, page.path).toContain(
         `<link rel="canonical" href="${SITE_ORIGIN}${page.path}" />`
       );
       expect(page.html, page.path).toContain(
+        '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
+      );
+      expect(page.html, page.path).toContain(
+        '<link rel="preload" href="/assets/Geist-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous" />'
+      );
+      expect(page.html, page.path).toContain(
+        '<link rel="preload" href="/assets/Geist-Bold.ttf" as="font" type="font/ttf" crossorigin="anonymous" />'
+      );
+      expect(page.html, page.path).toContain(
         `<meta property="og:url" content="${SITE_ORIGIN}${page.path}" />`
       );
+      expect(page.html, page.path).toContain('<meta property="og:locale" content="en_US" />');
       expect(page.html, page.path).toContain('<meta property="og:title" content="');
-      expect(page.html, page.path).toContain('<meta name="twitter:card" content="summary" />');
+      expect(page.html, page.path).toContain(
+        `<meta property="og:image" content="${SITE_ORIGIN}/og.png" />`
+      );
+      expect(page.html, page.path).toContain(
+        '<meta property="og:image:type" content="image/png" />'
+      );
+      expect(page.html, page.path).toContain(
+        `<meta name="twitter:image" content="${SITE_ORIGIN}/og.png" />`
+      );
+      expect(page.html, page.path).toContain(
+        '<meta name="twitter:card" content="summary_large_image" />'
+      );
       expect(page.html, page.path).toContain('media="(prefers-color-scheme: dark)"');
+      const jsonLd =
+        /<script type="application\/ld\+json">(?<json>[^<]+)<\/script>/.exec(page.html)?.groups
+          ?.json ?? '';
+      expect(jsonLd, page.path).toContain('"@context":"https://schema.org"');
+      if (page.path !== '/') {
+        expect(jsonLd, page.path).toContain('"@type":"BreadcrumbList"');
+      }
+      expect(() => JSON.parse(jsonLd) as unknown, page.path).not.toThrow();
       const description = /<meta name="description" content="(?<content>[^"]+)"/.exec(page.html)
         ?.groups?.content;
       expect(description, page.path).toMatch(/\S/);
@@ -336,6 +403,24 @@ describe('documentation pages – head metadata & client script', () => {
     }
     expect(descriptions.size).toBe(DOCS_PAGES.length + BUILDER_PAGES.length + 1);
     expect(renderDocsHtml('badges')).not.toContain('Interactive SVG preview studio');
+  });
+
+  it('keeps the HTML Content-Security-Policy SHA-256 hash synchronized with the inline head script and renders accessible 404 pages without canonical metadata (drift guard)', async () => {
+    const scriptBytes = new TextEncoder().encode(getHeadScriptBody());
+    const digestBuffer = await crypto.subtle.digest('SHA-256', scriptBytes);
+    const digestBase64 = btoa(String.fromCodePoint(...new Uint8Array(digestBuffer)));
+    expect(HTML_SECURITY_HEADERS['Content-Security-Policy']).toContain(`'sha256-${digestBase64}'`);
+
+    const notFoundHtml = renderNotFoundHtml();
+    expect(notFoundHtml).toContain('<meta name="robots" content="noindex" />');
+    expect(notFoundHtml).not.toContain('rel="canonical"');
+    expect(notFoundHtml).not.toContain('property="og:url"');
+    expect(notFoundHtml).not.toContain('<script type="application/ld+json">');
+    const ids = collectGroups(notFoundHtml, ID_ATTRIBUTE_RX, 'id');
+    expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+    for (const anchorMatch of notFoundHtml.matchAll(/<a\s[^>]*href="[^"]+"[^>]*>/g)) {
+      expect(anchorMatch[0]).toContain('tabindex="0"');
+    }
   });
 
   it('only applies whitelisted stored color schemes and preview backgrounds (regression: any localStorage value reached the meta tag)', () => {
@@ -407,14 +492,15 @@ describe('documentation pages – navigation & static assets', () => {
   it('renders exactly three header tabs and marks the active one with aria-current', () => {
     const expectedActive: Readonly<Record<string, string>> = {
       '/': '/',
-      '/builder/badge': '/builder',
+      '/builder/badge': '/builder/badge',
+      '/builder/typing': '/builder/badge',
       '/docs': '/docs',
       '/docs/colors': '/docs',
     };
     for (const page of renderAllPages()) {
       const headerHtml = page.html.slice(0, page.html.indexOf('</header>'));
       const navHrefs = collectGroups(headerHtml, NAV_LINK_RX, 'href');
-      expect(navHrefs, page.path).toEqual(['/', '/builder', '/docs']);
+      expect(navHrefs, page.path).toEqual(['/', '/builder/badge', '/docs']);
       const activeHrefs: string[] = [];
       for (const match of headerHtml.matchAll(NAV_LINK_RX)) {
         if (match.groups?.active) {
@@ -683,6 +769,15 @@ describe('website client scripts & markup regressions', () => {
     expect(computePopoverPlacement(lowAnchor, { height: 690, width: 150 }, viewport, {}).top).toBe(
       8
     );
+    const wideAnchor = { bottom: 40, left: 4, right: 396, top: 10, width: 392 };
+    expect(
+      computePopoverPlacement(
+        wideAnchor,
+        { height: 120, width: 392 },
+        { height: 600, width: 320 },
+        { isWidthMatched: true }
+      ).minWidth
+    ).toBe(304);
   });
 
   it('keeps the theme-color meta tags in sync with the manual scheme override (regression: system color only)', () => {
@@ -702,11 +797,14 @@ describe('website client scripts & markup regressions', () => {
     );
   });
 
-  it('keeps the sidebar keyboard-focusable on wide screens and turns it into a popover drawer on narrow screens (regression: static popover attribute made desktop sidebar nav unfocusable)', () => {
+  it('keeps the sidebar keyboard-focusable on wide screens, turns it into a popover drawer on narrow screens, and restores focus on close (regressions)', () => {
     const html = renderDocsHtml('badges');
     const drawerHtml = html.slice(html.indexOf('<aside class="sidebar" id="sidebar-drawer">'));
     expect(drawerHtml).toMatch(
       /^<aside class="sidebar" id="sidebar-drawer">\s*<button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-label="Close /
+    );
+    expect(html).toContain(
+      'class="sidebar-toggle" popovertarget="sidebar-drawer" aria-expanded="false"'
     );
     expect(html).not.toContain('<aside class="sidebar" id="sidebar-drawer" popover>');
     expect(html).toContain('"drawerMediaQuery":"(max-width: 960px)"');
@@ -715,6 +813,8 @@ describe('website client scripts & markup regressions', () => {
     expect(script).toContain("sidebarDrawer.removeAttribute('popover')");
     expect(script).toContain("drawerQuery.addEventListener('change', syncSidebarDrawer)");
     expect(script).toContain("element.toggleAttribute('inert', isInert)");
+    expect(script).toContain("sidebarToggle?.setAttribute('aria-expanded'");
+    expect(script).toContain('sidebarToggle.focus()');
     expect(getSiteStylesheet()).toContain('body:has(.sidebar:where(:popover-open, .is-open))');
     expect(getSiteStylesheet()).not.toContain('content-visibility: auto');
   });
@@ -734,7 +834,7 @@ describe('website client scripts & markup regressions', () => {
   it('exposes the shared clipboard and popover helpers for the builder script', () => {
     const script = readSiteScript();
     expect(script).toMatch(
-      /globalThis\.svgSite = \{\s*closePopover,\s*copyText,\s*isPopoverOpen,\s*placePopover,?\s*\};/
+      /globalThis\.svgSite = \{\s*closePopover,\s*copyText,\s*isPopoverOpen,\s*openPopover,\s*placePopover,?\s*\};/
     );
     expect(script).toContain("button.querySelector('[data-copy-label]')");
     expect(script).not.toContain('hasAnchorPositioning');
@@ -880,5 +980,24 @@ describe('site stylesheet', () => {
       /\.swatch-grid:has\(\.swatch-input:focus-visible\) \.swatch-input:not\(:checked\) \+ \.swatch-dot \{/
     );
     expect(css).toMatch(/\.section-title-row \{[^}]*justify-content: space-between;/);
+  });
+
+  it('meets WCAG 2.2 AA 24px minimum target sizes, preserves High Contrast swatches, and keeps mobile anchor links at full contrast', () => {
+    const css = getSiteStylesheet();
+    expect(css).toMatch(/\.theme-switch \{[^}]*inline-size: 42px;\s*block-size: 24px;/);
+    expect(css).toMatch(/\.gh-link \{[^}]*inline-size: 24px;\s*block-size: 24px;/);
+    expect(css).toMatch(/\.bg-toggle \{[^}]*inline-size: 24px;\s*block-size: 24px;/);
+    expect(css).toMatch(/\.anchor-link \{[^}]*min-inline-size: 24px;\s*min-block-size: 24px;/);
+    expect(css).toMatch(
+      /@media \(max-width: 640px\) \{\s*\.anchor-link \{\s*opacity: 1;\s*\}\s*\}/
+    );
+    expect(css).toMatch(
+      /\.scroll-btn \{\s*display: none;\s*inline-size: 24px;\s*block-size: 24px;/
+    );
+    expect(css).toMatch(/\.swatch-dot \{\s*inline-size: 24px;\s*block-size: 24px;/);
+    expect(css).toMatch(/\.help-btn::before \{[^}]*inset: -3px;/);
+    expect(css).toMatch(
+      /@media \(forced-colors: active\) \{\s*\.swatch-dot,\s*\.select-swatch,\s*\.anatomy-swatch,\s*\.bg-swatch \{\s*forced-color-adjust: none;\s*\}\s*\}/
+    );
   });
 });

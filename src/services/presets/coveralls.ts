@@ -1,5 +1,5 @@
 /**
- * Coveralls service preset – Test coverage of a GitHub repository with a threshold-colored ring gauge (`/badge/coveralls/:owner/:repo/:metric`).
+ * Coveralls service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createCoverageService } from '@/services/metrics';

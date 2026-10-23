@@ -149,11 +149,11 @@
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
-  inline-size: 40px;
-  block-size: 22px;
+  inline-size: 42px;
+  block-size: 24px;
   padding: 0;
   border: 1px solid var(--c-divider);
-  border-radius: 11px;
+  border-radius: 12px;
   background: var(--c-switch-bg);
   cursor: pointer;
   transition:
@@ -169,8 +169,8 @@
 
 .theme-switch-thumb {
   position: absolute;
-  inset-block-start: 1px;
-  inset-inline-start: 1px;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -215,8 +215,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  inline-size: 20px;
-  block-size: 20px;
+  inline-size: 24px;
+  block-size: 24px;
   border-radius: var(--radius-sm);
   text-decoration: none;
   color: var(--c-text-2);
@@ -234,8 +234,8 @@
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 24px;
+  block-size: 24px;
   padding: 0;
   border: 1px solid var(--c-divider);
   border-radius: 50%;
@@ -308,7 +308,7 @@
   }
 }
 
-/* Page Shell; full-width content (home) or sidebar + content (docs, builder): */
+/* Page Shell; full-width content or sidebar + content: */
 
 .page-shell {
   display: grid;

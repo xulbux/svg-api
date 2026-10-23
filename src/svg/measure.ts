@@ -1,10 +1,10 @@
 /**
- * Text measurement & vector path rendering – Exact OpenType glyph outline measurement and `<path>` generation using bundled Geist Sans and JetBrains Mono `.ttf` binaries.
+ * Text measurement & vector path rendering – Exact OpenType glyph outline measurement and `<path>` generation from bundled `.ttf` fonts.
  *
- * Each distinct `text|fontSize|weight|style` combination is laid out once at the `(0, 0)` baseline;
+ * Each distinct text and typography combination is laid out once at the `(0, 0)` baseline;
  * Its ink bounds and serialized outline are cached (LRU) and positioned with `transform="translate(…)"`.
  * Probe measurements used while wrapping and truncating go through uncached helpers, and one-off text
- * (quote lines and authors) is rendered with `isUncached`, so neither ever evicts hot entries.
+ * is rendered with `isUncached`, so neither ever evicts hot entries.
  */
 
 import { parse as parseFont } from 'opentype.js';
@@ -43,17 +43,17 @@ interface TextOutline extends InkMetrics {
   pathData: string;
 }
 
-/** Lazily parsed Geist Sans and JetBrains Mono `Font` singletons. */
+/** Lazily parsed proportional and monospace `Font` singletons. */
 interface FontSingletons {
-  /** Geist Sans `600` SemiBold Italic. */
+  /** Proportional bold italic font instance. */
   italic?: Font;
-  /** Geist Sans `500` Medium. */
+  /** Proportional regular/medium font instance. */
   medium?: Font;
-  /** JetBrains Mono `700` Bold. */
+  /** Monospace bold font instance. */
   monoBold?: Font;
-  /** JetBrains Mono `400` Regular. */
+  /** Monospace regular font instance. */
   monoRegular?: Font;
-  /** Geist Sans `600` SemiBold. */
+  /** Proportional bold font instance. */
   semiBold?: Font;
 }
 
@@ -61,7 +61,7 @@ interface FontSingletons {
 interface ResolvedFontGlyph {
   /** Effective font family after `.notdef` fallback. */
   font: Font;
-  /** Effective font family key (`'mono'` or `'sans'`). */
+  /** Effective font family key. */
   fontKey: TypingFont;
   /** OpenType glyph instance (`index === 0` when missing in both fonts). */
   glyph: Glyph;
@@ -89,7 +89,7 @@ export interface GlyphLineLayout {
 
 /** Options for `renderTextPathMarkup`. */
 interface TextPathOptions {
-  /** Horizontal alignment mode (`'center'` or `'left'`; Defaults to `'center'`). */
+  /** Horizontal alignment mode (defaults to `'center'`). */
   align?: 'center' | 'left';
   /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`). */
   anchorX: number;
@@ -97,17 +97,17 @@ interface TextPathOptions {
   baselineY: number;
   /** SVG `fill` color string. */
   fill: string;
-  /** Optional font family (`'sans'` or `'mono'`; Defaults to `'sans'`). */
+  /** Optional font family (defaults to `'sans'`). */
   font?: TypingFont;
   /** Font size in pixels. */
   fontSize: number;
-  /** Whether to use Geist Sans SemiBold (`600`) or JetBrains Mono Bold (`700`). */
+  /** Whether to use the bold font weight. */
   isBold?: boolean;
-  /** Whether to use Geist Sans SemiBold Italic (`600` italic). */
+  /** Whether to use the bold italic font style. */
   isItalic?: boolean;
   /**
-   * Whether to lay the text out without reading or writing the shared outline cache (one-off text such
-   * as quote lines, which would otherwise evict hot badge labels; Defaults to `false`).
+   * Whether to lay the text out without reading or writing the shared outline cache (used for one-off
+   * wrapped text so it never evicts hot entries; Defaults to `false`).
    */
   isUncached?: boolean;
 }
@@ -117,23 +117,22 @@ interface TextPathOptions {
 /** Default OpenType layout options (`kerning: true`, slight `-0.01em` UI tracking). */
 const PATH_OPTIONS: RenderOptions = { kerning: true, letterSpacing: -0.01 };
 
-/** Ratio of Geist Sans cap-height (`710 / 1000`) to `fontSize`, halved (`0.355`) for vertical baseline centering. */
+/** Half of the proportional font's cap-height-to-em ratio, used for vertical baseline centering. */
 const HALF_CAP_HEIGHT_RATIO = 0.355;
 
 /** Maximum number of entries in the in-memory `TextOutline` cache per Worker isolate. */
 const MAX_OUTLINE_CACHE_SIZE = 512;
 
 /**
- * Maximum summed `pathData` length in UTF-16 code units of the `TextOutline` cache; One 128-character
- * label of complex glyphs at `28px` serializes to roughly `100k` code units, so the entry count alone
- * cannot bound the isolate's memory.
+ * Maximum summed `pathData` length in UTF-16 code units of the `TextOutline` cache; Long labels of
+ * complex glyphs serialize to tens of thousands of code units, so entry count alone cannot bound memory.
  */
 const MAX_OUTLINE_CACHE_WEIGHT = 4_000_000;
 
 /** Maximum text length in UTF-16 code units whose outline is cached (longer strings are laid out per request). */
 const MAX_CACHED_TEXT_LENGTH = 128;
 
-/** Lazily parsed Geist Sans `Font` singletons (`500` Medium, `600` SemiBold, `600` SemiBold Italic). */
+/** Lazily parsed OpenType `Font` singletons. */
 const FONT_SINGLETONS: FontSingletons = {};
 
 /** Bounded LRU cache mapping `text|fontSize|bold|italic` to `TextOutline`, weighted by serialized path size. */
@@ -194,19 +193,20 @@ function resolveFontFamily(fontFamily: TypingFont, isBold: boolean, isItalic = f
   return fontFamily === 'mono' ? resolveMonoFont(isBold) : resolveGeistFont(isBold, isItalic);
 }
 
-/** Resolve the OpenType `Glyph` for `char`, falling back between Geist Sans and JetBrains Mono when a glyph is missing. */
+/** Resolve the OpenType `Glyph` for `char`, falling back across bundled font families when a glyph is missing. */
 function resolveFontGlyph(
   char: string,
   fontFamily: TypingFont,
-  isBold: boolean
+  isBold: boolean,
+  isItalic = false
 ): ResolvedFontGlyph {
-  const primaryFont = resolveFontFamily(fontFamily, isBold);
+  const primaryFont = resolveFontFamily(fontFamily, isBold, isItalic);
   const primaryGlyph = primaryFont.charToGlyph(char);
   if (primaryGlyph.index !== 0) {
     return { font: primaryFont, fontKey: fontFamily, glyph: primaryGlyph };
   }
   const fallbackFamily: TypingFont = fontFamily === 'mono' ? 'sans' : 'mono';
-  const fallbackFont = resolveFontFamily(fallbackFamily, isBold);
+  const fallbackFont = resolveFontFamily(fallbackFamily, isBold, isItalic);
   const fallbackGlyph = fallbackFont.charToGlyph(char);
   if (fallbackGlyph.index !== 0) {
     return { font: fallbackFont, fontKey: fallbackFamily, glyph: fallbackGlyph };
@@ -285,13 +285,14 @@ function buildFallbackTextOutline(
   primaryFont: Font,
   fontSize: number,
   isBold: boolean,
+  isItalic: boolean,
   fontFamily: TypingFont
 ): TextOutline {
   const combinedPath = primaryFont.getPath('', 0, 0, fontSize);
   let cursorX = 0;
 
   for (const char of text) {
-    const resolved = resolveFontGlyph(char, fontFamily, isBold);
+    const resolved = resolveFontGlyph(char, fontFamily, isBold, isItalic);
     const { font, glyph } = resolved;
     const scale = fontSize / font.unitsPerEm;
     if (glyph.index !== 0) {
@@ -326,7 +327,7 @@ function buildTextOutline(
 ): TextOutline {
   const font = resolveFontFamily(fontFamily, isBold, isItalic);
   if (hasMissingGlyphInFont(font, text)) {
-    return buildFallbackTextOutline(text, font, fontSize, isBold, fontFamily);
+    return buildFallbackTextOutline(text, font, fontSize, isBold, isItalic, fontFamily);
   }
   const options = fontFamily === 'mono' ? { kerning: false } : PATH_OPTIONS;
   const path = font.getPath(text, 0, 0, fontSize, options);
@@ -363,10 +364,10 @@ function getTextOutline(
 /**
  * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string (cached).
  * @param text         Text string to measure.
- * @param fontSize     Font size in pixels (defaults to the `22px` badge font size, `BADGE_FONT_SIZE`).
- * @param isBold       Whether the text is rendered with bold (`600` Geist / `700` JetBrains Mono) weight.
- * @param isItalic     Whether the text is rendered with semi-bold italic (`600` italic) style.
- * @param fontFamily   Font family (`'sans'` or `'mono'`; Defaults to `'sans'`).
+ * @param fontSize     Font size in pixels (defaults to `BADGE_FONT_SIZE`).
+ * @param isBold       Whether the text is rendered with the bold font weight.
+ * @param isItalic     Whether the text is rendered with the italic font style.
+ * @param fontFamily   Font family (defaults to `'sans'`).
  * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
 export function measureTextWidth(
@@ -387,8 +388,8 @@ export function measureTextWidth(
  * Used for throwaway probe strings (e.g., binary-search truncation candidates) that are never rendered.
  * @param text       Text string to measure.
  * @param fontSize   Font size in pixels.
- * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
- * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
+ * @param isBold     Whether the text is rendered with the bold font weight.
+ * @param isItalic   Whether the text is rendered with the italic font style.
  * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
 export function measureTextWidthUncached(
@@ -401,6 +402,9 @@ export function measureTextWidthUncached(
     return 0;
   }
   const font = resolveGeistFont(isBold, isItalic);
+  if (hasMissingGlyphInFont(font, text)) {
+    return buildFallbackTextOutline(text, font, fontSize, isBold, isItalic, 'sans').width;
+  }
   return computeInkMetrics(font.getPath(text, 0, 0, fontSize, PATH_OPTIONS), font, text, fontSize)
     .width;
 }
@@ -411,8 +415,8 @@ export function measureTextWidthUncached(
  * words and spaces add up, which makes it suitable for incremental line wrapping estimates.
  * @param text       Text string to measure.
  * @param fontSize   Font size in pixels.
- * @param isBold     Whether the text is rendered with semi-bold (`600`) weight.
- * @param isItalic   Whether the text is rendered with semi-bold italic (`600` italic) style.
+ * @param isBold     Whether the text is rendered with the bold font weight.
+ * @param isItalic   Whether the text is rendered with the italic font style.
  * @returns Advance width in pixels (unrounded).
  */
 export function measureTextAdvance(
@@ -428,7 +432,7 @@ export function measureTextAdvance(
 }
 
 /**
- * Render a text string directly as an SVG `<path>` vector outline in Geist Sans.
+ * Render a text string directly as an SVG `<path>` vector outline.
  * Aligns the path using its exact analytical Bezier bounding box (`x1..x2`) so horizontal centering or
  * left-alignment has `0.00px` sidebearing error on every operating system and browser.
  * @param text      Raw unescaped text string to convert to an SVG `<path>`.
@@ -460,8 +464,8 @@ export function renderTextPathMarkup(text: string, options: TextPathOptions): st
  * Resolve a single character's glyph outline at `(0, 0)` and its advance width in pixels.
  * @param char         Single character to lay out.
  * @param fontSize     Font size in pixels.
- * @param isBold       Whether to use the bold font weight (`600` for Geist, `700` for JetBrains Mono).
- * @param fontFamily   Font family (`'mono'` or `'sans'`).
+ * @param isBold       Whether to use the bold font weight.
+ * @param fontFamily   Font family identifier.
  * @returns Positioned character glyph at `x = 0`.
  */
 export function resolveCharGlyph(
@@ -491,7 +495,7 @@ export function resolveCharGlyph(
  * @param text         Text string to lay out.
  * @param fontSize     Font size in pixels.
  * @param isBold       Whether to use the bold font weight.
- * @param fontFamily   Font family (`'mono'` or `'sans'`).
+ * @param fontFamily   Font family identifier.
  * @returns Per-character glyph positions and total advance width in pixels.
  */
 export function layoutTextGlyphs(

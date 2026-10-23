@@ -1,5 +1,5 @@
 /**
- * Getting Started overview page – Renders the `/docs` overview section (`<OverviewSection />` and `renderOverviewSectionHtml`).
+ * Getting Started overview page – Renders the `/docs` overview section (`<OverviewSection />`).
  */
 
 import {
@@ -17,7 +17,6 @@ import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
 import { UrlAnatomy } from '@/site/components/UrlAnatomy';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -58,12 +57,4 @@ export function OverviewSection(): HtmlFragment {
       />
     </section>
   );
-}
-
-/**
- * Render the Getting Started (`/docs`) overview section HTML.
- * @returns HTML string for the `/docs` overview section.
- */
-export function renderOverviewSectionHtml(): string {
-  return renderHtml(<OverviewSection />);
 }

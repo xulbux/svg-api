@@ -1,5 +1,5 @@
 /**
- * JetBrains Marketplace service preset – IDE plugin version, total downloads, and average rating (`/badge/jetbrains/:plugin/:metric`).
+ * JetBrains Marketplace service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields, projectFirstEntry } from '@/services/endpoint';

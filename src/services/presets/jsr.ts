@@ -1,5 +1,5 @@
 /**
- * JSR service preset – JavaScript Registry package version and JSR quality score (`/badge/jsr/:scope/:pkg/:metric`).
+ * JSR service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields, stripScopePrefix } from '@/services/endpoint';

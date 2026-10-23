@@ -1,8 +1,8 @@
 /**
- * Arch Linux service preset – Official repository package version, license, and repository (`/badge/arch/:pkg/:metric`).
+ * Arch Linux service preset – Live upstream metrics and redirect transformations.
  *
- * The exact-name package search is restricted to the stable `core`, `extra`, and `multilib`
- * repositories, so packages currently in testing never shadow the released version.
+ * The exact-name package search is restricted to the configured stable repositories, so packages
+ * currently in testing never shadow the released version.
  */
 
 import {

@@ -3,7 +3,6 @@
  */
 
 import { CopyButton, UiIcon } from '@/site/components/UiIcon';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -70,7 +69,7 @@ export function BuilderOutputPanel(): HtmlFragment {
             {tabs}
           </div>
           <div class="code-drawer-body builder-code-body">
-            <CopyButton extraAttrs='id="builder-copy" data-copy-target="builder-code"' />
+            <CopyButton id="builder-copy" copyTarget="builder-code" />
             <pre
               class="code-pre builder-code"
               id="builder-code"
@@ -130,12 +129,4 @@ export function BuilderOutputPanel(): HtmlFragment {
       </div>
     </aside>
   );
-}
-
-/**
- * Render the preview, snippet, and action panel as an HTML string.
- * @returns Output panel HTML string.
- */
-export function renderOutputPanelHtml(): string {
-  return renderHtml(<BuilderOutputPanel />);
 }

@@ -1,5 +1,5 @@
 /**
- * Minecraft plugin service presets – SpigotMC resource downloads, rating, likes, and latest version via the Spiget API (`/badge/spigot/:id/:metric`) and Hangar (PaperMC) project downloads, stars, watchers, and license (`/badge/hangar/:owner/:slug/:metric`).
+ * Minecraft plugin service presets – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';

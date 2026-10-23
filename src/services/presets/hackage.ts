@@ -1,5 +1,5 @@
 /**
- * Hackage service preset – Latest preferred Haskell package version (`/badge/hackage/:pkg/:metric`).
+ * Hackage service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

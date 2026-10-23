@@ -21,6 +21,7 @@ import {
   resolveTypingLayout,
   resolveVariant,
   SPECIAL_ELEMENT_KINDS,
+  STACK_MOTION_TOKENS,
   TYPING_ALIGN_TOKENS,
   TYPING_CURSOR_TOKENS,
   TYPING_ERASE_TOKENS,
@@ -236,7 +237,11 @@ describe('builder schemas', () => {
       '',
       ...ICON_MOTION_TOKENS.filter((motion) => motion !== 'default'),
     ]);
-    expect(collectOptionValues(getBuilderSchema('stack'), 'anim')).toEqual(['']);
+    expect(collectOptionValues(getBuilderSchema('stack'), 'anim')).toEqual([
+      '',
+      ...STACK_MOTION_TOKENS,
+    ]);
+    expect(collectOptionValues(getBuilderSchema('typing'), 'anim')).toEqual(['', 'none']);
     for (const kind of BUILDER_KINDS) {
       expect(getBuilderSchema(kind).maxIconSlugLength, kind).toBe(MAX_ICON_SLUG_LENGTH);
     }
@@ -441,7 +446,10 @@ describe('builder client core', () => {
       ['badge', { anim: 'sheen,none,nudge', label: 'C++ (beta)', special: 'ring:84:pulse' }],
       ['button', { icon: 'none,arrow-right', label: 'Read the docs', size: '40', value: 'v2' }],
       ['icon', { anim: 'sheen,spin', icon: 'archlinux', size: '64', stroke: '1.5' }],
-      ['stack', { groupgap: '30', groups: 'c,cpp:2|rust\npy,ts', perline: '8,6' }],
+      [
+        'stack',
+        { anim: 'sheen,wave', groupgap: '30', groups: 'c,cpp:2|rust\npy,ts', perline: '8,6' },
+      ],
       ['quote', { author: '', layout: 'vertical', text: 'Ship it & smile!', width: '420' }],
       ['service', { icon: ',star', metric: 'v', owner: 'types', service: 'npm', target: 'node' }],
       ['service', { metric: 'v', service: 'go', target: 'github.com/spf13/cobra' }],
@@ -567,6 +575,29 @@ describe('builder client core', () => {
       ['quote', '/quote/Hi?size=XL&layout=Vertical'],
     ] as const) {
       const [original, rebuilt] = renderPrefillRoundTrip(kind, prefillPath);
+      expect(rebuilt, prefillPath).toBe(original);
+    }
+  });
+
+  it('canonicalizes stack and badge ?anim= motion aliases and drops unknown tokens (regression: motion aliases failed to prefill)', () => {
+    const stack = getBuilderSchema('stack');
+    const badge = getBuilderSchema('badge');
+    expect(core.parsePath(stack, '/stack/rust,go?anim=bounce')?.anim).toBe('wave');
+    expect(core.parsePath(stack, '/stack/rust,go?anim=sheen,bob')?.anim).toBe('sheen,float');
+    expect(core.parsePath(stack, '/stack/rust,go?anim=breathe')?.anim).toBe('pulse');
+    expect(core.parsePath(stack, '/stack/rust,go?anim=auto')?.anim).toBe('wave');
+    expect(core.parsePath(stack, '/stack/rust,go?anim=bogus')?.anim).toBe('');
+    expect(core.parsePath(badge, '/badge/a/b?anim=twirl')?.anim).toBe('turn');
+    expect(core.parsePath(badge, '/badge/a/b?anim=spin-smooth')?.anim).toBe('whirl');
+
+    for (const prefillPath of [
+      '/stack/rust,go?anim=bounce',
+      '/stack/rust,go?anim=sheen,bob',
+      '/stack/rust,go?anim=breathe',
+      '/stack/rust,go?anim=auto',
+      '/stack/rust,go?anim=bogus',
+    ]) {
+      const [original, rebuilt] = renderPrefillRoundTrip('stack', prefillPath);
       expect(rebuilt, prefillPath).toBe(original);
     }
   });
@@ -904,7 +935,7 @@ describe('builder client core', () => {
     expect(htmlTokens).toContainEqual(['hl-val', 'rose']);
   });
 
-  it('builds the same Markdown tokens as the docs code drawers (parity with components.ts)', () => {
+  it('builds the same Markdown tokens as the docs code drawers', () => {
     const cases: [url: string, alt: string, href: string | undefined][] = [
       ['https://svg.xul.is/badge/build/passing', 'build', undefined],
       [

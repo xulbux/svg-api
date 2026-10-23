@@ -1,10 +1,10 @@
 /**
- * SVG route dispatcher – Maps `/badge/*`, `/button/*`, `/btn/*`, `/icon/*`, `/stack/*`, `/typing/*`, `/type/*`, and `/quote/*` URLs onto the SSOT renderers.
+ * SVG route dispatcher – Maps every registered SVG endpoint URL onto its SSOT renderer.
  *
- * Shared by the Worker router (`src/index.ts`) and the documentation previews (`src/site/`), so
- * every documented Markdown snippet is rendered by exactly the same parsing path as a live request.
- * The `SVG_ROUTES` table is the single source of the route prefixes, their segment limits, and the
- * query parameters each route reads (which also form its normalized edge cache key).
+ * Shared by the Worker router and the documentation previews, so every documented Markdown snippet
+ * is rendered by the exact same parsing path as a live request. The `SVG_ROUTES` table is the single
+ * source of the route prefixes, alias mappings, segment limits, builder targets, and the query
+ * parameters each route reads (which also form its normalized edge cache key).
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
@@ -21,6 +21,7 @@ import {
   resolveQuoteLayout,
   resolveSizeToken,
   resolveSpecialParam,
+  resolveStackAnimationMode,
   resolveTypingAlign,
   resolveTypingCursor,
   resolveTypingEraseMode,
@@ -66,7 +67,7 @@ interface RouteBadgeDefaults {
   specials?: BadgeSpecialMap;
   /** Default right-hand value text. */
   value?: string;
-  /** Default badge variant (`1`, `2`, `3`). */
+  /** Default badge variant. */
   variant: BadgeVariant;
 }
 
@@ -81,8 +82,23 @@ export const SERVICE_TTL_SECONDS = 600;
 /** Shared edge cache TTL in seconds for failed, pending, or invalid service preset badges. */
 export const SERVICE_ERROR_TTL_SECONDS = 60;
 
-/** Query parameters read by `/badge/*` routes (static and service preset badges), sorted. */
-const BADGE_QUERY_PARAMS: readonly string[] = [
+/** Default visual hierarchy variant for static and service preset badges. */
+export const DEFAULT_BADGE_VARIANT: BadgeVariant = '1';
+
+/** Default visual hierarchy variant for CTA buttons. */
+export const DEFAULT_BUTTON_VARIANT: BadgeVariant = '1';
+
+/** Default visual hierarchy variant for quote cards. */
+export const DEFAULT_QUOTE_VARIANT: BadgeVariant = '2';
+
+/** Default visual hierarchy variant for tech stack grids. */
+export const DEFAULT_STACK_VARIANT: BadgeVariant = '2';
+
+/** Default visual hierarchy variant for typing animations. */
+export const DEFAULT_TYPING_VARIANT: BadgeVariant = '3';
+
+/** Recognized query parameters for badge routes, sorted. */
+export const BADGE_QUERY_PARAMS: readonly string[] = [
   'anim',
   'color',
   'dot',
@@ -92,13 +108,13 @@ const BADGE_QUERY_PARAMS: readonly string[] = [
   'variant',
 ];
 
-/** Query parameters read by `/button/*` and `/btn/*` routes, sorted. */
+/** Recognized query parameters for button routes, sorted. */
 const BUTTON_QUERY_PARAMS: readonly string[] = ['anim', 'color', 'icon', 'size', 'variant'];
 
-/** Query parameters read by `/icon/*` routes, sorted. */
+/** Recognized query parameters for standalone icon routes, sorted. */
 const ICON_QUERY_PARAMS: readonly string[] = ['anim', 'color', 'size', 'stroke'];
 
-/** Query parameters read by `/quote/*` routes, sorted. */
+/** Recognized query parameters for quote card routes, sorted. */
 const QUOTE_QUERY_PARAMS: readonly string[] = [
   'anim',
   'author',
@@ -113,7 +129,7 @@ const QUOTE_QUERY_PARAMS: readonly string[] = [
   'width',
 ];
 
-/** Query parameters read by `/stack/*` routes, sorted. */
+/** Recognized query parameters for tech stack routes, sorted. */
 const STACK_QUERY_PARAMS: readonly string[] = [
   'anim',
   'color',
@@ -128,7 +144,7 @@ const STACK_QUERY_PARAMS: readonly string[] = [
   'variant',
 ];
 
-/** Query parameters read by `/typing/*` and `/type/*` routes, sorted. */
+/** Recognized query parameters for typing animation routes, sorted. */
 const TYPING_QUERY_PARAMS: readonly string[] = [
   'align',
   'anim',
@@ -190,7 +206,7 @@ function pickQueryParams(query: URLSearchParams, names: readonly string[]): URLS
   return picked;
 }
 
-/** Apply canonical badge query overrides (`color`, `variant`, `icon`, `dot`, `anim`, `special`, optional `label`) and render. */
+/** Apply canonical badge query overrides and render. */
 function renderBadgeFromQuery(
   query: URLSearchParams,
   defaults: RouteBadgeDefaults,
@@ -219,7 +235,11 @@ function resolveBadgeRoute(
 
   if (segments.length <= 2) {
     return buildStaticMatch(() =>
-      renderBadgeFromQuery(query, { label: first, value: second, variant: '1' }, false)
+      renderBadgeFromQuery(
+        query,
+        { label: first, value: second, variant: DEFAULT_BADGE_VARIANT },
+        false
+      )
     );
   }
 
@@ -257,7 +277,7 @@ function resolveBadgeRoute(
   return undefined;
 }
 
-/** Resolve a `/button/:label[/:value]` or `/btn/:label[/:value]` CTA button. */
+/** Resolve a CTA button route. */
 function resolveButtonRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   const [label = '', value] = segments;
   return buildStaticMatch(() =>
@@ -268,12 +288,12 @@ function resolveButtonRoute(segments: readonly string[], query: URLSearchParams)
       label,
       size: resolveSizeToken(query.get('size')),
       value,
-      variant: resolveVariant(query.get('variant')),
+      variant: resolveVariant(query.get('variant'), DEFAULT_BUTTON_VARIANT),
     })
   );
 }
 
-/** Resolve a `/icon/:icon` standalone icon (exactly one segment). */
+/** Resolve a standalone icon route (exactly one segment). */
 function resolveIconRoute(
   segments: readonly string[],
   query: URLSearchParams
@@ -293,7 +313,7 @@ function resolveIconRoute(
   );
 }
 
-/** Resolve a `/stack/:groups` (or `/stack?groups=` / `?icons=` / `?i=`) tech stack grid. */
+/** Resolve a tech stack grid route. */
 function resolveStackRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   return buildStaticMatch(() => {
     // `||` (not `??`); empty aliases (`/stack/?icons=react`, `?groupgap=&ggap=12`) fall through:
@@ -301,20 +321,20 @@ function resolveStackRoute(segments: readonly string[], query: URLSearchParams):
       segments[0] || query.get('groups') || query.get('icons') || query.get('i') || '';
     const perLineList = parsePerLineList(query.get('perline'));
     return renderStack({
-      anim: resolveAnimationMode(query.get('anim')),
-      // Invalid colors keep the per-icon brand palettes instead of forcing the indigo fallback:
+      anim: resolveStackAnimationMode(query.get('anim')),
+      // Invalid colors keep the per-icon brand palettes instead of forcing the default fallback:
       color: resolveOptionalColor(query.get('color')),
       gap: parseOptionalNumber(query.get('gap')),
       groupGap: parseOptionalNumber(query.get('groupgap') || query.get('ggap')),
       groups: parseStackGroups(rawGroups, perLineList),
       perLine: perLineList?.[0],
       size: parseOptionalNumber(query.get('size')),
-      variant: resolveVariant(query.get('variant'), '2'),
+      variant: resolveVariant(query.get('variant'), DEFAULT_STACK_VARIANT),
     });
   });
 }
 
-/** Resolve a `/quote/:author/:text`, `/quote/:text`, or `/quote?text=` quote card. */
+/** Resolve a quote card route. */
 function resolveQuoteRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   const hasAuthorSegment = segments.length === 2;
   const pathText = hasAuthorSegment ? segments[1] : segments[0];
@@ -326,13 +346,13 @@ function resolveQuoteRoute(segments: readonly string[], query: URLSearchParams):
       layout: resolveQuoteLayout(query.get('layout'), query.get('type'), query.get('center')),
       size: resolveSizeToken(query.get('size')),
       text: pathText || query.get('text') || query.get('quote') || '',
-      variant: resolveVariant(query.get('variant'), '2'),
+      variant: resolveVariant(query.get('variant'), DEFAULT_QUOTE_VARIANT),
       width: parseOptionalNumber(query.get('width')),
     })
   );
 }
 
-/** Resolve a `/typing/:prefix/:lines`, `/typing/:lines`, `/type/*`, or `/typing?lines=` typing animation. */
+/** Resolve a typing animation route. */
 function resolveTypingRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   const hasPrefixSegment = segments.length === 2;
   const pathLines = hasPrefixSegment ? segments[1] : segments[0];
@@ -355,7 +375,7 @@ function resolveTypingRoute(segments: readonly string[], query: URLSearchParams)
       prefix: (hasPrefixSegment ? segments[0] : queryPrefix) ?? undefined,
       size: resolveSizeToken(query.get('size')),
       title: query.get('title') ?? undefined,
-      variant: resolveVariant(query.get('variant'), '3'),
+      variant: resolveVariant(query.get('variant'), DEFAULT_TYPING_VARIANT),
       width: parseOptionalNumber(query.get('width')),
     })
   );
@@ -365,19 +385,58 @@ function resolveTypingRoute(segments: readonly string[], query: URLSearchParams)
 
 /** SVG route table sorted by prefix: The single source of the Hono registrations, the dispatcher, and the edge cache keys. */
 export const SVG_ROUTES: readonly SvgRouteDefinition[] = [
-  { prefix: 'badge', queryParams: BADGE_QUERY_PARAMS, resolve: resolveBadgeRoute },
-  { maxSegments: 2, prefix: 'btn', queryParams: BUTTON_QUERY_PARAMS, resolve: resolveButtonRoute },
   {
+    builderKind: 'badge',
+    prefix: 'badge',
+    queryParams: BADGE_QUERY_PARAMS,
+    resolve: resolveBadgeRoute,
+  },
+  {
+    aliasOf: 'button',
+    builderKind: 'button',
+    maxSegments: 2,
+    prefix: 'btn',
+    queryParams: BUTTON_QUERY_PARAMS,
+    resolve: resolveButtonRoute,
+  },
+  {
+    builderKind: 'button',
     maxSegments: 2,
     prefix: 'button',
     queryParams: BUTTON_QUERY_PARAMS,
     resolve: resolveButtonRoute,
   },
-  { maxSegments: 1, prefix: 'icon', queryParams: ICON_QUERY_PARAMS, resolve: resolveIconRoute },
-  { maxSegments: 2, prefix: 'quote', queryParams: QUOTE_QUERY_PARAMS, resolve: resolveQuoteRoute },
-  { maxSegments: 1, prefix: 'stack', queryParams: STACK_QUERY_PARAMS, resolve: resolveStackRoute },
-  { maxSegments: 2, prefix: 'type', queryParams: TYPING_QUERY_PARAMS, resolve: resolveTypingRoute },
   {
+    builderKind: 'icon',
+    maxSegments: 1,
+    prefix: 'icon',
+    queryParams: ICON_QUERY_PARAMS,
+    resolve: resolveIconRoute,
+  },
+  {
+    builderKind: 'quote',
+    maxSegments: 2,
+    prefix: 'quote',
+    queryParams: QUOTE_QUERY_PARAMS,
+    resolve: resolveQuoteRoute,
+  },
+  {
+    builderKind: 'stack',
+    maxSegments: 1,
+    prefix: 'stack',
+    queryParams: STACK_QUERY_PARAMS,
+    resolve: resolveStackRoute,
+  },
+  {
+    aliasOf: 'typing',
+    builderKind: 'typing',
+    maxSegments: 2,
+    prefix: 'type',
+    queryParams: TYPING_QUERY_PARAMS,
+    resolve: resolveTypingRoute,
+  },
+  {
+    builderKind: 'typing',
     maxSegments: 2,
     prefix: 'typing',
     queryParams: TYPING_QUERY_PARAMS,
@@ -455,7 +514,7 @@ export function renderServiceBadge(result: MetricResult, query: URLSearchParams)
       special: result.special,
       specials: result.specials,
       value: result.value,
-      variant: '1',
+      variant: DEFAULT_BADGE_VARIANT,
     },
     true
   );
@@ -477,7 +536,7 @@ export function renderInternalErrorBadge(): string {
 
 /**
  * Render the SVG for a documented path exactly as the live Worker would (service presets use `sample`).
- * @param path     Path and query string on `svg.xul.is` (e.g., `'/badge/build/passing?icon=circle-check'`).
+ * @param path     Root-relative path and query string (e.g., `'/badge/build/passing?icon=circle-check'`).
  * @param sample   Sample value or upstream payload for service preset badges (no network access).
  * @returns Complete SVG markup.
  * @throws {Error} When `path` does not match any SVG route (guards the docs against broken snippets).
@@ -496,7 +555,7 @@ export function renderSvgPath(path: string, sample: ServicePreviewSample = 'n/a'
 
 /**
  * Resolve the click-through destination of a documented service preset path (its upstream page).
- * @param path   Path and query string on `svg.xul.is`.
+ * @param path   Root-relative path and query string.
  * @returns Upstream redirect URL for service preset paths, or `undefined` for static SVG routes.
  */
 export function resolveSvgPathRedirectUrl(path: string): string | undefined {

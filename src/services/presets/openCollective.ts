@@ -1,5 +1,5 @@
 /**
- * Open Collective service preset – Backer count and yearly budget of a collective (`/badge/opencollective/:slug/:metric`).
+ * Open Collective service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';

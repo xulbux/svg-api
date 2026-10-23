@@ -1,5 +1,5 @@
 /**
- * Terraform Registry service presets – Module downloads and latest version (`/badge/terraform/:namespace/:name/:provider/:metric`) and provider downloads and latest version (`/badge/tf-provider/:namespace/:type/:metric`).
+ * Terraform Registry service presets – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

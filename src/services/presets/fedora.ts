@@ -1,7 +1,7 @@
 /**
- * Fedora service preset – Package version of a Fedora branch from mdapi (`/badge/fedora/[:branch/]:pkg/v`).
+ * Fedora service preset – Live upstream metrics and redirect transformations.
  *
- * The optional branch segment defaults to `rawhide` (e.g., `f43`, `epel10`); Mdapi answers unknown
+ * The optional branch segment falls back to `DEFAULT_FEDORA_BRANCH`; Mdapi answers unknown
  * packages and branches with `400`, which is reported as not found.
  */
 
@@ -35,7 +35,7 @@ const FEDORA_ENDPOINT = createEndpoint({
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Resolve the default Fedora branch (`rawhide`). */
+/** Resolve the default Fedora branch. */
 function resolveDefaultFedoraBranch(): string {
   return DEFAULT_FEDORA_BRANCH;
 }
@@ -45,7 +45,7 @@ function resolveDefaultFedoraBranch(): string {
 /** Fedora service preset (`fedora`). */
 export const FEDORA_SERVICE = defineService({
   docs: {
-    description: 'Package version-release of a branch (omit :branch for rawhide, e.g., f43).',
+    description: `Package version-release of a branch (omit :branch for ${DEFAULT_FEDORA_BRANCH}, e.g., f43).`,
     title: 'Fedora',
   },
   metrics: {

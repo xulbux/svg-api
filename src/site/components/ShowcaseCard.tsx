@@ -199,7 +199,7 @@ export function ShowcaseCard(card: ShowcaseCardConfig): HtmlFragment {
               aria-label="Scroll code right">
               <UiIcon slug="chevron-right" size={12} />
             </button>
-            <CopyButton extraAttrs={`aria-describedby="${titleId}"`} />
+            <CopyButton ariaDescribedBy={titleId} />
             <pre
               class="code-pre"
               tabindex="0"
@@ -212,28 +212,6 @@ export function ShowcaseCard(card: ShowcaseCardConfig): HtmlFragment {
       </div>
     </div>
   );
-}
-
-/**
- * Render a showcase card containing SVG previews and an expandable `<details>` Markdown drawer.
- * @param card   Showcase card configuration with items and titles.
- * @returns HTML string for the card wrapped in a container element.
- */
-export function renderShowcaseCard(card: ShowcaseCardConfig): string {
-  return renderHtml(<ShowcaseCard {...card} />);
-}
-
-/**
- * Render a list of showcase cards.
- * @param cards   Showcase card configurations.
- * @returns Concatenated card HTML.
- */
-export function renderCardsHtml(cards: readonly ShowcaseCardConfig[]): string {
-  let cardsHtml = '';
-  for (const card of cards) {
-    cardsHtml += renderShowcaseCard(card);
-  }
-  return cardsHtml;
 }
 
 /**

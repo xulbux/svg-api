@@ -26,6 +26,7 @@ export {
   findField,
   findOption,
   findService,
+  isTypingFieldActiveForLayout,
   normalizeStackGroups,
   parsePath,
   readState,

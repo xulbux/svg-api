@@ -1,11 +1,11 @@
 /**
- * GitHub service preset – Public repository metrics (`/badge/gh/:owner/:repo/:metric`).
+ * GitHub service preset – Live upstream metrics and redirect transformations.
  *
  * Repository metadata, latest releases, and weekly commit participation use conditional REST
  * requests (`ETag` / `304 Not Modified`), while open issue and pull request counts coalesce across
- * both metrics and up to 16 concurrent repositories into a single 1-point GraphQL v4 query when
- * `GITHUB_TOKEN` is configured (short-circuiting at 0 cost when `open_issues_count === 0`, and
- * falling back to REST search without a token in local development).
+ * both metrics and up to `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories into a single 1-point
+ * GraphQL v4 query when `GITHUB_TOKEN` is configured (short-circuiting at 0 cost when
+ * `open_issues_count === 0`, and falling back to REST search without a token in local development).
  */
 
 import {
@@ -149,6 +149,34 @@ const BATCHED_QUERY_CACHE = new Map<number, string>();
 /** Open microtask batches keyed by `Authorization` header value. */
 const PENDING_GRAPHQL_BATCHES = new Map<string, GraphQlBatchItem[]>();
 
+/** GitHub repository endpoint (one cached projection shared by every repository metric). */
+const REPO_ENDPOINT = createEndpoint({
+  api: 'https://api.github.com/repos/{owner}/{target}',
+  page: 'https://github.com/{owner}/{target}',
+  project: pickFields<GitHubRepoPayload>([
+    'forks_count',
+    'license',
+    'open_issues_count',
+    'pushed_at',
+    'stargazers_count',
+  ]),
+});
+
+/** GitHub latest release endpoint. */
+const RELEASE_ENDPOINT = createEndpoint({
+  api: 'https://api.github.com/repos/{owner}/{target}/releases/latest',
+  page: 'https://github.com/{owner}/{target}/releases',
+  project: pickFields<GitHubReleasePayload>(['tag_name']),
+});
+
+/** GitHub commit participation endpoint. */
+const PARTICIPATION_ENDPOINT = createEndpoint({
+  api: 'https://api.github.com/repos/{owner}/{target}/stats/participation',
+  page: 'https://github.com/{owner}/{target}/graphs/commit-activity',
+  project: pickFields<GitHubParticipationPayload>(['all']),
+  ttl: CACHE_TTL.slow,
+});
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build the `Authorization` header when a `GITHUB_TOKEN` secret is configured. */
@@ -156,7 +184,7 @@ function buildGitHubHeaders(env: Env): Readonly<Record<string, string>> {
   return env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {};
 }
 
-/** Build (once per batch size `2`..`16`) a parameterized aliased GraphQL counts query. */
+/** Build (once per batch size `2`..`MAX_GRAPHQL_BATCH_SIZE`) a parameterized aliased GraphQL counts query. */
 function getBatchedCountsQuery(count: number): string {
   let cached = BATCHED_QUERY_CACHE.get(count);
   if (cached !== undefined) {
@@ -211,7 +239,7 @@ function buildAliasEnvelope(parsed: unknown, alias: string): Record<string, unkn
   };
 }
 
-/** Execute a multi-repository GraphQL batch (`2`..`16` items) and demultiplex each alias response. */
+/** Execute a multi-repository GraphQL batch (`2`..`MAX_GRAPHQL_BATCH_SIZE` items) and demultiplex each alias response. */
 async function executeMultiRepoBatch(
   batch: readonly GraphQlBatchItem[],
   headers: Readonly<Record<string, string>>
@@ -249,9 +277,15 @@ async function executeMultiRepoBatch(
   let parsed: unknown = undefined;
   try {
     parsed = (await response.json()) as unknown;
-  } catch {
+  } catch (error) {
+    const isAbortOrTimeout =
+      error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
     for (const item of batch) {
-      item.resolve(new Response('invalid json', { headers: forwardedHeaders, status: 200 }));
+      if (isAbortOrTimeout) {
+        item.reject(error);
+      } else {
+        item.resolve(new Response('invalid json', { headers: forwardedHeaders, status: 200 }));
+      }
     }
     return;
   }
@@ -273,7 +307,7 @@ function ignoreUnhandledBatchError(): void {
   // Every queued item is resolved or rejected inside `executeMultiRepoBatch`.
 }
 
-/** Flush one queued microtask batch (`1` repo directly, or `2`..`16` repos in a single 1-point query). */
+/** Flush one queued microtask batch (`1` repo directly, or `2`..`MAX_GRAPHQL_BATCH_SIZE` repos in a single 1-point query). */
 function flushGraphQlBatch(
   authKey: string,
   batch: GraphQlBatchItem[],
@@ -301,7 +335,7 @@ function flushGraphQlBatch(
   executeMultiRepoBatch(batch, headers).catch(ignoreUnhandledBatchError);
 }
 
-/** Enqueue a repository count lookup into the current microtask's GraphQL batch (`<= 16` repos per query). */
+/** Enqueue a repository count lookup into the current microtask's GraphQL batch (`<= MAX_GRAPHQL_BATCH_SIZE` repos per query). */
 function enqueueGitHubCountsQuery(
   params: ServiceRouteParams,
   headers: Readonly<Record<string, string>>
@@ -324,19 +358,6 @@ function enqueueGitHubCountsQuery(
   });
 }
 
-/** GitHub repository endpoint (one cached projection shared by every repository metric). */
-const REPO_ENDPOINT = createEndpoint({
-  api: 'https://api.github.com/repos/{owner}/{target}',
-  page: 'https://github.com/{owner}/{target}',
-  project: pickFields<GitHubRepoPayload>([
-    'forks_count',
-    'license',
-    'open_issues_count',
-    'pushed_at',
-    'stargazers_count',
-  ]),
-});
-
 /** Check whether the cached repository payload already proves both open issues and PRs are `0`. */
 function hasZeroOpenIssuesAndPrs(
   params: ServiceRouteParams,
@@ -348,8 +369,8 @@ function hasZeroOpenIssuesAndPrs(
 
 /**
  * Build a shared GraphQL request for open issue and pull request counts (micro-batched across up to
- * 16 concurrent repositories when `GITHUB_TOKEN` is set, short-circuited at 0 cost when
- * `open_issues_count === 0`, and falling back to REST `/search/issues` without a token).
+ * `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories when `GITHUB_TOKEN` is set, short-circuited at 0
+ * cost when `open_issues_count === 0`, and falling back to REST `/search/issues` without a token).
  */
 function buildGitHubCountsRequest(
   params: ServiceRouteParams,
@@ -465,21 +486,6 @@ const PRS_ENDPOINT = createEndpoint({
   missingStatuses: [422],
   page: 'https://github.com/{owner}/{target}/pulls',
   project: projectGitHubCounts,
-  ttl: CACHE_TTL.slow,
-});
-
-/** GitHub latest release endpoint. */
-const RELEASE_ENDPOINT = createEndpoint({
-  api: 'https://api.github.com/repos/{owner}/{target}/releases/latest',
-  page: 'https://github.com/{owner}/{target}/releases',
-  project: pickFields<GitHubReleasePayload>(['tag_name']),
-});
-
-/** GitHub commit participation endpoint. */
-const PARTICIPATION_ENDPOINT = createEndpoint({
-  api: 'https://api.github.com/repos/{owner}/{target}/stats/participation',
-  page: 'https://github.com/{owner}/{target}/graphs/commit-activity',
-  project: pickFields<GitHubParticipationPayload>(['all']),
   ttl: CACHE_TTL.slow,
 });
 

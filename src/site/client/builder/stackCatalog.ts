@@ -341,11 +341,15 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     });
     modeTabList?.addEventListener('keydown', (event) => {
       const keyEvent = event as KeyboardEvent;
-      if (keyEvent.key !== 'ArrowLeft' && keyEvent.key !== 'ArrowRight') {
-        return;
-      }
       const tabs = [...modeTabList.querySelectorAll('.stack-mode-tab')];
-      const next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
+      let next: Element | undefined = undefined;
+      if (keyEvent.key === 'ArrowLeft' || keyEvent.key === 'ArrowRight') {
+        next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
+      } else if (keyEvent.key === 'Home') {
+        [next] = tabs;
+      } else if (keyEvent.key === 'End') {
+        next = tabs.at(-1);
+      }
       if (next instanceof HTMLElement) {
         keyEvent.preventDefault();
         selectStackModeTab(next);

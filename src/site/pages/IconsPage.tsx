@@ -1,5 +1,5 @@
 /**
- * Icons documentation page – Renders the Standalone Icons (`/docs/icons`) section (`<IconsSection />` and `renderIconsSectionHtml`).
+ * Icons documentation page – Renders the Standalone Icons (`/docs/icons`) section (`<IconsSection />`).
  */
 
 import { buildIconParamRows, ICON_CARDS } from '@/site/catalog/icons';
@@ -7,9 +7,9 @@ import { formatCountLowerBound, getIconSetCounts } from '@/site/catalog/shared';
 import { AliasList, ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { renderHtml } from '@/site/jsx';
+import { formatConjunctionList } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
-import { ICON_SLUG_ALIASES } from '@/svg/icons';
+import { ICON_SLUG_ALIASES, ICON_SOURCE_SETS } from '@/svg/icons';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -22,7 +22,7 @@ export function IconsSection(): HtmlFragment {
   return (
     <section class="doc-section" id="icons">
       <SectionHeader
-        description={`${formatCountLowerBound(iconCounts.lucide)} Lucide stroke icons and ${formatCountLowerBound(iconCounts.brand)} Simple Icons / Devicon brand marks with intrinsic pixel dimensions baked into the root \`<svg>\`.`}
+        description={`${formatCountLowerBound(iconCounts.lucide)} ${ICON_SOURCE_SETS.stroke[0]} stroke icons and ${formatCountLowerBound(iconCounts.brand)} ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand marks with intrinsic pixel dimensions baked into the root \`<svg>\`.`}
         routes={['/icon/:icon']}
         title="Standalone UI & Brand Icons"
       />
@@ -33,12 +33,4 @@ export function IconsSection(): HtmlFragment {
       <AliasList aliases={ICON_SLUG_ALIASES} label="Icon slug aliases" />
     </section>
   );
-}
-
-/**
- * Render the Standalone Icons (`/icon/:icon`) documentation section HTML.
- * @returns HTML string for the `/icon/*` documentation and live preview section.
- */
-export function renderIconsSectionHtml(): string {
-  return renderHtml(<IconsSection />);
 }

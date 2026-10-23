@@ -1,5 +1,5 @@
 /**
- * UI icon & inline primitive components – Lucide/brand UI icons, the per-page SVG sprite, copy buttons, permalink anchors, and inline markup helpers.
+ * UI icon & inline primitive components – Inline UI icons, per-page SVG sprite, copy buttons, permalink anchors, and inline markup helpers.
  */
 
 import { raw, renderHtml } from '@/site/jsx';
@@ -21,8 +21,12 @@ export interface UiIconProps {
 
 /** Props for the `<CopyButton />` component. */
 export interface CopyButtonProps {
-  /** Additional raw HTML attributes (e.g., `'data-copy-target="builder-code"'`). */
-  readonly extraAttrs?: string | undefined;
+  /** Optional ID of the heading or element that describes what this button copies. */
+  readonly ariaDescribedBy?: string | undefined;
+  /** Optional ID of the target element whose text content is copied (`data-copy-target`). */
+  readonly copyTarget?: string | undefined;
+  /** Optional DOM `id` attribute for the button. */
+  readonly id?: string | undefined;
 }
 
 /** Props for the `<AnchorLink />` permalink component. */
@@ -190,7 +194,7 @@ export function UiSprite(): HtmlFragment {
 }
 
 /**
- * Render an inline UI icon (`<svg class="ui-icon">`) from `lucide-static` or `@iconify-json/simple-icons`;
+ * Render an inline UI icon (`<svg class="ui-icon">`) from the bundled icon registry;
  * Repeated icons (`UI_SPRITE_ICON_SLUGS`) reference the page's UI sprite instead of repeating their paths.
  * @param slug         Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`).
  * @param size         Width and height in pixels (defaults to `16`).
@@ -238,12 +242,17 @@ export function UiIcon(props: UiIconProps): HtmlFragment {
 
 /**
  * Render an icon-only copy button as a JSX component.
- * @param props   Copy button props (`extraAttrs`).
+ * @param props   Copy button props (`id`, `ariaDescribedBy`, and `copyTarget`).
  * @returns Copy `<button>` fragment.
  */
 export function CopyButton(props: CopyButtonProps): HtmlFragment {
   return (
-    <button type="button" class="copy-btn" rawAttrs={props.extraAttrs}>
+    <button
+      type="button"
+      class="copy-btn"
+      id={props.id}
+      aria-describedby={props.ariaDescribedBy}
+      data-copy-target={props.copyTarget}>
       <UiIcon slug="copy" size={15} extraClass="icon-copy" />
       <UiIcon slug="check" size={15} extraClass="icon-check" />
       <span class="visually-hidden" data-copy-label={true} aria-live="polite">
@@ -251,13 +260,4 @@ export function CopyButton(props: CopyButtonProps): HtmlFragment {
       </span>
     </button>
   );
-}
-
-/**
- * Render an icon-only copy button (copy and check icons plus a polite live label announced by the site script).
- * @param extraAttrs   Additional button attributes (e.g., `'data-copy-target="builder-code"'`).
- * @returns Copy button HTML.
- */
-export function renderCopyButton(extraAttrs: string): string {
-  return renderHtml(<CopyButton extraAttrs={extraAttrs} />);
 }

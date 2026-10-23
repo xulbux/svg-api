@@ -1,5 +1,5 @@
 /**
- * Codecov service preset – Test coverage of a GitHub repository with a threshold-colored ring gauge (`/badge/codecov/:owner/:repo/:metric`).
+ * Codecov service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createCoverageService } from '@/services/metrics';

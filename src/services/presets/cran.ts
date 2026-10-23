@@ -1,5 +1,5 @@
 /**
- * CRAN service preset – R package version and license from crandb plus daily/weekly/monthly downloads from cranlogs (RStudio mirror) (`/badge/cran/:pkg/:metric`).
+ * CRAN service preset – Live upstream metrics and redirect transformations.
  */
 
 import {

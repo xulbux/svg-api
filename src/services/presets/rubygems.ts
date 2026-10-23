@@ -1,5 +1,5 @@
 /**
- * RubyGems service preset – Ruby gem version, total downloads, license, and last-updated age (`/badge/gem/:gem/:metric`).
+ * RubyGems service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

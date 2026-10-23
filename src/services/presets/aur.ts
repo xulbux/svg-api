@@ -1,5 +1,5 @@
 /**
- * AUR service preset – Arch User Repository package version, votes, popularity, and license (`/badge/aur/:pkg/:metric`).
+ * AUR service preset – Live upstream metrics and redirect transformations.
  */
 
 import {

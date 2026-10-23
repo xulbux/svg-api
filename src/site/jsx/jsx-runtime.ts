@@ -1,8 +1,8 @@
 /**
- * Server JSX runtime – Zero-overhead synchronous JSX serializer for `svg.xul.is` documentation and builder pages.
+ * Server JSX runtime – Zero-overhead synchronous JSX serializer for server-rendered HTML pages.
  *
- * Evaluates JSX trees directly into escaped HTML strings using `escapeXml` from `src/svg/shared.ts`
- * without VDOM allocations, async promises, or client hydration payloads.
+ * Evaluates JSX trees directly into escaped HTML strings without VDOM allocations,
+ * async promises, or client hydration payloads.
  */
 
 import { escapeXml } from '@/svg/shared';

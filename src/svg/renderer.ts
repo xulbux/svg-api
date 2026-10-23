@@ -1,5 +1,5 @@
 /**
- * SVG renderer – Single Source of Truth generator for badges, micro-buttons, and standalone icons (`svg.xul.is`).
+ * SVG renderer – Single Source of Truth generator for badges, micro-buttons, and standalone icons.
  */
 
 import { ROSE_200, STRIP_DARK_COLORS, STRIP_SOLID_COLORS, WHITE } from '@/config/palette';
@@ -141,7 +141,7 @@ interface IconSlot extends IconLookup {
   slug: string;
 }
 
-/** Resolved left and right icon slots from `?icon=name`, `?icon=left,right`, or `?icon=none,right`. */
+/** Resolved left and right icon slots of a badge or button. */
 interface ResolvedIconPair {
   /** Leading left-hand icon slot. */
   left: Readonly<IconSlot>;
@@ -333,7 +333,7 @@ interface CapsuleBodyOptions {
   dot: DotState | undefined;
   /** Resolved icon slots. */
   icons: ResolvedIconPair;
-  /** Whether the label uses semi-bold (`600`) weight. */
+  /** Whether the label uses the bold font weight. */
   isLabelBold: boolean;
   /** Whether the leading icon and label sit on a vivid primary surface. */
   isLeftOnPrimary: boolean;
@@ -378,21 +378,24 @@ type NudgeVector = readonly [deltaX: number, deltaY: number];
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Rendered size bounds in pixels for standalone SVG icons (`svg.xul.is/icon/:icon?size=`). */
+/** Rendered size bounds in pixels for standalone SVG icons. */
 export const ICON_SIZE_RANGE: NumericRange = { default: 24, max: 256, min: 8 };
 
-/** Stroke width bounds in `24x24` viewBox units for standalone Lucide SVG icons (`?stroke=`). */
+/** Stroke width bounds in `24x24` viewBox units for standalone stroked SVG icons. */
 export const ICON_STROKE_RANGE: NumericRange = {
   default: DEFAULT_ICON_STROKE_WIDTH,
   max: 4,
   min: 1,
 };
 
-/** Custom pixel height bounds for CTA buttons (`/button/*?size=<px>`; Defaults to the `md` preset). */
+/** Custom pixel height bounds for CTA buttons. */
 export const BUTTON_HEIGHT_RANGE: NumericRange = { default: 30, max: 48, min: 22 };
 
 /** Maximum badge/button label, value, and delta length in UTF-16 code units before ellipsis truncation. */
 export const MAX_LABEL_LENGTH = 128;
+
+/** Minimum number of data points required by `sparkline:` and `bars:` series widgets. */
+export const MIN_SERIES_POINTS = 2;
 
 /** Maximum number of bars in a `bars:` special element. */
 export const MAX_BARS_POINTS = 10;
@@ -403,11 +406,14 @@ export const MAX_STEPS_COUNT = 10;
 /** Maximum number of ticks in a `strip:` special element. */
 export const MAX_STRIP_TICKS = 10;
 
+/** Maximum single-digit tick state accepted by `strip:` history widgets (derived from the strip color scale). */
+export const STRIP_TICK_MAX_STATE = Object.keys(STRIP_DARK_COLORS).length - 1;
+
 /** Maximum number of points in a `sparkline:` special element. */
 export const MAX_SPARKLINE_POINTS = 64;
 
 /** Bounds of `bar:` and `ring:` gauge percentages. */
-const PERCENT_RANGE: NumericRange = { default: 0, max: 100, min: 0 };
+export const PERCENT_RANGE: NumericRange = { default: 0, max: 100, min: 0 };
 
 /** Bounds of `steps:` total step count. */
 const STEPS_TOTAL_RANGE: NumericRange = { default: 1, max: MAX_STEPS_COUNT, min: 1 };
@@ -418,7 +424,7 @@ const STEPS_TOTAL_RANGE: NumericRange = { default: 1, max: MAX_STEPS_COUNT, min:
  */
 const MAX_SPARKLINE_MAGNITUDE = 1e12;
 
-/** Named size scale presets for CTA buttons (`/button/*` and `/btn/*`). */
+/** Named size scale presets for CTA buttons. */
 export const BUTTON_SIZE_PRESETS: Readonly<Record<SizePreset, VariantMetrics>> = {
   lg: { fontSize: 14, height: 36, iconSize: 17, padX: 18, radius: 11 },
   md: { fontSize: 12.5, height: 30, iconSize: 15, padX: 14, radius: 9 },
@@ -426,10 +432,13 @@ export const BUTTON_SIZE_PRESETS: Readonly<Record<SizePreset, VariantMetrics>> =
   xl: { fontSize: 15.5, height: 42, iconSize: 19, padX: 22, radius: 13 },
 };
 
-/** Size metrics for standard `22px` badges (`variant=1`, `variant=2`, `variant=3`). */
+/** Fixed height in pixels of standard status and service badges. */
+export const BADGE_HEIGHT = 22;
+
+/** Size metrics for standard badges across every visual variant. */
 const BADGE_METRICS: VariantMetrics = {
   fontSize: BADGE_FONT_SIZE,
-  height: 22,
+  height: BADGE_HEIGHT,
   iconSize: 13,
   padX: 9,
   radius: 6,
@@ -446,7 +455,7 @@ const SPECIAL_WIDGET_GEOMETRY: Readonly<SpecialWidgetGeometry> = {
   strip: { tickGap: 2, tickHeight: 10, tickWidth: 2.5 },
 };
 
-/** Stroke width of Lucide icons inside badges and buttons in `24x24` icon units. */
+/** Stroke width of stroked icons inside badges and buttons in `24x24` icon units. */
 const CAPSULE_ICON_STROKE_WIDTH = DEFAULT_ICON_STROKE_WIDTH;
 
 /** Horizontal slot width in pixels reserved for the status dot. */
@@ -668,7 +677,7 @@ function sanitizeSeriesValues(values: readonly number[], maxPoints: number): num
   return sanitized;
 }
 
-/** Keep the valid strip tick states (`'0'`–`'9'`), at most `MAX_STRIP_TICKS`. */
+/** Keep the valid strip tick states, at most `MAX_STRIP_TICKS`. */
 function sanitizeStripStates(states: readonly string[]): StripTickState[] {
   const sanitized: StripTickState[] = [];
   for (const state of states) {
@@ -683,11 +692,10 @@ function sanitizeStripStates(states: readonly string[]): StripTickState[] {
 }
 
 /**
- * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON): Sparkline
- * and mini-bar values become finite and bounded, gauge percentages are clamped to `0`–`100` (`NaN`
- * becomes `0`), step pills clamp `total` to `1`–`MAX_STEPS_COUNT` and `done` to `0`–`total`, strips
- * keep at most `MAX_STRIP_TICKS` valid ticks, and delta text is normalized, trimmed, and capped (an
- * empty delta renders no special element).
+ * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON): Series
+ * values become finite and bounded, gauge percentages are clamped to `PERCENT_RANGE` (`NaN` becomes `0`),
+ * step pills clamp `total` and `done`, strips keep at most `MAX_STRIP_TICKS` valid ticks, and delta text
+ * is normalized, trimmed, and capped (an empty delta renders no special element).
  */
 function sanitizeSpecialElement(
   special: BadgeSpecialElement | undefined
@@ -965,16 +973,12 @@ function renderIconMarkup(options: IconMarkupOptions): string {
   const scaleNum = options.iconSize / 24;
   const scale = roundScale(scaleNum);
   const translateX = roundCoord(options.visualStartX - iconData.minX * scaleNum);
-  const isFallback = options.slot.isFallback === true;
-  const animatedSvg = wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion);
-  const innerSvg =
-    isFallback && options.isOnPrimary
-      ? `<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}" stroke="none" />${animatedSvg}`
-      : animatedSvg;
   return renderIconGroup({
-    color: isFallback ? THEMES.red.iconColor : options.paint.color,
-    innerSvg,
-    opacity: isFallback ? undefined : options.paint.opacity,
+    color: options.paint.color,
+    innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),
+    isFallback: options.slot.isFallback === true,
+    isOnPrimary: options.isOnPrimary,
+    opacity: options.paint.opacity,
     strokeWidth: CAPSULE_ICON_STROKE_WIDTH,
     transform: `translate(${translateX}, ${options.iconY}) scale(${scale})`,
     type: iconData.type,
@@ -1030,28 +1034,28 @@ function renderDotMarkup(
     return staticCore;
   }
 
-  // [1] Critical / Offline (red, rose); urgent 1.15s outward beacon + core pulse:
+  // [1] Critical / offline state; urgent outward beacon and core pulse:
   if (CRITICAL_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', 'dur="1.15s"'))}`;
   }
 
-  // [2] Incident / Overloaded (orange); faster 1.45s double-beat outward ripple + subtle core pulse:
+  // [2] Incident / overloaded state; fast double-beat outward ripple and core pulse:
   if (INCIDENT_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.45;1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', 'dur="1.45s"'))}`;
   }
 
-  // [3] Degraded / Warning (amber, yellow); 1.8s double-beat outward radar ripple:
+  // [3] Degraded / warning state; double-beat outward radar ripple:
   if (WARNING_DOT_STATES.has(dot)) {
     return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.46;1" dur="1.8s"')}${staticCore}`;
   }
 
-  // [4] Maintenance / Deploying / Syncing (sky, blue, cyan, indigo); active-work breathing core + soft outward halo:
+  // [4] Active work / deploying state; breathing core and soft outward halo:
   if (ACTIVE_WORK_DOT_STATES.has(dot)) {
     const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', 'dur="2s"')}${renderDotAnimate('opacity', '0.75;1;0.75', 'dur="2s"')}`;
     return `${renderDotRipple(position, dotHex, '2.6;5.8', '0.5;0', 'dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1"')}${renderDotCore(position, dotHex, breathing)}`;
   }
 
-  // [5] Standby / Paused / Idle (slate, gray, zinc, neutral, stone); calm 3.4s deep-sleep core breath without radar ring:
+  // [5] Standby / idle state; calm core breath without a radar ring:
   if (STANDBY_DOT_STATES.has(dot)) {
     return renderDotCore(
       position,
@@ -1060,7 +1064,7 @@ function renderDotMarkup(
     );
   }
 
-  // [6] Operational / Online & Beta / Preview (green, emerald, violet, purple, etc.); calm 2.3s outward spline wave:
+  // [6] Operational / default state; calm outward spline wave:
   return `${renderDotRipple(position, dotHex, '2.6;6.8', '0.6;0', 'dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1"')}${staticCore}`;
 }
 
@@ -1116,7 +1120,7 @@ function renderBarShimmerDef(isOnPrimary: boolean): string {
 }
 
 /**
- * Render an inline horizontal progress/capacity bar from a sanitized `0`–`100` percentage.
+ * Render an inline horizontal progress/capacity bar from a sanitized percentage.
  * The empty track uses a dark translucent accent color, and the rightward shimmer wave is applied
  * directly as a fill on the filled `<rect>` so it can never enter the empty part of the bar; Its
  * gradient definition goes into the root `<defs>`.
@@ -1152,7 +1156,7 @@ function renderBarWidget(
   };
 }
 
-/** Render a mini vertical bar histogram (sanitized to at most `MAX_BARS_POINTS` finite values), bottom-aligned in the `11px` box. */
+/** Render a mini vertical bar histogram (sanitized to at most `MAX_BARS_POINTS` finite values), bottom-aligned in its widget box. */
 function renderBarsWidgetMarkup(values: number[], context: SpecialElementContext): string {
   const { barGap, barWidth, maxHeight, minHeight } = SPECIAL_WIDGET_GEOMETRY.bars;
   let minValue = Number.POSITIVE_INFINITY;
@@ -1220,7 +1224,7 @@ function renderStepsWidgetMarkup(
   return pillsMarkup;
 }
 
-/** Render an inline `12x12px` circular ring/donut gauge (sanitized `0`–`100` percentage) with a dark translucent accent track and optional pulse. */
+/** Render an inline circular ring/donut gauge from a sanitized percentage with a dark translucent accent track and optional pulse. */
 function renderRingWidgetMarkup(
   percentValue: number,
   hasPulse: boolean,
@@ -1244,7 +1248,7 @@ function renderRingWidgetMarkup(
   return `${trackCircle}<circle ${circleGeometry} stroke="${paint.activeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
 }
 
-/** Resolve the fill color for a single sanitized tick (`'0'`–`'9'`) in a 10-stage segmented strip. */
+/** Resolve the fill color for a single sanitized tick in a segmented strip. */
 function resolveStripTickColor(state: StripTickState, isOnPrimary: boolean): string {
   return isOnPrimary
     ? (getOwnValue(STRIP_SOLID_COLORS, state) ?? WHITE)
@@ -1355,7 +1359,7 @@ function renderSparklineWidget(
   };
 }
 
-/** Render the active right-compartment special element (`sparkline`, `bars`, `bar`, `steps`, `ring`, `strip`, or `delta`) and its `<defs>`. */
+/** Render the active right-compartment special element and its `<defs>`. */
 function renderSpecialElement(
   special: BadgeSpecialElement | undefined,
   context: SpecialElementContext
@@ -1393,7 +1397,7 @@ function renderSpecialElement(
   }
 }
 
-/** Render all background fills, upper-edge Kumo 3D crescents, dividers, and outer border rings for a `22px` badge. */
+/** Render all background fills, upper-edge Kumo 3D crescents, dividers, and outer border rings for a badge. */
 function renderBadgeSurface(options: BadgeSurfaceOptions): string {
   const { color, height, layout, radius, variant } = options;
   const { isSplit, leftWidth, totalWidth } = layout;
@@ -1629,7 +1633,7 @@ function buildIconSheenId(coordScale: number): string {
 /**
  * Render (memoized per coordinate scale) the standalone icon sheen `<linearGradient>`.
  * The gradient uses `userSpaceOnUse` coordinates of the painted paths, so icon bodies drawn in a scaled
- * coordinate space (Devicon's `128x128` grid) get an inverse `gradientTransform` to sweep the full `24x24` box.
+ * coordinate space get an inverse `gradientTransform` to sweep the full `24x24` box.
  */
 function renderIconSheenGradientDef(coordScale: number): string {
   let gradientDef = ICON_SHEEN_DEF_CACHE.get(coordScale);
@@ -1659,8 +1663,8 @@ function renderIconSheenGradientDef(coordScale: number): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render a complete `22px` badge SVG string from `BadgeRenderOptions`.
- * @param options   Badge rendering configuration (label, value, color, variant, icon, dot, special, anim).
+ * Render a complete badge SVG string from `BadgeRenderOptions`.
+ * @param options   Badge rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderBadge(options: BadgeRenderOptions): string {
@@ -1742,9 +1746,8 @@ export function renderBadge(options: BadgeRenderOptions): string {
 }
 
 /**
- * Render a CTA button SVG string (`svg.xul.is/button/*` and `svg.xul.is/btn/*`) from `ButtonRenderOptions`.
- * Supports size presets (`sm`, `md`, `lg`, `xl` or custom pixel height), unified `icon` (`'left'`, `'left,right'`, `'none,right'`),
- * optional 2-segment split `value`, and 3 Kumo 3D variants (`1`, `2`, `3`).
+ * Render a CTA button SVG string from `ButtonRenderOptions`.
+ * Supports named size presets or custom pixel heights, leading/trailing icons, optional split values, and Kumo 3D variants.
  * @param options   Button rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -1819,10 +1822,10 @@ export function renderButton(options: ButtonRenderOptions): string {
 }
 
 /**
- * Render a standalone SVG icon string (`svg.xul.is/icon/:icon`).
+ * Render a standalone SVG icon string.
  * Uses a padded `-3 -3 30 30` viewBox so rotation, scale, and translation micro-animations never clip.
- * Unknown slugs draw `FALLBACK_ICON_SLUG` and are labeled `unknown icon: <slug>`.
- * @param options   Standalone icon rendering configuration (`icon`, `color`, `size`, `strokeWidth`, `anim`).
+ * Unknown slugs draw the placeholder icon and are labeled `unknown icon: <slug>`.
+ * @param options   Standalone icon rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderIcon(options: IconRenderOptions): string {

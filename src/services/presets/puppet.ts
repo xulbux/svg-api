@@ -1,9 +1,9 @@
 /**
- * Puppet Forge service preset – Module version, total downloads, license, and community feedback score with a ring gauge (`/badge/puppet/:owner/:module/:metric`).
+ * Puppet Forge service preset – Live upstream metrics and redirect transformations.
  *
- * Version and license come from the newest release (`/v3/releases?limit=1`, `~5 KB` with
- * `exclude_fields`); Downloads and the feedback score need the module document, which ignores
- * `exclude_fields` (`~300 KB`), so only its two counters are kept in the caches.
+ * Release metadata comes from the newest release (`/v3/releases?limit=1`, `~5 KB` with
+ * `exclude_fields`), while module-wide metrics read the module document (which ignores
+ * `exclude_fields`, `~300 KB`) and project only the needed fields.
  */
 
 import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';

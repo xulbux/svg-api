@@ -1,5 +1,5 @@
 /**
- * Liberapay service preset – Patron count and weekly donations received by a user or team (`/badge/liberapay/:user/:metric`).
+ * Liberapay service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';

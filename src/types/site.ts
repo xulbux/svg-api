@@ -1,12 +1,12 @@
 /**
- * Website types – Navigation, showcase cards, parameter tables, and page layout options (`src/site/`).
+ * Website types – Navigation, showcase cards, parameter tables, and page layout options.
  */
 
 import type { ServicePreviewSample } from './service';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Supported documentation section slugs on `/docs/:section`. */
+/** Supported documentation section slugs. */
 export type DocsSectionSlug =
   | 'badges'
   | 'buttons'
@@ -17,22 +17,22 @@ export type DocsSectionSlug =
   | 'stack'
   | 'typing';
 
-/** Documentation page slugs (`'overview'` is the `/docs` landing page). */
+/** Documentation page slugs (`'overview'` is the root documentation landing page). */
 export type DocsPageSlug = DocsSectionSlug | 'overview';
 
-/** Element kinds with a dedicated URL builder page on `/builder/:kind`. */
+/** Element kinds with a dedicated URL builder page. */
 export type BuilderKind = 'badge' | 'button' | 'icon' | 'quote' | 'service' | 'stack' | 'typing';
 
 /** Sidebar group identifiers shared by the documentation and builder sidebars. */
 export type SidebarGroupId = 'badges' | 'elements' | 'reference' | 'start';
 
-/** Top navigation tab identifiers across the `svg.xul.is` web interface. */
-export type NavPageId = 'builder' | 'docs' | 'home';
+/** Top navigation tab identifiers (`'none'` when no tab is active, e.g., on `404`). */
+export type NavPageId = 'builder' | 'docs' | 'home' | 'none';
 
-/** Public file names of the static website assets served at `/assets/:name` (icon picker pages are resolved dynamically). */
+/** Public file names of static website assets (paginated icon body assets are resolved dynamically). */
 export type SiteAssetName = 'builder.js' | 'icons.json' | 'site.css' | 'site.js';
 
-/** Public file names of the bundled website font files served at `/assets/:name`. */
+/** Public file names of bundled website font files. */
 export type SiteFontName =
   | 'Geist-Bold.ttf'
   | 'Geist-Medium.ttf'
@@ -73,16 +73,20 @@ export interface DocsSectionMeta {
   title: string;
 }
 
-/** Sidebar, `<title>`, and meta description metadata of a builder page. */
+/** Sidebar, `<title>`, meta description, and companion docs metadata of a builder page. */
 export interface BuilderPageMeta {
   /** Unique meta description for search engines and link previews. */
   description: string;
+  /** Companion documentation section slug linked from the builder header. */
+  docsSlug: DocsSectionSlug;
   /** Sidebar group the page is listed in. */
   group: SidebarGroupId;
   /** Element kind (`/builder/:kind`). */
   kind: BuilderKind;
   /** Short label in the sidebar. */
   navLabel: string;
+  /** Short capability label rendered on the shared OpenGraph preview card. */
+  ogLabel: string;
   /** Page heading and document `<title>` prefix. */
   title: string;
 }
@@ -125,11 +129,11 @@ export interface PageSidebar {
   label: string;
 }
 
-/** Distinct icon counts of the bundled icon sets (computed lazily for the docs; Never hard-coded). */
+/** Distinct icon counts of the bundled icon sets (computed lazily; Never hard-coded). */
 export interface IconSetCounts {
-  /** Distinct Simple Icons and Devicon Plain brand/technology slugs. */
+  /** Distinct brand and technology slugs across the bundled brand icon sets. */
   brand: number;
-  /** Distinct Lucide stroke icons (aliases of the same glyph are counted once). */
+  /** Distinct UI stroke icons (aliases of the same glyph are counted once). */
   lucide: number;
 }
 
@@ -139,7 +143,7 @@ export interface ShowcaseItem {
   alt: string;
   /** Optional outer link target (`[![alt](url)](href)`; Defaults to the preset redirect for service badges). */
   href?: string;
-  /** Canonical path and query string on `https://svg.xul.is` (e.g., `'/badge/pypi/xulbux/v'`). */
+  /** Canonical root-relative SVG path and query string (e.g., `'/badge/pypi/xulbux/v'`). */
   path: string;
   /** Sample value or upstream payload for service preset badges (rendered without network access). */
   sample?: ServicePreviewSample;
@@ -171,41 +175,6 @@ export interface ParamTableRow {
   name: string;
   /** Accepted values or type signature (prefix with `~` for a non-code descriptive note). */
   values: string;
-}
-
-/**
- * Options for rendering a documentation section header.
- * `title` and `description` support inline `` `code` `` and `**strong**` markup; Everything else is escaped.
- */
-export interface SectionHeaderOptions {
-  /** Optional raw HTML rendered beside the section title (e.g., the builder's `Reference` link). */
-  actionHtml?: string;
-  /** Section lead paragraph. */
-  description: string;
-  /** Heading level of the title (`1` for docs pages, `2` for homepage sections; Defaults to `1`). */
-  headingLevel?: 1 | 2;
-  /** Route patterns rendered as `GET` pills below the description. */
-  routes?: readonly string[];
-  /** Section heading text. */
-  title: string;
-}
-
-/** Options for rendering the full HTML document shell. */
-export interface PageLayoutOptions {
-  /** Active top navigation tab. */
-  activeNav: NavPageId;
-  /** Inner `<main>` HTML content. */
-  bodyHtml: string;
-  /** Canonical path of the page on `https://svg.xul.is` (e.g., `'/docs/badges'`). */
-  canonicalPath: string;
-  /** Meta description for search engines and link previews. */
-  description: string;
-  /** Additional HTML appended after the site script (e.g., the builder schema and script). */
-  extraBodyHtml?: string;
-  /** Optional left sidebar (documentation and builder pages). */
-  sidebar?: PageSidebar;
-  /** Document `<title>` text. */
-  title: string;
 }
 
 /** Site-wide client configuration rendered into the `#site-config` JSON element. */
@@ -246,9 +215,9 @@ export interface PopoverSize {
 
 /** Options of a fallback popover placement. */
 export interface PopoverPlacementOptions {
-  /** Horizontal alignment with the anchor (`'start'` aligns left edges, `'end'` right edges; Defaults to `'start'`). */
+  /** Horizontal alignment with the anchor (`'start'` aligns left edges, `'end'` right edges). */
   align?: 'end' | 'start';
-  /** Distance in pixels between anchor and popover (defaults to `8`). */
+  /** Distance in pixels between anchor and popover. */
   gap?: number;
   /** Whether the popover is at least as wide as its anchor (dropdown menus). */
   isWidthMatched?: boolean;

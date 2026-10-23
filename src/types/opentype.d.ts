@@ -1,13 +1,19 @@
 /**
- * OpenType module declarations – Ambient TypeScript declarations for `opentype.js` (`v2.0.0`) and bundled `.ttf` binary modules.
+ * OpenType & binary module declarations – Ambient TypeScript declarations for `opentype.js` and bundled Worker `Data` binary modules.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 declare module '*.ttf' {
-  /** Raw font binary (Wrangler `Data` module rule; Mirrored by the `ttf-arraybuffer` plugin in `vitest.config.mts`). */
+  /** Raw font binary imported as a Worker `Data` module. */
   const fontBuffer: ArrayBuffer;
   export default fontBuffer;
+}
+
+declare module '*.png' {
+  /** Raw PNG image binary imported as a Worker `Data` module. */
+  const pngBuffer: ArrayBuffer;
+  export default pngBuffer;
 }
 
 declare module 'opentype.js' {
@@ -32,7 +38,7 @@ declare module 'opentype.js' {
 
   /** Vector outline path constructed from OpenType glyph contours. */
   export interface Path {
-    /** Ordered list of 2D contour commands (`M`, `L`, `Q`, `C`, `Z`). */
+    /** Ordered list of 2D contour commands. */
     commands: PathCommand[];
     /** Calculate the exact analytical Bezier bounding box of this path. */
     getBoundingBox: () => BoundingBox;
@@ -66,7 +72,7 @@ declare module 'opentype.js' {
     sxHeight?: number;
   }
 
-  /** Parsed OpenType tables used by the text measurement (`gsub`, `os2`). */
+  /** Parsed OpenType tables exposed on a `Font` instance. */
   export interface FontTables {
     /** Optional `GSUB` glyph substitution table. */
     gsub?: unknown;

@@ -1,10 +1,12 @@
 /**
- * Header navigation component – Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, 3-tab navigation, preview background switch, theme switch, and GitHub link.
+ * Header navigation component – Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, top-level navigation tabs, preview background switch, theme switch, and GitHub link.
  */
 
+import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SITE_HOST } from '@/config/site';
 import { UiIcon } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
+import { buildBuilderPath, DEFAULT_BUILDER_KIND } from '@/site/navigation';
 import type { NavPageId, PageSidebar } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -21,7 +23,7 @@ interface NavTab {
 
 /** Props for the `<HeaderNav />` component. */
 export interface HeaderNavProps {
-  /** Active top-level navigation tab (`'home'`, `'builder'`, or `'docs'`). */
+  /** Active top-level navigation tab. */
   readonly activeNav: NavPageId;
   /** Optional grouped left sidebar configuration (renders the narrow-screen drawer toggle when present). */
   readonly sidebar?: PageSidebar | undefined;
@@ -32,7 +34,7 @@ export interface HeaderNavProps {
 /** Top navigation tabs in display order. */
 const NAV_TABS: readonly NavTab[] = [
   { href: '/', id: 'home', label: 'Home' },
-  { href: '/builder', id: 'builder', label: 'Builder' },
+  { href: buildBuilderPath(DEFAULT_BUILDER_KIND), id: 'builder', label: 'Builder' },
   { href: '/docs', id: 'docs', label: 'Docs' },
 ];
 
@@ -65,6 +67,7 @@ function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
       type="button"
       class="sidebar-toggle"
       popovertarget="sidebar-drawer"
+      aria-expanded="false"
       aria-label={openLabel}
       title={openLabel}>
       <UiIcon slug="panel-left" size={16} />
@@ -113,7 +116,7 @@ export function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | und
           <span class="brand-mark" aria-hidden="true">
             <UiIcon slug="sparkles" size={15} />
           </span>
-          svg.xul.is
+          {SITE_HOST}
         </a>
         <div class="header-nav-row">
           {sidebar ? renderSidebarToggle(sidebar) : undefined}
@@ -148,12 +151,12 @@ export function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | und
           </button>
           <span class="header-divider" aria-hidden="true"></span>
           <a
-            href="https://github.com/xulbux"
+            href={AUTHOR_GITHUB_URL}
             class="gh-link"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label="XulbuX on GitHub"
-            title="XulbuX on GitHub"
+            aria-label={`${AUTHOR_NAME} on GitHub`}
+            title={`${AUTHOR_NAME} on GitHub`}
             tabindex="0">
             <UiIcon slug="github" size={20} />
           </a>

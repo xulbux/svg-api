@@ -1,5 +1,5 @@
 /**
- * CocoaPods service preset – Latest pod version and license from the CocoaPods Trunk API (`/badge/cocoapods/:pod/:metric`).
+ * CocoaPods service preset – Live upstream metrics and redirect transformations.
  *
  * Trunk answers with a `303` redirect to the commit-pinned podspec JSON on GitHub, which `fetch`
  * follows transparently.

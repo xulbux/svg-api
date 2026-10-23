@@ -1,5 +1,5 @@
 /**
- * Builder types – Declarative URL builder schemas embedded into the `/builder/:kind` pages and read by the builder client script.
+ * Builder types – Declarative URL builder schemas embedded into builder pages and consumed by the builder client.
  */
 
 import type { BadgeSpecialKind } from './badge';
@@ -10,8 +10,8 @@ import type { BuilderKind, HighlightToken } from './site';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /**
- * Form control of a builder field. Composite controls (`anim`, `hint`, `iconPair`, `size`, `special`, `typingLines`) render
- * several inputs but always serialize to a single parameter value string.
+ * Form control kind of a builder field. Composite controls render several interactive sub-inputs
+ * while serializing to a single parameter or segment value string.
  */
 export type BuilderControl =
   | 'anim'
@@ -28,8 +28,8 @@ export type BuilderControl =
   | 'textarea'
   | 'typingLines';
 
-/** Motion controls offered by an `anim` field (`pair`: Sheen + left/right motions; `single`: Sheen + one motion; `sheen`: Sheen only). */
-export type BuilderAnimScope = 'pair' | 'sheen' | 'single';
+/** Animation control layout mode for an `anim` builder field. */
+export type BuilderAnimScope = 'pair' | 'sheen' | 'single' | 'stack' | 'typing';
 
 /** Selectable option of a builder field (an empty `value` means "omit the parameter"). */
 export interface BuilderOption {
@@ -82,19 +82,19 @@ export interface BuilderField {
   isRequired?: boolean;
   /** Visible field label. */
   label: string;
-  /** Maximum numeric value (`number` and `size` fields). */
+  /** Maximum numeric value. */
   max?: number;
-  /** Maximum text length (`text` and `textarea` fields). */
+  /** Maximum text length in characters. */
   maxLength?: number;
-  /** Minimum numeric value (`number` and `size` fields). */
+  /** Minimum numeric value. */
   min?: number;
-  /** Selectable options (`select`, `color`, `size`, and `anim` motion options). */
+  /** Selectable options for choice, swatch, preset, or motion controls. */
   options?: readonly BuilderOption[];
   /** Query parameter name; Fields without one are path segments built per element kind. */
   param?: string;
   /** Placeholder text (usually the effective default). */
   placeholder?: string;
-  /** Numeric step (`number` and `size` fields). */
+  /** Numeric increment step. */
   step?: number;
 }
 
@@ -132,9 +132,9 @@ export interface BuilderSchema {
   isBrandFirst: boolean;
   /** Element kind. */
   kind: BuilderKind;
-  /** Maximum icon slug length in characters; Longer slugs never resolve (mirrors `resolveIcon`). */
+  /** Maximum icon slug length in characters; Longer slugs never resolve. */
   maxIconSlugLength: number;
-  /** Public origin used in the generated snippets (e.g., `'https://svg.xul.is'`). */
+  /** Public origin used in the generated snippets. */
   origin: string;
   /**
    * Pattern (`RegExp` source) every owner and target segment must match before a service redirect template
@@ -175,7 +175,7 @@ export interface BuilderTarget {
   kind: BuilderKind;
 }
 
-/** Single technology item in a curated `/builder/stack` category. */
+/** Single technology item in a curated stack builder category. */
 export interface StackCategoryItem {
   /** Canonical brand slug after alias resolution (e.g., `'typescript'` for `'ts'`). */
   canonical: string;
@@ -185,7 +185,7 @@ export interface StackCategoryItem {
   slug: string;
 }
 
-/** Curated technology category in the `/builder/stack` category picker. */
+/** Curated technology category in the stack builder category picker. */
 export interface StackCategory {
   /** Stable category identifier (e.g., `'languages'`). */
   id: string;
@@ -221,19 +221,19 @@ export type SnippetTokenSet = Record<keyof SnippetSet, HighlightToken[]>;
 
 /** Resolved icon set and canonical slug in the icon picker. */
 export interface IconMatch {
-  /** Icon set (`'lucide'` or `'brands'`). */
+  /** Target icon picker set identifier. */
   set: IconPickerSetId;
   /** Canonical icon slug within `set`. */
   slug: string;
 }
 
-/** Resolved icon set, canonical slug, and body page number (`icons-<set>-<page>.json`). */
+/** Resolved icon set, canonical slug, and body page number. */
 export interface IconLocation extends IconMatch {
   /** Zero-based icon body page index. */
   page: number;
 }
 
-/** Client-side icon slug resolver built from `/assets/icons.json`. */
+/** Client-side icon slug resolver built from the icon picker index. */
 export interface IconResolver {
   /** Locate the icon set, canonical slug, and body page of `slug`, or `undefined` when unknown. */
   locate: (slug: string, isBrandFirst: boolean) => IconLocation | undefined;

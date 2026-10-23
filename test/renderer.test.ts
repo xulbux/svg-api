@@ -1,10 +1,11 @@
 /**
- * SSOT SVG renderer tests – Variants 1..3, CTA buttons, standalone icons, tech stack grids, quote cards, Kumo 3D crescents, micro-animations, and special elements (`src/svg/`).
+ * SSOT SVG renderer tests – Element renderers, surface tiers, Kumo 3D crescents, micro-animations, inline data widgets, and size/DoS bounds (`src/svg/`).
  */
 
 import { describe, expect, it } from 'vitest';
-import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
+import { BASE_DARK, DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import { renderSvgPath } from '@/routes/svg';
+import { DOCS_PAGES } from '@/site/navigation';
 import { renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import { resolveIcon } from '@/svg/icons';
 import { renderQuote } from '@/svg/quote';
@@ -632,6 +633,50 @@ describe('renderStack', () => {
       'tech stack: UnoCSS, Next.js, scikit-learn, n8n'
     );
   });
+
+  it('renders staggered pure-SMIL per-tile micro-animations (wave, float, pulse) with synchronized sheen clipping and motion aliases', () => {
+    const staticSvg = renderStack({ icons: ['rust,go,ts'] });
+    expect(renderStack({ anim: 'none', icons: ['rust,go,ts'] })).toBe(staticSvg);
+    expect(staticSvg).toContain('width="142" height="42"');
+    expect(staticSvg).not.toContain('<animate');
+
+    const waveSvg = renderStack({ anim: 'wave', icons: ['rust,go,ts'] });
+    expect(waveSvg).toContain('width="142" height="48" viewBox="0 -3 142 48"');
+    expect(waveSvg).toContain('type="translate" values="0 0;0 -3;0 0;0 0"');
+    expect(waveSvg).toContain('begin="0s"');
+    expect(waveSvg).toContain('begin="0.12s"');
+    expect(waveSvg).toContain('begin="0.24s"');
+
+    const floatSvg = renderStack({ anim: 'float', icons: ['rust,go,ts'] });
+    expect(floatSvg).toContain('width="142" height="46" viewBox="0 -2 142 46"');
+    expect(floatSvg).toContain('type="translate" values="0 0;0 -2;0 0;0 2;0 0"');
+    expect(floatSvg).toContain('begin="-0.45s"');
+    expect(floatSvg).toContain('begin="-0.9s"');
+
+    const pulseSvg = renderStack({ anim: 'pulse', icons: ['rust,go,ts'], variant: '2' });
+    expect(pulseSvg).toContain('width="142" height="42"');
+    expect(pulseSvg).toContain('attributeName="opacity" values="0;0.14;0;0"');
+    expect(pulseSvg).toContain('type="scale" values="1;1.15;1;1"');
+
+    const sheenWaveSvg = renderStack({ anim: 'sheen,wave', icons: ['rust,go'] });
+    expect(sheenWaveSvg).toContain('stack-sheen-clip-');
+    expect(sheenWaveSvg).toContain(
+      '<rect x="0" y="0" width="42" height="42" rx="10"><animateTransform attributeName="transform" type="translate"'
+    );
+
+    expect(renderSvgPath('/stack/rust,go?anim=bounce')).toBe(
+      renderSvgPath('/stack/rust,go?anim=wave')
+    );
+    expect(renderSvgPath('/stack/rust,go?anim=auto')).toBe(
+      renderSvgPath('/stack/rust,go?anim=wave')
+    );
+    expect(renderSvgPath('/stack/rust,go?anim=bob')).toBe(
+      renderSvgPath('/stack/rust,go?anim=float')
+    );
+    expect(renderSvgPath('/stack/rust,go?anim=breathe')).toBe(
+      renderSvgPath('/stack/rust,go?anim=pulse')
+    );
+  });
 });
 
 describe('renderQuote', () => {
@@ -682,26 +727,11 @@ describe('renderQuote', () => {
 });
 
 describe('renderDocsHtml & renderHomeHtml', () => {
-  it('renders the homepage and all 7 dedicated documentation subpages containing all variants, service registries, and syntax-highlighted Markdown snippets', () => {
+  it('renders the homepage and every documentation page containing variants, service registries, and syntax-highlighted Markdown snippets', () => {
     const homeHtml = renderHomeHtml();
-    const badgesHtml = renderDocsHtml('badges');
-    const buttonsHtml = renderDocsHtml('buttons');
-    const servicesHtml = renderDocsHtml('services');
-    const iconsHtml = renderDocsHtml('icons');
-    const stackHtml = renderDocsHtml('stack');
-    const quotesHtml = renderDocsHtml('quotes');
-    const colorsHtml = renderDocsHtml('colors');
+    const docsBySlug = new Map(DOCS_PAGES.map((page) => [page.slug, renderDocsHtml(page.slug)]));
 
-    for (const html of [
-      homeHtml,
-      badgesHtml,
-      buttonsHtml,
-      servicesHtml,
-      iconsHtml,
-      stackHtml,
-      quotesHtml,
-      colorsHtml,
-    ]) {
+    for (const html of [homeHtml, ...docsBySlug.values()]) {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).not.toContain('<span>');
       expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
@@ -710,30 +740,39 @@ describe('renderDocsHtml & renderHomeHtml', () => {
       );
     }
 
-    expect(badgesHtml).toContain(
+    expect(docsBySlug.get('badges')).toContain(
       '<code class="card-title-code">variant=1</code><span class="card-title-text">Primary Badge</span><span class="card-title-pill">Default</span>'
     );
-    expect(buttonsHtml).toContain(
+    expect(docsBySlug.get('buttons')).toContain(
       '<code class="card-title-code">variant=3</code><span class="card-title-text">Tertiary Button</span>'
     );
-    expect(servicesHtml).toContain(
+    expect(docsBySlug.get('services')).toContain(
       '<span class="card-title-text">PyPI &amp; ClickPy</span><code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
     );
-    expect(servicesHtml).toContain(
+    expect(docsBySlug.get('services')).toContain(
       '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
     );
-    expect(servicesHtml).toContain(
+    expect(docsBySlug.get('services')).toContain(
       '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
     );
-    expect(servicesHtml).toContain(
-      '<span class="card-title-text">Crates.io &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docker/*</code>'
+    expect(docsBySlug.get('services')).toContain(
+      '<span class="card-title-text">Crates.io, docs.rs &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docsrs/*</code><code class="card-title-meta">/badge/docker/*</code>'
     );
-    expect(iconsHtml).toContain('<span class="route-method">GET</span>/icon/:icon</code>');
-    expect(stackHtml).toContain('<span class="route-method">GET</span>/stack/:groups</code>');
-    expect(quotesHtml).toContain(
+    expect(docsBySlug.get('icons')).toContain(
+      '<span class="route-method">GET</span>/icon/:icon</code>'
+    );
+    expect(docsBySlug.get('stack')).toContain(
+      '<span class="route-method">GET</span>/stack/:groups</code>'
+    );
+    expect(docsBySlug.get('typing')).toContain(
+      '<span class="route-method">GET</span>/typing/:lines</code>'
+    );
+    expect(docsBySlug.get('quotes')).toContain(
       '<span class="route-method">GET</span>/quote/:author/:text</code>'
     );
-    expect(colorsHtml).toContain('22 Tailwind v4 OKLCH Theme Colors');
+    expect(docsBySlug.get('colors')).toContain(
+      `${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH Theme Colors`
+    );
   });
 });
 
@@ -1635,5 +1674,24 @@ describe('renderTyping', () => {
     expect(renderTyping({ color: 'indigo', lines: extraLines })).toBe(
       renderTyping({ color: 'indigo', lines: cappedLines })
     );
+  });
+
+  it('emits data-rest-time and keeps Line 0 glyphs visible in static SVG viewers while hiding typo and subsequent lines (regression: reduced-motion paused typing cards on a blank frame)', () => {
+    const animatedSvg = renderTyping({
+      color: 'indigo',
+      hasTypo: true,
+      lines: 'First line here;Second line here;Third line here',
+    });
+    const restTimeMatch = /data-rest-time="(?<rest>[\d.]+)"/.exec(animatedSvg);
+    const restTime = Number(restTimeMatch?.groups?.rest);
+    expect(Number.isFinite(restTime)).toBe(true);
+    expect(restTime).toBeGreaterThan(0);
+
+    const useOpeningTags = [...animatedSvg.matchAll(/<use href="#type-g-[^>]+>/g)].map(
+      (match) => match[0]
+    );
+    expect(useOpeningTags.length).toBeGreaterThan(2);
+    expect(useOpeningTags[0]).not.toContain('opacity="0"');
+    expect(useOpeningTags.some((tag) => tag.includes('opacity="0"'))).toBe(true);
   });
 });

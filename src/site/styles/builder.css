@@ -13,7 +13,7 @@
   }
 }
 
-/* Form & Panel Surfaces (shared surface card in `base.css`): */
+/* Form & Panel Surfaces: */
 
 .builder-form,
 .builder-panel-inner {
@@ -172,6 +172,7 @@
   align-items: center;
   gap: 8px;
   inline-size: fit-content;
+  min-block-size: 24px;
   font-size: 0.84rem;
   color: var(--c-text-1);
   user-select: none;
@@ -282,11 +283,11 @@
   background: var(--swatch);
 }
 
-/* Listbox Panel; shared popover surface (`.popover-panel` in `base.css`, positioned by `placePopover`): */
+/* Listbox Panel: */
 
 .select-menu {
   min-inline-size: 180px;
-  max-inline-size: min(360px, calc(100vw - 16px));
+  max-inline-size: calc(100vw - 16px);
   max-block-size: min(320px, 60vh);
 }
 
@@ -405,7 +406,7 @@
   color: var(--c-text-3);
 }
 
-/* Color Swatches (the hidden radio overlay lives in `base.css`): */
+/* Color Swatches: */
 
 .swatch-grid {
   display: flex;
@@ -428,8 +429,8 @@
 }
 
 .swatch-dot {
-  inline-size: 22px;
-  block-size: 22px;
+  inline-size: 24px;
+  block-size: 24px;
   border-radius: 50%;
   background: var(--swatch);
   box-shadow:
@@ -722,7 +723,7 @@
   margin-block-start: 14px;
 }
 
-/* Icon Picker Popover (shared popover surface in `base.css`, positioned and viewport-clamped by `placePopover`): */
+/* Icon Picker Popover: */
 
 .icon-picker {
   inline-size: min(384px, calc(100vw - 16px));
@@ -832,10 +833,10 @@
   background: var(--c-border);
 }
 
-/* Empty search results (spans the whole grid, with a `Clear search` text button): */
+/* Empty search results (replaces the grid area inside the flex popover, with a `Clear search` button): */
 
 .icon-picker-empty {
-  grid-column: 1 / -1;
+  flex: 1;
   padding: 24px 12px;
   font-size: 0.8rem;
   text-align: center;
@@ -1009,6 +1010,7 @@
 }
 
 .help-btn {
+  position: relative;
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -1024,6 +1026,14 @@
   transition:
     opacity var(--duration-fast) ease,
     scale var(--duration-fast) ease;
+}
+
+/* Expand the `18x18` badge's hit area to the `24x24` WCAG 2.2 AA minimum target size: */
+
+.help-btn::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
 }
 
 .help-btn:hover,

@@ -1,12 +1,11 @@
 /**
- * Conda service preset – Package version and license from Anaconda Cloud (`/badge/conda/[:channel/]:pkg/:metric`).
+ * Conda service preset – Live upstream metrics and redirect transformations.
  *
- * The optional channel segment defaults to `conda-forge` (e.g., `bioconda`, `anaconda`, `pytorch`);
- * `extractKeys` stops the response stream before the multi-megabyte `builds`, `releases`, and
- * `files` arrays.
+ * The optional channel segment falls back to `DEFAULT_CONDA_CHANNEL`; `extractKeys` stops the
+ * response stream before the multi-megabyte `builds`, `releases`, and `files` arrays.
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -30,22 +29,22 @@ const CONDA_ENDPOINT = createEndpoint({
   extractKeys: ['latest_version', 'license'],
   page: 'https://anaconda.org/{owner}/{target}',
   project: pickFields<CondaPackagePayload>(['latest_version', 'license']),
+  ttl: CACHE_TTL.daily,
 });
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Resolve the default Conda channel (`conda-forge`). */
+/** Resolve the default Conda channel. */
 function resolveDefaultCondaChannel(): string {
   return DEFAULT_CONDA_CHANNEL;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Conda (Anaconda Cloud / conda-forge) service preset (`conda`). */
+/** Conda (Anaconda Cloud) service preset (`conda`). */
 export const CONDA_SERVICE = defineService({
   docs: {
-    description:
-      'Latest package version and license on Anaconda Cloud (omit :channel for conda-forge, e.g., bioconda).',
+    description: `Latest package version and license on Anaconda Cloud (omit :channel for ${DEFAULT_CONDA_CHANNEL}, e.g., bioconda).`,
     title: 'Conda',
   },
   metrics: {

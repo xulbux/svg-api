@@ -1,5 +1,5 @@
 /**
- * PyPI service preset – Package version, required Python, and license from PyPI plus ClickHouse ClickPy download statistics (`/badge/pypi/:pkg/:metric`).
+ * PyPI service preset – Live upstream metrics and redirect transformations.
  *
  * The PyPI JSON document lists every release file (e.g., `~3.3 MB` for `boto3`), but its leading
  * `info` object holds every needed field, so the body stream is cancelled as soon as `info` is
@@ -12,7 +12,6 @@ import {
   createMetric,
   defineService,
   isJsonObject,
-  pickFields,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -141,9 +140,9 @@ function readClickPySeries(raw: unknown): number[] | undefined {
   return values.length >= 2 ? values : undefined;
 }
 
-/** Build the read-only ClickPy SQL URL returning all-time, 30-day, prior 30-day, and bucketed downloads. */
+/** Build the read-only ClickPy SQL URL returning all-time, 30-day, prior 30-day, and bucketed downloads (`HAVING count() > 0` yields empty JSON for missing projects). */
 function buildClickPyApiUrl({ target }: ServiceRouteParams): string {
-  const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30 AND date < today()) AS last_month, sumIf(count, date >= today() - 60 AND date < today() - 30) AS prev_month, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 15) * 2) AND date < addDays(today(), (i - 14) * 2), count, 0)), range(15))) AS bins_30d, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 12) * 30) AND date < addDays(today(), (i - 11) * 30), count, 0)), range(12))) AS monthly_12m FROM pypi.pypi_downloads_per_day WHERE project = '${normalizePyPiName(target)}'`;
+  const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30 AND date < today()) AS last_month, sumIf(count, date >= today() - 60 AND date < today() - 30) AS prev_month, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 15) * 2) AND date < addDays(today(), (i - 14) * 2), count, 0)), range(15))) AS bins_30d, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 12) * 30) AND date < addDays(today(), (i - 11) * 30), count, 0)), range(12))) AS monthly_12m FROM pypi.pypi_downloads_per_day WHERE project = '${normalizePyPiName(target)}' HAVING count() > 0`;
   return `https://sql-clickhouse.clickhouse.com/?user=play&default_format=JSONObjectEachRow&query=${encodeURIComponent(sql)}`;
 }
 
@@ -160,11 +159,14 @@ const PYPI_ENDPOINT = createEndpoint({
   project: projectPyPiInfo,
 });
 
-/** ClickPy daily download statistics endpoint. */
+/** ClickPy daily download statistics endpoint (`undefined` when `row_1` is absent so missing packages return `404`). */
 const CLICKPY_ENDPOINT = createEndpoint<Partial<ClickPyDownloadsPayload>>({
   api: buildClickPyApiUrl,
   page: buildClickPyPageUrl,
-  project: pickFields<ClickPyDownloadsPayload>(['row_1']),
+  project: (data) =>
+    isJsonObject(data) && isJsonObject(data.row_1)
+      ? { row_1: data.row_1 as ClickPyDownloadsRow }
+      : undefined,
   ttl: CACHE_TTL.daily,
 });
 

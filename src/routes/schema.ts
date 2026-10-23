@@ -1,30 +1,48 @@
 /**
  * Builder schema – Declarative URL builder schemas for every element kind, generated from the constants the route parser and renderers use.
  *
- * Every option list (variants, colors, motions, widget kinds, size presets), numeric
- * range, and service preset is read from the code that parses or renders it, so the builder cannot
- * offer a value the API rejects. The schemas are embedded into the `/builder/:kind` pages and read by
- * the builder client script (`src/site/client/bundles/builder.client.js`).
+ * Every option list, numeric range, and service preset is read directly from the code that parses or
+ * renders it, so the builder cannot offer a value the API rejects.
  */
 
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import {
+  FALSY_FLAG_LIST,
+  ICON_MOTION_ALIASES,
   ICON_MOTION_TOKENS,
+  QUOTE_LAYOUT_TOKENS,
   SPECIAL_ELEMENT_KINDS,
+  STACK_MOTION_ALIASES,
+  STACK_MOTION_TOKENS,
+  TRUTHY_FLAG_LIST,
+  TYPING_ALIGN_MAP,
   TYPING_ALIGN_TOKENS,
+  TYPING_CURSOR_MAP,
   TYPING_CURSOR_TOKENS,
+  TYPING_ERASE_MAP,
   TYPING_ERASE_TOKENS,
+  TYPING_FONT_MAP,
   TYPING_FONT_TOKENS,
+  TYPING_LAYOUT_MAP,
   TYPING_LAYOUT_TOKENS,
   VARIANT_TOKENS,
+  VERTICAL_LAYOUT_TOKENS,
 } from '@/routes/params';
-import { resolveSvgRoute } from '@/routes/svg';
+import { findSvgRoute, resolveSvgRoute } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
-import { capitalizeWord, SPECIAL_KIND_DETAILS, VARIANT_TIERS } from '@/site/glossary';
+import {
+  capitalizeWord,
+  collectAliasesForTarget,
+  formatConjunctionList,
+  SPECIAL_KIND_DETAILS,
+  VARIANT_TIERS,
+} from '@/site/glossary';
 import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
+  DEFAULT_HORIZONTAL_QUOTE_SIZE,
+  DEFAULT_VERTICAL_QUOTE_SIZE,
   DEFAULT_VERTICAL_QUOTE_WIDTH,
   MAX_QUOTE_TEXT_LENGTH,
   QUOTE_FONT_SIZE_RANGE,
@@ -46,8 +64,13 @@ import {
   STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
 import {
+  DEFAULT_TYPING_LAYOUT,
+  DEFAULT_WINDOW_PROMPT,
+  MAX_TYPING_HINT_LENGTH,
   MAX_TYPING_LINE_LENGTH,
   MAX_TYPING_LINES,
+  MAX_TYPING_PREFIX_LENGTH,
+  MAX_TYPING_TITLE_LENGTH,
   TYPING_DURATION_RANGE,
   TYPING_FONT_SIZE_RANGE,
   TYPING_PAUSE_RANGE,
@@ -125,7 +148,16 @@ function buildDefaultOption(label = 'Default'): BuilderOption {
   return { label, value: '' };
 }
 
-/** Build the `?variant=` field (every tier from the parser's `VARIANT_TOKENS`). */
+/** Return sorted aliases for `targetValue`, or `undefined` when none exist. */
+function collectAliasesForValue(
+  aliasMap: Readonly<Record<string, string>>,
+  targetValue: string
+): string[] | undefined {
+  const aliases = collectAliasesForTarget(aliasMap, targetValue);
+  return aliases.length > 0 ? aliases : undefined;
+}
+
+/** Build the `?variant=` field. */
 function buildVariantField(): BuilderField {
   const options: BuilderOption[] = [buildDefaultOption()];
   for (const variant of VARIANT_TOKENS) {
@@ -134,7 +166,7 @@ function buildVariantField(): BuilderField {
   return { control: 'select', id: 'variant', label: 'Variant', options, param: 'variant' };
 }
 
-/** Build the `?color=` swatch field (every theme color with its Tailwind `500` swatch). */
+/** Build the `?color=` swatch field. */
 function buildColorField(description?: string): BuilderField {
   const options: BuilderOption[] = [buildDefaultOption()];
   for (const colorName of THEME_COLOR_NAMES) {
@@ -156,7 +188,7 @@ function buildIconPairField(description: string, hasPresetValue = false): Builde
   };
 }
 
-/** Build the `?dot=` status dot field (theme colors, with `None` as the default). */
+/** Build the `?dot=` status dot field. */
 function buildDotField(): BuilderField {
   const options: BuilderOption[] = [{ aliases: ['none'], label: 'None', value: '' }];
   for (const colorName of THEME_COLOR_NAMES) {
@@ -165,7 +197,7 @@ function buildDotField(): BuilderField {
   return { control: 'select', id: 'dot', label: 'Status dot', options, param: 'dot' };
 }
 
-/** Build the `?special=` inline data widget field (every kind from the parser's `SPECIAL_ELEMENT_KINDS`). */
+/** Build the `?special=` inline data widget field. */
 function buildSpecialField(hasPresetValue = false): BuilderField {
   const defaultDescription = hasPresetValue
     ? 'Auto-marked widgets use live upstream data when Data is left empty.'
@@ -208,20 +240,41 @@ function buildSpecialField(hasPresetValue = false): BuilderField {
   };
 }
 
-/** Build the `?anim=` field (motion options from the parser's `ICON_MOTION_TOKENS`). */
+/** Build the `?anim=` field. */
 function buildAnimField(scope: BuilderAnimScope): BuilderField {
-  const options: BuilderOption[] = [buildDefaultOption('Static')];
-  if (scope !== 'sheen') {
+  const options: BuilderOption[] = [];
+  if (scope === 'pair' || scope === 'single') {
+    options.push(buildDefaultOption('Static'));
     for (const motion of ICON_MOTION_TOKENS) {
       if (motion !== 'default') {
-        options.push({ label: capitalizeWord(motion), value: motion });
+        options.push({
+          aliases: collectAliasesForValue(ICON_MOTION_ALIASES, motion),
+          label: capitalizeWord(motion),
+          value: motion,
+        });
       }
     }
+  } else if (scope === 'stack') {
+    options.push(buildDefaultOption('Static'));
+    for (const motion of STACK_MOTION_TOKENS) {
+      options.push({
+        aliases: collectAliasesForValue(STACK_MOTION_ALIASES, motion),
+        label: capitalizeWord(motion),
+        value: motion,
+      });
+    }
+  } else if (scope === 'typing') {
+    options.push(buildDefaultOption('Typing (default)'), { label: 'Static (none)', value: 'none' });
+  } else {
+    options.push(buildDefaultOption('Static'));
   }
+  const activeStackMotions = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
   const descriptions: Readonly<Record<BuilderAnimScope, string>> = {
     pair: 'Surface sheen plus one motion per icon; None also stops widget and dot animations.',
     sheen: 'Diagonal sheen sweep across the whole element.',
     single: 'Diagonal sheen plus one icon motion (Auto picks a motion per icon).',
+    stack: `Diagonal sheen sweep and/or staggered per-tile ${formatConjunctionList(activeStackMotions, 'or')} motion.`,
+    typing: 'Diagonal sheen sweep or static reduced-motion snapshot (none).',
   };
   return {
     animScope: scope,
@@ -551,12 +604,23 @@ function buildStackFields(): BuilderField[] {
       aliases: ['ggap'],
       placeholder: 'auto',
     }),
-    buildAnimField('sheen'),
+    buildAnimField('stack'),
   ];
 }
 
 /** Build the quote card builder fields (`aliases` of path segment fields list their query fallbacks). */
 function buildQuoteFields(): BuilderField[] {
+  const verticalAliases = [...VERTICAL_LAYOUT_TOKENS]
+    .filter((token) => token !== 'vertical')
+    .toSorted();
+  const layoutOptions: BuilderOption[] = [buildDefaultOption()];
+  for (const layoutToken of QUOTE_LAYOUT_TOKENS) {
+    layoutOptions.push({
+      aliases: layoutToken === 'vertical' ? verticalAliases : undefined,
+      label: capitalizeWord(layoutToken),
+      value: layoutToken,
+    });
+  }
   return [
     {
       aliases: ['author'],
@@ -579,18 +643,14 @@ function buildQuoteFields(): BuilderField[] {
       control: 'select',
       id: 'layout',
       label: 'Layout',
-      options: [
-        buildDefaultOption(),
-        { label: 'Horizontal', value: 'horizontal' },
-        { aliases: ['center', 'v'], label: 'Vertical', value: 'vertical' },
-      ],
+      options: layoutOptions,
       param: 'layout',
     },
     buildVariantField(),
     buildSizePresetField(
       QUOTE_SIZE_MAP,
       QUOTE_FONT_SIZE_RANGE,
-      'Typography preset or custom font size (defaults to md, or lg for vertical cards).'
+      `Typography preset or custom font size (defaults to ${DEFAULT_HORIZONTAL_QUOTE_SIZE}, or ${DEFAULT_VERTICAL_QUOTE_SIZE} for vertical cards).`
     ),
     buildColorField(),
     buildNumberField('width', 'Width (px)', QUOTE_WIDTH_RANGE, {
@@ -610,68 +670,37 @@ function buildTypingFields(): BuilderField[] {
     prompt: 'Prompt',
     window: 'Window',
   };
-  const layoutAliases: Readonly<Record<(typeof TYPING_LAYOUT_TOKENS)[number], readonly string[]>> =
-    {
-      browser: ['address', 'omnibox', 'search', 'url'],
-      ide: ['code', 'editor', 'tab'],
-      none: ['bare', 'minimal', 'plain', 'transparent'],
-      prompt: [
-        'ai',
-        'assistant',
-        'bar',
-        'bubble',
-        'chat',
-        'command',
-        'message',
-        'palette',
-        'popup',
-        'raycast',
-        'spotlight',
-      ],
-      window: ['app', 'mac', 'terminal', 'zsh'],
-    };
   const layoutOptions: BuilderOption[] = [buildDefaultOption()];
   for (const token of TYPING_LAYOUT_TOKENS) {
     layoutOptions.push({
-      aliases: [...layoutAliases[token]],
+      aliases: collectAliasesForValue(TYPING_LAYOUT_MAP, token),
       label: layoutLabels[token],
       value: token,
     });
   }
 
-  const fontAliases: Readonly<Record<(typeof TYPING_FONT_TOKENS)[number], readonly string[]>> = {
-    mono: ['code', 'fira', 'jetbrains', 'monospace'],
-    sans: ['geist', 'proportional', 'ui'],
-  };
   const fontOptions: BuilderOption[] = [buildDefaultOption()];
   for (const token of TYPING_FONT_TOKENS) {
     fontOptions.push({
-      aliases: [...fontAliases[token]],
+      aliases: collectAliasesForValue(TYPING_FONT_MAP, token),
       label: capitalizeWord(token),
       value: token,
     });
   }
 
-  const cursorAliases: Readonly<Record<(typeof TYPING_CURSOR_TOKENS)[number], readonly string[]>> =
-    { bar: ['beam', 'line', 'pipe'], block: ['box'], underscore: ['under', 'underline'] };
   const cursorOptions: BuilderOption[] = [buildDefaultOption()];
   for (const token of TYPING_CURSOR_TOKENS) {
     cursorOptions.push({
-      aliases: [...cursorAliases[token]],
+      aliases: collectAliasesForValue(TYPING_CURSOR_MAP, token),
       label: capitalizeWord(token),
       value: token,
     });
   }
 
-  const eraseAliases: Readonly<Record<(typeof TYPING_ERASE_TOKENS)[number], readonly string[]>> = {
-    backspace: ['del', 'delete', 'type'],
-    fade: ['dissolve'],
-    select: ['clear', 'highlight'],
-  };
   const eraseOptions: BuilderOption[] = [buildDefaultOption()];
   for (const token of TYPING_ERASE_TOKENS) {
     eraseOptions.push({
-      aliases: [...eraseAliases[token]],
+      aliases: collectAliasesForValue(TYPING_ERASE_MAP, token),
       label: capitalizeWord(token),
       value: token,
     });
@@ -680,11 +709,13 @@ function buildTypingFields(): BuilderField[] {
   const alignOptions: BuilderOption[] = [buildDefaultOption()];
   for (const token of TYPING_ALIGN_TOKENS) {
     alignOptions.push({
-      aliases: token === 'center' ? ['middle'] : ['start'],
+      aliases: collectAliasesForValue(TYPING_ALIGN_MAP, token),
       label: capitalizeWord(token),
       value: token,
     });
   }
+
+  const [primaryTruthyFlag, ...truthyFlagAliases] = TRUTHY_FLAG_LIST;
 
   return [
     {
@@ -694,8 +725,8 @@ function buildTypingFields(): BuilderField[] {
         'Static prompt text before the typed lines (pass none to hide the default prompt).',
       id: 'prefix',
       label: 'Prefix',
-      maxLength: MAX_LABEL_LENGTH,
-      placeholder: '❯ (window default)',
+      maxLength: MAX_TYPING_PREFIX_LENGTH,
+      placeholder: `${DEFAULT_WINDOW_PROMPT} (${DEFAULT_TYPING_LAYOUT} default)`,
     },
     {
       aliases: ['lines', 'text'],
@@ -739,15 +770,14 @@ function buildTypingFields(): BuilderField[] {
       id: 'typo',
       label: 'Human typo',
       options: [
-        { aliases: ['0', 'false', 'no'], label: 'Off', value: '' },
-        { aliases: ['1', 'yes'], label: 'Enabled', value: 'true' },
+        { aliases: FALSY_FLAG_LIST, label: 'Off', value: '' },
+        { aliases: truthyFlagAliases, label: 'Enabled', value: primaryTruthyFlag },
       ],
       param: 'typo',
     },
     {
       control: 'icon',
-      description:
-        'Optional icon (header bar on window, file tab on ide, squircle badge on prompt, or omnibox on browser).',
+      description: 'Optional icon rendered in the active container frame or header.',
       id: 'icon',
       label: 'Icon',
       param: 'icon',
@@ -755,19 +785,19 @@ function buildTypingFields(): BuilderField[] {
     },
     {
       control: 'text',
-      description: 'Optional header bar title on window or active tab filename on ide.',
+      description: 'Optional header bar or active tab title on titled layouts.',
       id: 'title',
       label: 'Window / tab title',
-      maxLength: MAX_LABEL_LENGTH,
+      maxLength: MAX_TYPING_TITLE_LENGTH,
       param: 'title',
       placeholder: 'optional (e.g., zsh)',
     },
     {
       control: 'hint',
-      description: 'Optional icon and/or label inside the header pill or 3D keycap badge.',
+      description: 'Optional icon and/or label inside the trailing hint or keycap badge.',
       id: 'hint',
       label: 'Keycap / hint',
-      maxLength: 24,
+      maxLength: MAX_TYPING_HINT_LENGTH,
       param: 'hint',
       placeholder: 'optional (e.g., UTF-8)',
     },
@@ -777,7 +807,7 @@ function buildTypingFields(): BuilderField[] {
       description: 'Auto-fits the longest line when left empty.',
       placeholder: 'auto',
     }),
-    buildAnimField('sheen'),
+    buildAnimField('typing'),
   ];
 }
 
@@ -881,31 +911,7 @@ export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
     }
   } else {
     const prefix = url.pathname.split('/', 2)[1] ?? '';
-    switch (prefix) {
-      case 'badge': {
-        kind = 'badge';
-        break;
-      }
-      case 'btn':
-      case 'button': {
-        kind = 'button';
-        break;
-      }
-      case 'icon':
-      case 'quote':
-      case 'stack': {
-        kind = prefix;
-        break;
-      }
-      case 'type':
-      case 'typing': {
-        kind = 'typing';
-        break;
-      }
-      default: {
-        break;
-      }
-    }
+    kind = findSvgRoute(prefix)?.builderKind;
   }
   return kind ? { href: `/builder/${kind}?path=${encodeURIComponent(path)}`, kind } : undefined;
 }

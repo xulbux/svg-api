@@ -1,5 +1,5 @@
 /**
- * Services documentation page – Renders the Live Service Badges (`/docs/services`) section (`<ServicesSection />` and `renderServicesSectionHtml`).
+ * Services documentation page – Renders the Live Service Badges (`/docs/services`) section (`<ServicesSection />`).
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
@@ -11,7 +11,6 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -35,12 +34,4 @@ export function ServicesSection(): HtmlFragment {
       <ParamTable rows={buildServiceParamRows()} label="Service preset routes and metrics" />
     </section>
   );
-}
-
-/**
- * Render the dedicated Public Service Badges (`/docs/services`) documentation section HTML.
- * @returns HTML string for the `/docs/services` documentation and live preview section.
- */
-export function renderServicesSectionHtml(): string {
-  return renderHtml(<ServicesSection />);
 }

@@ -1,11 +1,11 @@
 /**
- * Typing animation renderer – Renders realistic human-cadence SVG typing animations in Kumo 3D containers (`svg.xul.is/typing/*` and `svg.xul.is/type/*`).
+ * Typing animation renderer – Renders realistic human-cadence SVG typing animations in Kumo 3D containers.
  *
- * Character glyphs are laid out with OpenType pair kerning (`Geist Sans` or `JetBrains Mono`), deduplicated
- * in `<defs>` by content hash, and animated with hardware-accelerated SMIL opacity fades and cursor motion.
- * Inter-key intervals follow human-computer interaction (HCI) keystroke dynamics: Fast alternating/rollover
- * bigrams, double-letter bounce penalties, word-start cognitive planning pauses, punctuation pauses, and
- * optional QWERTY neighbor typos with backspace self-correction (`?typo=true`).
+ * Character glyphs are laid out with OpenType pair kerning, deduplicated in `<defs>` by content hash, and
+ * animated with hardware-accelerated SMIL opacity fades and cursor motion. Inter-key intervals follow
+ * human-computer interaction (HCI) keystroke dynamics: Fast alternating/rollover bigrams, double-letter bounce
+ * penalties, word-start cognitive planning pauses, punctuation pauses, and optional QWERTY neighbor typos with
+ * backspace self-correction.
  */
 
 import { WHITE } from '@/config/palette';
@@ -76,7 +76,7 @@ interface TypingMetrics {
   padX: number;
   /** Outer container corner radius in pixels. */
   radius: number;
-  /** Proportional scale factor relative to the default `16px` (`md`) preset. */
+  /** Proportional scale factor relative to the default size preset. */
   scale: number;
   /** Font size of the window or IDE tab title in pixels. */
   titleFontSize: number;
@@ -94,9 +94,9 @@ interface TypingStyleTokens {
   gradDefs: string;
   /** Foreground paint (color + optional opacity) for leading icons. */
   iconPaint: ForegroundPaint;
-  /** Whether the typed text uses the bold font weight (`600` Geist / `700` JetBrains Mono). */
+  /** Whether the typed text uses the bold font weight. */
   isBoldText: boolean;
-  /** Whether the surface is a vivid primary (`variant = '1'`) fill. */
+  /** Whether the surface is a vivid primary fill. */
   isOnPrimary: boolean;
   /** Muted secondary text color for window titles, IDE gutter numbers, and keycap hints. */
   mutedTextColor: string;
@@ -114,18 +114,26 @@ interface ResolvedTypingIconSlot {
   isFallback: boolean;
 }
 
-/** Parsed and resolved content of the optional trailing keycap or header pill (`?hint=`). */
+/** Parsed and resolved content of the optional trailing keycap or header pill. */
 interface ResolvedTypingHint {
-  /** Optional leading icon rendered inside the keycap or header pill (`?hint=icon:<slug>[ <text>]`). */
+  /** Optional leading icon rendered inside the keycap or header pill. */
   iconSlot?: ResolvedTypingIconSlot;
   /** Optional display text rendered inside the keycap or header pill. */
   text: string;
 }
 
-/** Geometry and SVG markup of the optional trailing 3D keycap badge. */
-interface HintBadgeLayout {
-  /** Rendered SVG markup for the recessed 3D keycap badge (`''` when hidden). */
-  markup: string;
+/** Pre-measured dimensions and reserved widths of the optional trailing hint badge (independent of container `width`). */
+interface HintBadgeGeometry {
+  /** Total horizontal width of the hint pill or keycap in pixels. */
+  badgeWidth: number;
+  /** Width of the inner icon + gap + text content in pixels. */
+  contentWidth: number;
+  /** Rendered icon box size in pixels. */
+  iconBoxSize: number;
+  /** Horizontal gap between the icon and text in pixels (`0` unless both are present). */
+  iconTextGap: number;
+  /** Visible horizontal ink width of the icon in pixels (`0` when no icon). */
+  iconVisualWidth: number;
   /** Horizontal space reserved on the right side of the body row in pixels (`0` for header keycaps or hidden hints). */
   reservedBodyWidth: number;
   /** Horizontal space reserved on the right side of the header bar in pixels (`0` for body keycaps or hidden hints). */
@@ -142,7 +150,7 @@ interface LeadingPromptLayout {
 
 /** Caret cursor rectangle dimensions relative to the typing baseline. */
 interface CursorGeometry {
-  /** Fill opacity of the cursor when visible (`0.52` for `'block'`, `0.95` otherwise). */
+  /** Fill opacity of the cursor when visible. */
   activeOpacity: number;
   /** Cursor rectangle height in pixels. */
   height: number;
@@ -168,6 +176,8 @@ interface ScheduledGlyph {
   eraseStartMs: number;
   /** `<defs>` glyph path ID (`type-g-<hash>`). */
   glyphId: string;
+  /** Whether the character belongs to the completed first line (shown in non-SMIL static viewers). */
+  isFirstLineChar: boolean;
   /** Absolute horizontal baseline X coordinate of the character in pixels. */
   x: number;
 }
@@ -214,6 +224,10 @@ interface CycleTimelineState {
   cursorOpacityPoints: TimelinePoint[];
   /** Cursor horizontal `x` keyframe points. */
   cursorXPoints: TimelinePoint[];
+  /** Resting cursor X coordinate at the end of the first line in pixels. */
+  firstLineEndCursorX: number;
+  /** Timestamp in milliseconds when the first line finishes typing and enters its reading pause. */
+  firstLineRestMs: number;
   /** Deduplicated `<defs>` glyph `<path>` markup keyed by `glyphId`. */
   glyphDefsById: Map<string, string>;
   /** All scheduled character appearances across every line. */
@@ -224,7 +238,7 @@ interface CycleTimelineState {
 
 /** Shared layout context passed to the static and animated SVG assembly helpers. */
 interface TypingBodyRenderContext {
-  /** Resolved animation mode (`'default'`, `'subtle'`, `'full'`, or `'none'`). */
+  /** Resolved animation mode. */
   animMode: AnimationMode;
   /** Accessible `aria-label` string for the `<svg>` document. */
   ariaText: string;
@@ -258,16 +272,16 @@ interface TypingBodyRenderContext {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Container width bounds in pixels (`?width=`; Auto-fits the longest line when omitted). */
+/** Container width bounds in pixels (auto-fits the longest line when omitted). */
 export const TYPING_WIDTH_RANGE: NumericRange = { default: 440, max: 720, min: 200 };
 
-/** Custom numeric typing font size bounds in pixels (`?size=<px>`; Defaults to the `md` preset). */
+/** Custom numeric typing font size bounds in pixels. */
 export const TYPING_FONT_SIZE_RANGE: NumericRange = { default: 16, max: 32, min: 12 };
 
-/** Per-line typing duration bounds in milliseconds (`?duration=<ms>`). */
+/** Per-line typing duration bounds in milliseconds. */
 export const TYPING_DURATION_RANGE: NumericRange = { default: 2200, max: 10_000, min: 600 };
 
-/** Per-line reading pause bounds in milliseconds (`?pause=<ms>`). */
+/** Per-line reading pause bounds in milliseconds. */
 export const TYPING_PAUSE_RANGE: NumericRange = { default: 1200, max: 6000, min: 200 };
 
 /** Maximum raw lines string length in UTF-16 code units before truncation. */
@@ -279,16 +293,16 @@ export const MAX_TYPING_LINES = 12;
 /** Maximum character length of a single typed line before ellipsis truncation. */
 export const MAX_TYPING_LINE_LENGTH = 80;
 
-/** Maximum character length of the optional static prefix (`?prefix=`). */
-const MAX_TYPING_PREFIX_LENGTH = 48;
+/** Maximum character length of the optional static prefix. */
+export const MAX_TYPING_PREFIX_LENGTH = 48;
 
-/** Maximum character length of the optional window or IDE header title (`?title=`). */
-const MAX_TYPING_TITLE_LENGTH = 64;
+/** Maximum character length of the optional window or IDE header title. */
+export const MAX_TYPING_TITLE_LENGTH = 64;
 
-/** Maximum character length of the optional keycap or header hint (`?hint=`). */
-const MAX_TYPING_HINT_LENGTH = 24;
+/** Maximum character length of the optional keycap or header hint. */
+export const MAX_TYPING_HINT_LENGTH = 24;
 
-/** Preset font sizes in pixels for named `SizePreset` tokens on `/typing/*`. */
+/** Preset font sizes in pixels for named `SizePreset` tokens. */
 export const TYPING_SIZE_MAP: Readonly<Record<SizePreset, number>> = {
   lg: 19,
   md: 16,
@@ -302,14 +316,23 @@ const DEFAULT_TYPING_LINES: readonly string[] = [
   'Design-Driven Engineering',
 ];
 
+/** Default container layout when layout parameters are omitted. */
+export const DEFAULT_TYPING_LAYOUT: TypingLayout = 'window';
+
+/** Default caret cursor shape when omitted. */
+export const DEFAULT_TYPING_CURSOR: TypingCursor = 'bar';
+
+/** Default line erase transition when omitted. */
+export const DEFAULT_TYPING_ERASE: TypingEraseMode = 'backspace';
+
 /** Default prompt chevron rendered in `window` layout when `prefix` is omitted and `align === 'left'`. */
-const DEFAULT_WINDOW_PROMPT = '❯';
+export const DEFAULT_WINDOW_PROMPT = '❯';
 
 /** Default active tab filename rendered in `ide` layout when `title` is omitted. */
-const DEFAULT_IDE_TITLE = 'index.ts';
+export const DEFAULT_IDE_TITLE = 'index.ts';
 
-/** Natural default font family per layout when `?font=` is omitted. */
-const DEFAULT_LAYOUT_FONTS: Readonly<Record<TypingLayout, TypingFont>> = {
+/** Natural default font family per layout when `font` is omitted. */
+export const DEFAULT_LAYOUT_FONTS: Readonly<Record<TypingLayout, TypingFont>> = {
   browser: 'sans',
   ide: 'mono',
   none: 'sans',
@@ -320,7 +343,7 @@ const DEFAULT_LAYOUT_FONTS: Readonly<Record<TypingLayout, TypingFont>> = {
 /** Traffic-light window control dot colors (rose, amber, emerald) for dark Kumo windows. */
 const WINDOW_DOT_COLORS: readonly string[] = ['#F43F5E', '#F59E0B', '#10B981'];
 
-/** Traffic-light window control dot opacities on vivid primary (`variant = '1'`) windows. */
+/** Traffic-light window control dot opacities on vivid primary windows. */
 const PRIMARY_WINDOW_DOT_OPACITIES: readonly string[] = ['0.82', '0.56', '0.36'];
 
 /** Duration in milliseconds of each character's smooth opacity fade-in. */
@@ -347,7 +370,7 @@ const PRE_LINE_PAUSE_MS = 190;
 /** Brief pause in milliseconds after erasing a line before the next line starts typing. */
 const POST_ERASE_PAUSE_MS = 210;
 
-/** Pause in milliseconds after hitting a wrong neighbor key before backspacing it (`?typo=true`). */
+/** Pause in milliseconds after hitting a wrong neighbor key before backspacing it. */
 const TYPO_RECOGNITION_PAUSE_MS = 165;
 
 /** Pause in milliseconds after backspacing a typo before typing the intended character. */
@@ -408,7 +431,7 @@ const FAST_ROLLOVER_BIGRAMS: ReadonlySet<string> = new Set([
   've',
 ]);
 
-/** Horizontal QWERTY neighbor lookup table for realistic single-key slip typos (`?typo=true`). */
+/** Horizontal QWERTY neighbor lookup table for realistic single-key slip typos. */
 const QWERTY_NEIGHBOR_MAP: Readonly<Record<string, string>> = {
   a: 's',
   b: 'v',
@@ -449,7 +472,7 @@ const SHIFTED_CHAR_RX = /[A-Z!@#$%^&*()_+{}|:"<>?~]/;
 /** Matches ASCII letters eligible for a QWERTY neighbor typo. */
 const ASCII_LETTER_RX = /[A-Za-z]/;
 
-/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in `?hint=`. */
+/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in a hint string. */
 const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -728,17 +751,17 @@ function clampLineGlyphsToWidth(
   return { glyphs: fitted, totalAdvance: roundCoord(cursorX + placedEllipsis.advance) };
 }
 
-/** Compute the relative HCI inter-key interval weight before typing `chars[index]`. */
+/** Compute the relative HCI inter-key interval weight before typing `glyphs[index]`. */
 function computeKeystrokeWeight(
-  chars: readonly string[],
+  glyphs: readonly PositionedCharGlyph[],
   index: number,
   lineIndex: number
 ): number {
-  const char = chars[index] ?? '';
+  const char = glyphs[index]?.char ?? '';
   if (index === 0) {
     return 1.15;
   }
-  const prevChar = chars[index - 1] ?? '';
+  const prevChar = glyphs[index - 1]?.char ?? '';
   let weight = 1;
 
   if (prevChar === ' ') {
@@ -764,7 +787,7 @@ function computeKeystrokeWeight(
   return Math.max(0.48, weight + jitter);
 }
 
-/** Decide whether line `lineIndex` out of `totalLines` should include a simulated typo when `?typo=true`. */
+/** Decide whether line `lineIndex` out of `totalLines` should include a simulated typo. */
 function isLineEligibleForTypo(
   lineIndex: number,
   totalLines: number,
@@ -788,7 +811,7 @@ function isLineEligibleForTypo(
   return false;
 }
 
-/** Pick a deterministic character index and QWERTY neighbor glyph for `?typo=true` (`undefined` if ineligible). */
+/** Pick a deterministic character index and QWERTY neighbor glyph for a simulated typo (`undefined` if ineligible). */
 function resolveLineTypo(
   glyphs: readonly PositionedCharGlyph[],
   lineIndex: number,
@@ -940,7 +963,7 @@ function registerGlyphDef(pathData: string, glyphDefsById: Map<string, string>):
   return glyphId;
 }
 
-/** Schedule the erase phase (`backspace`, `select`, or `fade`) and smooth cursor flight to `nextLineStartCursorX`. */
+/** Schedule the line erase phase and smooth cursor flight to `nextLineStartCursorX`. */
 function scheduleLineErasePhase(options: {
   activeOpacity: number;
   endCursorX: number;
@@ -1075,11 +1098,10 @@ function scheduleLineTimeline(options: {
   appendTimelinePoint(state.cursorOpacityPoints, state.currentTimeMs, activeOpacity);
 
   // [2] Compute normalized HCI keystroke intervals across the line's characters:
-  const chars = glyphs.map((glyph) => glyph.char);
   const weights: number[] = [];
   let weightSum = 0;
-  for (let i = 0; i < chars.length; i += 1) {
-    const weight = computeKeystrokeWeight(chars, i, lineIndex);
+  for (let i = 0; i < glyphs.length; i += 1) {
+    const weight = computeKeystrokeWeight(glyphs, i, lineIndex);
     weights.push(weight);
     weightSum += weight;
   }
@@ -1111,6 +1133,7 @@ function scheduleLineTimeline(options: {
         eraseEndMs: typoBackspaceMs + CHAR_FAST_FADE_OUT_MS,
         eraseStartMs: typoBackspaceMs,
         glyphId: typoGlyphId,
+        isFirstLineChar: false,
         x: roundCoord(lineStartX + typoGlyph.x),
       });
 
@@ -1135,6 +1158,7 @@ function scheduleLineTimeline(options: {
         eraseEndMs: appearEndMs + 100,
         eraseStartMs: appearEndMs + 80,
         glyphId,
+        isFirstLineChar: lineIndex === 0,
         x: roundCoord(lineStartX + glyph.x),
       };
       lineScheduledRecords.push(record);
@@ -1148,12 +1172,16 @@ function scheduleLineTimeline(options: {
 
   // [3] Reading pause with smooth cursor blinking at the end of the line:
   const pauseStartMs = state.currentTimeMs;
+  if (lineIndex === 0) {
+    state.firstLineRestMs = pauseStartMs;
+    state.firstLineEndCursorX = endCursorX;
+  }
   const pauseEndMs = pauseStartMs + pauseMs;
   appendCursorBlinkWindow(state.cursorOpacityPoints, pauseStartMs, pauseEndMs, activeOpacity);
   state.currentTimeMs = pauseEndMs;
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, endCursorX);
 
-  // [4] Erase phase (`backspace`, `select`, or `fade`) and transition to `nextLineStartCursorX`:
+  // [4] Erase phase and transition to `nextLineStartCursorX`:
   scheduleLineErasePhase({
     activeOpacity,
     endCursorX,
@@ -1187,14 +1215,12 @@ function renderPositionedIconSlot(options: {
   const renderedWidth = roundCoord((resolvedIcon.maxX - resolvedIcon.minX) * scaleNum);
   const visualStartX = isBoxCentered ? roundCoord(boxX + (boxSize - renderedWidth) / 2) : boxX;
   const iconOffsetX = roundCoord(visualStartX - resolvedIcon.minX * scaleNum);
-  const innerSvg =
-    iconSlot.isFallback && isOnPrimary
-      ? `<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}" stroke="none" />${resolvedIcon.innerSvg}`
-      : resolvedIcon.innerSvg;
   const markup = renderIconGroup({
-    color: iconSlot.isFallback ? THEMES.red.iconColor : color,
-    innerSvg,
-    opacity: iconSlot.isFallback ? undefined : opacity,
+    color,
+    innerSvg: resolvedIcon.innerSvg,
+    isFallback: iconSlot.isFallback,
+    isOnPrimary,
+    opacity,
     strokeWidth: DEFAULT_ICON_STROKE_WIDTH,
     transform: `translate(${iconOffsetX}, ${roundCoord(boxY)}) scale(${iconScale})`,
     type: resolvedIcon.type,
@@ -1262,7 +1288,6 @@ function renderHintBadgeInner(options: {
       font: 'mono',
       fontSize: hintFontSize,
       isBold: true,
-      isUncached: true,
     });
   }
 
@@ -1291,7 +1316,6 @@ function renderHintBadgeInner(options: {
     font: 'mono',
     fontSize: hintFontSize,
     isBold: true,
-    isUncached: true,
   });
   return `${iconMarkup}${textMarkup}`;
 }
@@ -1318,7 +1342,7 @@ function resolveHintBadgePaint(
 }
 
 /**
- * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent (vertical mirror of `buildTopCrescentPath` in `src/svg/shared.ts`).
+ * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
  * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
  * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
  * bottom corner curves without extending up the vertical sides.
@@ -1341,19 +1365,14 @@ function buildBottomCrescentPath(
   return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
 }
 
-/** Render the trailing hint badge: rounded pill in header (`window`/`ide`), borderless well badge in `browser`, or 3D keycap in `prompt`. */
-function renderHintBadge(options: {
-  hint: ResolvedTypingHint | undefined;
-  layout: TypingLayout;
-  metrics: TypingMetrics;
-  palette: ThemePalette;
-  styleTokens: TypingStyleTokens;
-  variant: BadgeVariant;
-  width: number;
-}): HintBadgeLayout {
-  const { hint, layout, metrics, palette, styleTokens, variant, width } = options;
+/** Measure the dimensions and horizontal reserved space of a trailing hint badge before `width` is finalized. */
+function measureHintBadgeGeometry(
+  hint: ResolvedTypingHint | undefined,
+  layout: TypingLayout,
+  metrics: TypingMetrics
+): HintBadgeGeometry | undefined {
   if (!hint || layout === 'none') {
-    return { markup: '', reservedBodyWidth: 0, reservedHeaderWidth: 0 };
+    return undefined;
   }
 
   const { bodyHeight, headerHeight, hintFontSize, scale } = metrics;
@@ -1372,6 +1391,69 @@ function renderHintBadge(options: {
     hint.iconSlot && !hint.text
       ? Math.round((isHeaderBadge ? 24 : 23) * scale)
       : Math.max(Math.round(24 * scale), Math.ceil(contentWidth + badgePadX * 2));
+
+  if (isHeaderBadge) {
+    const pillHeight = Math.round(18 * scale);
+    const inset = roundCoord((headerHeight - pillHeight) / 2);
+    return {
+      badgeWidth,
+      contentWidth,
+      iconBoxSize,
+      iconTextGap,
+      iconVisualWidth,
+      reservedBodyWidth: 0,
+      reservedHeaderWidth: Math.ceil(badgeWidth + inset + Math.round(12 * scale)),
+    };
+  }
+
+  if (layout === 'browser') {
+    const wellInsetY = roundCoord(Math.max(6, Math.round(7 * scale)));
+    const wellHeight = roundCoord(bodyHeight - 2 * wellInsetY);
+    const keycapHeight = Math.round(22 * scale);
+    const innerInset = roundCoord((wellHeight - keycapHeight) / 2);
+    return {
+      badgeWidth,
+      contentWidth,
+      iconBoxSize,
+      iconTextGap,
+      iconVisualWidth,
+      reservedBodyWidth: Math.ceil(badgeWidth + innerInset + Math.round(6 * scale)),
+      reservedHeaderWidth: 0,
+    };
+  }
+
+  const keycapHeight = Math.round(23 * scale);
+  const inset = roundCoord((bodyHeight - keycapHeight) / 2);
+  return {
+    badgeWidth,
+    contentWidth,
+    iconBoxSize,
+    iconTextGap,
+    iconVisualWidth,
+    reservedBodyWidth: Math.ceil(badgeWidth + inset + Math.round(8 * scale)),
+    reservedHeaderWidth: 0,
+  };
+}
+
+/** Render the trailing hint badge according to the active container layout. */
+function renderHintBadge(options: {
+  geometry: HintBadgeGeometry | undefined;
+  hint: ResolvedTypingHint | undefined;
+  layout: TypingLayout;
+  metrics: TypingMetrics;
+  palette: ThemePalette;
+  styleTokens: TypingStyleTokens;
+  variant: BadgeVariant;
+  width: number;
+}): string {
+  const { geometry, hint, layout, metrics, palette, styleTokens, variant, width } = options;
+  if (!geometry || !hint || layout === 'none') {
+    return '';
+  }
+
+  const { badgeWidth, contentWidth, iconBoxSize, iconTextGap, iconVisualWidth } = geometry;
+  const { bodyHeight, headerHeight, hintFontSize, scale } = metrics;
+  const isHeaderBadge = layout === 'window' || layout === 'ide';
 
   const { keycapFill, keycapStroke, keycapTextFill } = resolveHintBadgePaint(
     styleTokens.isOnPrimary,
@@ -1404,12 +1486,7 @@ function renderHintBadge(options: {
       badgeY: inset,
       verticalNudge: 0,
     });
-    const markup = `<rect x="${pillX}" y="${inset}" width="${badgeWidth}" height="${pillHeight}" rx="${pillRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
-    return {
-      markup,
-      reservedBodyWidth: 0,
-      reservedHeaderWidth: Math.ceil(badgeWidth + inset + Math.round(12 * scale)),
-    };
+    return `<rect x="${pillX}" y="${inset}" width="${badgeWidth}" height="${pillHeight}" rx="${pillRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
   }
 
   if (layout === 'browser') {
@@ -1427,12 +1504,7 @@ function renderHintBadge(options: {
       badgeY: keycapY,
       verticalNudge: 0,
     });
-    const markup = `<rect x="${keycapX}" y="${keycapY}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />${innerMarkup}`;
-    return {
-      markup,
-      reservedBodyWidth: Math.ceil(badgeWidth + innerInset + Math.round(6 * scale)),
-      reservedHeaderWidth: 0,
-    };
+    return `<rect x="${keycapX}" y="${keycapY}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />${innerMarkup}`;
   }
 
   // `layout === 'prompt'`; recessed 3D keycap with Kumo lower-edge crescent and outer border ring:
@@ -1461,16 +1533,11 @@ function renderHintBadge(options: {
     badgeY: inset,
     verticalNudge: -0.5,
   });
-  const markup =
+  return (
     `<rect x="${keycapX}" y="${inset}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />` +
     `<path d="${bottomCrescentPath}" fill="${crescentFill}" fill-opacity="${crescentOpacity}" />` +
-    `<rect ${ringGeometry} stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
-
-  return {
-    markup,
-    reservedBodyWidth: Math.ceil(badgeWidth + inset + Math.round(8 * scale)),
-    reservedHeaderWidth: 0,
-  };
+    `<rect ${ringGeometry} stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`
+  );
 }
 
 /** Render traffic-light window control dots with left X-padding matching their vertical Y-padding in `bandHeight`. */
@@ -1554,7 +1621,6 @@ function renderWindowHeaderChrome(options: {
       font: 'mono',
       fontSize: titleFontSize,
       isBold: true,
-      isUncached: true,
     });
     return markup;
   }
@@ -1583,7 +1649,6 @@ function renderWindowHeaderChrome(options: {
       font: 'mono',
       fontSize: titleFontSize,
       isBold: true,
-      isUncached: true,
     });
   }
   return markup;
@@ -1661,7 +1726,6 @@ function renderIdeHeaderAndGutterChrome(options: {
       font: 'mono',
       fontSize: titleFontSize,
       isBold: true,
-      isUncached: true,
     });
   }
 
@@ -1692,14 +1756,13 @@ function renderIdeHeaderAndGutterChrome(options: {
     font: 'mono',
     fontSize: titleFontSize,
     isBold: false,
-    isUncached: true,
   });
   markup += `<g opacity="0.42">${gutterNumberPath}</g>`;
 
   return markup;
 }
 
-/** Render the Kumo container surface and layout-specific chrome (`window`, `ide`, `browser`, `prompt`). */
+/** Render the Kumo container surface and layout-specific chrome. */
 function renderTypingContainerSurface(options: {
   color: ThemeColorName;
   height: number;
@@ -1873,7 +1936,6 @@ function renderLeadingPrompt(options: {
       font: fontFamily,
       fontSize,
       isBold: true,
-      isUncached: true,
     });
     currentX = roundCoord(currentX + prefixLayout.totalAdvance + Math.round(9 * scale));
   }
@@ -1881,7 +1943,7 @@ function renderLeadingPrompt(options: {
   return { markup, textStartX: currentX };
 }
 
-/** Render the static (`?anim=none`) typing SVG showing the first line and stationary cursor. */
+/** Render the static typing SVG showing the first line and stationary cursor. */
 function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
   const {
     ariaText,
@@ -1961,6 +2023,8 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     currentTimeMs: 0,
     cursorOpacityPoints: [],
     cursorXPoints: [],
+    firstLineEndCursorX: roundCoord(leading.textStartX + cursorGeometry.offsetX),
+    firstLineRestMs: 0,
     glyphDefsById: new Map<string, string>(),
     scheduledGlyphs: [],
     selectionFlashes: [],
@@ -2010,11 +2074,11 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     const t4 = roundScale(
       Math.min(0.9999, Math.max(t3 + 0.0002, scheduled.eraseEndMs / totalCycleMs))
     );
-    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.x}" y="${baselineY}" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
+    const baseOpacityAttr = scheduled.isFirstLineChar ? '' : ' opacity="0"';
+    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.x}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
   }
   charsMarkup += '</g>';
 
-  const initialCursorX = timelineState.cursorXPoints[0]?.value ?? leading.textStartX;
   const xAnimate = renderTimelineAnimate(
     'x',
     timelineState.cursorXPoints,
@@ -2027,7 +2091,7 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     totalCycleMs,
     cycleDurAttr
   );
-  const cursorMarkup = `<rect x="${initialCursorX}" y="${cursorGeometry.y}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}">${xAnimate}${opacityAnimate}</rect>`;
+  const cursorMarkup = `<rect x="${timelineState.firstLineEndCursorX}" y="${cursorGeometry.y}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" opacity="${cursorGeometry.activeOpacity}">${xAnimate}${opacityAnimate}</rect>`;
 
   const sheen =
     layout === 'none'
@@ -2044,6 +2108,7 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     body: `${surfaceMarkup}${hintMarkup}${leading.markup}${selectionMarkup}${charsMarkup}${cursorMarkup}${sheen.overlay}`,
     defs: defsMarkup,
     height,
+    restTime: roundCoord(timelineState.firstLineRestMs / 1000),
     width,
   });
 }
@@ -2168,14 +2233,25 @@ function computeMinHeaderWidth(options: {
   return Math.ceil(tabStartX + tabWidth + rightClearance);
 }
 
+/** Resolve the effective horizontal text alignment of a typing card. */
+function resolveTypingAlignment(
+  layout: TypingLayout,
+  options: TypingRenderOptions,
+  hasIcon: boolean
+): TypingAlign {
+  if (layout === 'browser' || layout === 'ide') {
+    return 'left';
+  }
+  const defaultAlign: TypingAlign =
+    layout === 'none' && !options.prefix && !hasIcon ? 'center' : 'left';
+  return options.align ?? defaultAlign;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render a standalone SVG typing animation (`svg.xul.is/typing/*` and `svg.xul.is/type/*`).
- * Supports 5 container layouts (`'window'`, `'prompt'`, `'ide'`, `'browser'`, `'none'`),
- * 3 cursor shapes (`'bar'`, `'block'`, `'underscore'`), 3 erase transitions (`'backspace'`, `'select'`, `'fade'`),
- * 2 bundled fonts (`'mono'` JetBrains Mono and `'sans'` Geist Sans), realistic HCI keystroke cadence,
- * and optional QWERTY neighbor typos (`hasTypo`).
+ * Render a standalone SVG typing animation with configurable container frame, caret cursor, erase transition,
+ * vector font family, HCI keystroke cadence, and optional QWERTY neighbor typos.
  * @param options   Typing animation rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -2183,19 +2259,16 @@ export function renderTyping(options: TypingRenderOptions): string {
   const { color } = options;
   const palette = THEMES[color];
   const variant: BadgeVariant = options.variant ?? '3';
-  const layout: TypingLayout = options.layout ?? 'window';
-  const cursorStyle: TypingCursor = options.cursor ?? 'bar';
-  const eraseMode: TypingEraseMode = options.erase ?? 'backspace';
+  const layout: TypingLayout = options.layout ?? DEFAULT_TYPING_LAYOUT;
+  const cursorStyle: TypingCursor = options.cursor ?? DEFAULT_TYPING_CURSOR;
+  const eraseMode: TypingEraseMode = options.erase ?? DEFAULT_TYPING_ERASE;
   const fontFamily: TypingFont = options.font ?? DEFAULT_LAYOUT_FONTS[layout];
   const animMode: AnimationMode = options.anim ?? 'default';
   const hasTypo = options.hasTypo ?? false;
 
   const lines = normalizeTypingLines(options.lines);
   const iconSlot = resolveTypingIcon(options.icon);
-  const isLeftOnlyLayout = layout === 'browser' || layout === 'ide';
-  const defaultAlign: TypingAlign =
-    layout === 'none' && !options.prefix && !iconSlot ? 'center' : 'left';
-  const align: TypingAlign = isLeftOnlyLayout ? 'left' : (options.align ?? defaultAlign);
+  const align = resolveTypingAlignment(layout, options, Boolean(iconSlot));
 
   const metrics = resolveTypingMetrics(options.size, layout);
   const { bodyHeight, fontSize, headerHeight, padX, scale } = metrics;
@@ -2225,23 +2298,17 @@ export function renderTyping(options: TypingRenderOptions): string {
     prefixText,
     styleTokens,
   });
-  const probeHint = renderHintBadge({
-    hint: resolvedHint,
-    layout,
-    metrics,
-    palette,
-    styleTokens,
-    variant,
-    width: TYPING_WIDTH_RANGE.max,
-  });
+  const hintGeometry = measureHintBadgeGeometry(resolvedHint, layout, metrics);
+  const reservedBodyWidth = hintGeometry?.reservedBodyWidth ?? 0;
+  const reservedHeaderWidth = hintGeometry?.reservedHeaderWidth ?? 0;
 
-  const rightInset = padX + probeHint.reservedBodyWidth + cursorReserveWidth;
+  const rightInset = padX + reservedBodyWidth + cursorReserveWidth;
   const minAutoWidth = layout === 'none' ? 200 : Math.round(360 * Math.max(1, scale * 0.88));
   const minHeaderWidth = computeMinHeaderWidth({
     iconSlot,
     layout,
     metrics,
-    reservedHeaderWidth: probeHint.reservedHeaderWidth,
+    reservedHeaderWidth,
     titleText,
   });
   const idealWidth = Math.max(
@@ -2251,7 +2318,8 @@ export function renderTyping(options: TypingRenderOptions): string {
   );
   const width = clampInt(options.width, TYPING_WIDTH_RANGE, idealWidth);
 
-  const hintBadge = renderHintBadge({
+  const hintMarkup = renderHintBadge({
+    geometry: hintGeometry,
     hint: resolvedHint,
     layout,
     metrics,
@@ -2262,10 +2330,10 @@ export function renderTyping(options: TypingRenderOptions): string {
   });
   const maxTextWidth = Math.max(
     fontSize * 3,
-    width - leading.textStartX - padX - hintBadge.reservedBodyWidth - cursorReserveWidth
+    width - leading.textStartX - padX - reservedBodyWidth - cursorReserveWidth
   );
   const centerAnchorX = roundCoord(
-    (leading.textStartX + (width - padX - hintBadge.reservedBodyWidth - cursorReserveWidth)) / 2
+    (leading.textStartX + (width - padX - reservedBodyWidth - cursorReserveWidth)) / 2
   );
 
   const preparedLines = buildPreparedTypingLines({
@@ -2300,7 +2368,7 @@ export function renderTyping(options: TypingRenderOptions): string {
     cursorGeometry,
     eraseMode,
     height,
-    hintMarkup: hintBadge.markup,
+    hintMarkup,
     layout,
     leading,
     metrics,

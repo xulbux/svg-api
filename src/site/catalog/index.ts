@@ -39,6 +39,7 @@ export {
   buildStackParamRows,
   buildStackVariantCards,
   countStackExampleIcons,
+  STACK_ANIMATION_CARDS,
   STACK_VARIANT_DESCRIPTORS,
 } from './stack';
 export {

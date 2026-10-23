@@ -4,6 +4,7 @@
  * Every page is deterministic, so each one is rendered once per Worker isolate and then served from memory.
  */
 
+import { SITE_HOST } from '@/config/site';
 import { DocsPager } from '@/site/components/DocsPager';
 import { PageLayout } from '@/site/components/PageLayout';
 import { renderHtml } from '@/site/jsx';
@@ -18,6 +19,7 @@ import { QuotesSection } from '@/site/pages/QuotesPage';
 import { ServicesSection } from '@/site/pages/ServicesPage';
 import { StackSection } from '@/site/pages/StackPage';
 import { TypingSection } from '@/site/pages/TypingPage';
+import { buildDocsJsonLd } from '@/site/seo';
 import type { DocsPageSlug, DocsSectionSlug } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -65,14 +67,17 @@ export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
 export function DocsPage(props: DocsPageProps): HtmlFragment {
   const slug = props.slug ?? 'overview';
   const meta = getDocsPageMeta(slug);
+  const canonicalPath = buildDocsPath(slug);
+  const pageTitle = `${meta.title} · ${SITE_HOST} Documentation`;
   const SectionComponent = PAGE_SECTIONS[slug];
   return (
     <PageLayout
       activeNav="docs"
-      canonicalPath={buildDocsPath(slug)}
+      canonicalPath={canonicalPath}
       description={meta.description}
+      jsonLd={buildDocsJsonLd(pageTitle, meta.description, canonicalPath)}
       sidebar={buildDocsSidebar(slug)}
-      title={`${meta.title} · svg.xul.is Documentation`}>
+      title={pageTitle}>
       <SectionComponent />
       <DocsPager slug={slug} />
     </PageLayout>
@@ -81,7 +86,7 @@ export function DocsPage(props: DocsPageProps): HtmlFragment {
 
 /**
  * Render (once per isolate) a documentation page: The Getting Started overview or a dedicated element section.
- * @param slug   Target page slug (`'overview'`, `'badges'`, `'services'`, `'buttons'`, `'icons'`, `'stack'`, `'typing'`, `'quotes'`, `'colors'`).
+ * @param slug   Target documentation page slug.
  * @returns Complete HTML document string.
  */
 export function renderDocsHtml(slug: DocsPageSlug = 'overview'): string {

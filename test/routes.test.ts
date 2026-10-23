@@ -3,13 +3,16 @@
  */
 
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { isThemeColorName, resolveColor, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import app from '@/index';
 import {
   buildSvgCacheControl,
   computeEtag,
+  HTML_SECURITY_HEADERS,
   isDocumentNavigation,
+  MAX_REQUEST_URL_LENGTH,
   sanitizeRedirectUrl,
 } from '@/routes/http';
 import {
@@ -28,6 +31,7 @@ import {
 } from '@/routes/params';
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
+import { BUILDER_PAGES } from '@/site/navigation';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
@@ -66,7 +70,7 @@ afterEach(() => {
 });
 
 describe('resolveColor', () => {
-  it('resolves all 22 Tailwind v4 theme colors and falls back on unknown inputs', () => {
+  it(`resolves all ${THEME_COLOR_NAMES.length} Tailwind v4 theme colors and falls back on unknown inputs`, () => {
     expect(resolveColor('cyan', 'indigo')).toBe('cyan');
     expect(resolveColor('EMERALD', 'indigo')).toBe('emerald');
     expect(resolveColor('fuchsia', 'indigo')).toBe('fuchsia');
@@ -387,6 +391,11 @@ describe('HTTP helpers', () => {
 });
 
 describe('Hono routes on svg.xul.is', () => {
+  it('exports only the default Worker handler from src/index.ts (regression: named value exports crashed workerd on startup)', async () => {
+    const workerEntrypoint = await import('@/index');
+    expect(Object.keys(workerEntrypoint)).toEqual(['default']);
+  });
+
   it('renders homepage HTML at /', async () => {
     const response = await app.request('/', {}, TEST_ENV);
     expect(response.status).toBe(200);
@@ -394,7 +403,6 @@ describe('Hono routes on svg.xul.is', () => {
     const body = await response.text();
     expect(body).toContain('One Cohesive <span class="hero-accent">Edge SVG Engine</span>');
     expect(body).toContain('href="/docs"');
-    expect(body).toContain('href="/builder"');
     expect(body).toContain('href="/builder/badge"');
     expect(body).toContain('<details class="code-drawer">');
     expect(body).toContain('class="ui-icon');
@@ -402,15 +410,20 @@ describe('Hono routes on svg.xul.is', () => {
     expect(body).toContain('class="feature-card"');
   });
 
-  it('renders the /docs overview, redirects /preview and unknown sections to /docs, and renders /docs/:section pages with syntax-highlighted Markdown code drawers', async () => {
+  it('renders /docs and /docs/:section pages, 301-redirects /preview, and answers unknown sections with a noindex 404 page', async () => {
     const docsRes = await app.request('/docs', {}, TEST_ENV);
     expect(docsRes.status).toBe(200);
     expect(docsRes.headers.get('Content-Type')).toContain('text/html');
     expect(await docsRes.text()).toContain('Encoding Path Segments');
 
-    const previewRedirect = await app.request('/preview', {}, TEST_ENV);
-    expect(previewRedirect.status).toBe(302);
-    expect(previewRedirect.headers.get('Location')).toBe('/docs');
+    const [previewRedirect, queryPreviewRedirect] = await requestAll(
+      ['/preview', '/preview?from=legacy'],
+      TEST_ENV
+    );
+    expect(previewRedirect?.status).toBe(301);
+    expect(previewRedirect?.headers.get('Location')).toBe('/docs');
+    expect(queryPreviewRedirect?.status).toBe(301);
+    expect(queryPreviewRedirect?.headers.get('Location')).toBe('/docs?from=legacy');
 
     const badgesRes = await app.request('/docs/badges', {}, TEST_ENV);
     expect(badgesRes.status).toBe(200);
@@ -439,27 +452,109 @@ describe('Hono routes on svg.xul.is', () => {
 
     const unknownPaths = ['/docs/unknown-page', '/docs/overview'];
     const unknownResponses = await requestAll(unknownPaths, TEST_ENV);
+    const unknownBodies = await Promise.all(unknownResponses.map((response) => response.text()));
     for (const [i, response] of unknownResponses.entries()) {
-      expect(response.status, unknownPaths[i]).toBe(302);
-      expect(response.headers.get('Location'), unknownPaths[i]).toBe('/docs');
+      expect(response.status, unknownPaths[i]).toBe(404);
+      expect(response.headers.get('Content-Type'), unknownPaths[i]).toContain('text/html');
+      expect(unknownBodies[i], unknownPaths[i]).toContain(
+        '<meta name="robots" content="noindex" />'
+      );
     }
   });
 
-  it('redirects /builder and unknown kinds to /builder/badge and renders every builder page', async () => {
-    const redirectPaths = ['/builder', '/builder/unknown'];
-    const redirectResponses = await requestAll(redirectPaths, TEST_ENV);
-    for (const [i, response] of redirectResponses.entries()) {
-      expect(response.status, redirectPaths[i]).toBe(302);
-      expect(response.headers.get('Location'), redirectPaths[i]).toBe('/builder/badge');
-    }
-    const builderPaths = ['badge', 'service', 'button', 'icon', 'stack', 'quote'].map(
-      (kind) => `/builder/${kind}`
+  it('301-redirects /builder (preserving query strings), answers unknown kinds with 404, and renders every builder page', async () => {
+    const [builderRedirect, prefillRedirect, unknownBuilderRes] = await requestAll(
+      ['/builder', '/builder?path=%2Ficon%2Frust', '/builder/unknown'],
+      TEST_ENV
     );
+    expect(builderRedirect?.status).toBe(301);
+    expect(builderRedirect?.headers.get('Location')).toBe('/builder/badge');
+    expect(prefillRedirect?.status).toBe(301);
+    expect(prefillRedirect?.headers.get('Location')).toBe('/builder/badge?path=%2Ficon%2Frust');
+    expect(unknownBuilderRes?.status).toBe(404);
+    expect(unknownBuilderRes?.headers.get('Content-Type')).toContain('text/html');
+    expect(await unknownBuilderRes?.text()).toContain('<meta name="robots" content="noindex" />');
+
+    const builderPaths = BUILDER_PAGES.map((page) => `/builder/${page.kind}`);
     const builderResponses = await requestAll(builderPaths, TEST_ENV);
     for (const [i, response] of builderResponses.entries()) {
       expect(response.status, builderPaths[i]).toBe(200);
       expect(response.headers.get('Content-Type'), builderPaths[i]).toContain('text/html');
     }
+  });
+
+  it('serves /robots.txt, /sitemap.xml, and /llms.txt with ETag revalidation and lists every page and service preset', async () => {
+    const [rawRobotsRes, rawSitemapRes, rawLlmsRes] = await requestAll(
+      ['/robots.txt', '/sitemap.xml', '/llms.txt'],
+      TEST_ENV
+    );
+    const robotsRes = requireDefined(rawRobotsRes, '/robots.txt');
+    const sitemapRes = requireDefined(rawSitemapRes, '/sitemap.xml');
+    const llmsRes = requireDefined(rawLlmsRes, '/llms.txt');
+
+    expect(robotsRes.status).toBe(200);
+    expect(robotsRes.headers.get('Content-Type')).toContain('text/plain');
+    expect(await robotsRes.text()).toContain(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`);
+
+    const robotsEtag = robotsRes.headers.get('ETag') ?? '';
+    const robotsNotModified = await app.request(
+      '/robots.txt',
+      { headers: { 'If-None-Match': robotsEtag } },
+      TEST_ENV
+    );
+    expect(robotsNotModified.status).toBe(304);
+
+    expect(sitemapRes.status).toBe(200);
+    expect(sitemapRes.headers.get('Content-Type')).toContain('application/xml');
+    const sitemapBody = await sitemapRes.text();
+    expect(sitemapBody).toContain(`<loc>${SITE_ORIGIN}/</loc>`);
+    expect(sitemapBody).toContain(`<loc>${SITE_ORIGIN}/docs/services</loc>`);
+    expect(sitemapBody).toContain(`<loc>${SITE_ORIGIN}/builder/typing</loc>`);
+
+    expect(llmsRes.status).toBe(200);
+    expect(llmsRes.headers.get('Content-Type')).toContain('text/plain');
+    const llmsBody = await llmsRes.text();
+    for (const serviceKey of Object.keys(SERVICES_CONFIG)) {
+      expect(llmsBody, serviceKey).toContain(`/badge/${serviceKey}/`);
+    }
+  });
+
+  it('serves /og.png (1200x630 RGB PNG) and /og.svg with ETag revalidation', async () => {
+    const [rawOgPngRes, rawOgSvgRes] = await requestAll(['/og.png', '/og.svg'], TEST_ENV);
+    const ogPngRes = requireDefined(rawOgPngRes, '/og.png');
+    const ogSvgRes = requireDefined(rawOgSvgRes, '/og.svg');
+
+    expect(ogPngRes.status).toBe(200);
+    expect(ogPngRes.headers.get('Content-Type')).toBe('image/png');
+    expect(ogPngRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    const ogPngEtag = ogPngRes.headers.get('ETag') ?? '';
+    expect(ogPngEtag).toMatch(/^W\/"[\da-z]+-[\da-z]+"$/);
+    const ogPngBytes = new Uint8Array(await ogPngRes.arrayBuffer());
+    expect([...ogPngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    const ogPngView = new DataView(ogPngBytes.buffer, ogPngBytes.byteOffset, ogPngBytes.byteLength);
+    expect(ogPngView.getUint32(16)).toBe(1200);
+    expect(ogPngView.getUint32(20)).toBe(630);
+    const ogPngNotModified = await app.request(
+      '/og.png',
+      { headers: { 'If-None-Match': ogPngEtag } },
+      TEST_ENV
+    );
+    expect(ogPngNotModified.status).toBe(304);
+
+    expect(ogSvgRes.status).toBe(200);
+    expect(ogSvgRes.headers.get('Content-Type')).toContain('image/svg+xml');
+    expect(ogSvgRes.headers.get('Content-Security-Policy')).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'"
+    );
+    const ogSvgEtag = ogSvgRes.headers.get('ETag') ?? '';
+    expect(ogSvgEtag).toMatch(/^W\/"/);
+    expect(await ogSvgRes.text()).toContain('width="1200" height="630"');
+    const ogSvgNotModified = await app.request(
+      '/og.svg',
+      { headers: { 'If-None-Match': ogSvgEtag } },
+      TEST_ENV
+    );
+    expect(ogSvgNotModified.status).toBe(304);
   });
 
   it('redirects trailing-slash docs and builder paths to their canonical paths (regression: /docs/ returned 404)', async () => {
@@ -713,20 +808,33 @@ describe('route parsing regressions', () => {
     }
   });
 
-  it('returns 404 for paths that match no SVG route', async () => {
-    const paths = [
+  it('returns plain-text 404 for unmatched SVG/asset routes and branded 404 HTML for unmatched site paths', async () => {
+    const svgMissPaths = [
       '/badge/a/b/c',
       '/badge/a/b/c/d/e',
       '/icon/a/b',
       '/icon',
       '/icon/',
       '/stack/a/b',
-      '/nope',
     ];
-    const responses = await requestAll(paths, TEST_ENV);
-    for (const [i, response] of responses.entries()) {
-      expect(response.status, paths[i]).toBe(404);
+    const svgMissResponses = await requestAll(svgMissPaths, TEST_ENV);
+    for (const [i, response] of svgMissResponses.entries()) {
+      expect(response.status, svgMissPaths[i]).toBe(404);
+      expect(response.headers.get('Content-Type'), svgMissPaths[i]).toContain('text/plain');
     }
+
+    const siteMissRes = await app.request('/nope', {}, TEST_ENV);
+    expect(siteMissRes.status).toBe(404);
+    expect(siteMissRes.headers.get('Content-Type')).toContain('text/html');
+    expect(await siteMissRes.text()).toContain('<meta name="robots" content="noindex" />');
+  });
+
+  it('rejects oversized request URLs with 414 URI Too Long before routing (regression: unbounded URL lengths)', async () => {
+    const oversizedSuffix = 'x'.repeat(MAX_REQUEST_URL_LENGTH);
+    const response = await app.request(`/badge/a/${oversizedSuffix}`, {}, TEST_ENV);
+    expect(response.status).toBe(414);
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
+    expect(await response.text()).toBe('URI Too Long');
   });
 
   it('serves memoized documentation pages with Cache-Control headers', async () => {
@@ -848,17 +956,23 @@ describe('SVG route table & edge cache keys', () => {
 });
 
 describe('response headers & revalidation', () => {
-  it('adds security headers to HTML pages and a restrictive CSP to SVG responses', async () => {
+  it('adds security headers to HTML pages, 301-redirects /favicon.ico, and sends a restrictive CSP on SVG responses', async () => {
     const homeRes = await app.request('/', {}, TEST_ENV);
     expect(homeRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(homeRes.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    expect(homeRes.headers.get('Cross-Origin-Opener-Policy')).toBe('same-origin');
+    expect(homeRes.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(homeRes.headers.get('Content-Security-Policy')).toBe(
+      HTML_SECURITY_HEADERS['Content-Security-Policy']
+    );
 
     const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
     expect(faviconRes.headers.get('Content-Security-Policy')).toBe(
       "default-src 'none'; style-src 'unsafe-inline'"
     );
-    const secondFaviconRes = await app.request('/favicon.ico', {}, TEST_ENV);
-    expect(await secondFaviconRes.text()).toBe(await faviconRes.text());
+    const faviconIcoRes = await app.request('/favicon.ico', {}, TEST_ENV);
+    expect(faviconIcoRes.status).toBe(301);
+    expect(faviconIcoRes.headers.get('Location')).toBe('/favicon.svg');
   });
 
   it('sends CORS, CSP, nosniff, and per-route Cache-Control headers on every SVG route kind', async () => {
@@ -955,6 +1069,34 @@ describe('response headers & revalidation', () => {
     expect(fontRes.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
     const fontBuffer = await fontRes.arrayBuffer();
     expect(fontBuffer.byteLength).toBeGreaterThan(200_000);
+  });
+
+  it('answers If-None-Match revalidations of SVG routes and edge-cached SVGs with 304 Not Modified', async () => {
+    const stub = installEdgeCacheStub();
+    const firstSvgRes = await app.request('/badge/status/live?color=emerald', {}, TEST_ENV);
+    const svgEtag = firstSvgRes.headers.get('ETag') ?? '';
+    expect(svgEtag).toMatch(/^W\/"[\da-z]+-[\da-z]+"$/);
+
+    const cachedRevalidatedRes = await app.request(
+      '/badge/status/live?color=emerald&utm=1',
+      { headers: { 'If-None-Match': svgEtag } },
+      TEST_ENV
+    );
+    expect(cachedRevalidatedRes.status).toBe(304);
+    expect(cachedRevalidatedRes.headers.get('ETag')).toBe(svgEtag);
+    expect(cachedRevalidatedRes.headers.get('Access-Control-Allow-Origin')).toBe('*');
+    expect(await cachedRevalidatedRes.text()).toBe('');
+    expect(stub.storedKeys).toHaveLength(1);
+
+    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
+    const faviconEtag = faviconRes.headers.get('ETag') ?? '';
+    expect(faviconEtag).toMatch(/^W\/"/);
+    const faviconRevalidatedRes = await app.request(
+      '/favicon.svg',
+      { headers: { 'If-None-Match': faviconEtag } },
+      TEST_ENV
+    );
+    expect(faviconRevalidatedRes.status).toBe(304);
   });
 });
 

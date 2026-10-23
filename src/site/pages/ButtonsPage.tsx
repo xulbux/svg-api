@@ -1,5 +1,5 @@
 /**
- * Buttons documentation page – Renders the Interactive CTA Buttons (`/docs/buttons`) section (`<ButtonsSection />` and `renderButtonsSectionHtml`).
+ * Buttons documentation page – Renders the Interactive CTA Buttons (`/docs/buttons`) section (`<ButtonsSection />`).
  */
 
 import { SIZE_TOKENS } from '@/routes/params';
@@ -11,7 +11,6 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -43,12 +42,4 @@ export function ButtonsSection(): HtmlFragment {
       <CardGrid cards={BUTTON_USE_CASE_CARDS} />
     </section>
   );
-}
-
-/**
- * Render the dedicated CTA Buttons (`/docs/buttons`) documentation section HTML.
- * @returns HTML string for the `/docs/buttons` documentation and live preview section.
- */
-export function renderButtonsSectionHtml(): string {
-  return renderHtml(<ButtonsSection />);
 }

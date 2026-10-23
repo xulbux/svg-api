@@ -8,6 +8,9 @@ import {
   MAX_SPARKLINE_POINTS,
   MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
+  MIN_SERIES_POINTS,
+  PERCENT_RANGE,
+  STRIP_TICK_MAX_STATE,
 } from '@/svg/renderer';
 import type { BadgeSpecialElement, BadgeVariant, SpecialKindDetail, VariantTier } from '@/types';
 
@@ -25,18 +28,18 @@ export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
   bar: {
-    description: 'Percentage from 0 to 100 (e.g., 92).',
+    description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 92).`,
     example: '92',
     label: 'Progress bar',
     modifiers: ['static'],
-    summary: 'Progress bar (0 to 100%)',
+    summary: `Progress bar (${PERCENT_RANGE.min} to ${PERCENT_RANGE.max}%)`,
   },
   bars: {
-    description: `2 to ${MAX_BARS_POINTS} comma-separated numbers (e.g., 3,6,4,8,5,9,7).`,
+    description: `${MIN_SERIES_POINTS} to ${MAX_BARS_POINTS} comma-separated numbers (e.g., 3,6,4,8,5,9,7).`,
     example: '3,6,4,8,5,9,7',
     label: 'Mini bars',
     modifiers: [],
-    summary: `Mini bars (2 to ${MAX_BARS_POINTS} numbers)`,
+    summary: `Mini bars (${MIN_SERIES_POINTS} to ${MAX_BARS_POINTS} numbers)`,
   },
   delta: {
     description: 'Signed change label; + tints emerald, - tints rose (e.g., +24%).',
@@ -46,18 +49,18 @@ export const SPECIAL_KIND_DETAILS: Readonly<
     summary: 'Delta pill (+ emerald, - rose)',
   },
   ring: {
-    description: 'Percentage from 0 to 100 (e.g., 84).',
+    description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 84).`,
     example: '84',
     label: 'Donut ring',
     modifiers: ['pulse'],
-    summary: 'Donut ring (0 to 100%)',
+    summary: `Donut ring (${PERCENT_RANGE.min} to ${PERCENT_RANGE.max}%)`,
   },
   sparkline: {
-    description: `2 to ${MAX_SPARKLINE_POINTS} comma-separated numbers (e.g., 22,19,21,17,15,16,14).`,
+    description: `${MIN_SERIES_POINTS} to ${MAX_SPARKLINE_POINTS} comma-separated numbers (e.g., 22,19,21,17,15,16,14).`,
     example: '22,19,21,17,15,16,14',
     label: 'Sparkline',
     modifiers: [],
-    summary: `Sparkline (2 to ${MAX_SPARKLINE_POINTS} numbers)`,
+    summary: `Sparkline (${MIN_SERIES_POINTS} to ${MAX_SPARKLINE_POINTS} numbers)`,
   },
   steps: {
     description: `Completed/total steps up to ${MAX_STEPS_COUNT} (e.g., 4/5).`,
@@ -67,11 +70,11 @@ export const SPECIAL_KIND_DETAILS: Readonly<
     summary: `Step pills (done/total, up to ${MAX_STEPS_COUNT})`,
   },
   strip: {
-    description: `1 to ${MAX_STRIP_TICKS} tick states from 0 (down) to 9 (ok) (e.g., 9987998999).`,
+    description: `1 to ${MAX_STRIP_TICKS} tick states from 0 (down) to ${STRIP_TICK_MAX_STATE} (ok) (e.g., 9987998999).`,
     example: '9987998999',
     label: 'Uptime strip',
     modifiers: [],
-    summary: `Uptime strip (1 to ${MAX_STRIP_TICKS} ticks, 0 to 9)`,
+    summary: `Uptime strip (1 to ${MAX_STRIP_TICKS} ticks, 0 to ${STRIP_TICK_MAX_STATE})`,
   },
 };
 
@@ -121,4 +124,39 @@ export function formatSpecialExamples(): string {
     }
   }
   return examples.join(' | ');
+}
+
+/**
+ * Collect sorted alias keys from `aliasMap` that resolve to `targetValue` (excluding `targetValue` itself).
+ * @param aliasMap      Alias lookup map (`alias -> canonical`).
+ * @param targetValue   Canonical target token.
+ * @returns Sorted list of alias tokens for `targetValue`.
+ */
+export function collectAliasesForTarget(
+  aliasMap: Readonly<Record<string, string>>,
+  targetValue: string
+): string[] {
+  const aliases: string[] = [];
+  for (const [alias, canonical] of Object.entries(aliasMap)) {
+    if (canonical === targetValue && alias !== targetValue) {
+      aliases.push(alias);
+    }
+  }
+  return aliases.toSorted();
+}
+
+/**
+ * Format a list of strings as natural English prose (`'a'`, `'a and b'`, `'a, b, and c'`).
+ * @param items         Items to join in display order.
+ * @param conjunction   Coordinating conjunction (`'and'` or `'or'`).
+ * @returns Human-readable prose list.
+ */
+export function formatConjunctionList(items: readonly string[], conjunction = 'and'): string {
+  if (items.length <= 1) {
+    return items[0] ?? '';
+  }
+  if (items.length === 2) {
+    return `${items[0]} ${conjunction} ${items[1]}`;
+  }
+  return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items.at(-1)}`;
 }

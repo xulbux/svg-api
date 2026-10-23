@@ -1,5 +1,5 @@
 /**
- * Hacker News service preset – User karma from the official Firebase API (`/badge/hn/:user/karma`).
+ * Hacker News service preset – Live upstream metrics and redirect transformations.
  *
  * The `karma` child path returns a bare number (`null` for unknown users) instead of the full user
  * document, which lists every submitted item id (`100+ KB` for active users).

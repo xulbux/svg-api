@@ -1,5 +1,5 @@
 /**
- * Hex.pm service preset – Elixir/Erlang package version, all-time/90-day/weekly downloads, and license (`/badge/hex/:pkg/:metric`).
+ * Hex.pm service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

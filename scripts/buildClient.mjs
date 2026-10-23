@@ -1,9 +1,10 @@
 /**
- * Client script bundler – Compiles modular browser TypeScript in `src/site/client/` into self-contained IIFE bundles in `src/site/client/bundles/*.client.js` for Wrangler text-module embedding.
+ * Client & asset builder – Compiles modular browser TypeScript in `src/site/client/` into self-contained IIFE bundles in `src/site/client/bundles/*.client.js` and rasterizes `src/assets/og.png` from `renderOgImageSvg()`.
  */
 
 import { writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
+import { buildOgImagePng } from './buildOgImage.mjs';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -47,3 +48,5 @@ await Promise.all(
     }
   })
 );
+
+await buildOgImagePng();

@@ -1,5 +1,5 @@
 /**
- * Shared SVG primitives – XML escaping, display text normalization and truncation, numeric clamping, prototype-safe record lookups, bounded LRU caches, content hashing, foreground paints, Kumo 3D top-edge crescent geometry, surface layers, gradient defs, sweep animations, icon groups, specular sheen overlays, and the root `<svg>` document template.
+ * Shared SVG primitives – Escaping, display text normalization, numeric clamping, bounded LRU caches, content hashing, Kumo 3D surfaces, sheen overlays, and the root `<svg>` document template.
  */
 
 import { STRIP_DARK_COLORS, WHITE } from '@/config/palette';
@@ -14,6 +14,7 @@ import type {
   LruCache,
   NumericRange,
   ResolvedIcon,
+  StackAnimationMode,
   StripTickState,
   SweepTiming,
   ThemeColorName,
@@ -40,7 +41,7 @@ interface SheenOverlay {
 /** Options for `renderSheenOverlay`. */
 interface SheenOverlayOptions {
   /** Active animation mode. */
-  animMode: AnimationMode;
+  animMode: AnimationMode | StackAnimationMode;
   /** Optional custom inner SVG elements for the `<clipPath>` (e.g., multiple tile `<rect>`s); Defaults to one rounded rectangle. */
   clipContent?: string;
   /** Total SVG height in pixels. */
@@ -72,7 +73,7 @@ interface KumoSurfaceOptions {
   rightCapsuleStartX?: number;
   /** Optional X coordinate in pixels of an internal vertical divider (split micro-buttons and badges). */
   splitLineX?: number;
-  /** Surface hierarchy tier (`'1'`, `'2'`, or `'3'`). */
+  /** Surface hierarchy tier. */
   variant: BadgeVariant;
   /** Box width in pixels. */
   width: number;
@@ -80,11 +81,15 @@ interface KumoSurfaceOptions {
 
 /** Options for `renderIconGroup`. */
 interface IconGroupOptions {
-  /** Stroke (Lucide) or fill (Simple Icons) color. */
+  /** Stroke (Lucide) or fill (brand icon) color. */
   color: string;
   /** Inner SVG markup of the icon (optionally wrapped in animation groups). */
   innerSvg: string;
-  /** Optional group opacity (`0`–`1`; Omitted when `>= 1`). */
+  /** Whether the icon is a placeholder fallback for an unknown slug (painted in red, with a dark disc backdrop on primary surfaces). */
+  isFallback?: boolean;
+  /** Whether the icon sits on a vivid primary (`variant=1`) surface (adds a dark disc backdrop behind fallback icons). */
+  isOnPrimary?: boolean;
+  /** Optional group opacity (`0`–`1`; Omitted when `>= 1` or when `isFallback` is `true`). */
   opacity?: number;
   /** Stroke width in `24x24` icon units (Lucide icons only). */
   strokeWidth: number;
@@ -106,6 +111,8 @@ interface SvgDocumentOptions {
   height: number;
   /** Root paint attributes (defaults to `fill="none"`). */
   paintAttrs?: string;
+  /** Optional SMIL resting timestamp in seconds (`data-rest-time`), used to pause reduced-motion previews on a readable frame. */
+  restTime?: number;
   /** Root `viewBox` (defaults to `0 0 <width> <height>`). */
   viewBox?: string;
   /** Rendered width in pixels. */
@@ -117,13 +124,12 @@ interface SvgDocumentOptions {
 /** ID of the shared dark-slate surface `<linearGradient>`. */
 const BG_DARK_ID = 'bg-dark';
 
-/** Font size in pixels of `22px` badge labels and values (also the default text measurement size). */
+/** Default font size in pixels for standard badge labels and values (also the default text measurement size). */
 export const BADGE_FONT_SIZE = 11;
 
 /**
- * Opacity of white foreground elements drawn on vivid primary (`variant=1`) surfaces: Icons, delta
- * arrows, gauge fills, sparkline strokes, accent bars, and secondary text (author lines, split
- * button values, neutral delta readouts); Primary text (labels, values, quotes) stays fully white.
+ * Opacity of white foreground accents and secondary text drawn on vivid primary (`variant = '1'`) surfaces;
+ * Primary display text stays fully white.
  */
 export const PRIMARY_FOREGROUND_OPACITY = 0.85;
 
@@ -376,7 +382,7 @@ export function isIconMotionMode(token: string | undefined): token is IconMotion
 }
 
 /**
- * Check whether an untrusted string is a valid 10-stage strip tick (`'0'`–`'9'`, an own key of `STRIP_DARK_COLORS`).
+ * Check whether an untrusted string is a valid strip tick state (an own key of `STRIP_DARK_COLORS`).
  * @param state   Candidate tick character or token.
  * @returns `true` when `state` is a `StripTickState`.
  */
@@ -385,19 +391,18 @@ export function isStripTickState(state: string): state is StripTickState {
 }
 
 /**
- * Check whether an animation mode enables the diagonal specular sheen sweep (`'sheen'` or `'sheen,<mode>'`).
+ * Check whether an animation mode enables the diagonal specular sheen sweep.
  * @param animMode   Active animation mode.
  * @returns `true` when the sheen overlay should be rendered.
  */
-export function isSheenMode(animMode: AnimationMode): boolean {
+export function isSheenMode(animMode: AnimationMode | StackAnimationMode): boolean {
   return animMode === 'sheen' || animMode.startsWith('sheen,');
 }
 
 /**
- * Check whether an animation mode disables status dot and data widget animations (`'none'`, `'none,none'`,
- * or `'sheen,none,none'`).
+ * Check whether an animation mode explicitly disables element and widget animations.
  * @param animMode   Active animation mode.
- * @returns `true` when status dots and data widgets must be static.
+ * @returns `true` when animated elements must render statically.
  */
 export function isAnimationDisabled(animMode: AnimationMode): boolean {
   return animMode === 'none' || animMode === 'none,none' || animMode === 'sheen,none,none';
@@ -488,8 +493,8 @@ export function escapeXml(unsafe: string): string {
 
 /**
  * Hash text into a short, deterministic base-36 token (polynomial rolling hash over UTF-16 code units
- * modulo a 32-bit prime). Used for content-addressed SVG IDs, per-card SVG ID scopes, static asset
- * versions, and ETags; Not a cryptographic hash.
+ * modulo a 32-bit prime). Used for content-addressed SVG IDs, cache-busting asset versions, and ETags;
+ * Not a cryptographic hash.
  * @param text   Text to hash.
  * @returns Base-36 hash token (e.g., `'1x2k9f'`).
  */
@@ -497,6 +502,20 @@ export function hashText(text: string): string {
   let hash = HASH_SEED;
   for (let i = 0; i < text.length; i += 1) {
     hash = (hash * HASH_MULTIPLIER + text.charCodeAt(i)) % HASH_MODULUS;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * Hash raw binary bytes into a short, deterministic base-36 token using the same polynomial rolling hash
+ * as `hashText` (used once per bundled binary asset such as `.ttf` fonts; Not a cryptographic hash).
+ * @param buffer   Binary buffer to hash.
+ * @returns Base-36 hash token (e.g., `'1x2k9f'`).
+ */
+export function hashBytes(buffer: ArrayBuffer): string {
+  let hash = HASH_SEED;
+  for (const byte of new Uint8Array(buffer)) {
+    hash = (hash * HASH_MULTIPLIER + byte) % HASH_MODULUS;
   }
   return hash.toString(36);
 }
@@ -649,8 +668,8 @@ export function resolveSurfaceTextColor(
 }
 
 /**
- * Resolve the paint of a foreground element drawn as a group (icons, delta arrows): White at
- * `PRIMARY_FOREGROUND_OPACITY` on vivid primary surfaces, the opaque accent color otherwise.
+ * Resolve the paint of a foreground element drawn as a group: White at `PRIMARY_FOREGROUND_OPACITY`
+ * on vivid primary surfaces, the opaque accent color otherwise.
  * @param isOnPrimary   Whether the element sits on a vivid primary surface.
  * @param accentColor   Color used on dark surfaces (e.g., `palette.iconColor`).
  * @returns Color and optional group opacity.
@@ -662,9 +681,8 @@ export function resolveForegroundPaint(isOnPrimary: boolean, accentColor: string
 }
 
 /**
- * Resolve the single paint color of a foreground element without a group opacity (gauge fills,
- * sparkline strokes, secondary text): White with `PRIMARY_FOREGROUND_OPACITY` baked in on vivid
- * primary surfaces, the accent color otherwise.
+ * Resolve the single paint color of a foreground element without a group opacity: White with
+ * `PRIMARY_FOREGROUND_OPACITY` baked in on vivid primary surfaces, the accent color otherwise.
  * @param isOnPrimary   Whether the element sits on a vivid primary surface.
  * @param accentColor   Color used on dark surfaces (e.g., `palette.accentText`).
  * @returns Paint color.
@@ -675,7 +693,7 @@ export function resolveForegroundColor(isOnPrimary: boolean, accentColor: string
 
 /**
  * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme
- * gradient per primary color (shared by badges, buttons, stacks, and quote cards).
+ * gradient per active primary color.
  * @param hasDarkBg     Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
  * @param themeColors   Theme colors whose `grad-<color>` gradient is referenced (defaults to none).
  * @returns Concatenated `<linearGradient>` SVG strings.
@@ -724,10 +742,10 @@ export function renderSweepAnimation(
 }
 
 /**
- * Render the paint attributes for an icon: Round-capped strokes for Lucide icons, a solid fill for brand icons.
+ * Render the paint attributes for an icon: Round-capped strokes for stroked icons, a solid fill for brand icons.
  * @param type          Icon source type.
  * @param color         Stroke or fill color.
- * @param strokeWidth   Stroke width in `24x24` icon units (Lucide icons only).
+ * @param strokeWidth   Stroke width in `24x24` icon units (stroked icons only).
  * @returns Space-separated SVG presentation attributes.
  */
 export function renderIconPaintAttrs(type: IconType, color: string, strokeWidth: number): string {
@@ -737,24 +755,28 @@ export function renderIconPaintAttrs(type: IconType, color: string, strokeWidth:
 }
 
 /**
- * Render a positioned, painted icon `<g>` group for a resolved Lucide or brand icon.
- * @param options   Icon group configuration (`innerSvg`, `type`, `transform`, `color`, `strokeWidth`, `opacity`).
+ * Render a positioned, painted icon `<g>` group for a resolved icon.
+ * @param options   Icon group configuration.
  * @returns `<g>` SVG element string.
  */
 export function renderIconGroup(options: IconGroupOptions): string {
+  const isFallback = options.isFallback === true;
+  const color = isFallback ? THEMES.red.iconColor : options.color;
+  const effectiveOpacity = isFallback ? undefined : options.opacity;
   const opacityAttr =
-    options.opacity !== undefined && options.opacity < 1 ? ` opacity="${options.opacity}"` : '';
-  const paintAttrs = renderIconPaintAttrs(options.type, options.color, options.strokeWidth);
-  return `<g transform="${options.transform}" ${paintAttrs}${opacityAttr}>${options.innerSvg}</g>`;
+    effectiveOpacity !== undefined && effectiveOpacity < 1 ? ` opacity="${effectiveOpacity}"` : '';
+  const paintAttrs = renderIconPaintAttrs(options.type, color, options.strokeWidth);
+  const innerSvg =
+    isFallback && options.isOnPrimary
+      ? `<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}" stroke="none" />${options.innerSvg}`
+      : options.innerSvg;
+  return `<g transform="${options.transform}" ${paintAttrs}${opacityAttr}>${innerSvg}</g>`;
 }
 
 /**
- * Render the unified 3-variant Cloudflare Kumo 3D rectangular/pill/tile surface, upper-edge crescent,
- * optional split divider, and outer border ring.
- * - `variant = '1'` (Primary): vivid brand gradient fill (`url(#grad-<color>)`) + `palette.emphasisBg` top crescent + `palette.emphasisRing` border.
- * - `variant = '2'` (Secondary): dark slate fill (`url(#bg-dark)`) + `palette.tintBg` overlay + `palette.borderColor` (`0.45`) top crescent + `palette.borderColor` border.
- * - `variant = '3'` (Tertiary): dark slate fill (`url(#bg-dark)`) + subtle `#FFFFFF` (`0.045`) top crescent + `BASE_DARK.borderNeutral` border.
- * With `rightCapsuleStartX` (split `variant = '2'` badges), the tint and the 3D top crescent only cover the
+ * Render the unified Cloudflare Kumo 3D rectangular/pill/tile surface, upper-edge crescent,
+ * optional split divider, and outer border ring across primary, secondary, and tertiary surface tiers.
+ * With `rightCapsuleStartX` (split secondary badges), the tint and the 3D top crescent only cover the
  * right capsule, like split primary badges; Tertiary dividers stop short of the edges, so their crescent spans both halves.
  * @param options   Surface geometry, variant, color, and optional split/right capsule positions.
  * @returns Concatenated SVG surface, crescent, divider, and border `<rect>`/`<path>`/`<line>` elements.
@@ -858,11 +880,11 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
 }
 
 /**
- * Render the optional periodic diagonal specular sheen overlay (`?anim=sheen`) for rectangular/pill surfaces and tile grids.
+ * Render the optional periodic diagonal specular sheen overlay for rectangular/pill surfaces and tile grids.
  * Accounts for the horizontal displacement of `skewX(-22)` (`tan(22°) ≈ 0.404`, rounded up to `0.45` for a safety margin)
  * over the full band height so the skewed highlight band completely clears the bottom-right corner before pausing.
  * IDs are content-addressed (custom clip content is hashed), so equal IDs always carry identical definitions.
- * @param options   Sheen configuration (`animMode`, `width`, `height`, `radius`, `idPrefix`, `clipContent`).
+ * @param options   Sheen overlay configuration.
  * @returns `clipDef` (for `<defs>`) and `overlay` (for the top SVG layer).
  */
 export function renderSheenOverlay(options: SheenOverlayOptions): SheenOverlay {
@@ -901,7 +923,8 @@ export function renderSvgDocument(options: SvgDocumentOptions): string {
   const { height, width } = options;
   const viewBox = options.viewBox ?? `0 0 ${width} ${height}`;
   const paintAttrs = options.paintAttrs ?? 'fill="none"';
+  const restAttr = options.restTime === undefined ? '' : ` data-rest-time="${options.restTime}"`;
   const label = escapeXml(options.ariaLabel);
   const defsMarkup = options.defs ? `<defs>${options.defs}</defs>` : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewBox}" ${paintAttrs} role="img" aria-label="${label}"><title>${label}</title>${defsMarkup}${options.body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${viewBox}" ${paintAttrs} role="img" aria-label="${label}"${restAttr}><title>${label}</title>${defsMarkup}${options.body}</svg>`;
 }

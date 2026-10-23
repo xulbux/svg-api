@@ -6,15 +6,28 @@ import { hashText } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** Maximum accepted raw request URL length in characters (`414 URI Too Long` defense against CPU/cache abuse). */
+export const MAX_REQUEST_URL_LENGTH = 8192;
+
 /** `X-Content-Type-Options` header attached to every HTML, asset, and SVG response. */
 export const NOSNIFF_HEADERS: Readonly<Record<string, string>> = {
   'X-Content-Type-Options': 'nosniff',
 };
 
+/**
+ * `Content-Security-Policy` for HTML documentation and builder responses: Self-hosted assets, inline
+ * style attributes, `data:` images, and the SHA-256 hash of the head theme script.
+ */
+const HTML_CONTENT_SECURITY_POLICY =
+  "default-src 'self'; script-src 'self' 'sha256-/IDNHTLeii71yYb2OfLrAGLXbAnBMN+jobzvfEklCYE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
 /** Security headers attached to every HTML documentation response. */
 export const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
   ...NOSNIFF_HEADERS,
+  'Content-Security-Policy': HTML_CONTENT_SECURITY_POLICY,
+  'Cross-Origin-Opener-Policy': 'same-origin',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'X-Frame-Options': 'DENY',
 };
 
 /**
@@ -129,7 +142,7 @@ export function buildSvgCacheControl(ttl: number): string {
 }
 
 /**
- * Build an HTTP `200` SVG response with edge cache and security headers.
+ * Build an HTTP `200` SVG response with entity tag, edge cache, and security headers.
  * @param svg            Complete SVG markup.
  * @param ttl            Shared edge cache TTL in seconds.
  * @param extraHeaders   Optional additional headers (e.g., `Vary`).
@@ -141,7 +154,32 @@ export function buildSvgResponse(
   extraHeaders?: Readonly<Record<string, string>>
 ): Response {
   return new Response(svg, {
-    headers: { ...SVG_BASE_HEADERS, 'Cache-Control': buildSvgCacheControl(ttl), ...extraHeaders },
+    headers: {
+      ...SVG_BASE_HEADERS,
+      'Cache-Control': buildSvgCacheControl(ttl),
+      ETag: computeEtag(svg),
+      ...extraHeaders,
+    },
     status: 200,
   });
+}
+
+/**
+ * Convert a `200` response carrying an `ETag` header into a `304 Not Modified` response when `ifNoneMatch` matches.
+ * @param response      Built or edge-cached `Response`.
+ * @param ifNoneMatch   Incoming `If-None-Match` request header value.
+ * @returns `304` `Response` without a body when current, otherwise `response` unchanged.
+ */
+export function toConditionalResponse(
+  response: Response,
+  ifNoneMatch: string | undefined
+): Response {
+  if (response.status !== 200 || !ifNoneMatch) {
+    return response;
+  }
+  const etag = response.headers.get('ETag');
+  if (!etag || !isEtagMatch(ifNoneMatch, etag)) {
+    return response;
+  }
+  return new Response(undefined, { headers: response.headers, status: 304 });
 }

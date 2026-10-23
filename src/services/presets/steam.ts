@@ -1,7 +1,7 @@
 /**
- * Steam service preset – Current in-game player count of a Steam app (`/badge/steam/:appid/players`).
+ * Steam service preset – Live upstream metrics and redirect transformations.
  *
- * The app id must be numeric: The Steam Web API answers non-numeric ids with the global player
+ * The app id must be numeric; The Steam Web API answers non-numeric ids with the global player
  * count of every game instead of an error, so they are rejected before any fetch.
  */
 
@@ -18,7 +18,7 @@ interface SteamPlayersPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Cache TTL in seconds of the live player count (5 min). */
+/** Cache TTL in seconds of the live player count. */
 const STEAM_PLAYERS_TTL = 300;
 
 /** Steam current players endpoint (unknown apps are a `404`) with store page redirect. */

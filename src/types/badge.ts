@@ -24,7 +24,7 @@ export type IconMotionMode =
  * Micro-animation mode for icons, status dots, and specular sheen.
  * - `'default'`: Status dots and progress bars animate; Icons and surfaces remain static (default when `?anim=` is omitted).
  * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
- * - `'auto' | 'breathe' | 'float' | 'nudge' | 'pulse' | 'shake' | 'spin' | 'turn' | 'whirl'`: Enables contextual or explicit icon micro-animation.
+ * - Any active `IconMotionMode`: Enables contextual or explicit icon micro-animation.
  * - `'<left>,<right>'` (e.g., `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
  * - `'sheen,<mode>'` or `'sheen,<left>,<right>'`: Combines surface sheen with single or per-icon animations.
  * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
@@ -36,7 +36,7 @@ export type AnimationMode =
   | `${IconMotionMode},${IconMotionMode}`
   | `sheen,${IconMotionMode},${IconMotionMode}`;
 
-/** Health/heat stage of an individual tick in a segmented strip (`'0'` = critical/rose through `'9'` = optimal/emerald). */
+/** Health/heat stage of an individual tick in a segmented strip, ordered from critical/rose to optimal/emerald. */
 export type StripTickState = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
 
 /** Inline horizontal capacity/progress bar special element. */
@@ -45,7 +45,7 @@ export interface BarSpecialElement {
   hasPulse?: boolean;
   /** Special element discriminant (`'bar'`). */
   type: 'bar';
-  /** Progress percentage (`0`–`100`). */
+  /** Clamped progress percentage. */
   value: number;
 }
 
@@ -53,7 +53,7 @@ export interface BarSpecialElement {
 export interface BarsSpecialElement {
   /** Special element discriminant (`'bars'`). */
   type: 'bars';
-  /** Numeric bar heights (at least 2 values). */
+  /** Numeric bar heights. */
   values: number[];
 }
 
@@ -61,17 +61,17 @@ export interface BarsSpecialElement {
 export interface DeltaSpecialElement {
   /** Special element discriminant (`'delta'`). */
   type: 'delta';
-  /** Formatted delta string (e.g., `'+14%'`, `'-3.2%'`, `'0%'`; Truncated with an ellipsis beyond `128` characters). */
+  /** Formatted signed delta string (e.g., `'+14%'`, `'-3.2%'`, `'0%'`; Truncated with an ellipsis when over-long). */
   value: string;
 }
 
-/** Compact `12x12px` circular ring gauge special element. */
+/** Compact circular ring gauge special element. */
 export interface RingSpecialElement {
   /** Optional override to enable a subtle pulse on the circular ring gauge (`false` by default). */
   hasPulse?: boolean;
   /** Special element discriminant (`'ring'`). */
   type: 'ring';
-  /** Progress percentage (`0`–`100`). */
+  /** Clamped progress percentage. */
   value: number;
 }
 
@@ -79,7 +79,7 @@ export interface RingSpecialElement {
 export interface SparklineSpecialElement {
   /** Special element discriminant (`'sparkline'`). */
   type: 'sparkline';
-  /** Numeric series points (at least 2 values). */
+  /** Numeric series points. */
   values: number[];
 }
 
@@ -87,7 +87,7 @@ export interface SparklineSpecialElement {
 export interface StepsSpecialElement {
   /** Completed step count (`0`–`total`). */
   done: number;
-  /** Total step count (`1`–`10`). */
+  /** Total step count. */
   total: number;
   /** Special element discriminant (`'steps'`). */
   type: 'steps';
@@ -95,7 +95,7 @@ export interface StepsSpecialElement {
 
 /** Segmented uptime/health history strip special element. */
 export interface StripSpecialElement {
-  /** Up to 10 vertical status ticks from `'0'` to `'9'`. */
+  /** Ordered sequence of vertical status tick states. */
   states: StripTickState[];
   /** Special element discriminant (`'strip'`). */
   type: 'strip';
@@ -117,27 +117,27 @@ export type BadgeSpecialKind = BadgeSpecialElement['type'];
 /** Candidate inline data visualization elements derived from upstream data, keyed by kind. */
 export type BadgeSpecialMap = Partial<Record<BadgeSpecialKind, BadgeSpecialElement>>;
 
-/** Options for rendering a `22px` badge SVG via `renderBadge`. */
+/** Options for rendering a badge SVG via `renderBadge`. */
 export interface BadgeRenderOptions {
-  /** Optional micro-animation control mode (defaults to `'default'`). */
+  /** Optional micro-animation control mode. */
   anim?: AnimationMode;
   /** Named theme color token. */
   color: ThemeColorName;
   /** Optional pulsing status indicator state. */
   dot?: DotState;
-  /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
+  /** Optional single, left/right pair, or trailing-only icon specification. */
   icon?: string;
-  /** Left-hand label text, or single-part badge text (truncated with an ellipsis beyond `128` characters). */
+  /** Left-hand label text, or single-part badge text (truncated with an ellipsis when over-long). */
   label: string;
-  /** Optional right-hand special data visualization element (`bar`, `bars`, `ring`, `steps`, `strip`, `delta`, or `sparkline`). */
+  /** Optional right-hand special data visualization element. */
   special?: BadgeSpecialElement;
-  /** Right-hand value text, omitted on 1-segment badges (truncated with an ellipsis beyond `128` characters). */
+  /** Right-hand value text, omitted on single-segment badges (truncated with an ellipsis when over-long). */
   value?: string;
-  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary). */
+  /** Visual hierarchy tier. */
   variant: BadgeVariant;
 }
 
-/** Base size dimensions of a badge (`22px`) or a CTA button (`22px`–`48px`). */
+/** Base size dimensions of a badge or CTA button. */
 export interface VariantMetrics {
   /** Font size in pixels. */
   fontSize: number;
@@ -151,20 +151,20 @@ export interface VariantMetrics {
   radius: number;
 }
 
-/** Options for rendering a CTA button SVG via `renderButton` (`/button/*` and `/btn/*`). */
+/** Options for rendering a CTA button SVG via `renderButton`. */
 export interface ButtonRenderOptions {
-  /** Optional micro-animation control mode (defaults to `'default'`). */
+  /** Optional micro-animation control mode. */
   anim?: AnimationMode;
   /** Named theme color token. */
   color: ThemeColorName;
-  /** Optional icon spec: `'slug'` (left only), `'left,right'` (both sides), `'none,right'` (right only), or `'none'`. */
+  /** Optional single, left/right pair, or trailing-only icon specification. */
   icon?: string;
-  /** Primary button label text (truncated with an ellipsis beyond `128` characters). */
+  /** Primary button label text (truncated with an ellipsis when over-long). */
   label: string;
-  /** Optional button size preset (`'sm'`, `'md'`, `'lg'`, `'xl'`) or custom pixel height (`22`–`48`; Defaults to `'md'` = `30px`). */
+  /** Optional button size preset or custom pixel height. */
   size?: SizePreset | number;
-  /** Optional secondary right-hand compartment text for split CTA buttons (`/button/:label/:value`). */
+  /** Optional secondary right-hand compartment text for split CTA buttons. */
   value?: string;
-  /** Visual variant (`1` = Primary, `2` = Secondary, `3` = Tertiary; Defaults to `'1'`). */
+  /** Visual hierarchy tier. */
   variant: BadgeVariant;
 }

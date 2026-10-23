@@ -30,6 +30,8 @@ export interface IconPickerOptions {
   onIndexLoaded: () => void;
   /** `#icon-picker` dialog element. */
   picker: HTMLElement | null;
+  /** `#icon-picker-empty` empty-state notice element outside `role="listbox"`. */
+  pickerEmpty: HTMLElement | null;
   /** `#icon-picker-grid` element. */
   pickerGrid: HTMLElement | null;
   /** `#icon-picker-none` button element. */
@@ -146,6 +148,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     glyphTemplates,
     onIndexLoaded,
     picker,
+    pickerEmpty,
     pickerGrid,
     pickerNoneButton,
     pickerSearch,
@@ -269,10 +272,19 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       ? `Unknown icon${unknown.length > 1 ? 's' : ''}: ${unknown.slice(0, MAX_LISTED_UNKNOWN_ICONS).join(', ')}${more} (renders a fallback).`
       : '';
     hint.classList.toggle('is-warning', hasUnknown);
-    (hint.closest('.icon-input') ?? hint.closest('[data-field]'))?.classList.toggle(
-      'is-invalid',
-      hasUnknown
-    );
+    const invalidContainer = hint.closest('.icon-input') ?? hint.closest('[data-field]');
+    invalidContainer?.classList.toggle('is-invalid', hasUnknown);
+    const interactiveControl =
+      input instanceof HTMLInputElement && input.type === 'hidden'
+        ? form.querySelector(`[data-icon-target="${inputId}"]`)
+        : input;
+    if (interactiveControl instanceof HTMLElement) {
+      if (hasUnknown) {
+        interactiveControl.setAttribute('aria-invalid', 'true');
+      } else if (!interactiveControl.closest('.is-missing')) {
+        interactiveControl.removeAttribute('aria-invalid');
+      }
+    }
   }
 
   function syncIconSelects(scope: ParentNode): void {
@@ -411,6 +423,8 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     if (pickerRendered < pickerMatches.length) {
       const sentinel = document.createElement('div');
       sentinel.className = 'icon-picker-sentinel';
+      sentinel.setAttribute('aria-hidden', 'true');
+      sentinel.setAttribute('role', 'presentation');
       pickerGrid.append(sentinel);
       sentinelObserver?.observe(sentinel);
     }
@@ -440,18 +454,19 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
   }
 
   function renderPickerEmpty(): void {
-    const empty = document.createElement('div');
-    empty.className = 'icon-picker-empty';
-    empty.append('No icons found.');
+    if (!pickerEmpty) {
+      return;
+    }
+    pickerEmpty.replaceChildren('No icons found.');
     if (pickerSearch?.value.trim()) {
       const clearButton = document.createElement('button');
       clearButton.type = 'button';
       clearButton.className = 'text-btn';
       clearButton.dataset.pickerClear = 'true';
       clearButton.textContent = 'Clear search';
-      empty.append(' ', clearButton);
+      pickerEmpty.append(' ', clearButton);
     }
-    pickerGrid?.append(empty);
+    pickerEmpty.hidden = false;
   }
 
   function findSelectedMatchIndex(): number {
@@ -476,9 +491,15 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     sentinelObserver?.disconnect();
     pickerGrid.replaceChildren();
     pickerGrid.scrollTop = 0;
-    if (pickerMatches.length === 0) {
+    const hasMatches = pickerMatches.length > 0;
+    pickerGrid.hidden = !hasMatches;
+    if (!hasMatches) {
       renderPickerEmpty();
     } else {
+      if (pickerEmpty) {
+        pickerEmpty.hidden = true;
+        pickerEmpty.replaceChildren();
+      }
       const selectedIndex = isOpening ? findSelectedMatchIndex() : -1;
       renderPickerUntil(Math.max(0, selectedIndex));
       const rovingTile = getTileAt(Math.max(0, selectedIndex));
@@ -690,14 +711,16 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     pickerSearch?.addEventListener('input', scheduleRenderPicker);
     pickerSearch?.addEventListener('keydown', handlePickerSearchKeydown);
 
-    gridElement.addEventListener('click', (event) => {
+    pickerElement.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target : undefined;
       if (target?.closest('[data-picker-clear]') && pickerSearch) {
         pickerSearch.value = '';
         pickerSearch.focus();
         renderPicker(false);
-        return;
       }
+    });
+    gridElement.addEventListener('click', (event) => {
+      const target = event.target instanceof Element ? event.target : undefined;
       const tile = target?.closest('.icon-tile');
       if (tile instanceof HTMLElement && tile.dataset.slug) {
         applyPickedSlug(tile.dataset.slug);

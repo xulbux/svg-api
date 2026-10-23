@@ -1,5 +1,5 @@
 /**
- * Quote card renderer – Renders Kumo 3D horizontal and vertical quote cards (`svg.xul.is/quote/…`).
+ * Quote card renderer – Renders Kumo 3D horizontal and vertical quote cards.
  */
 
 import { WHITE } from '@/config/palette';
@@ -62,9 +62,9 @@ interface QuoteMetrics {
 interface TextStyle {
   /** Font size in pixels. */
   fontSize: number;
-  /** Whether the text is rendered with semi-bold (`600`) weight. */
+  /** Whether the text is rendered with the bold font weight. */
   isBold: boolean;
-  /** Whether the text is rendered with semi-bold italic (`600` italic) style. */
+  /** Whether the text is rendered with the italic font style. */
   isItalic: boolean;
 }
 
@@ -72,7 +72,7 @@ interface TextStyle {
 interface QuoteWrapContext {
   /** Quote body font size in pixels. */
   fontSize: number;
-  /** Whether the text is rendered with semi-bold (`600`) weight. */
+  /** Whether the text is rendered with the bold font weight. */
   isBold: boolean;
   /** Maximum rendered line width in pixels. */
   maxWidth: number;
@@ -96,7 +96,7 @@ interface QuoteStyleTokens {
   authorColor: string;
   /** `<defs>` gradient markup required by the card. */
   gradDefs: string;
-  /** Whether the quote body uses semi-bold (`600`) weight. */
+  /** Whether the quote body uses the bold font weight. */
   isBoldText: boolean;
   /** Quote body text color. */
   textColor: string;
@@ -106,7 +106,7 @@ interface QuoteStyleTokens {
 interface QuoteCardContext {
   /** Author line color. */
   authorColor: string;
-  /** Width-truncated author line including its leading em dash (`''` when no author is given). */
+  /** Width-truncated author line including its leading dash (`''` when no author is given). */
   authorLine: string;
   /** Theme color token of the card accent. */
   color: ThemeColorName;
@@ -114,7 +114,7 @@ interface QuoteCardContext {
   height: number;
   /** Rendered size of a decorative quote mark icon in pixels. */
   iconBoxSize: number;
-  /** Whether the quote body uses semi-bold (`600`) weight. */
+  /** Whether the quote body uses the bold font weight. */
   isBoldText: boolean;
   /** Card layout orientation. */
   layout: QuoteLayout;
@@ -138,13 +138,22 @@ interface QuoteCardContext {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Card width bounds in pixels (`?width=`; The default applies to horizontal cards). */
+/** Default quote card layout when layout parameters are omitted. */
+export const DEFAULT_QUOTE_LAYOUT: QuoteLayout = 'horizontal';
+
+/** Default typography size preset for horizontal quote cards. */
+export const DEFAULT_HORIZONTAL_QUOTE_SIZE: SizePreset = 'md';
+
+/** Default typography size preset for vertical centered quote cards. */
+export const DEFAULT_VERTICAL_QUOTE_SIZE: SizePreset = 'lg';
+
+/** Card width bounds in pixels (the default applies to horizontal cards). */
 export const QUOTE_WIDTH_RANGE: NumericRange = { default: 560, max: 900, min: 240 };
 
-/** Default card width in pixels for vertical centered `/quote/…` cards. */
+/** Default card width in pixels for vertical centered quote cards. */
 export const DEFAULT_VERTICAL_QUOTE_WIDTH = 380;
 
-/** Custom numeric quote font size bounds in pixels (`?size=<px>`; Defaults to the `md` preset). */
+/** Custom numeric quote font size bounds in pixels. */
 export const QUOTE_FONT_SIZE_RANGE: NumericRange = { default: 15, max: 28, min: 11 };
 
 /** Maximum quote text and author length in UTF-16 code units before ellipsis truncation. */
@@ -195,14 +204,14 @@ const VERTICAL_MARK_TOP_GAP = 10;
 /** Vertical gap in pixels between the text block and the bottom quote mark of vertical cards. */
 const VERTICAL_MARK_BOTTOM_GAP = 14;
 
-/** Vertical quote mark fill opacity by quote card variant (`'1'`, `'2'`, `'3'`). */
+/** Vertical quote mark fill opacity by surface variant. */
 const VERTICAL_QUOTE_OPACITY_BY_VARIANT: Readonly<Record<BadgeVariant, string>> = {
   '1': '0.74',
   '2': '0.78',
   '3': '0.52',
 };
 
-/** Watermark stroke opacity by quote card variant (`'1'`, `'2'`, `'3'`). */
+/** Watermark stroke opacity by surface variant. */
 const WATERMARK_OPACITY_BY_VARIANT: Readonly<Record<BadgeVariant, string>> = {
   '1': '0.20',
   '2': '0.16',
@@ -227,7 +236,8 @@ function resolveQuoteMetrics(
   sizeOption: SizePreset | number | undefined,
   layout: QuoteLayout
 ): QuoteMetrics {
-  const defaultPreset: SizePreset = layout === 'vertical' ? 'lg' : 'md';
+  const defaultPreset: SizePreset =
+    layout === 'vertical' ? DEFAULT_VERTICAL_QUOTE_SIZE : DEFAULT_HORIZONTAL_QUOTE_SIZE;
   let fontSize = QUOTE_SIZE_MAP[defaultPreset];
   if (typeof sizeOption === 'number') {
     fontSize = clampNumber(sizeOption, QUOTE_FONT_SIZE_RANGE, fontSize);
@@ -552,25 +562,30 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render a standalone SVG quote card (`svg.xul.is/quote/…`).
- * Supports both horizontal callout cards (`layout='horizontal'`) and vertical centered profile README
- * quote cards (`layout='vertical'`) with configurable `size` (`'sm'`, `'md'`, `'lg'`, `'xl'`, or pixel number).
- * @param options   Quote card rendering configuration (`text`, `author`, `color`, `variant`, `layout`, `size`, `width`, `anim`).
+ * Render a standalone SVG quote card.
+ * Supports horizontal and vertical layouts with configurable preset or numeric font sizing and auto-wrapping.
+ * @param options   Quote card rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
 export function renderQuote(options: QuoteRenderOptions): string {
   const { color } = options;
   const palette = THEMES[color];
   const variant: BadgeVariant = options.variant ?? '2';
-  const layout: QuoteLayout = options.layout ?? 'horizontal';
+  const layout: QuoteLayout = options.layout ?? DEFAULT_QUOTE_LAYOUT;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveQuoteMetrics(options.size, layout);
   const { authorFontSize, authorSpace, fontSize, lineHeight, padY, quoteIconScale } = metrics;
 
   const isVertical = layout === 'vertical';
   const defaultWidth = isVertical
-    ? Math.round(DEFAULT_VERTICAL_QUOTE_WIDTH * Math.max(1, fontSize / QUOTE_SIZE_MAP.lg))
-    : Math.round(QUOTE_WIDTH_RANGE.default * Math.max(1, fontSize / QUOTE_SIZE_MAP.md));
+    ? Math.round(
+        DEFAULT_VERTICAL_QUOTE_WIDTH *
+          Math.max(1, fontSize / QUOTE_SIZE_MAP[DEFAULT_VERTICAL_QUOTE_SIZE])
+      )
+    : Math.round(
+        QUOTE_WIDTH_RANGE.default *
+          Math.max(1, fontSize / QUOTE_SIZE_MAP[DEFAULT_HORIZONTAL_QUOTE_SIZE])
+      );
   const width = clampInt(options.width, QUOTE_WIDTH_RANGE, defaultWidth);
   const iconBoxSize = Math.round(24 * quoteIconScale);
   const textColumn = computeQuoteTextColumn(layout, width, metrics, iconBoxSize);

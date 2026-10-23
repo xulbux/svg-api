@@ -2,15 +2,17 @@
  * Tech stack documentation catalog – Variant descriptors, showcase cards, icon count helper, and parameter reference rows for `/docs/stack`.
  */
 
+import { STACK_MOTION_ALIASES, STACK_MOTION_TOKENS } from '@/routes/params';
+import { DEFAULT_STACK_VARIANT } from '@/routes/svg';
 import {
   buildColorParamRow,
-  buildSheenAnimParamRow,
   buildVariantCards,
   buildVariantParamRow,
   formatRange,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog/shared';
 import type { VariantDescriptor } from '@/site/catalog/shared';
+import { collectAliasesForTarget, formatConjunctionList } from '@/site/glossary';
 import {
   GROUP_GAP_RATIO,
   parseStackGroups,
@@ -19,11 +21,17 @@ import {
   STACK_PER_LINE_RANGE,
   STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
-import type { BadgeVariant, ParamTableRow, ShowcaseCardConfig, ShowcaseItem } from '@/types';
+import type {
+  BadgeVariant,
+  ParamTableRow,
+  ShowcaseCardConfig,
+  ShowcaseItem,
+  StackTileMotion,
+} from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Showcase definitions for the 3 tech stack tile variants (`1`, `2`, `3`). */
+/** Showcase definitions for the tech stack tile variants. */
 export const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Filled 3D brand gradient tiles with crisp white icons.',
@@ -44,6 +52,11 @@ export const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Format the sorted shorthand aliases of a stack tile motion (`'auto, bounce, ripple'`). */
+function formatStackMotionAliases(motion: StackTileMotion): string {
+  return collectAliasesForTarget(STACK_MOTION_ALIASES, motion).join(', ');
+}
+
 /** Build the single stack example for a stack variant. */
 function buildStackVariantItems(variant: BadgeVariant): ShowcaseItem[] {
   return [
@@ -55,6 +68,43 @@ function buildStackVariantItems(variant: BadgeVariant): ShowcaseItem[] {
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/** Showcase cards demonstrating staggered per-tile SMIL micro-animations on `/docs/stack`. */
+export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: 'Tech Stack Wave',
+        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=wave',
+      },
+    ],
+    subtitle: `Staggered vertical bounce rippled left-to-right across tiles (?anim=wave; aliases: ${formatStackMotionAliases('wave')}).`,
+    title: 'anim=wave · Staggered Vertical Wave (?anim=wave)',
+  },
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: 'Tech Stack Sheen Float',
+        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?variant=1&anim=sheen,float',
+      },
+    ],
+    subtitle: `Continuous phase-shifted bobbing combined with a diagonal surface sheen (?anim=sheen,float; aliases: ${formatStackMotionAliases('float')}).`,
+    title: 'anim=sheen,float · Continuous Ambient Float (?anim=sheen,float)',
+  },
+  {
+    isCentered: true,
+    items: [
+      {
+        alt: 'Tech Stack Pulse',
+        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=pulse',
+      },
+    ],
+    subtitle: `Staggered accent border glow and subtle centered icon scale (?anim=pulse; aliases: ${formatStackMotionAliases('pulse')}).`,
+    title: 'anim=pulse · Breathing Accent Glow (?anim=pulse)',
+  },
+];
 
 /**
  * Count the icons of the stack showcase example through the live stack DSL parser.
@@ -72,7 +122,7 @@ export function countStackExampleIcons(): number {
 
 /**
  * Build the variant showcase cards for `/docs/stack`.
- * @returns Showcase card configurations for the 3 stack variants.
+ * @returns Showcase card configurations for the stack variants.
  */
 export function buildStackVariantCards(): ShowcaseCardConfig[] {
   return buildVariantCards(STACK_VARIANT_DESCRIPTORS, buildStackVariantItems, true);
@@ -83,6 +133,9 @@ export function buildStackVariantCards(): ShowcaseCardConfig[] {
  * @returns Parameter table rows.
  */
 export function buildStackParamRows(): ParamTableRow[] {
+  const motionSummaries = STACK_MOTION_TOKENS.filter((token) => token !== 'none').map(
+    (token) => `${token} [${formatStackMotionAliases(token)}]`
+  );
   return [
     {
       defaultVal: '~required',
@@ -91,7 +144,7 @@ export function buildStackParamRows(): ParamTableRow[] {
       name: ':groups / ?groups= / ?icons= / ?i=',
       values: 'c,cpp,cs,rust@amber:4 | aws,cloudflare:2 ; figma,blender:2',
     },
-    buildVariantParamRow('2', 'Tile hierarchy'),
+    buildVariantParamRow(DEFAULT_STACK_VARIANT, 'Tile hierarchy'),
     buildColorParamRow(
       '~per-icon brand color',
       'Uniform theme color override applied to all tiles.'
@@ -116,6 +169,11 @@ export function buildStackParamRows(): ParamTableRow[] {
       name: '?gap= / ?groupgap= / ?ggap=',
       values: `${formatRange(STACK_GAP_RANGE)} / ${formatRange(STACK_GROUP_GAP_RANGE)}`,
     },
-    buildSheenAnimParamRow('Diagonal sheen sweep across every tile, or none.'),
+    {
+      defaultVal: '~static',
+      description: `Diagonal sheen sweep, staggered per-tile motion (${formatConjunctionList(motionSummaries, 'or')}), sheen combined with any motion (sheen,<motion>), or none.`,
+      name: '?anim=',
+      values: `sheen | ${STACK_MOTION_TOKENS.join(' | ')} | sheen,<motion>`,
+    },
   ];
 }

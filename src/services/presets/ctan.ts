@@ -1,5 +1,5 @@
 /**
- * CTAN service preset – TeX/LaTeX package version and license from the Comprehensive TeX Archive Network (`/badge/ctan/:pkg/:metric`).
+ * CTAN service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

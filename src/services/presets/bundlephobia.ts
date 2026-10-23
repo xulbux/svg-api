@@ -1,5 +1,5 @@
 /**
- * Bundlephobia service preset – Minified size, gzipped size, and dependency count of the latest version of an unscoped or scoped npm package (`/badge/bundlephobia/[:scope/]:pkg/:metric`).
+ * Bundlephobia service preset – Live upstream metrics and redirect transformations.
  */
 
 import {

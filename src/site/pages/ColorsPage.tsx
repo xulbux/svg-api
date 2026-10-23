@@ -1,12 +1,11 @@
 /**
- * Colors documentation page – Renders the Tailwind v4 OKLCH Theme Colors (`/docs/colors`) section (`<ColorsSection />` and `renderColorsSectionHtml`).
+ * Colors documentation page – Renders the Tailwind v4 OKLCH Theme Colors (`/docs/colors`) section (`<ColorsSection />`).
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { buildColorSwatchCards } from '@/site/catalog/colors';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -27,12 +26,4 @@ export function ColorsSection(): HtmlFragment {
       <CardGrid cards={buildColorSwatchCards()} />
     </section>
   );
-}
-
-/**
- * Render the Tailwind v4 OKLCH Theme Colors (`/docs/colors`) documentation section HTML.
- * @returns HTML string for the color palette showcase section.
- */
-export function renderColorsSectionHtml(): string {
-  return renderHtml(<ColorsSection />);
 }

@@ -1,5 +1,5 @@
 /**
- * Go modules service preset – Latest module version from the Go module proxy (`/badge/go/:module/:metric`, e.g., `/badge/go/github.com/spf13/cobra/v`).
+ * Go modules service preset – Live upstream metrics and redirect transformations.
  *
  * Module paths span multiple path segments (`route.target.maxSegments`); Every segment is validated
  * individually, and uppercase letters are escaped as `!` + lowercase for the proxy (Go module

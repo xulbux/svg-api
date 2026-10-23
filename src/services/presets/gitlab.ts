@@ -1,5 +1,5 @@
 /**
- * GitLab service preset – Public gitlab.com project stars, forks, open issues, license, last activity, and latest release for any owner, incl. projects in nested subgroups (`/badge/gitlab/:owner/[:subgroup/]:repo/:metric`).
+ * GitLab service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields, withPageSuffix } from '@/services/endpoint';

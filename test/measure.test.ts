@@ -169,6 +169,59 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       expect(sansPathMarkup, symbol).toBe(monoPathMarkup);
     }
   });
+
+  it('forwards italic styling to JetBrains Mono fallback glyphs and includes fallback glyphs in uncached widths (regression: fallback outlines dropped isItalic and uncached widths ignored fallback glyphs)', () => {
+    const italicSansSymbol = renderTextPathMarkup('⌘', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'sans',
+      fontSize: 16,
+      isBold: true,
+      isItalic: true,
+      isUncached: true,
+    });
+    const italicMonoSymbol = renderTextPathMarkup('⌘', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'mono',
+      fontSize: 16,
+      isBold: true,
+      isItalic: true,
+      isUncached: true,
+    });
+    expect(italicSansSymbol).toBe(italicMonoSymbol);
+
+    const uprightMarkup = renderTextPathMarkup('⌘K', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'sans',
+      fontSize: 16,
+      isBold: true,
+      isItalic: false,
+      isUncached: true,
+    });
+    const italicMarkup = renderTextPathMarkup('⌘K', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'sans',
+      fontSize: 16,
+      isBold: true,
+      isItalic: true,
+      isUncached: true,
+    });
+    expect(italicMarkup).not.toBe(uprightMarkup);
+    expect(italicMarkup).not.toContain('NaN');
+
+    expect(measureTextWidthUncached('⌘', 16, true)).toBeGreaterThan(0);
+    expect(measureTextWidthUncached('⌘K', 16, true)).toBe(measureTextWidth('⌘K', 16, true));
+    expect(measureTextWidthUncached('⌘K', 16, true, true)).toBe(
+      measureTextWidth('⌘K', 16, true, true)
+    );
+  });
 });
 
 describe('bounded LRU cache (src/svg/shared.ts)', () => {

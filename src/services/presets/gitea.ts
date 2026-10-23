@@ -1,5 +1,5 @@
 /**
- * Gitea/Forgejo service presets – Public repository stars, forks, issues, pull requests, last activity, and latest release for any owner on Codeberg and gitea.com (`/badge/codeberg/:owner/:repo/:metric`, `/badge/gitea/:owner/:repo/:metric`).
+ * Gitea & Forgejo service presets – Live upstream metrics and redirect transformations.
  *
  * Codeberg runs Forgejo, a Gitea fork with an identical `/api/v1/repos` API, so both presets are
  * built by the same `createGiteaService` factory.

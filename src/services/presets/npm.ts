@@ -1,5 +1,5 @@
 /**
- * npm service preset – Registry version, license, TypeScript types, and download counts for unscoped and scoped packages (`/badge/npm/[:scope/]:pkg/:metric`).
+ * npm service preset – Live upstream metrics and redirect transformations.
  */
 
 import {
@@ -134,7 +134,7 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
     return { dl: pointCount, dw: pointCount, dy: pointCount };
   }
   if (!Array.isArray(data.downloads)) {
-    return {};
+    return undefined;
   }
   const daily: number[] = [];
   for (const entry of data.downloads) {
@@ -143,7 +143,7 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
     }
   }
   if (daily.length === 0) {
-    return {};
+    return undefined;
   }
   const totalDays = daily.length;
   const recent30d = daily.slice(-30);

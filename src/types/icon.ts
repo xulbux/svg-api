@@ -10,18 +10,18 @@ import type { ThemeColorName } from './theme';
 /** Supported icon library source types. */
 export type IconType = 'lucide' | 'simple';
 
-/** Icon picker sets (`/assets/icons.json`): Lucide stroke icons and brand/tech logos. */
+/** Icon picker sets: UI stroke icons and brand/tech logos. */
 export type IconPickerSetId = 'brands' | 'lucide';
 
 /** SVG icon markup and source type, without horizontal ink bounds. */
 export interface IconBody {
   /** Horizontal offset in `24x24` icon units applied before `coordScale` (`0` when omitted). */
   coordOffsetX?: number;
-  /** Scale factor from the icon body's native coordinate space to `24x24` (`1` for Lucide and Simple Icons, `0.1875` for Devicon Plain, `0.046875` for File Icons). */
+  /** Scale factor normalizing the icon body's native coordinate space to `24x24`. */
   coordScale: number;
   /** Inner SVG elements (without the outer `<svg>` wrapper). */
   innerSvg: string;
-  /** Whether the icon uses Lucide strokes or a Simple Icons fill path. */
+  /** Whether the icon renders as strokes or filled paths. */
   type: IconType;
 }
 
@@ -49,17 +49,17 @@ export interface IconLookup {
   key: string;
 }
 
-/** Searchable icon picker index served at `/assets/icons.json`. */
+/** Searchable icon picker index served as a static JSON asset. */
 export interface IconPickerIndex {
-  /** Common slug aliases (`ICON_SLUG_ALIASES`) mapped to their canonical slugs. */
+  /** Common slug aliases mapped to their canonical slugs. */
   aliases: Record<string, string>;
-  /** Simple Icons aliases mapped to their parent slugs (applied by brand lookups only). */
+  /** Brand icon aliases mapped to their parent slugs (applied by brand lookups only). */
   brandAliases: Record<string, string>;
-  /** Alternative Lucide export names mapped to the slug listed in `sets.lucide`. */
+  /** Alternative stroke icon export names mapped to the slug listed in `sets.lucide`. */
   lucideAliases: Record<string, string>;
-  /** Space-separated lowercase search tags keyed by Lucide slug (from `lucide-static/tags.json`). */
+  /** Space-separated lowercase search tags keyed by stroke icon slug. */
   lucideTags: Record<string, string>;
-  /** Number of icons per body page (`/assets/icons-<set>-<page>.json`). */
+  /** Number of icons per paginated body asset. */
   pageSize: number;
   /** Slugs per set in page order. */
   sets: Record<IconPickerSetId, string[]>;
@@ -67,14 +67,14 @@ export interface IconPickerIndex {
 
 /** Options for rendering a standalone SVG icon via `renderIcon`. */
 export interface IconRenderOptions {
-  /** Optional micro-animation control mode (defaults to `'default'`, i.e., a static icon). */
+  /** Optional micro-animation control mode. */
   anim?: AnimationMode;
-  /** Named Tailwind v4 theme color token (defaults to `'indigo'`). */
+  /** Named Tailwind v4 theme color token. */
   color: ThemeColorName;
-  /** Icon slug from Lucide or Simple Icons (e.g., `'globe-code'`, `'rocket'`, `'archlinux'`). */
+  /** Bundled stroke or brand icon slug (e.g., `'globe-code'`, `'rocket'`, `'archlinux'`). */
   icon: string;
-  /** Width and height of the rendered SVG in pixels (`8`–`256`; Defaults to `24`). */
+  /** Intrinsic width and height of the rendered SVG in pixels. */
   size?: number;
-  /** Stroke width for Lucide icons in `24x24` viewBox units (`1`–`4`; Defaults to `2.25`). */
+  /** Stroke width for stroke icons in `24x24` viewBox units. */
   strokeWidth?: number;
 }

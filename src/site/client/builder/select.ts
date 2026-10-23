@@ -9,6 +9,8 @@ import type { BuilderOption } from '@/types';
 
 /** Cached elements of a custom dropdown (`[data-select]`). */
 export interface SelectParts {
+  /** Empty-state notice element outside `role="listbox"` (`[data-select-empty]`). */
+  empty: HTMLElement | null;
   /** Options container (`.select-options`). */
   list: HTMLElement | null;
   /** Popover menu (`.select-menu`). */
@@ -33,6 +35,7 @@ function getSelectParts(wrapper: Element): SelectParts {
   let parts = selectPartsCache.get(wrapper);
   if (!parts) {
     parts = {
+      empty: wrapper.querySelector('[data-select-empty]'),
       list: wrapper.querySelector('.select-options'),
       menu: wrapper.querySelector('.select-menu'),
       search: wrapper.querySelector('.select-search-input'),
@@ -58,7 +61,7 @@ function createSwatch(color: string): HTMLSpanElement {
  * (only while the menu is open).
  */
 function renderSelectOptions(wrapper: Element): void {
-  const { list, search, select } = getSelectParts(wrapper);
+  const { empty, list, search, select } = getSelectParts(wrapper);
   if (!list || !select) {
     return;
   }
@@ -91,13 +94,12 @@ function renderSelectOptions(wrapper: Element): void {
       fragment.append(item);
     }
   }
-  if (fragment.childElementCount === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'select-empty';
-    empty.textContent = 'No matches';
-    fragment.append(empty);
-  }
+  const hasMatches = fragment.childElementCount > 0;
   list.replaceChildren(fragment);
+  list.hidden = !hasMatches;
+  if (empty) {
+    empty.hidden = hasMatches;
+  }
 }
 
 /** Move the focus between the options of an open custom dropdown. */
@@ -134,7 +136,7 @@ function focusTypeaheadOption(wrapper: Element, key: string): void {
  * Sync a custom dropdown trigger (label and swatch) and its rendered options with the native `<select>`.
  * @param wrapper   `[data-select]` element.
  */
-export function syncSelect(wrapper: Element): void {
+function syncSelect(wrapper: Element): void {
   const { list, select, trigger } = getSelectParts(wrapper);
   if (!select || !trigger) {
     return;
@@ -227,6 +229,8 @@ function openSelectMenu(wrapper: Element, site: SvgSite | undefined): void {
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+export { syncSelect };
+
 /**
  * Sync every custom dropdown inside a scope with its native `<select>`.
  * @param scope   Changed field element or the whole form.
@@ -299,9 +303,9 @@ export function bindSelects(form: HTMLFormElement | null, site: SvgSite | undefi
     });
     search?.addEventListener('input', () => renderSelectOptions(wrapper));
     trigger?.addEventListener('keydown', (event) => {
-      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu?.showPopover) {
+      if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu) {
         event.preventDefault();
-        menu.showPopover();
+        site?.openPopover(menu);
       }
     });
   }

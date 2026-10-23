@@ -1,5 +1,5 @@
 /**
- * Tech stack catalog & brand colors – Curated developer categories for `/builder/stack` and official brand color mappings for all bundled technology icons.
+ * Tech stack catalog & brand colors – Curated developer categories for the stack builder and official brand color mappings for bundled technology icons.
  */
 
 import { getOwnValue } from '@/svg/shared';
@@ -18,16 +18,14 @@ interface StackIconMeta {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /**
- * Curated developer technology categories displayed in the `/builder/stack` interactive category picker.
+ * Curated developer technology categories displayed in the stack builder interactive category picker.
  *
  * Ordering policy (keep consistent when adding icons):
- * - Categories are ordered from core full-stack tiers (Languages -> Frontend -> Backend -> Databases -> Cloud/DevOps)
- *   to specialized engineering domains (AI/Data/ML -> Mobile/Desktop -> Game Dev/Graphics) and developer environment
- *   layers (Build/Testing/Tooling -> IDEs/Editors/Terminals -> Design/3D/Media/CAD -> OS/Hardware/Workspace).
+ * - Categories progress from core application tiers to specialized engineering domains and developer
+ *   environment layers.
  * - Because chip order also determines the left-to-right tile order when `Group by category` composes a `/stack` URL,
  *   items inside each category are grouped by functional sub-domain (documented inline per category) and ordered by
- *   ecosystem adoption within each sub-domain, keeping sibling families adjacent (e.g., `C` -> `C++` -> `C#`,
- *   `JavaScript` -> `TypeScript`, `React` -> `Next.js` -> `Remix`, `Vue.js` -> `Nuxt`).
+ *   ecosystem adoption within each sub-domain, keeping sibling families adjacent.
  * - Exclude non-programming data/serialization/document formats (`JSON`, `YAML`, `TOML`, `Markdown`, `LaTeX`) from `languages`.
  */
 export const STACK_CATEGORIES: readonly StackCategory[] = [
@@ -801,8 +799,8 @@ export const STACK_CATEGORIES: readonly StackCategory[] = [
 ];
 
 /**
- * Official brand colors of bundled Simple Icons, Devicon Plain, and File Icons slugs mapped in perceptual
- * OKLCH space to their nearest Tailwind v4 `ThemeColorName` (`'indigo'` is the fallback and is omitted).
+ * Official brand colors of bundled brand icon slugs mapped in perceptual OKLCH space to their
+ * nearest Tailwind v4 `ThemeColorName` (the default theme color is the fallback and is omitted).
  */
 const STACK_BRAND_COLORS_BY_THEME: Readonly<Partial<Record<ThemeColorName, readonly string[]>>> = {
   amber: [
@@ -4998,7 +4996,7 @@ function getCategoryLabelBySlugMap(): Map<string, string> {
 /**
  * Look up the curated or official brand theme color for a canonical brand icon slug.
  * @param canonicalSlug   Canonical brand slug (lowercase, `[-_.]` stripped).
- * @returns The mapped `ThemeColorName`, or `undefined` when the slug uses the default `'indigo'` palette or is unknown.
+ * @returns The mapped `ThemeColorName`, or `undefined` when the slug uses the default theme palette or is unknown.
  */
 export function resolveStackBrandColor(canonicalSlug: string): ThemeColorName | undefined {
   return (

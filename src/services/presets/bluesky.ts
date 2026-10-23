@@ -1,5 +1,5 @@
 /**
- * Bluesky service preset – Follower and post counts of a public profile (`/badge/bluesky/:handle/:metric`).
+ * Bluesky service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

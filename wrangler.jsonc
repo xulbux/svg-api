@@ -7,7 +7,7 @@
   "workers_dev": false,
   "observability": { "enabled": true },
   "rules": [
-    { "type": "Data", "globs": ["**/*.ttf"], "fallthrough": true },
+    { "type": "Data", "globs": ["**/*.ttf", "**/*.png"], "fallthrough": true },
     { "type": "Text", "globs": ["**/*.css", "**/*.client.js"], "fallthrough": true }
   ],
   "routes": [

@@ -1,5 +1,5 @@
 /**
- * Ansible Galaxy service preset – Collection version and total downloads (`/badge/galaxy/:namespace/:collection/:metric`).
+ * Ansible Galaxy service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

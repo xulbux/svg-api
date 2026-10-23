@@ -1,10 +1,9 @@
 /**
- * Color palette – The single source of every fixed color: The Isolux gray scale, Isolux Pro UI neutrals and syntax colors, the website brand indigo, GitHub preview canvases, and the strip widget stages.
+ * Color palette – The single source of every fixed color: Isolux gray scale, Isolux Pro UI neutrals and syntax colors, brand indigo, and strip widget stage colors.
  *
- * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for the raw grays, `dist/isolux-pro-*.json` for the
- * resolved syntax colors), shared by the SVG renderers (`src/config/theme.ts`) and the documentation
- * website (`src/site/styles/`). The 22 Tailwind v4 accent scales behind `?color=` are generated
- * from their OKLCH seeds in `src/config/theme.ts`.
+ * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for raw grays, `dist/isolux-pro-*.json` for
+ * resolved syntax colors), shared across SVG renderers and website stylesheets. Named Tailwind v4
+ * accent scales behind `?color=` are generated from their OKLCH seeds in the theme module.
  */
 
 import type { SchemeColor } from '@/types';
@@ -85,7 +84,7 @@ export const BRAND_INDIGO = { 400: '#818CF8', 500: '#6366F1', 600: '#4F46E5' } a
 /** Tailwind `rose-200` (negative tint on solid primary surfaces). */
 export const ROSE_200 = '#FECDD3';
 
-/** 10-stage green, lime, yellow, amber, orange, red, and rose strip ticks on dark capsules (Tailwind `400`/`500` shades), from worst (`0`) to best (`9`). */
+/** Strip tick heat-scale colors on dark capsules, ordered from worst (`0`) to best. */
 export const STRIP_DARK_COLORS = {
   0: '#FF4D6D',
   1: '#FF6467',
@@ -99,7 +98,7 @@ export const STRIP_DARK_COLORS = {
   9: '#00D294',
 } as const;
 
-/** 10-stage high-contrast light tints for strip ticks on solid primary capsules (Tailwind `100`–`300` shades). */
+/** High-contrast light tints for strip ticks on solid primary capsules, ordered from worst (`0`) to best. */
 export const STRIP_SOLID_COLORS = {
   0: ROSE_200,
   1: '#FCA5A5',

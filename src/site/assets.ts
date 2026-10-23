@@ -19,7 +19,7 @@ import builderScript from '@/site/client/bundles/builder.client.js';
 import siteScript from '@/site/client/bundles/site.client.js';
 import { getSiteStylesheet } from '@/site/styles';
 import { getIconPickerIndex, getIconPickerPage } from '@/svg/icons';
-import { getOwnValue, hashText } from '@/svg/shared';
+import { getOwnValue, hashBytes, hashText } from '@/svg/shared';
 import type { IconPickerSetId, SiteAsset, SiteAssetName, SiteFontName } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -92,12 +92,12 @@ function buildSiteAsset(name: SiteAssetName): SiteAsset {
   return asset;
 }
 
-/** Build (once per isolate) a static website font asset with its byte-length version. */
+/** Build (once per isolate) a static website font asset with its content version. */
 function buildFontAsset(name: SiteFontName): SiteAsset<ArrayBuffer> {
   let asset = SITE_FONT_CACHE.get(name);
   if (!asset) {
     const body = SITE_FONT_BUFFERS[name];
-    asset = { body, contentType: FONT_CONTENT_TYPE, version: body.byteLength.toString(36) };
+    asset = { body, contentType: FONT_CONTENT_TYPE, version: hashBytes(body) };
     SITE_FONT_CACHE.set(name, asset);
   }
   return asset;

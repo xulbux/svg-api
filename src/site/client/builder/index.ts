@@ -16,6 +16,7 @@ import {
   core,
   findOption,
   findService,
+  isTypingFieldActiveForLayout,
   parsePath,
   readState,
   splitAnim,
@@ -107,6 +108,7 @@ function initBuilderDom(): void {
   const shareButton = document.getElementById('builder-share');
   const resetButton = document.getElementById('builder-reset');
   const picker = document.getElementById('icon-picker');
+  const pickerEmpty = document.getElementById('icon-picker-empty');
   const pickerGrid = document.getElementById('icon-picker-grid');
   const pickerSearch = document.getElementById('icon-picker-search') as HTMLInputElement | null;
   const pickerStatus = document.getElementById('icon-picker-status');
@@ -142,6 +144,7 @@ function initBuilderDom(): void {
   let snippetFormat: keyof SnippetSet = 'markdown';
   let lastPreviewSrc = '';
   let currentPreviewPath = '';
+  let crossBuilderNotice = '';
   let previewTimer = 0;
 
   function getControl(id: string): FieldControl | undefined {
@@ -169,6 +172,7 @@ function initBuilderDom(): void {
       stackCatalogController?.flushPendingChips();
     },
     picker,
+    pickerEmpty,
     pickerGrid,
     pickerNoneButton,
     pickerSearch,
@@ -360,7 +364,11 @@ function initBuilderDom(): void {
     const control = getControl(id);
     if (control instanceof HTMLInputElement) {
       control.placeholder = placeholder;
-      control.toggleAttribute('aria-required', isRequired);
+      if (isRequired) {
+        control.setAttribute('aria-required', 'true');
+      } else {
+        control.removeAttribute('aria-required');
+      }
     }
   }
 
@@ -403,7 +411,7 @@ function initBuilderDom(): void {
 
     switch (field.control) {
       case 'anim': {
-        const anim = splitAnim(value);
+        const anim = splitAnim(value, field.options);
         const sheen = getPart(fieldElement, 'sheen');
         if (sheen instanceof HTMLInputElement) {
           sheen.checked = anim.hasSheen;
@@ -472,13 +480,16 @@ function initBuilderDom(): void {
       return;
     }
     const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
-    const isTitledLayout = effectiveLayout === 'window' || effectiveLayout === 'ide';
-    const isFrameless = effectiveLayout === 'none';
-    const isCenterableLayout = effectiveLayout !== 'browser' && effectiveLayout !== 'ide';
 
-    fieldElements.get('title')?.toggleAttribute('hidden', !isTitledLayout);
-    fieldElements.get('hint')?.toggleAttribute('hidden', isFrameless);
-    fieldElements.get('align')?.toggleAttribute('hidden', !isCenterableLayout);
+    fieldElements
+      .get('title')
+      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('title', effectiveLayout));
+    fieldElements
+      .get('hint')
+      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('hint', effectiveLayout));
+    fieldElements
+      .get('align')
+      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('align', effectiveLayout));
 
     const titleControl = getControl('title');
     if (titleControl instanceof HTMLInputElement) {
@@ -553,7 +564,19 @@ function initBuilderDom(): void {
       const isRequired =
         field.isRequired || (field.id === 'owner' && service?.ownerMode === 'required');
       const isMissing = isRequired && !readState(state, field.id);
-      fieldElements.get(field.id)?.classList.toggle('is-missing', isMissing);
+      const fieldElement = fieldElements.get(field.id);
+      if (fieldElement) {
+        fieldElement.classList.toggle('is-missing', isMissing);
+        for (const control of fieldElement.querySelectorAll(
+          '.builder-input:not(.select-trigger)'
+        )) {
+          if (isMissing) {
+            control.setAttribute('aria-invalid', 'true');
+          } else if (!control.closest('.is-invalid')) {
+            control.removeAttribute('aria-invalid');
+          }
+        }
+      }
     }
     if (openLink) {
       if (isComplete) {
@@ -572,9 +595,9 @@ function initBuilderDom(): void {
     outputElement?.classList.toggle('is-incomplete', !isComplete);
     setStatus(
       isComplete
-        ? ''
+        ? crossBuilderNotice
         : `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
-      !isComplete
+      !isComplete || Boolean(crossBuilderNotice)
     );
   }
 
@@ -649,8 +672,43 @@ function initBuilderDom(): void {
     }
   }
 
+  function syncControlPartsOnInput(
+    field: BuilderField,
+    fieldElement: Element,
+    target: EventTarget | undefined
+  ): void {
+    if (field.control === 'anim' && field.animScope !== 'pair' && target instanceof Element) {
+      const sheen = getPart(fieldElement, 'sheen');
+      const left = getPart(fieldElement, 'left');
+      if (
+        target.matches('[data-part="left"]') &&
+        left?.value === 'none' &&
+        sheen instanceof HTMLInputElement
+      ) {
+        sheen.checked = false;
+      } else if (
+        target.matches('[data-part="sheen"]') &&
+        sheen instanceof HTMLInputElement &&
+        sheen.checked &&
+        left?.value === 'none'
+      ) {
+        left.value = '';
+      }
+    }
+    if (
+      field.control === 'special' &&
+      target instanceof Element &&
+      target.matches('[data-part="kind"]')
+    ) {
+      syncSpecialParts(field, fieldElement, '');
+    }
+    if (field.control === 'size') {
+      syncSizeParts(fieldElement);
+    }
+  }
+
   function handleFieldInput(event: Event): void {
-    const { target } = event;
+    const target = event.target ?? undefined;
     if (
       (event.type === 'change' && !(target instanceof HTMLSelectElement)) ||
       target === stackCategorySearch ||
@@ -663,16 +721,8 @@ function initBuilderDom(): void {
     if (!fieldElement || !field) {
       return;
     }
-    if (
-      field.control === 'special' &&
-      target instanceof Element &&
-      target.matches('[data-part="kind"]')
-    ) {
-      syncSpecialParts(field, fieldElement, '');
-    }
-    if (field.control === 'size') {
-      syncSizeParts(fieldElement);
-    }
+    crossBuilderNotice = '';
+    syncControlPartsOnInput(field, fieldElement, target);
     state[field.id] = readFieldValue(field, fieldElement);
     stackCatalogController?.syncStackFieldChange(field);
     syncServiceFieldChange(field);
@@ -706,6 +756,9 @@ function initBuilderDom(): void {
 
   function applyState(nextState: BuilderState): void {
     state = { ...nextState };
+    if (schema.kind === 'service' && !findService(schema, state.service)) {
+      state.service = schema.services?.[0]?.key ?? '';
+    }
     writeState();
     syncStateFromForm();
     update(form);
@@ -721,10 +774,11 @@ function initBuilderDom(): void {
     if (linkInput) {
       linkInput.value = pageParams.get('link') ?? '';
     }
+    crossBuilderNotice =
+      sharedPath && !parsedState
+        ? 'The shared link belongs to another builder; Showing the example instead.'
+        : '';
     applyState(parsedState ?? schema.initialState);
-    if (sharedPath && !parsedState) {
-      setStatus('The shared link belongs to another builder; Showing the example instead.', true);
-    }
   }
 
   function copyShareLink(): void {
@@ -743,20 +797,29 @@ function initBuilderDom(): void {
   }
 
   function handleTabKeydown(event: KeyboardEvent): void {
-    const offsets: Readonly<Record<string, number>> = { ArrowLeft: -1, ArrowRight: 1 };
-    const offset = offsets[event.key];
-    if (offset === undefined) {
+    const tabs = [...document.querySelectorAll('.builder-tab')];
+    if (tabs.length === 0) {
       return;
     }
-    const tabs = [...document.querySelectorAll('.builder-tab')];
     let current = 0;
     for (const [i, tab] of tabs.entries()) {
       if (tab.getAttribute('aria-selected') === 'true') {
         current = i;
       }
     }
-    const next = tabs[(current + offset + tabs.length) % tabs.length];
+    let nextIndex: number | undefined = undefined;
+    if (event.key === 'ArrowLeft') {
+      nextIndex = (current - 1 + tabs.length) % tabs.length;
+    } else if (event.key === 'ArrowRight') {
+      nextIndex = (current + 1) % tabs.length;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = tabs.length - 1;
+    }
+    const next = nextIndex !== undefined ? tabs[nextIndex] : undefined;
     if (next instanceof HTMLElement) {
+      event.preventDefault();
       selectTab(next);
       next.focus();
     }
@@ -766,8 +829,14 @@ function initBuilderDom(): void {
     form.addEventListener('input', handleFieldInput);
     form.addEventListener('change', handleFieldInput);
     form.addEventListener('submit', (event) => event.preventDefault());
-    altInput?.addEventListener('input', renderOutputs);
-    linkInput?.addEventListener('input', renderOutputs);
+    altInput?.addEventListener('input', () => {
+      crossBuilderNotice = '';
+      renderOutputs();
+    });
+    linkInput?.addEventListener('input', () => {
+      crossBuilderNotice = '';
+      renderOutputs();
+    });
     if (linkInput && schema.kind === 'service') {
       linkInput.placeholder = 'Upstream page of the service';
     }
@@ -775,7 +844,7 @@ function initBuilderDom(): void {
     previewImage?.addEventListener('load', () => {
       previewImage.classList.remove('is-loading');
       if (buildPath(schema, state).missing.length === 0) {
-        setStatus('');
+        setStatus(crossBuilderNotice, Boolean(crossBuilderNotice));
       }
     });
     previewImage?.addEventListener('error', () => {
@@ -813,6 +882,7 @@ function initBuilderDom(): void {
     bindHelpPopovers();
 
     resetButton?.addEventListener('click', () => {
+      crossBuilderNotice = '';
       if (altInput) {
         altInput.value = '';
       }

@@ -1,9 +1,8 @@
 /**
- * Website styles – XulbuX design tokens and the shared `svg.xul.is` stylesheet (served at `/assets/site.css`).
+ * Website styles – Design tokens and composite stylesheet assembly for `/assets/site.css`.
  *
- * Scheme-dependent `--c-*` color tokens are built from the palette (`src/config/palette.ts`) and emitted
- * as light, dark, explicit override, and `light-dark()` bindings; Every static rule lives in a plain
- * `.css` file under `src/site/styles/`, bundled as text by Wrangler (see `rules` in `wrangler.jsonc`).
+ * Scheme-dependent `--c-*` color tokens are built from the color palette and emitted as light,
+ * dark, explicit override, and `light-dark()` bindings ahead of the static `.css` modules.
  */
 
 import {
@@ -103,7 +102,7 @@ function invertScheme(color: SchemeColor): SchemeColor {
 
 /**
  * Build (once per isolate) the design tokens bound to `--c-*` custom properties for both color schemes.
- * Every color comes from `src/config/palette.ts`; Tokens with identical light and dark values are emitted once.
+ * Tokens with identical light and dark values are emitted once.
  */
 function getThemeTokens(): readonly ThemeToken[] {
   themeTokensCache ??= [
@@ -208,7 +207,7 @@ function buildSchemeOverrideSelector(scheme: 'dark' | 'light'): string {
 
 /** Render the generated design token rules (brand constants, light/dark bindings, explicit overrides, `light-dark()`). */
 function renderTokenCss(): string {
-  return `/* Generated Design Tokens (src/config/palette.ts via src/site/styles/index.ts) */
+  return `/* Generated Design Tokens */
 :root {
   --brand-gradient-start: ${BRAND_GRADIENT_START};
   --brand-gradient-end: ${BRAND_GRADIENT_END};

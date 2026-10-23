@@ -1,5 +1,5 @@
 /**
- * OpenSSF Scorecard service preset – Supply-chain security score (`0`–`10`) of a GitHub repository with a threshold-colored ring gauge (`/badge/scorecard/:owner/:repo/:metric`).
+ * OpenSSF Scorecard service preset – Live upstream metrics and redirect transformations.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

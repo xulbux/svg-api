@@ -94,13 +94,13 @@ export function initThemeAndMotion(
     previewBgToggle?.setAttribute('aria-checked', String(isInverse));
   }
 
-  /** Reduced motion: CSS cannot stop SMIL, so pause every inline preview SVG at its first frame. */
+  /** Reduced motion: CSS cannot stop SMIL, so pause every inline preview SVG on its readable resting frame. */
   function syncPreviewAnimations(): void {
     for (const previewSvg of document.querySelectorAll('.preview-stage svg')) {
       if (previewSvg instanceof SVGSVGElement) {
         if (reducedMotionQuery.matches) {
           previewSvg.pauseAnimations();
-          previewSvg.setCurrentTime(0);
+          previewSvg.setCurrentTime(Number(previewSvg.dataset.restTime) || 0);
         } else {
           previewSvg.unpauseAnimations();
         }

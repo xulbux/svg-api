@@ -26,6 +26,7 @@ import {
 import {
   buildPackageVersion,
   buildTrailingSeriesSpecials,
+  createRatingMetric,
   createScoreMetric,
   createVersionMetric,
   formatBytes,
@@ -297,6 +298,7 @@ describe('service registry integrity', () => {
         ['discord', 'members', 'discord'],
         ['discord', 'online', 'discord'],
         ['hf', 'likes', 'huggingface'],
+        ['hf-space', 'likes', 'huggingface'],
         ['liberapay', 'patrons', 'liberapay'],
         ['modrinth', 'followers', 'modrinth'],
         ['opencollective', 'backers', 'opencollective'],
@@ -434,7 +436,10 @@ describe('existing service presets', () => {
         }
         if (repoName === 'broken-repo') {
           return Promise.resolve(
-            Response.json({ errors: [{ message: 'Internal GraphQL failure' }] })
+            Response.json({
+              data: { repository: null },
+              errors: [{ message: 'Internal GraphQL failure', type: 'INTERNAL' }],
+            })
           );
         }
         return Promise.resolve(
@@ -612,8 +617,12 @@ describe('existing service presets', () => {
     const clickPyUrl = decodeURIComponent(requestedUrls.at(-1) ?? '');
     expect(clickPyUrl).toContain("project = 'typing-extensions'");
     expect(clickPyUrl).toContain('date >= today() - 30 AND date < today()');
+    expect(clickPyUrl).toContain('HAVING count() > 0');
     expect(getServiceMetric('pypi', 'dl').endpoint.ttl).toBe(CACHE_TTL.daily);
     expect(getServiceMetric('jsdelivr', 'hm').endpoint.ttl).toBe(CACHE_TTL.daily);
+
+    mockUpstream({ 'sql-clickhouse': {} });
+    expect(await describeMetric('/badge/pypi/nonexistent-pkg/dl')).toBe('Downloads: not found');
   });
 
   it('falls back to the last License classifier for PyPI licenses (regression: classifier-only packages showed unknown)', async () => {
@@ -1287,12 +1296,23 @@ describe('upstream caching & redirects', () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(fetchCount);
   });
 
-  it('reads x-ratelimit-reset and ratelimit-reset as delta seconds below 1e9 and as an epoch above (regression: delta resets clamped to 60s)', async () => {
+  it('reads x-ratelimit-reset and ratelimit-reset as delta seconds below 1e9, epoch seconds below 1e12, and epoch ms above (regression: delta resets, decimal Retry-After, and ms epochs)', async () => {
     const stub = installEdgeCacheStub();
     vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
     const epochReset = Math.floor(REFERENCE_NOW / 1000) + 600;
+    const msEpochReset = REFERENCE_NOW + 180_000;
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
+      if (url.includes('/decimal-retry/')) {
+        return Promise.resolve(
+          new Response('', { headers: { 'Retry-After': '120.4' }, status: 429 })
+        );
+      }
+      if (url.includes('/ms-reset/')) {
+        return Promise.resolve(
+          new Response('', { headers: { 'x-ratelimit-reset': String(msEpochReset) }, status: 429 })
+        );
+      }
       if (url.includes('/standard-reset/')) {
         return Promise.resolve(
           new Response('', { headers: { 'ratelimit-reset': '240' }, status: 429 })
@@ -1304,8 +1324,10 @@ describe('upstream caching & redirects', () => {
       );
     });
     const expectedMaxAges: readonly (readonly [name: string, maxAge: number])[] = [
+      ['decimal-retry', 121],
       ['delta-reset', 300],
       ['epoch-reset', 600],
+      ['ms-reset', 180],
       ['standard-reset', 240],
     ];
     await Promise.all(expectedMaxAges.map(([name]) => resolvePathMetric(`/badge/npm/${name}/v`)));
@@ -1315,6 +1337,32 @@ describe('upstream caching & redirects', () => {
       const marker = stub.store.get(key ?? '');
       expect(marker?.headers.get('Cache-Control'), name).toContain(`max-age=${maxAge},`);
     }
+  });
+
+  it('caps distinct concurrent in-flight loads per isolate and recovers once pending loads settle (regression: unbounded IN_FLIGHT_LOADS)', async () => {
+    const resolvers: ((response: Response) => void)[] = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolvers.push(resolve);
+        })
+    );
+    const pendingLoads = Array.from({ length: 64 }, (_unused, index) =>
+      resolvePathMetric(`/badge/npm/pkg-${index}/v`)
+    );
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(64);
+    });
+    const shedOutcome = await resolvePathMetric('/badge/npm/pkg-overflow/v');
+    expect(shedOutcome.status).toBe(429);
+    expect(shedOutcome.result.value).toBe('rate limited');
+    expect(fetchSpy).toHaveBeenCalledTimes(64);
+
+    for (const resolve of resolvers) {
+      resolve(Response.json({ version: '1.0.0' }));
+    }
+    const settled = await Promise.all(pendingLoads);
+    expect(settled[0]?.result.value).toBe('v1.0.0');
   });
 
   it('keeps edge hits in memory only for their remaining TTL (regression: edge hits got a full fresh TTL)', async () => {
@@ -1549,12 +1597,15 @@ describe('upstream caching & redirects', () => {
 });
 
 describe('metric formatting helpers', () => {
-  it('formats compact numbers with k, M, and B suffixes', () => {
+  it('formats compact numbers with k, M, and B suffixes including negative values (regression: negative compact numbers skipped unit scaling)', () => {
     expect(formatCompactNumber(42)).toBe('42');
     expect(formatCompactNumber(1000)).toBe('1k');
     expect(formatCompactNumber(4820)).toBe('4.8k');
     expect(formatCompactNumber(2_500_000)).toBe('2.5M');
     expect(formatCompactNumber(1_200_000_000)).toBe('1.2B');
+    expect(formatCompactNumber(-1500)).toBe('-1.5k');
+    expect(formatCompactNumber(-2_500_000)).toBe('-2.5M');
+    expect(formatCount(-2500, '/mo')).toBe('-2.5k/mo');
   });
 
   it('promotes values that round up to the next unit (regression: 999_950 rendered as "1000k")', () => {
@@ -1626,6 +1677,16 @@ describe('metric formatting helpers', () => {
       type: 'ring',
       value: 100,
     });
+    const ratingMetric = createRatingMetric(
+      createEndpoint<readonly [number | string | undefined, number]>({
+        api: 'https://example.com/{target}',
+        page: 'https://example.com/{target}',
+      }),
+      ([rawRating, maximum]) => [rawRating as number | undefined, maximum]
+    );
+    expect(ratingMetric.transform(['4.5', 5], dummyParams)?.value).toBe('4.5/5');
+    expect(ratingMetric.transform([7, 5], dummyParams)?.value).toBe('5.0/5');
+    expect(ratingMetric.transform([Number.NaN, 5], dummyParams)?.value).toBe('unrated');
     expect(formatLicense('LicenseRef-Polyform-Shield-1.0.0')).toBe('Polyform-Shield-1.0.0');
     expect(formatLicense('LicenseRef-proprietary')).toBe('proprietary');
     expect(formatLicense('Some Very Long Custom License Name')).toBe('Some Very Long Custom ..');
@@ -1728,7 +1789,7 @@ describe('segment validation & query encoding', () => {
     expect(buildMetricApiUrl('wp', 'v', '', 'a+b')).toContain('request%5Bslug%5D=a%2Bb&');
   });
 
-  it('still blocks dot-only segments and over-long multi-segment targets without calling upstream', async () => {
+  it('still blocks dot-only segments, bare @ scopes, and over-long multi-segment targets without calling upstream', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const paths = [
       '/badge/brew/..%2F..%2Fcask%2Ffirefox/v',
@@ -1736,6 +1797,8 @@ describe('segment validation & query encoding', () => {
       '/badge/go/github.com//cobra/v',
       '/badge/go/a/b/c/d/e/f/g/h/i/v',
       '/badge/npm/a%2Fb/v',
+      '/badge/npm/@/v',
+      '/badge/npm/@@scope/pkg/v',
     ];
     const resolved = await Promise.all(paths.map((path) => resolvePathMetric(path)));
     for (const [i, resolvedMetric] of resolved.entries()) {
@@ -1808,6 +1871,85 @@ describe('added service presets', () => {
     expect(resolvePathRedirect('/badge/hf-dataset/HuggingFaceFW/fineweb/likes')).toBe(
       'https://huggingface.co/datasets/HuggingFaceFW/fineweb'
     );
+  });
+
+  it('resolves Hugging Face Spaces runtime stages, SDKs, and likes, and maps 401 private/missing Spaces to not found', async () => {
+    const requestedUrls: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = resolveFetchUrl(input);
+      requestedUrls.push(url);
+      if (url.includes('/spaces/black-forest-labs/FLUX.1-dev?')) {
+        return Response.json({ likes: 5210, runtime: { stage: 'RUNNING' }, sdk: 'gradio' });
+      }
+      if (url.includes('/spaces/acme/sleeping-app?')) {
+        return Response.json({ likes: 12, runtime: { stage: 'SLEEPING' }, sdk: 'streamlit' });
+      }
+      if (url.includes('/spaces/acme/broken-app?')) {
+        return Response.json({ runtime: { stage: 'BUILD_ERROR' }, sdk: 'docker' });
+      }
+      return new Response('Unauthorized', { status: 401 });
+    });
+
+    expect(await describeMetric('/badge/hf-space/black-forest-labs/FLUX.1-dev/likes')).toBe(
+      'Likes: 5.2k'
+    );
+    const sdk = await resolvePathMetric('/badge/hf-space/black-forest-labs/FLUX.1-dev/sdk');
+    expect(sdk.result).toMatchObject({
+      color: 'orange',
+      icon: 'gradio',
+      label: 'Space SDK',
+      value: 'Gradio',
+    });
+    const running = await resolvePathMetric('/badge/hf-space/black-forest-labs/FLUX.1-dev/stage');
+    expect(running.result).toMatchObject({
+      color: 'emerald',
+      dot: 'emerald',
+      label: 'Space',
+      value: 'running',
+    });
+    expect(await describeMetric('/badge/hf-space/acme/sleeping-app/status')).toBe(
+      'Space: sleeping'
+    );
+    expect(await describeMetric('/badge/hf-space/acme/sleeping-app/sdk')).toBe(
+      'Space SDK: Streamlit'
+    );
+    const broken = await resolvePathMetric('/badge/hf-space/acme/broken-app/state');
+    expect(broken.result).toMatchObject({ color: 'rose', icon: 'circle-x', value: 'build error' });
+    expect(await describeMetric('/badge/hf-space/acme/private-space/stage')).toBe(
+      'Space: not found'
+    );
+    expect(await describeMetric('/badge/hf-space/FLUX.1-dev/stage')).toBe(
+      'hf-space: missing owner'
+    );
+    expect(requestedUrls[0]).toBe(
+      'https://huggingface.co/api/spaces/black-forest-labs/FLUX.1-dev?expand%5B%5D=likes&expand%5B%5D=sdk&expand%5B%5D=runtime'
+    );
+    expect(resolvePathRedirect('/badge/hf-space/black-forest-labs/FLUX.1-dev/stage')).toBe(
+      'https://huggingface.co/spaces/black-forest-labs/FLUX.1-dev'
+    );
+  });
+
+  it('resolves Rust docs.rs crate build status and latest documented version', async () => {
+    const requestedUrls = mockUpstream({
+      'docs.rs/crate/broken-crate/latest/status.json': { doc_status: false, version: '0.1.0' },
+      'docs.rs/crate/queued-crate/latest/status.json': { doc_status: null, version: '0.2.0' },
+      'docs.rs/crate/serde/latest/status.json': { doc_status: true, version: '1.0.229' },
+    });
+    const passing = await resolvePathMetric('/badge/docsrs/serde/docs');
+    expect(passing.result).toMatchObject({
+      color: 'emerald',
+      icon: 'circle-check',
+      label: 'docs.rs',
+      value: 'passing',
+    });
+    expect(await describeMetric('/badge/docsrs/serde/v')).toBe('docs.rs: v1.0.229');
+    expect(await describeMetric('/badge/docsrs/serde/build')).toBe('docs.rs: passing');
+    const failing = await resolvePathMetric('/badge/docsrs/broken-crate/status');
+    expect(failing.result).toMatchObject({ color: 'rose', icon: 'circle-x', value: 'failing' });
+    expect(await describeMetric('/badge/docsrs/queued-crate/docs')).toBe('docs.rs: unknown');
+    expect(await describeMetric('/badge/docsrs/no-such-crate/docs')).toBe('docs.rs: not found');
+    expect(requestedUrls[0]).toBe('https://docs.rs/crate/serde/latest/status.json');
+    expect(resolvePathRedirect('/badge/docsrs/serde/docs')).toBe('https://docs.rs/serde');
   });
 
   it('resolves Modrinth metrics and picks the newest stable game release', async () => {
@@ -2355,11 +2497,13 @@ describe('funding & social presets (Open Collective, Liberapay, Bluesky)', () =>
     );
   });
 
-  it('formats currency amounts with known symbols or appended ISO codes', () => {
+  it('formats currency amounts with known symbols or appended ISO codes including negative values (regression: negative currencies misplaced minus sign)', () => {
     expect(formatCurrency(177_515.31, 'USD', '/yr')).toBe('$177.5k/yr');
     expect(formatCurrency('640.8', 'eur', '/wk')).toBe('€640.80/wk');
     expect(formatCurrency(25, 'GBP')).toBe('£25');
     expect(formatCurrency('1234.5', 'CHF', '/mo')).toBe('1.2k CHF/mo');
+    expect(formatCurrency(-12.5, 'USD')).toBe('-$12.50');
+    expect(formatCurrency(-1500, 'CHF', '/mo')).toBe('-1.5k CHF/mo');
     expect(formatCurrency(12, undefined)).toBe('12');
     expect(formatCurrency(undefined, 'USD')).toBe('n/a');
   });
@@ -2494,6 +2638,12 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
             { metric: 'bugs', value: '327' },
             { metric: 'code_smells', value: '3964' },
             { metric: 'duplicated_lines_density', value: '2.6' },
+            {
+              metric: 'quality_gate_details',
+              value: JSON.stringify({
+                conditions: [{ level: 'OK' }, { level: 'OK' }, { level: 'WARN' }],
+              }),
+            },
             { metric: 'security_rating', value: '5.0' },
             { metric: 'sqale_rating', value: '1.0' },
             { metric: 'vulnerabilities', value: '0' },
@@ -2510,6 +2660,10 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     expect(quality.result).toMatchObject({
       color: 'emerald',
       label: 'Quality Gate',
+      specials: {
+        steps: { done: 2, total: 3, type: 'steps' },
+        strip: { states: ['9', '9', '4'], type: 'strip' },
+      },
       value: 'passed',
     });
     const coverage = await resolvePathMetric('/badge/sonarcloud/apache_struts/cov');
@@ -2717,6 +2871,7 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
       expect(await describeMetric('/badge/cpan/Moose_X/v')).toBe('cpan: invalid name');
       expect(await describeMetric('/badge/cpan/-Moose/v')).toBe('cpan: invalid name');
       expect(await describeMetric('/badge/cpan/Moose%2Bx/v')).toBe('cpan: invalid name');
+      expect(await describeMetric('/badge/cpan/AND/v')).toBe('cpan: invalid name');
       expect(requestedUrls).toHaveLength(requestCount);
       expect(resolvePathRedirect('/badge/cpan/libwww-perl/v')).toBe(
         'https://metacpan.org/dist/libwww-perl'
@@ -2849,6 +3004,7 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(await describeMetric('/badge/maven/com.google.guava/.bad/v')).toBe(
       'maven: invalid name'
     );
+    expect(await describeMetric('/badge/maven/com.google.guava/OR/v')).toBe('maven: invalid name');
     expect(requestedUrls).toHaveLength(requestCount);
     expect(resolvePathRedirect('/badge/maven/com.google.guava/guava/v')).toBe(
       'https://central.sonatype.com/artifact/com.google.guava/guava'
@@ -3042,8 +3198,11 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     mockUpstream({
       'clojars.org/api/artifacts/hiccup': {
         downloads: 5000,
-        downloads_per_version: { '1.0': 1000, '2.0': 1500 },
         latest_version: '2.0',
+        recent_versions: [
+          { downloads: 1500, version: '2.0' },
+          { downloads: 1000, version: '1.0' },
+        ],
       },
       'crates.io/api/v1/crates/serde/downloads': {
         meta: {

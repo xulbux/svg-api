@@ -1,5 +1,5 @@
 /**
- * Packagist service preset – PHP Composer package version and total/monthly/daily downloads (`/badge/packagist/:vendor/:pkg/:metric`).
+ * Packagist service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

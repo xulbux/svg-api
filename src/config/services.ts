@@ -1,8 +1,8 @@
 /**
  * Service presets – Registry of all upstream service presets (`/badge/:service/…`).
  *
- * Each service lives in its own module under `src/services/presets/`; This registry is the single
- * source of truth for routing, fetching, and the generated `/docs/services` reference table.
+ * Each service lives in its own preset module and is registered here as the single source of truth
+ * for routing, upstream fetching, builder options, and documentation reference tables.
  */
 
 import { AMO_SERVICE } from '@/services/presets/amo';
@@ -25,6 +25,7 @@ import { DEBIAN_SERVICE } from '@/services/presets/debian';
 import { DEPS_DEV_SERVICE } from '@/services/presets/depsDev';
 import { DISCORD_SERVICE } from '@/services/presets/discord';
 import { DOCKER_SERVICE } from '@/services/presets/docker';
+import { DOCSRS_SERVICE } from '@/services/presets/docsRs';
 import { DUB_SERVICE } from '@/services/presets/dub';
 import { ELM_SERVICE } from '@/services/presets/elm';
 import { FDROID_SERVICE } from '@/services/presets/fdroid';
@@ -42,6 +43,7 @@ import { HOMEBREW_CASK_SERVICE, HOMEBREW_FORMULA_SERVICE } from '@/services/pres
 import {
   HUGGING_FACE_DATASET_SERVICE,
   HUGGING_FACE_MODEL_SERVICE,
+  HUGGING_FACE_SPACE_SERVICE,
 } from '@/services/presets/huggingface';
 import { JETBRAINS_SERVICE } from '@/services/presets/jetbrains';
 import { JSDELIVR_SERVICE } from '@/services/presets/jsDelivr';
@@ -98,6 +100,7 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   depsdev: DEPS_DEV_SERVICE,
   discord: DISCORD_SERVICE,
   docker: DOCKER_SERVICE,
+  docsrs: DOCSRS_SERVICE,
   dub: DUB_SERVICE,
   elm: ELM_SERVICE,
   fdroid: FDROID_SERVICE,
@@ -114,6 +117,7 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
   hex: HEX_SERVICE,
   hf: HUGGING_FACE_MODEL_SERVICE,
   'hf-dataset': HUGGING_FACE_DATASET_SERVICE,
+  'hf-space': HUGGING_FACE_SPACE_SERVICE,
   hn: HACKER_NEWS_SERVICE,
   jetbrains: JETBRAINS_SERVICE,
   jsdelivr: JSDELIVR_SERVICE,
@@ -145,7 +149,7 @@ export const SERVICES_CONFIG: Readonly<Record<string, ServiceDefinition>> = {
 };
 
 /**
- * Derive the owner segment mode of a service preset route (used by the builder and the docs).
+ * Derive the owner segment mode of a service preset route.
  * @param service   Service definition.
  * @returns `'none'` without an owner segment, otherwise `'required'` or `'optional'`.
  */

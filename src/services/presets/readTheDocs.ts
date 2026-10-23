@@ -1,5 +1,5 @@
 /**
- * Read the Docs service preset – Status of the most recent build of the `latest` documentation version (`/badge/rtd/:project/:metric`).
+ * Read the Docs service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
@@ -24,7 +24,7 @@ interface ReadTheDocsBuild {
   success?: boolean | null;
 }
 
-/** Projected Read the Docs recent build history (`?limit=10`). */
+/** Projected Read the Docs recent build history. */
 interface ReadTheDocsProjection {
   /** Chronological build durations in seconds across recent builds. */
   durations?: number[];

@@ -1,8 +1,8 @@
 /**
- * crates.io service preset – Rust crate version, MSRV, crate size, total/90-day downloads, and license (`/badge/crates/:crate/:metric`).
+ * crates.io service preset – Live upstream metrics and redirect transformations.
  *
  * `?include=default_version,downloads` shrinks the crate document from `~440 KB` (every version)
- * to `~3 KB` (only the default version, whose license, MSRV, and crate size are reported).
+ * to `~3 KB` (only the default version and recent download counters).
  */
 
 import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

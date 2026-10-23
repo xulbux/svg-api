@@ -30,7 +30,7 @@ export async function putInEdgeCache(
   response: Response,
   executionCtx?: WaitUntilContext
 ): Promise<void> {
-  const cachePromise = edgeCache.put(cacheKey, response);
+  const cachePromise = edgeCache.put(cacheKey, response).catch(() => undefined);
   if (executionCtx) {
     executionCtx.waitUntil(cachePromise);
   } else {

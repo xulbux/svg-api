@@ -1,5 +1,5 @@
 /**
- * cdnjs service preset – Library version and license from the Cloudflare-powered cdnjs API (`/badge/cdnjs/:pkg/:metric`).
+ * cdnjs service preset – Live upstream metrics and redirect transformations.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
