@@ -111,25 +111,25 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('bg-elv', ISOLUX_UI.raised),
     buildColorToken('bg-soft', SOFT_SURFACE),
     buildColorToken('divider', ISOLUX_UI.border),
-    // 2-tier border hierarchy: Outer shell/card divider (--c-divider) > inner border (--c-border).
+    // 2-tier border hierarchy; outer shell/card divider (`--c-divider`) > inner border (`--c-border`):
     buildDerivedToken('border', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 72%)'),
     buildDerivedToken('code-bg', 'color-mix(in srgb, var(--c-bg), var(--c-divider) 65%)'),
     buildColorToken('text-1', ISOLUX_UI.foreground),
     buildColorToken('text-2', ISOLUX_UI.foregroundSecondary),
-    // WCAG AA (= 4.5:1) for small text on both `bg` and `bg-soft`.
+    // WCAG AA (`= 4.5:1`) for small text on both `bg` and `bg-soft`:
     buildColorToken('text-3', ISOLUX_UI.foregroundMuted),
     buildColorToken('brand-1', { dark: BRAND_GRADIENT_START, light: BRAND_GRADIENT_END }),
     buildColorToken('brand-2', { dark: BRAND_INDIGO[500], light: BRAND_INDIGO[500] }),
     buildDerivedToken('brand-soft', 'color-mix(in srgb, var(--c-brand-1) 12%, transparent)'),
     buildDerivedToken('brand-border', 'color-mix(in srgb, var(--c-brand-1) 36%, transparent)'),
-    // Error status color (WCAG AA for small text and invalid input borders on both `bg` and `bg-soft`).
+    // Error status color (WCAG AA for small text and invalid input borders on both `bg` and `bg-soft`):
     buildColorToken('danger', DANGER_COLOR),
     buildColorToken('nav-bg', {
       dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
       light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
     }),
     buildColorToken('on-brand', { dark: WHITE, light: WHITE }),
-    // Neutral interactive states (Isolux keeps buttons, selections, and focus rings free of the accent).
+    // Neutral interactive states (Isolux keeps buttons, selections, and focus rings free of the accent):
     buildColorToken('btn-bg', ISOLUX_UI.button),
     buildColorToken('btn-hover-bg', ISOLUX_UI.buttonHover),
     buildColorToken('btn-text', ISOLUX_UI.buttonForeground),
@@ -140,12 +140,12 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('selected', ISOLUX_UI.selected),
     buildColorToken('switch-bg', ISOLUX_UI.bubble),
     buildColorToken('switch-thumb-bg', { dark: ISOLUX_GRAY[950], light: WHITE }),
-    // Inverted preview stage: GitHub's README canvas and `Edit` chip of the opposite color scheme.
+    // Inverted preview stage; GitHub's README canvas and `Edit` chip of the opposite color scheme:
     buildColorToken('preview-inverse-bg', { dark: LIGHT_BG, light: DARK_BG }),
     buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
     buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
     buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),
-    // Isolux Pro Markdown roles: punctuation, path segments (lifted string indigo), alt text and link targets (label), URLs (string), query keys (function cyan), and query values (property cyan).
+    // Isolux Pro Markdown roles; punctuation, path segments (lifted string indigo), alt text and link targets (label), URLs (string), query keys (function cyan), and query values (property cyan):
     buildColorToken('hl-p', ISOLUX_SYNTAX.punctuation),
     buildColorToken('hl-path', ISOLUX_SYNTAX.constant),
     buildColorToken('hl-alt', ISOLUX_SYNTAX.label),
@@ -153,7 +153,7 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('hl-key', ISOLUX_SYNTAX.function),
     buildColorToken('hl-val', ISOLUX_SYNTAX.property),
     buildColorToken('hl-href', ISOLUX_SYNTAX.label),
-    // Elevation shadows and theme switch state (non-color tokens, so they never go through `light-dark()`).
+    // Elevation shadows and theme switch state (non-color tokens, so they never go through `light-dark()`):
     {
       dark: '0 0 3px rgb(0 0 0 / 0.65)',
       isColor: false,

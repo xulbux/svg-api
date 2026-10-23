@@ -512,6 +512,7 @@ export function resolveAnimationMode(
   if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
     return fallback;
   }
+
   let hasSheen = false;
   const motionTokens: string[] = [];
   for (const token of normalized.split(LIST_SEPARATOR_RX)) {
@@ -541,6 +542,7 @@ export function resolveAnimationMode(
   ) {
     return 'sheen';
   }
+
   const joined = motionTokens.join(',');
   return (hasSheen ? `sheen,${joined}` : joined) as AnimationMode;
 }
@@ -593,7 +595,7 @@ export function parsePerLineList(
     const parsed = parseOptionalNumber(part);
     values.push(parsed !== undefined && parsed >= 1 ? Math.round(parsed) : undefined);
   }
-  // Drop trailing holes, so the last valid value keeps applying to every remaining group.
+  // Drop trailing holes, so the last valid value keeps applying to every remaining group:
   while (values.length > 0 && values.at(-1) === undefined) {
     values.pop();
   }

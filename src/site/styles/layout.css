@@ -1,4 +1,4 @@
-/* Sticky Header & VitePress-Style Text Navigation */
+/* Sticky Header & VitePress-Style Text Navigation: */
 
 .site-header {
   position: sticky;
@@ -66,7 +66,7 @@
   margin-inline: auto -11px;
 }
 
-/* Sidebar Drawer Toggle & Close Button: Only shown on narrow screens (the toggle sits left of the tabs, labeled with the current page title) */
+/* Sidebar Drawer Toggle & Close Button; only shown on narrow screens (the toggle sits left of the tabs, labeled with the current page title): */
 
 .sidebar-toggle,
 .sidebar-close {
@@ -135,7 +135,7 @@
   color: var(--c-brand-1);
 }
 
-/* VitePress-Style Theme Switch & Social Link */
+/* VitePress-Style Theme Switch & Social Link: */
 
 .header-actions {
   display: flex;
@@ -165,7 +165,7 @@
   border-color: var(--c-text-3);
 }
 
-/* The thumb position and sun/moon icon follow the active scheme tokens without requiring JS */
+/* The thumb position and sun/moon icon follow the active scheme tokens without requiring JS: */
 
 .theme-switch-thumb {
   position: absolute;
@@ -227,7 +227,7 @@
   color: var(--c-text-1);
 }
 
-/* Header Preview Background Toggle (toggles `:root[data-preview-bg='inverse']`) */
+/* Header Preview Background Toggle (toggles `:root[data-preview-bg='inverse']`): */
 
 .bg-toggle {
   display: inline-flex;
@@ -250,7 +250,7 @@
   border-color: var(--c-text-3);
 }
 
-/* Checker swatch: Mirrors the active preview stage background (`auto` or `inverse`) */
+/* Checker swatch; mirrors the active preview stage background (`auto` or `inverse`): */
 
 .bg-swatch {
   --swatch-bg: var(--c-bg);
@@ -276,7 +276,7 @@
   --swatch-fg: var(--c-bg);
 }
 
-/* Narrow Screens: The nav row wraps below the brand on every page (sidebar toggle left, tabs right) */
+/* Narrow Screens; the nav row wraps below the brand on every page (sidebar toggle left, tabs right): */
 
 @media (max-width: 960px) {
   :root {
@@ -308,7 +308,7 @@
   }
 }
 
-/* Page Shell: Full-width content (home) or sidebar + content (docs, builder) */
+/* Page Shell; full-width content (home) or sidebar + content (docs, builder): */
 
 .page-shell {
   display: grid;
@@ -334,7 +334,7 @@
   padding-inline-start: clamp(20px, 3vw, 48px);
 }
 
-/* Sidebar: Sticky column on wide screens; The site script turns the same element into a popover drawer on narrow screens */
+/* Sidebar; sticky column on wide screens; the site script turns the same element into a popover drawer on narrow screens: */
 
 .sidebar {
   position: sticky;
@@ -408,7 +408,7 @@
   outline-offset: -2px;
 }
 
-/* Narrow Screens: The sidebar becomes a drawer opened by the header's sidebar toggle */
+/* Narrow Screens; the sidebar becomes a drawer opened by the header's sidebar toggle: */
 
 @media (max-width: 960px) {
   body:has(.sidebar:where(:popover-open, .is-open)) {
@@ -470,7 +470,7 @@
     }
   }
 
-  /* The icon-only close button sits in the drawer's top-right corner. */
+  /* The icon-only close button sits in the drawer's top-right corner: */
 
   .sidebar-close {
     position: absolute;

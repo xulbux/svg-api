@@ -280,7 +280,7 @@ function stripOuterParentheses(text: string): string {
       depth += 1;
     } else if (char === ')') {
       depth -= 1;
-      // The opening parenthesis closes before the end, so it does not enclose the whole text.
+      // The opening parenthesis closes before the end, so it does not enclose the whole text:
       if (depth === 0) {
         return text;
       }

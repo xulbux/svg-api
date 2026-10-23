@@ -339,7 +339,7 @@ describe('builder schemas', () => {
       }
     }
 
-    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`.
+    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`:
     expect(
       core.buildPath(typing, {
         align: 'center',
@@ -509,11 +509,11 @@ describe('builder client core', () => {
     expect(core.parsePath(service, '/badge/build/passing')).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('badge'), '/badge/a/b/c')).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('badge'), '/badge/status/online/up')).toBeUndefined();
-    // The Worker's route prefixes are case-sensitive.
+    // The Worker's route prefixes are case-sensitive:
     expect(resolveSvgRoute(new URL('https://svg.xul.is/Badge/build/passing'))).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('badge'), '/Badge/build/passing')).toBeUndefined();
     expect(core.parsePath(getBuilderSchema('icon'), '/ICON/rocket')).toBeUndefined();
-    // Single-segment targets take 3 or 4 segments; Owner-less presets never take an owner segment.
+    // Single-segment targets take 3 or 4 segments; owner-less presets never take an owner segment:
     expect(core.parsePath(service, '/badge/npm/a/b/c/v')).toBeUndefined();
     const ownerless = service.services?.find(
       (option) => option.ownerMode === 'none' && option.maxTargetSegments === 1
@@ -682,7 +682,7 @@ describe('builder client core', () => {
       'ts',
       'cpu',
     ]);
-    // Bare trailing `:` (without digits) or mid-group `:N` tokens are not valid group column suffixes and must be flagged as unknown slugs.
+    // Bare trailing `:` (without digits) or mid-group `:N` tokens are not valid group column suffixes and must be flagged as unknown slugs:
     expect(core.collectStackSlugs('nodejs,postgres:|rust:2,go')).toEqual([
       'nodejs',
       'postgres:',
@@ -933,7 +933,7 @@ describe('builder client core', () => {
         const link = core.buildDefaultLinkTarget(schema, state, url);
         const expected = resolveSvgPathRedirectUrl(path);
         if (link.startsWith(schema.origin)) {
-          // No template: The query-free badge path redirects to the same page.
+          // No template; the query-free badge path redirects to the same page:
           expect(resolveSvgPathRedirectUrl(new URL(link).pathname), path).toBe(expected);
         } else {
           expect(link, path).toBe(expected);

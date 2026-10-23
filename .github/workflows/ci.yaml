@@ -1,5 +1,5 @@
-# This workflow validates the svg-api Worker on every push and PR, and deploys to Cloudflare on main.
-# Tool versions are inherited from package.json: Node.js from `engines.node`, pnpm from `packageManager`.
+# This workflow validates the `svg-api` Worker on every push and PR, and deploys to Cloudflare on `main`.
+# Tool versions are inherited from `package.json`; Node.js from `engines.node`, `pnpm` from `packageManager`.
 # One job runs the full `pnpm run check` suite (formatting, linting, Markdown linting, type checking,
 # tests, and the Worker bundle dry-run) and deploys right after it passes.
 
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
 
 # Cancel superseded validation runs of the same ref.
-# Pushes to main are never cancelled, so a deploy is never interrupted mid-way.
+# Pushes to `main` are never cancelled, so a deploy is never interrupted mid-way:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

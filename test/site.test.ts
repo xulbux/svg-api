@@ -185,7 +185,7 @@ describe('documentation pages – HTML validity', () => {
       for (const reference of collectGroups(page.html, FRAGMENT_REFERENCE_RX, 'id')) {
         expect(ids.has(reference), `${page.path} #${reference}`).toBe(true);
       }
-      // ARIA references are space-separated ID lists (e.g., a dropdown labeled by its field label and value).
+      // ARIA references are space-separated ID lists (e.g., a dropdown labeled by its field label and value):
       for (const references of collectGroups(page.html, ARIA_ID_REFERENCE_RX, 'id')) {
         for (const reference of references.split(' ')) {
           expect(ids.has(reference), `${page.path} aria → ${reference}`).toBe(true);
@@ -449,7 +449,7 @@ describe('documentation pages – navigation & static assets', () => {
       expect(activeMatches, page.path).toHaveLength(1);
       expect(activeMatches[0]?.groups?.href, page.path).toBe(page.path);
       expect(page.html, page.path).toContain('<body class="has-sidebar">');
-      // The drawer toggle lives in the sticky header and shows the active page title.
+      // The drawer toggle lives in the sticky header and shows the active page title:
       const headerHtml = page.html.slice(0, page.html.indexOf('</header>'));
       const toggleLabel = SIDEBAR_TOGGLE_RX.exec(headerHtml)?.groups?.label;
       expect(toggleLabel, page.path).toBe(activeMatches[0]?.groups?.label);

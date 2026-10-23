@@ -124,7 +124,7 @@ function resolvePlaceholder(name: string, params: ServiceRouteParams): string {
 function compileUrlTemplate(template: string): ServiceUrlBuilder {
   let parts: string[] | undefined = undefined;
   return function buildTemplateUrl(params: ServiceRouteParams): string {
-    // Split once on first use; Odd indices hold placeholder names, even indices literal text.
+    // Split once on first use; odd indices hold placeholder names, even indices literal text:
     parts ??= template.split(URL_PLACEHOLDER_RX);
     let url = '';
     for (let i = 0; i < parts.length; i += 1) {
@@ -267,7 +267,7 @@ export function createMetric<P>(
   return {
     ...presentation,
     endpoint,
-    // The fetcher only ever passes this endpoint's projection output, so erasing `P` is safe.
+    // The fetcher only ever passes this endpoint's projection output, so erasing `P` is safe:
     transform: transform as MetricTransform,
   };
 }

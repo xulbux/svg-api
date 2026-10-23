@@ -63,7 +63,7 @@ export const HEX_SERVICE = defineService({
     description: 'Latest stable version, all-time/90-day/weekly downloads (dt/dq/dw), and license.',
     title: 'Hex.pm',
   },
-  // `dl` reported the 90-day downloads before the download keys were normalized.
+  // `dl` reported the 90-day downloads before the download keys were normalized:
   metricAliases: { dl: 'dq' },
   metrics: {
     dq: createDownloadsMetric(HEX_ENDPOINT, 'dq', (pkg) => pkg.recent),

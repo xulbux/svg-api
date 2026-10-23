@@ -81,7 +81,7 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       isBold: true,
       isItalic: true,
     });
-    // The em dash's leftmost ink point (origin path `L<x1> -3`) plus the translate offset lands on x = 34.
+    // The em dash's leftmost ink point (origin path `L<x1> -3`) plus the translate offset lands on `x = 34`:
     const translateX = Number(/translate\((?<x>[\d.-]+) /.exec(leftItalicPath)?.groups?.x);
     const inkStartX = Number(/L(?<x>[\d.-]+) -3/.exec(leftItalicPath)?.groups?.x);
     expect(translateX + inkStartX).toBeCloseTo(34, 1);
@@ -134,14 +134,14 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
 
     const monoLayout = layoutTextGlyphs('iiiWWW', 16, false, 'mono');
     expect(monoLayout.glyphs).toHaveLength(6);
-    // In a monospace font, narrow and wide letters have identical advance widths.
+    // In a monospace font, narrow and wide letters have identical advance widths:
     expect(monoLayout.glyphs[0]?.advance).toBe(monoLayout.glyphs[5]?.advance);
     expect(monoLayout.glyphs[0]?.pathData).toMatch(/^M[\d.-]+ [\d.-]+/);
 
     const sansLayout = layoutTextGlyphs('iiiWWW', 16, false, 'sans');
     expect(sansLayout.glyphs[0]?.advance).toBeLessThan(sansLayout.glyphs[5]?.advance ?? 0);
 
-    // Technical prompt/keycap symbols (`❯`, `⌘`, `⏎`) fall back to JetBrains Mono when missing in Geist Sans.
+    // Technical prompt/keycap symbols (`❯`, `⌘`, `⏎`) fall back to JetBrains Mono when missing in Geist Sans:
     for (const symbol of ['❯', '⌘', '⏎']) {
       const resolvedSans = resolveCharGlyph(symbol, 16, true, 'sans');
       const resolvedMono = resolveCharGlyph(symbol, 16, true, 'mono');
@@ -179,17 +179,17 @@ describe('bounded LRU cache (src/svg/shared.ts)', () => {
     writeLruCache(cache, 'c', 'ccc');
     expect(readLruCache(cache, 'a')).toBe('aaa');
 
-    // A fourth entry exceeds the count limit and evicts `b`, the least recently used entry.
+    // A fourth entry exceeds the count limit and evicts `b`, the least recently used entry:
     writeLruCache(cache, 'd', 'd');
     expect([...cache.entries.keys()]).toEqual(['c', 'a', 'd']);
     expect(cache.totalWeight).toBe(7);
 
-    // A heavy entry evicts by weight until the summed weight fits again.
+    // A heavy entry evicts by weight until the summed weight fits again:
     writeLruCache(cache, 'e', 'eeeeeee');
     expect([...cache.entries.keys()]).toEqual(['d', 'e']);
     expect(cache.totalWeight).toBe(8);
 
-    // Values heavier than the whole budget are never cached and keep existing entries.
+    // Values heavier than the whole budget are never cached and keep existing entries:
     writeLruCache(cache, 'huge', 'x'.repeat(11));
     expect(readLruCache(cache, 'huge')).toBeUndefined();
     expect(cache.entries.size).toBe(2);

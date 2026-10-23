@@ -762,7 +762,7 @@ describe('rendering regressions', () => {
       text: `Supercalifragilisticexpialidocious${'a'.repeat(60)} end of the quote text here`,
       width,
     });
-    // Text column (`md`): Starts at x = 38 and ends 16px left of the watermark ink (x = 217 + 2 * 1.05).
+    // Text column (`md`); starts at `x = 38` and ends `16px` left of the watermark ink (`x = 217 + 2 * 1.05`):
     const textColumnRight = 217 + 2.1 - 16;
     const maxInkX = measureMaxTextInkX(svg);
     expect(maxInkX).toBeGreaterThan(100);
@@ -816,11 +816,11 @@ describe('rendering regressions', () => {
   });
 
   it('clamps derived defaults into their documented ranges (regression: fallbacks skipped clamping)', () => {
-    // `gap = 24` derives `groupGap = 78`, which must clamp to the `64px` maximum.
+    // `gap = 24` derives `groupGap = 78`, which must clamp to the `64px` maximum:
     expect(renderStack({ gap: 24, icons: ['rust|go'] })).toContain('width="148"');
-    // `gap = 2` derives `groupGap = 7`, which must clamp to the `8px` minimum.
+    // `gap = 2` derives `groupGap = 7`, which must clamp to the `8px` minimum:
     expect(renderStack({ gap: 2, icons: ['rust|go'] })).toContain('width="92"');
-    // `size = 28` derives a `1045px` default width, which must clamp to the `900px` maximum.
+    // `size = 28` derives a `1045px` default width, which must clamp to the `900px` maximum:
     expect(renderQuote({ color: 'indigo', size: 28, text: 'Clamped.' })).toContain('width="900"');
   });
 
@@ -1111,7 +1111,7 @@ describe('rendering regressions', () => {
     expect(readMetricBadgeLabel({ done: 4, total: 5, type: 'steps' }, 'v2 rollout')).toBe(
       'metric: 4/5 v2 rollout'
     );
-    // Sparklines and histograms with fewer than 2 points render nothing, so they are not announced either.
+    // Sparklines and histograms with fewer than 2 points render nothing, so they are not announced either:
     expect(readMetricBadgeLabel({ type: 'sparkline', values: [1] })).toBe('metric');
     expect(readMetricBadgeLabel({ type: 'bars', values: [1] })).toBe('metric');
     expect(readMetricBadgeLabel({ done: 1, total: 0, type: 'steps' })).toBe('metric');
@@ -1195,7 +1195,7 @@ describe('rendering regressions', () => {
     expect(ariaLabel.startsWith('tech stack: TypeScript, My Tool, Xyyy')).toBe(true);
     expect(ariaLabel.length).toBeLessThan(200);
     expect(svg.length).toBeLessThan(10_000);
-    // Tiles beyond the 128-tile cap are dropped before any normalization.
+    // Tiles beyond the 128-tile cap are dropped before any normalization:
     const cappedIcons = Array.from({ length: 128 }, (_entry, index) => `tool-${index}`);
     const overlongIcons = [...cappedIcons, ...Array.from({ length: 500 }, () => 'rust')];
     expect(renderStack({ groups: [[{ icons: overlongIcons }]] })).toBe(
@@ -1286,10 +1286,10 @@ describe('rendering regressions', () => {
       renderBadge({ color: 'cyan', label: 'arch', variant: '2' })
     );
 
-    // Square-left crescent (`M <x> 1 H …`) starting just right of the divider.
+    // Square-left crescent (`M <x> 1 H …`) starting just right of the divider:
     expect(splitSecondary).toMatch(/^M [\d.]+ 1 H/);
     expect(Number.parseFloat(splitSecondary.slice(2))).toBeGreaterThan(20);
-    // Rounded-left crescents spanning the whole badge (`M 1 <cornerY> A …`).
+    // Rounded-left crescents spanning the whole badge (`M 1 <cornerY> A …`):
     expect(splitTertiary).toMatch(/^M 1 [\d.]+ A/);
     expect(singleSecondary).toMatch(/^M 1 [\d.]+ A/);
   });
@@ -1302,7 +1302,7 @@ describe('rendering regressions', () => {
   it('renders unmistakable red exclamation-mark placeholders with a translucent border across /stack, /icon, /badge, and /button even when color or variant is overridden', () => {
     const redStroke = `stroke="${THEMES.red.iconColor}"`;
 
-    // Stack fallback tiles use a hollow transparent frame with a translucent red stroke and standalone red `!` icon.
+    // Stack fallback tiles use a hollow transparent frame with a translucent red stroke and standalone red `!` icon:
     const stackSvg = renderStack({ color: 'emerald', icons: ['unknown-tool@amber'], variant: '1' });
     expect(stackSvg).toContain(
       '<g stroke-width="2.75"><path d="M12 3.5v10.5" /><path d="M12 19.5h.01" /></g>'
@@ -1316,13 +1316,13 @@ describe('rendering regressions', () => {
     );
     expect(stackSvg).not.toContain('url(#grad-');
 
-    // Standalone unknown icons use the translucent-circle `!` placeholder in red regardless of `color`.
+    // Standalone unknown icons use the translucent-circle `!` placeholder in red regardless of `color`:
     const iconSvg = renderIcon({ color: 'sky', icon: 'unknown-tool' });
     expect(iconSvg).toContain(redStroke);
     expect(iconSvg).toContain('<circle cx="12" cy="12" r="10" stroke-opacity="0.45" />');
     expect(iconSvg).toContain('<path d="M12 7v5.5" /><path d="M12 16.5h.01" />');
 
-    // Badges and buttons with unknown `?icon=` slugs render the red translucent-circle `!` placeholder instead of omitting the icon.
+    // Badges and buttons with unknown `?icon=` slugs render the red translucent-circle `!` placeholder instead of omitting the icon:
     const badgeSvg = renderBadge({
       color: 'emerald',
       icon: 'unknown-tool',
@@ -1346,8 +1346,8 @@ describe('rendering regressions', () => {
   });
 
   it('splits only the status dot into the dark left cap on primary label-only badges while keeping icons with the label and leaving secondary/tertiary unsplit', () => {
-    // Primary (`variant=1`) label-only badge with left icon + dot (`[ • | ⚡ Test ]`):
-    // Only the dot sits in the 25px dark left cap; `zap` and `Test` stay together on the primary right cap in white.
+    // Primary (`variant=1`) label-only badge with left icon + dot (`[ • | ⚡ Test ]`).
+    // Only the dot sits in the `25px` dark left cap; `zap` and `Test` stay together on the primary right cap in white:
     const primaryLabelWithIconAndDot = renderBadge({
       color: 'amber',
       dot: 'green',
@@ -1365,7 +1365,7 @@ describe('rendering regressions', () => {
     expect(primaryLabelWithIconAndDot).not.toContain(`stroke="${THEMES.amber.iconColor}"`);
     expect(extractAriaLabel(primaryLabelWithIconAndDot)).toBe('Test');
 
-    // Secondary (`variant=2`) and Tertiary (`variant=3`) label-only badges with a dot stay unsplit (no divider) and keep label text colors.
+    // Secondary (`variant=2`) and Tertiary (`variant=3`) label-only badges with a dot stay unsplit (no divider) and keep label text colors:
     const secondaryLabelWithDot = renderBadge({
       color: 'emerald',
       dot: 'emerald',
@@ -1386,7 +1386,7 @@ describe('rendering regressions', () => {
     expect(tertiaryLabelWithDot).toContain(`fill="${BASE_DARK.textMuted}" />`);
     expect(tertiaryLabelWithDot).not.toContain(`fill="${THEMES.emerald.accentText}" />`);
 
-    // Value-only badge (`/badge//Value?icon=zap&dot=green`) keeps both `[ • ⚡ ]` in the dark left cap (`leftWidth > 25`, colored icon).
+    // Value-only badge (`/badge//Value?icon=zap&dot=green`) keeps both `[ • ⚡ ]` in the dark left cap (`leftWidth > 25`, colored icon):
     const valueOnlyWithIconAndDot = renderBadge({
       color: 'amber',
       dot: 'green',
@@ -1397,7 +1397,7 @@ describe('rendering regressions', () => {
     });
     expect(valueOnlyWithIconAndDot).toContain(`stroke="${THEMES.amber.iconColor}"`);
 
-    // Dot-only badge with no text or icons on `variant=1` uses the dark carbon surface instead of the primary gradient.
+    // Dot-only badge with no text or icons on `variant=1` uses the dark carbon surface instead of the primary gradient:
     const dotOnlyPrimaryBadge = renderBadge({ color: 'sky', dot: 'sky', label: '', variant: '1' });
     const dotOnlyTertiaryBadge = renderBadge({ color: 'sky', dot: 'sky', label: '', variant: '3' });
     expect(dotOnlyPrimaryBadge).toBe(dotOnlyTertiaryBadge);
@@ -1454,7 +1454,7 @@ describe('renderTyping', () => {
       }
     }
 
-    // `window` and `ide` render the header hint badge as a fully rounded pill (`height="18" rx="9"`).
+    // `window` and `ide` render the header hint badge as a fully rounded pill (`height="18" rx="9"`):
     const windowSvg = renderTyping({
       color: 'indigo',
       hint: 'utf8',
@@ -1464,7 +1464,7 @@ describe('renderTyping', () => {
     expect(windowSvg.split('<circle cx="').length - 1).toBe(3);
     expect(windowSvg).toContain('height="18" rx="9" fill="rgba(9,10,15,0.62)"');
 
-    // Without `?icon=`, no icon or squircle box is rendered on any layout; With `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`.
+    // Without `?icon=`, no icon or squircle box is rendered on any layout; with `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`:
     const barePromptSvg = renderTyping({ color: 'cyan', layout: 'prompt', lines: 'Search' });
     expect(barePromptSvg).not.toContain('scale(');
     expect(barePromptSvg).not.toContain('width="28" height="28"');
@@ -1489,7 +1489,7 @@ describe('renderTyping', () => {
     expect(promptIconCenterX).toBeCloseTo(24, 1);
     expect(Number(promptIconTransform?.y)).toBe(16);
 
-    // `browser` renders the omnibox hint badge without a border stroke; `browser` and `ide` ignore `align: 'center'`.
+    // `browser` renders the omnibox hint badge without a border stroke; `browser` and `ide` ignore `align: 'center'`:
     const browserSvg = renderTyping({
       align: 'center',
       color: 'sky',
@@ -1564,7 +1564,7 @@ describe('renderTyping', () => {
     expect(iconAndTextHintSvg.length).toBeGreaterThan(iconOnlyHintSvg.length);
 
     // Wide monospace keycap text (`testttttttttt`, where `'t'` is much wider in JetBrains Mono than in Geist Sans)
-    // must measure with the monospace font so the keycap `<rect>` contains the text without overflowing.
+    // must measure with the monospace font so the keycap `<rect>` contains the text without overflowing:
     for (const wideHint of ['testttttttttt', 'icon:corner-down-left testttttttttt']) {
       const wideHintSvg = renderTyping({
         color: 'indigo',
@@ -1607,7 +1607,7 @@ describe('renderTyping', () => {
       hasTypo: true,
       lines: 'Building resilient systems;Crafting delightful interfaces;Shipping edge workers',
     });
-    // Across 3 lines, only 1 line receives a simulated typo (not every single line).
+    // Across 3 lines, only 1 line receives a simulated typo (not every single line):
     expect(withTypo.split('<use href="#type-g-')).toHaveLength(
       withoutTypo.split('<use href="#type-g-').length + 1
     );

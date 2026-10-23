@@ -74,7 +74,7 @@
   navigation: auto;
 }
 
-/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated From `getThemeTokens()` in styles.ts) */
+/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated From `getThemeTokens()` in `styles.ts`): */
 
 :root {
   /* Layout Dimensions */
@@ -106,7 +106,7 @@
   scrollbar-color: color-mix(in srgb, var(--c-text-1) 24%, transparent) transparent;
 }
 
-/* Wider Shell for Pages With a Sidebar (Docs, Builder) */
+/* Wider Shell for Pages With a Sidebar (Docs, Builder): */
 
 .has-sidebar {
   --layout-max: 1480px;
@@ -122,7 +122,7 @@
   box-sizing: border-box;
 }
 
-/* The `hidden` attribute always wins over component `display` values. */
+/* The `hidden` attribute always wins over component `display` values: */
 
 [hidden] {
   display: none !important;
@@ -183,7 +183,7 @@ code,
   outline-offset: 2px;
 }
 
-/* Strip native browser spinbuttons and search cancel buttons so all inputs use custom UI */
+/* Strip native browser spinbuttons and search cancel buttons so all inputs use custom UI: */
 
 input[type='number'] {
   appearance: textfield;
@@ -215,7 +215,7 @@ input[type='search']::-webkit-search-decoration {
   clip-path: inset(50%) !important;
 }
 
-/* Skip Link: hidden until focused by keyboard */
+/* Skip Link; hidden until focused by keyboard: */
 
 .skip-link {
   position: fixed;
@@ -236,7 +236,7 @@ input[type='search']::-webkit-search-decoration {
   translate: 0 0;
 }
 
-/* UI Icons: Inline `<svg>` glyphs referencing the hidden `<symbol>` sprite (symbols still render through `<use>`) */
+/* UI Icons; inline `<svg>` glyphs referencing the hidden `<symbol>` sprite (symbols still render through `<use>`): */
 
 .ui-sprite {
   display: none;
@@ -251,7 +251,7 @@ input[type='search']::-webkit-search-decoration {
   pointer-events: none;
 }
 
-/* Text Links & Link-Styled Buttons: Always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover */
+/* Text Links & Link-Styled Buttons; always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover: */
 
 .text-link,
 .text-btn {
@@ -277,7 +277,7 @@ input[type='search']::-webkit-search-decoration {
   cursor: pointer;
 }
 
-/* Shared Surface Cards: Soft surface + outer divider border (cards, hero, tables, builder panels) */
+/* Shared Surface Cards; soft surface + outer divider border (cards, hero, tables, builder panels): */
 
 .card,
 .feature-card,
@@ -292,7 +292,7 @@ input[type='search']::-webkit-search-decoration {
   background: var(--c-bg-soft);
 }
 
-/* Shared Popover Panels (dropdown listboxes, icon picker, syntax help) */
+/* Shared Popover Panels (dropdown listboxes, icon picker, syntax help): */
 
 .popover-panel {
   position: fixed;
@@ -318,7 +318,7 @@ input[type='search']::-webkit-search-decoration {
   display: none;
 }
 
-/* Shared Hidden Input Overlays: The native input covers its custom-styled label for clicks and keyboard focus */
+/* Shared Hidden Input Overlays; the native input covers its custom-styled label for clicks and keyboard focus: */
 
 .swatch-input,
 .check-input,
@@ -330,7 +330,7 @@ input[type='search']::-webkit-search-decoration {
   cursor: pointer;
 }
 
-/* Reduced Motion: no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script) */
+/* Reduced Motion; no transitions, CSS animations, or view transitions (SMIL previews are paused by the client script): */
 
 @media (prefers-reduced-motion: reduce) {
   @view-transition {
@@ -345,7 +345,7 @@ input[type='search']::-webkit-search-decoration {
     scroll-behavior: auto !important;
   }
 
-  /* `*` never matches the `::details-content` or `::backdrop` pseudo-elements. */
+  /* `*` never matches the `::details-content` or `::backdrop` pseudo-elements: */
 
   details.code-drawer::details-content,
   .sidebar::backdrop {

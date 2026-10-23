@@ -291,7 +291,7 @@ export function bindSelects(form: HTMLFormElement | null, site: SvgSite | undefi
       }
     });
     menu?.addEventListener('keydown', (event) => handleSelectKeydown(event, wrapper, site));
-    // Keyboard focus leaving the dropdown (e.g., `Tab`) closes the menu; Pointer dismissal is native.
+    // Keyboard focus leaving the dropdown (e.g., `Tab`) closes the menu; pointer dismissal is native:
     menu?.addEventListener('focusout', (event) => {
       if (event.relatedTarget instanceof Node && !wrapper.contains(event.relatedTarget)) {
         site?.closePopover(menu);

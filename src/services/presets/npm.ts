@@ -81,7 +81,7 @@ function hasTypesCondition(node: unknown, depth: number, budget: ExportsWalkBudg
     return false;
   }
   if (Array.isArray(node)) {
-    // Fallback arrays (`["./a.js", { "types": … }]`).
+    // Fallback arrays (`["./a.js", { "types": … }]`):
     for (const entry of node) {
       budget.remainingKeys -= 1;
       if (budget.remainingKeys < 0) {
@@ -195,7 +195,7 @@ export const NPM_SERVICE = defineService({
       'Version, weekly/monthly/yearly downloads (dw/dl/dy), license, and bundled TS types.',
     title: 'npm',
   },
-  // `dt` reported the last-year downloads before the download keys were normalized.
+  // `dt` reported the last-year downloads before the download keys were normalized:
   metricAliases: { dt: 'dy' },
   metrics: {
     dl: createDownloadsMetric(

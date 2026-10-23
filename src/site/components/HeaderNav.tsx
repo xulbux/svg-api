@@ -85,7 +85,7 @@ function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
  * @returns Header HTML string.
  */
 export function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined): string {
-  // Sidebar pages are a fixed set, so the cache stays bounded by the number of pages.
+  // Sidebar pages are a fixed set, so the cache stays bounded by the number of pages:
   const cacheKey = `${activeNav}|${sidebar?.activeHref ?? ''}`;
   const cached = HEADER_HTML_CACHE.get(cacheKey);
   if (cached !== undefined) {

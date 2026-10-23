@@ -143,7 +143,7 @@ export const GITLAB_SERVICE = defineService({
   },
   route: {
     owner: { isRequired: true, placeholder: ':owner' },
-    // Nested subgroups (`group/subgroup/project`) span several target segments.
+    // Nested subgroups (`group/subgroup/project`) span several target segments:
     target: { maxSegments: GITLAB_MAX_TARGET_SEGMENTS, placeholder: ':[subgroup/]repo' },
   },
 });

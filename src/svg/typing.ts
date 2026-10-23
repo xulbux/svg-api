@@ -504,7 +504,7 @@ function resolveTypingMetrics(
 
   const radius = isFrameless ? 0 : Math.max(10, Math.round(13 * scale));
 
-  // Equal X and Y padding: `(bodyHeight - iconBoxSize) / 2` = `15 * scale` on framed containers.
+  // Equal X and Y padding; `(bodyHeight - iconBoxSize) / 2` = `15 * scale` on framed containers:
   const padX = isFrameless
     ? Math.round(8 * scale)
     : Math.max(10, Math.round((bodyHeight - iconBoxSize) / 2));
@@ -777,7 +777,7 @@ function isLineEligibleForTypo(
   for (const layout of rawLayouts) {
     cycleSeed = (cycleSeed * 31 + layout.glyphs.length) % 997;
   }
-  // Pick a sparse subset of lines (never every line) while guaranteeing at least one line in the cycle has a typo.
+  // Pick a sparse subset of lines (never every line) while guaranteeing at least one line in the cycle has a typo:
   const primaryLineIndex = cycleSeed % totalLines;
   if (lineIndex === primaryLineIndex) {
     return true;
@@ -1006,7 +1006,7 @@ function scheduleLineErasePhase(options: {
     return;
   }
 
-  // Default `'backspace'`: rapid OS key-repeat deletion from right to left.
+  // Default `'backspace'`; rapid OS key-repeat deletion from right to left:
   const totalEraseBudgetMs = Math.min(680, Math.max(260, glyphs.length * 32));
   const rawPerCharEraseMs = Math.round(totalEraseBudgetMs / Math.max(1, glyphs.length));
   const perCharEraseMs = clampInt(rawPerCharEraseMs, { default: 32, max: 52, min: 20 });
@@ -1031,7 +1031,7 @@ function scheduleLineErasePhase(options: {
     }
   }
 
-  // Smoothly fly the cursor to `nextLineStartCursorX` when center alignment shifts the next line's start X.
+  // Smoothly fly the cursor to `nextLineStartCursorX` when center alignment shifts the next line's start X:
   if (Math.abs(nextLineStartCursorX - startCursorX) > 0.5) {
     appendTimelinePoint(state.cursorXPoints, state.currentTimeMs + 35, startCursorX);
     appendTimelinePoint(state.cursorXPoints, state.currentTimeMs + 165, nextLineStartCursorX);
@@ -1085,13 +1085,13 @@ function scheduleLineTimeline(options: {
   }
   const safeWeightSum = weightSum > 0 ? weightSum : 1;
 
-  // Record each character's appearance window; Erase timestamps are filled in step 4.
+  // Record each character's appearance window; erase timestamps are filled in step `[4]`:
   const lineScheduledRecords: ScheduledGlyph[] = [];
 
   for (const [i, glyph] of glyphs.entries()) {
     const stepMs = Math.max(24, Math.round(((weights[i] ?? 1) / safeWeightSum) * lineDurationMs));
 
-    // Optional human typo + backspace correction before typing `glyph`.
+    // Optional human typo + backspace correction before typing `glyph`:
     if (i === typoIndex && typoGlyph && typoGlyph.pathData.length > 0) {
       const typoStartMs = state.currentTimeMs + Math.round(stepMs * 0.45);
       const typoFadeEndMs = typoStartMs + CHAR_FADE_IN_MS;
@@ -1142,18 +1142,18 @@ function scheduleLineTimeline(options: {
     }
   }
 
-  // Ensure the clock advances past the final character's fade-in.
+  // Ensure the clock advances past the final character's fade-in:
   state.currentTimeMs += CHAR_FADE_IN_MS;
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, endCursorX);
 
-  // 3. Reading pause with smooth cursor blinking at the end of the line.
+  // [3] Reading pause with smooth cursor blinking at the end of the line:
   const pauseStartMs = state.currentTimeMs;
   const pauseEndMs = pauseStartMs + pauseMs;
   appendCursorBlinkWindow(state.cursorOpacityPoints, pauseStartMs, pauseEndMs, activeOpacity);
   state.currentTimeMs = pauseEndMs;
   appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, endCursorX);
 
-  // 4. Erase phase (`backspace`, `select`, or `fade`) and transition to `nextLineStartCursorX`.
+  // [4] Erase phase (`backspace`, `select`, or `fade`) and transition to `nextLineStartCursorX`:
   scheduleLineErasePhase({
     activeOpacity,
     endCursorX,
@@ -1435,7 +1435,7 @@ function renderHintBadge(options: {
     };
   }
 
-  // `layout === 'prompt'`: recessed 3D keycap with Kumo lower-edge crescent and outer border ring.
+  // `layout === 'prompt'`; recessed 3D keycap with Kumo lower-edge crescent and outer border ring:
   const keycapHeight = Math.round(23 * scale);
   const keycapRadius = Math.max(5, Math.round(6 * scale));
   const inset = roundCoord((bodyHeight - keycapHeight) / 2);
@@ -1483,7 +1483,7 @@ function renderTrafficLightDots(
   const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
   const dotGap = roundCoord(Math.max(12, 14 * scale));
   const dotCy = roundCoord(bandHeight / 2);
-  // Left X-padding from the container edge to the left edge of dot 0 equals `dotCy - dotRadius`.
+  // Left X-padding from the container edge to the left edge of dot 0 equals `dotCy - dotRadius`:
   const firstDotCx = dotCy;
   let dotsMarkup = '';
 
@@ -1624,7 +1624,7 @@ function renderIdeHeaderAndGutterChrome(options: {
   const tabWidth = Math.max(Math.round(84 * scale), Math.ceil(tabContentWidth + tabPadX * 2));
   const tabEndX = roundCoord(Math.min(width - Math.round(24 * scale), tabStartX + tabWidth));
 
-  // Darken the recessed tab strip outside the active tab so the active tab seamlessly shares the editor surface.
+  // Darken the recessed tab strip outside the active tab so the active tab seamlessly shares the editor surface:
   const inactiveHeaderPath = `M 1 ${headerHeight} V ${1 + innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${1 + innerRadius} 1 H ${width - 1 - innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${width - 1} ${1 + innerRadius} V ${headerHeight} H ${tabEndX} V ${tabTopY + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabEndX - tabRadius} ${tabTopY} H ${tabStartX + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabStartX} ${tabTopY + tabRadius} V ${headerHeight} Z`;
   const inactiveHeaderOpacity = styleTokens.isOnPrimary ? '0.14' : '0.28';
   const borderPath = `M 1 ${headerHeight} H ${tabStartX} V ${tabTopY + tabRadius} A ${tabRadius} ${tabRadius} 0 0 1 ${tabStartX + tabRadius} ${tabTopY} H ${tabEndX - tabRadius} A ${tabRadius} ${tabRadius} 0 0 1 ${tabEndX} ${tabTopY + tabRadius} V ${headerHeight} H ${width - 1}`;
@@ -1665,14 +1665,14 @@ function renderIdeHeaderAndGutterChrome(options: {
     });
   }
 
-  // Subtle tab close `×` mark on the right side of the active tab.
+  // Subtle tab close `×` mark on the right side of the active tab:
   const closeCenterX = roundCoord(tabEndX - tabPadX - closeSize / 2);
   const closeCenterY = roundCoord(tabTopY + tabHeight / 2);
   const halfClose = roundCoord(closeSize / 2);
   const closePath = `M ${roundCoord(closeCenterX - halfClose)} ${roundCoord(closeCenterY - halfClose)} L ${roundCoord(closeCenterX + halfClose)} ${roundCoord(closeCenterY + halfClose)} M ${roundCoord(closeCenterX + halfClose)} ${roundCoord(closeCenterY - halfClose)} L ${roundCoord(closeCenterX - halfClose)} ${roundCoord(closeCenterY + halfClose)}`;
   markup += `<path d="${closePath}" fill="none" stroke="${styleTokens.mutedTextColor}" stroke-opacity="0.48" stroke-width="1.2" stroke-linecap="round" />`;
 
-  // Subtle active-line highlight + line-number gutter (`1` + vertical separator line) in the editor body.
+  // Subtle active-line highlight + line-number gutter (`1` + vertical separator line) in the editor body:
   const gutterWidth = Math.round(36 * scale);
   const activeBandInsetY = Math.round(9 * scale);
   const activeBandY = roundCoord(headerHeight + activeBandInsetY);
@@ -1829,7 +1829,7 @@ function renderLeadingPrompt(options: {
   let currentX = resolveBodyStartX(layout, metrics);
   let markup = '';
 
-  // Icons on `window` and `ide` live in the header/tab bar; On `prompt`, `browser`, and `none`, they live in the body row.
+  // Icons on `window` and `ide` live in the header/tab bar; on `prompt`, `browser`, and `none`, they live in the body row:
   if (layout === 'prompt' && iconSlot) {
     const avatarSize = Math.round(28 * scale);
     const avatarInset = roundCoord((bodyHeight - avatarSize) / 2);

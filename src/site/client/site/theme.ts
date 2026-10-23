@@ -24,7 +24,7 @@ function writeStorage(key: string, value: string | undefined): void {
       localStorage.setItem(key, value);
     }
   } catch {
-    // Storage is unavailable (private mode or blocked); Preferences simply do not persist.
+    // Storage is unavailable (private mode or blocked); preferences simply do not persist.
   }
 }
 

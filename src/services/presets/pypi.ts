@@ -108,7 +108,7 @@ function projectPyPiInfo(data: unknown): PyPiInfoProjection | undefined {
   if (!isJsonObject(info)) {
     return undefined;
   }
-  // Legacy `license` fields sometimes hold the full license text; Only short names are usable.
+  // Legacy `license` fields sometimes hold the full license text; only short names are usable:
   const legacyLicense = readText(info.license);
   const shortLegacyLicense = legacyLicense?.includes('\n') ? undefined : legacyLicense;
   return {

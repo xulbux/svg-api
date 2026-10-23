@@ -131,7 +131,7 @@ describe('resolveIcon', () => {
       expect(resolveStackIconColor(slug)).toBeDefined();
     }
 
-    // With isBrandFirst=true, "blender" resolves to the Simple Icons 3D Blender logo rather than Lucide's kitchen blender.
+    // With `isBrandFirst=true`, `'blender'` resolves to the Simple Icons 3D Blender logo rather than Lucide's kitchen blender:
     const blenderBrand = requireDefined(resolveIcon('blender', true), 'blender brand icon');
     expect(blenderBrand.type).toBe('simple');
   });
@@ -144,14 +144,14 @@ describe('resolveIcon', () => {
     expect(twigIcon.innerSvg).toContain('transform="translate(2.41, 0) scale(0.046875)"');
     expect(resolveStackIconColor('twig')).toBe('lime');
 
-    // Icons present in Simple Icons or Devicon Plain must keep their preferred glyph rather than File Icons' 512-unit body.
+    // Icons present in Simple Icons or Devicon Plain must keep their preferred glyph rather than File Icons' 512-unit body:
     const phpIcon = requireDefined(resolveIcon('php', true), 'php icon');
     expect(phpIcon.coordScale).toBe(1);
     const archIcon = requireDefined(resolveIcon('archlinux', true), 'archlinux icon');
     expect(archIcon.coordScale).toBe(1);
     expect(resolveIcon('arch-linux', true)?.innerSvg).toBe(archIcon.innerSvg);
 
-    // Hyphenated File Icons duplicates (`arch-linux`, `common-lisp`) are mapped as aliases instead of duplicating picker slugs.
+    // Hyphenated File Icons duplicates (`arch-linux`, `common-lisp`) are mapped as aliases instead of duplicating picker slugs:
     const index = getIconPickerIndex();
     expect(index.sets.brands).toContain('twig');
     expect(index.sets.brands).toContain('archlinux');
@@ -208,7 +208,7 @@ describe('resolveIcon', () => {
   });
 
   it('never serves a raw-slug fallback result for the canonical slug (regression: cached under the alias target key)', () => {
-    // A temporary alias whose canonical target does not exist, so the raw slug resolves it.
+    // A temporary alias whose canonical target does not exist, so the raw slug resolves it:
     const alias = 'zap';
     const missingTarget = 'zzz-no-such-canonical-icon';
     Reflect.set(ICON_SLUG_ALIASES, alias, missingTarget);
@@ -256,7 +256,7 @@ describe('computeIconXBounds', () => {
     expect(quad.minX).toBeCloseTo(2, 1);
     expect(quad.maxX).toBe(4);
 
-    // The reflected `S` control point (`x = 16`) and its explicit control (`x = 24`) both lie outside the ink.
+    // The reflected `S` control point (`x = 16`) and its explicit control (`x = 24`) both lie outside the ink:
     const smooth = computeIconXBounds('<path d="M4 12 C0 0 24 0 20 12 S24 24 4 24" />', false);
     expect(smooth.maxX).toBeCloseTo(20.45, 1);
   });

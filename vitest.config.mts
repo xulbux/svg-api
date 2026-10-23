@@ -24,8 +24,8 @@ const TEXT_MODULE_RX = /\.(?:css|client\.js)$/;
 export default defineConfig({
   plugins: [
     {
-      // Mirror Wrangler's `Data` module rule: `*.ttf` imports default-export an `ArrayBuffer`. The
-      // generated module reads the file itself instead of inlining (and re-parsing) a base64 copy.
+      // Mirror Wrangler's `Data` module rule; `*.ttf` imports default-export an `ArrayBuffer`. The
+      // generated module reads the file itself instead of inlining (and re-parsing) a base64 copy:
       enforce: 'pre',
       load(id) {
         if (!id.endsWith('.ttf')) {
@@ -41,7 +41,7 @@ export default defineConfig({
       name: 'ttf-arraybuffer',
     },
     {
-      // Mirror Wrangler's `Text` module rule: `*.css` and `*.client.js` imports default-export their raw source.
+      // Mirror Wrangler's `Text` module rule; `*.css` and `*.client.js` imports default-export their raw source:
       enforce: 'pre',
       load(id) {
         if (!id.startsWith(TEXT_MODULE_PREFIX)) {

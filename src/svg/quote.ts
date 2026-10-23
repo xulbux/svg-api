@@ -424,7 +424,7 @@ function resolveQuoteStyleTokens(
   palette: ThemePalette
 ): QuoteStyleTokens {
   const isOnPrimary = variant === '1';
-  // Primary cards fill with the theme gradient; Horizontal secondary cards paint their accent bar with it.
+  // Primary cards fill with the theme gradient; horizontal secondary cards paint their accent bar with it:
   const hasThemeGradient = isOnPrimary || (!isVertical && variant === '2');
   return {
     authorColor: resolveForegroundColor(isOnPrimary, palette.accentText),

@@ -228,8 +228,8 @@ function resolveBadgeRoute(
     return undefined;
   }
   if ((service.route.target.maxSegments ?? 1) > 1) {
-    // Multi-segment targets (e.g., Go module paths): Every middle segment belongs to the target,
-    // except a leading required owner segment.
+    // Multi-segment targets (e.g., Go module paths); every middle segment belongs to the target,
+    // except a leading required owner segment:
     const hasOwnerSegment = service.route.owner?.isRequired === true;
     return {
       kind: 'service',
@@ -253,6 +253,7 @@ function resolveBadgeRoute(
       request: { metric: fourth ?? '', owner: second, service: firstLower, target: third ?? '' },
     };
   }
+
   return undefined;
 }
 
@@ -295,13 +296,13 @@ function resolveIconRoute(
 /** Resolve a `/stack/:groups` (or `/stack?groups=` / `?icons=` / `?i=`) tech stack grid. */
 function resolveStackRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   return buildStaticMatch(() => {
-    // `||` (not `??`): Empty aliases (`/stack/?icons=react`, `?groupgap=&ggap=12`) fall through.
+    // `||` (not `??`); empty aliases (`/stack/?icons=react`, `?groupgap=&ggap=12`) fall through:
     const rawGroups =
       segments[0] || query.get('groups') || query.get('icons') || query.get('i') || '';
     const perLineList = parsePerLineList(query.get('perline'));
     return renderStack({
       anim: resolveAnimationMode(query.get('anim')),
-      // Invalid colors keep the per-icon brand palettes instead of forcing the indigo fallback.
+      // Invalid colors keep the per-icon brand palettes instead of forcing the indigo fallback:
       color: resolveOptionalColor(query.get('color')),
       gap: parseOptionalNumber(query.get('gap')),
       groupGap: parseOptionalNumber(query.get('groupgap') || query.get('ggap')),

@@ -520,7 +520,7 @@ describe('existing service presets', () => {
       }
     );
 
-    // 18 concurrent repositories (incl. 1 missing + both issues & prs on repo-1): splits into 16 + 2!
+    // 18 concurrent repositories (incl. 1 missing + both `issues` & `prs` on `repo-1`); splits into 16 + 2:
     const requests: Promise<string>[] = [
       describeMetric('/badge/gh/acme/missing/issues', AUTHENTICATED_GH_ENV),
       describeMetric('/badge/gh/acme/repo-1/prs', AUTHENTICATED_GH_ENV),
@@ -838,7 +838,7 @@ describe('new service presets', () => {
     expect(resolvePathRedirect('/badge/gitlab/gitlab-org/charts/gitlab-runner/stars')).toBe(
       'https://gitlab.com/gitlab-org/charts/gitlab-runner/-/starrers'
     );
-    // Every segment is validated individually, and the depth stays bounded.
+    // Every segment is validated individually, and the depth stays bounded:
     expect(await describeMetric('/badge/gitlab/gitlab-org/../gitlab-runner/stars')).toBe(
       'gitlab: invalid name'
     );
@@ -1142,7 +1142,7 @@ describe('streaming JSON key extractor', () => {
     expect(await describeMetric('/badge/pypi/reordered/v')).toBe('PyPI: v3.1.0');
     expect(reordered.stats.isCancelled).toBe(true);
 
-    // Even when a > 3 MB unwanted `releases` object precedes `info`, streaming skips it without hitting the 2 MB value cap.
+    // Even when a > 3 MB unwanted `releases` object precedes `info`, streaming skips it without hitting the 2 MB value cap:
     const hugePreceding = `{"releases":{"blob":"${'x'.repeat(3_200_000)}"},"info":{"version":"4.2.0"},`;
     const hugeStream = createChunkedBody(
       hugePreceding,
@@ -1394,7 +1394,7 @@ describe('upstream caching & redirects', () => {
     expect(stub.store.get(storedKey)?.headers.get('X-Svg-Api-ETag')).toBe('W/"etag-v1"');
     expect(stub.store.get(storedKey)?.headers.get('Cache-Control')).toContain('max-age=604800');
 
-    // Expire logical TTL (even if memory is cold, the edge cache carries the stale projection + ETag).
+    // Expire logical TTL (even if memory is cold, the edge cache carries the stale projection + `ETag`):
     const firstExpiry = REFERENCE_NOW + CACHE_TTL.default * 1000 + 1000;
     resetUpstreamCaches();
     nowSpy.mockReturnValue(firstExpiry);
@@ -1404,7 +1404,7 @@ describe('upstream caching & redirects', () => {
     expect(seenIfNoneMatch).toEqual([undefined, 'W/"etag-v1"']);
     expect(seenAuth[1]).toBe('Bearer github_pat_test_token');
 
-    // Another cold isolate within the refreshed TTL reads the refreshed edge entry with zero upstream fetches.
+    // Another cold isolate within the refreshed TTL reads the refreshed edge entry with zero upstream fetches:
     resetUpstreamCaches();
     nowSpy.mockReturnValue(firstExpiry + 5000);
     expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
@@ -1412,7 +1412,7 @@ describe('upstream caching & redirects', () => {
     );
     expect(seenIfNoneMatch).toHaveLength(2);
 
-    // Next expiry receives 200 OK with updated stars and ETag.
+    // Next expiry receives `200 OK` with updated stars and `ETag`:
     const secondExpiry = firstExpiry + CACHE_TTL.default * 1000 + 1000;
     nowSpy.mockReturnValue(secondExpiry);
     expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
@@ -1473,7 +1473,7 @@ describe('upstream caching & redirects', () => {
       'Commits: 40/8w'
     );
 
-    // Expire both `default` and `slow` TTLs; 429, GraphQL `RATE_LIMITED`, and 202 rescue the stale projections.
+    // Expire both `default` and `slow` TTLs; `429`, GraphQL `RATE_LIMITED`, and `202` rescue the stale projections:
     const afterSlowExpiry = REFERENCE_NOW + CACHE_TTL.slow * 1000 + 1000;
     phase = 'throttled';
     resetUpstreamCaches();
@@ -1491,14 +1491,14 @@ describe('upstream caching & redirects', () => {
       'Commits: 40/8w'
     );
 
-    // Upstream 503 outage also rescues stale data.
+    // Upstream `503` outage also rescues stale data:
     phase = 'outage';
     nowSpy.mockReturnValue(afterSlowExpiry + CACHE_TTL.slow * 1000 + 1000);
     expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
       'Stars: 3.2k'
     );
 
-    // Upstream 404 (deleted or privatized repository) does NOT rescue stale data.
+    // Upstream `404` (deleted or privatized repository) does NOT rescue stale data:
     phase = 'deleted';
     nowSpy.mockReturnValue(afterSlowExpiry + CACHE_TTL.slow * 2000 + 2000);
     expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
@@ -1532,7 +1532,7 @@ describe('upstream caching & redirects', () => {
     );
     expect(fetchSpy).toHaveBeenCalledOnce();
 
-    // 25 minutes later (past the normal 10-minute default TTL, before the 45-minute reset): still fresh!
+    // 25 minutes later (past the normal 10-minute `default` TTL, before the 45-minute reset); still fresh:
     resetUpstreamCaches();
     nowSpy.mockReturnValue(REFERENCE_NOW + 25 * 60 * 1000);
     expect(await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV)).toBe(
@@ -1540,7 +1540,7 @@ describe('upstream caching & redirects', () => {
     );
     expect(fetchSpy).toHaveBeenCalledOnce();
 
-    // Past the 45-minute reset window: revalidates upstream as normal.
+    // Past the 45-minute reset window; revalidates upstream as normal:
     resetUpstreamCaches();
     nowSpy.mockReturnValue(REFERENCE_NOW + 46 * 60 * 1000);
     await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV);
@@ -2768,7 +2768,7 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(missing.status).toBe(404);
     expect(missing.result.value).toBe('not found');
     expect(await describeMetric('/badge/fedora/f42/python3/v')).toBe('Fedora: not found');
-    // Endpoints without `missingStatuses` keep reporting upstream `400` answers as API errors.
+    // Endpoints without `missingStatuses` keep reporting upstream `400` answers as API errors:
     expect(await describeMetric('/badge/macports/git/v')).toBe('MacPorts: api error');
     expect(requestedUrls[0]).toBe('https://mdapi.fedoraproject.org/rawhide/pkg/python3');
     expect(resolvePathRedirect('/badge/fedora/f43/python3/v')).toBe(

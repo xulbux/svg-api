@@ -166,7 +166,7 @@ export const CRATES_SERVICE = defineService({
       'Default version, MSRV, crate size, total and 90-day downloads (dt/dq), and license.',
     title: 'crates.io',
   },
-  // `dl` reported the 90-day downloads before the download keys were normalized.
+  // `dl` reported the 90-day downloads before the download keys were normalized:
   metricAliases: { dl: 'dq', rust: 'msrv' },
   metrics: {
     dq: createDownloadsMetric(

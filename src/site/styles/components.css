@@ -43,7 +43,7 @@ button.btn-secondary {
   cursor: pointer;
 }
 
-/* Disabled link buttons (e.g., the builder's "Open SVG" link without an `href` while required fields are empty) */
+/* Disabled link buttons (e.g., the builder's `Open SVG` link without an `href` while required fields are empty): */
 
 .btn-secondary[aria-disabled='true'] {
   opacity: 0.5;
@@ -51,7 +51,7 @@ button.btn-secondary {
   pointer-events: none;
 }
 
-/* Section Headers & Spacious Subsections */
+/* Section Headers & Spacious Subsections: */
 
 .doc-section {
   margin-block-end: 60px;
@@ -210,7 +210,7 @@ button.btn-secondary {
   -webkit-user-select: none;
 }
 
-/* Responsive Card Grids & Hierarchical Cards */
+/* Responsive Card Grids & Hierarchical Cards: */
 
 .card-grid {
   display: grid;
@@ -230,7 +230,7 @@ button.btn-secondary {
   margin-block-start: 20px;
 }
 
-/* Outer Card: Distinct divider border + soft surface (shared surface card in base.css) */
+/* Outer Card; distinct divider border + soft surface (shared surface card in `base.css`): */
 
 .card {
   display: flex;
@@ -308,7 +308,7 @@ button.btn-secondary {
   color: var(--c-text-2);
 }
 
-/* Inner Preview Stage: Inner border and non-interactable SVG previews */
+/* Inner Preview Stage; inner border and non-interactable SVG previews: */
 
 .preview-stage {
   --stage-bg: var(--c-bg);
@@ -359,7 +359,7 @@ button.btn-secondary {
   block-size: auto;
 }
 
-/* Preview Links: Every documented preview opens its prefilled builder */
+/* Preview Links; every documented preview opens its prefilled builder: */
 
 .preview-link {
   position: relative;
@@ -371,7 +371,7 @@ button.btn-secondary {
   transition: opacity var(--duration-fast) ease;
 }
 
-/* `Edit` chip in the top-right corner, revealed on hover and keyboard focus (the link's `title` names the action) */
+/* `Edit` chip in the top-right corner, revealed on hover and keyboard focus (the link's `title` names the action): */
 
 .preview-link::after {
   content: 'Edit' / '';
@@ -413,7 +413,7 @@ button.btn-secondary {
   opacity: 0.45;
 }
 
-/* Expandable <details> Markdown Code Drawer (Subtle inner hierarchy) */
+/* Expandable `<details>` Markdown Code Drawer (subtle inner hierarchy): */
 
 details.code-drawer {
   margin-block-start: auto;
@@ -588,7 +588,7 @@ details.code-drawer[open] .drawer-chevron {
   display: inline-block;
 }
 
-/* Soft-Edge Inner Fade-Out for Code Blocks (a horizontal mask on the scrolling `<pre>`) */
+/* Soft-Edge Inner Fade-Out for Code Blocks (a horizontal mask on the scrolling `<pre>`): */
 
 .code-pre {
   margin: 0;
@@ -626,7 +626,7 @@ details.code-drawer[open] .drawer-chevron {
   display: none;
 }
 
-/* Markdown Syntax Highlighting Tokens (Isolux Pro Light & Dark) */
+/* Markdown Syntax Highlighting Tokens (Isolux Pro Light & Dark): */
 
 .hl-p {
   color: var(--c-hl-p);
@@ -656,7 +656,7 @@ details.code-drawer[open] .drawer-chevron {
   color: var(--c-hl-href);
 }
 
-/* Responsive Parameter Reference Tables (Outer divider, subtle inner rows) */
+/* Responsive Parameter Reference Tables (outer divider, subtle inner rows): */
 
 .table-wrapper {
   container-type: inline-size;
@@ -748,7 +748,7 @@ details.code-drawer[open] .drawer-chevron {
   pointer-events: none;
 }
 
-/* Compact Alias Grid (e.g., icon slug aliases) */
+/* Compact Alias Grid (e.g., icon slug aliases): */
 
 .alias-list {
   display: grid;
@@ -773,7 +773,7 @@ details.code-drawer[open] .drawer-chevron {
   -webkit-user-select: none;
 }
 
-/* Narrow containers: stack rows into labelled cards (explicit ARIA roles keep table semantics) */
+/* Narrow containers; stack rows into labelled cards (explicit ARIA roles keep table semantics): */
 
 @container (width < 600px) {
   .param-table,
@@ -842,7 +842,7 @@ details.code-drawer[open] .drawer-chevron {
   justify-content: flex-end;
 }
 
-/* Getting Started: Highlighted URL Anatomy */
+/* Getting Started; highlighted URL anatomy: */
 
 .anatomy {
   display: flex;

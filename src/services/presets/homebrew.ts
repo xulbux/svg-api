@@ -137,7 +137,7 @@ export const HOMEBREW_FORMULA_SERVICE = defineService({
     description: `Formula version, license, and ${INSTALLS_DOCS}; Encode + as %2B.`,
     title: 'Homebrew',
   },
-  // `dt` reported the 365-day installs before the download keys were normalized.
+  // `dt` reported the 365-day installs before the download keys were normalized:
   metricAliases: { dt: 'dy' },
   metrics: {
     ...createInstallMetrics(FORMULA_ENDPOINT),
@@ -150,7 +150,7 @@ export const HOMEBREW_FORMULA_SERVICE = defineService({
 /** Homebrew cask service preset (`cask`). */
 export const HOMEBREW_CASK_SERVICE = defineService({
   docs: { description: `Cask version and ${INSTALLS_DOCS}.`, title: 'Homebrew Cask' },
-  // `dt` reported the 365-day installs before the download keys were normalized.
+  // `dt` reported the 365-day installs before the download keys were normalized:
   metricAliases: { dt: 'dy' },
   metrics: {
     ...createInstallMetrics(CASK_ENDPOINT),

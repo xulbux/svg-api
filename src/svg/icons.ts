@@ -365,7 +365,7 @@ function recordCubicXBounds(
   scale: number,
   bounds: IconXBounds
 ): void {
-  // Roots of the derivative `3 * (a * t² + b * t + c)` are the interior extrema candidates.
+  // Roots of the derivative `3 * (a * t² + b * t + c)` are the interior extrema candidates:
   const quadraticCoef = -startX + 3 * control1X - 3 * control2X + endX;
   const linearCoef = 2 * (startX - 2 * control1X + control2X);
   const constantCoef = control1X - startX;
@@ -431,7 +431,7 @@ function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): 
   const halfDeltaX = (arc.startX - arc.endX) / 2;
   const halfDeltaY = (arc.startY - arc.endY) / 2;
   if (radiusX === 0 || radiusY === 0 || (halfDeltaX === 0 && halfDeltaY === 0)) {
-    // Zero radii draw a straight line and coincident endpoints draw nothing.
+    // Zero radii draw a straight line and coincident endpoints draw nothing:
     return;
   }
 
@@ -475,7 +475,7 @@ function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): 
     deltaAngle -= 2 * Math.PI;
   }
 
-  // `x(θ) = cx + rx·cos(φ)·cos(θ) − ry·sin(φ)·sin(θ)` is extremal where its derivative vanishes.
+  // `x(θ) = cx + rx·cos(φ)·cos(θ) − ry·sin(φ)·sin(θ)` is extremal where its derivative vanishes:
   const extremumAngle = Math.atan2(-radiusY * sinRotation, radiusX * cosRotation);
   for (const angle of [extremumAngle, extremumAngle + Math.PI]) {
     if (isAngleOnArc(angle, startAngle, deltaAngle)) {
@@ -552,7 +552,7 @@ function applyPathCommand(
   const originY = isAbsolute ? 0 : pen.currentY;
   const startX = pen.currentX;
   const { lastCubicControlX, lastQuadControlX } = pen;
-  // Smooth curves only reflect the control point of the immediately preceding segment.
+  // Smooth curves only reflect the control point of the immediately preceding segment:
   pen.lastCubicControlX = undefined;
   pen.lastQuadControlX = undefined;
 
@@ -563,7 +563,7 @@ function applyPathCommand(
       if (upper === 'M') {
         pen.subpathStartX = pen.currentX;
         pen.subpathStartY = pen.currentY;
-        // Implicit coordinate pairs after a moveto are linetos.
+        // Implicit coordinate pairs after a moveto are linetos:
         pen.command = isAbsolute ? 'L' : 'l';
       }
       break;
@@ -659,7 +659,7 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
       cursor.index += 1;
     }
     applyPathCommand(cursor, pen, scale, bounds);
-    // Skip unknown commands and malformed tokens so the scan always makes progress.
+    // Skip unknown commands and malformed tokens so the scan always makes progress:
     if (cursor.index === iterationStart) {
       cursor.index += 1;
     }
@@ -823,7 +823,7 @@ function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
   if (!body) {
     return undefined;
   }
-  // The scale/translate wrapper carries no path geometry, so native coordinates are measured with coordScale and coordOffsetX.
+  // The scale/translate wrapper carries no path geometry, so native coordinates are measured with `coordScale` and `coordOffsetX`:
   return {
     ...body,
     ...computeIconXBounds(

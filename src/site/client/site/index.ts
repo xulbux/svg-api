@@ -82,7 +82,7 @@ function initSiteClient(): void {
 
   initThemeAndMotion(siteConfig, rootElement, reducedMotionQuery);
 
-  // Popovers (mobile sidebar drawer, builder menus): Native popovers with a class-toggle fallback.
+  // Popovers (mobile sidebar drawer, builder menus); native popovers with a class-toggle fallback:
   if (!hasPopoverApi) {
     for (const trigger of document.querySelectorAll('[popovertarget]')) {
       trigger.setAttribute('aria-expanded', 'false');

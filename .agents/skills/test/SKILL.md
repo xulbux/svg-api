@@ -32,7 +32,7 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 ## 2. Test Organization
 
 1.  **One File per Module Area:** Group tests by module area using `describe()` blocks.
-2.  **Same Code Style:** Test files follow the code style in `AGENTS.md` Section 6 (module header, descriptive variable names, no single-letter variables except `i`/`j`/`n`).
+2.  **Same Code Style:** Test files follow the code style and comment conventions in `AGENTS.md` Section 6 (module header, descriptive variable names, no single-letter variables except `i`/`j`/`n`, standalone `:` vs. inline `.` comments).
 3.  **Descriptive Names:** `describe()` the function or route, `it()` the specific behavior being verified:
     -   ✅ `'returns 302 redirect when Sec-Fetch-Dest is document'`
     -   ❌ `'test redirect'`

@@ -178,7 +178,7 @@ async function handleServiceRoute(
 ): Promise<Response> {
   const env = context.env ?? DEFAULT_ENV;
 
-  // Document navigations only need the redirect target; Skip the upstream fetch entirely.
+  // Document navigations only need the redirect target; skip the upstream fetch entirely:
   if (isDocumentNavigation(context.req.raw)) {
     const redirectUrl = sanitizeRedirectUrl(resolveServiceRedirectUrl(request));
     if (redirectUrl) {
@@ -267,7 +267,7 @@ function handleBuilderRoute(context: AppContext): Response {
 
 /** Permanently redirect a trailing-slash documentation or builder path (e.g., `/docs/badges/`) to its canonical path. */
 function handleTrailingSlashRoute(context: AppContext): Response {
-  // Every `TRAILING_SLASH_PATHS` pattern ends in exactly one slash.
+  // Every `TRAILING_SLASH_PATHS` pattern ends in exactly one slash:
   const canonicalPath = getRawPathname(context.req.raw).slice(0, -1);
   return context.redirect(`${canonicalPath}${new URL(context.req.url).search}`, 301);
 }
@@ -279,7 +279,7 @@ function handleAssetRoute(context: AppContext): Response | Promise<Response> {
   if (!asset) {
     return context.notFound();
   }
-  // The version is a content hash, so it doubles as a weak entity tag (scoped to this URL).
+  // The version is a content hash, so it doubles as a weak entity tag (scoped to this URL):
   const etag = `W/"${asset.version}"`;
   const isImmutable = context.req.query('v') === asset.version || asset.contentType === 'font/ttf';
   const headers = {
@@ -306,7 +306,7 @@ function handleAppError(error: Error, context: AppContext): Response {
     try {
       return buildSvgResponse(renderInternalErrorBadge(), SERVICE_ERROR_TTL_SECONDS);
     } catch {
-      // Rendering the error badge failed as well; Fall back to the plain-text response below.
+      // Rendering the error badge failed as well; fall back to the plain-text response below.
     }
   }
   return new Response('Internal Server Error', { headers: INTERNAL_ERROR_HEADERS, status: 500 });

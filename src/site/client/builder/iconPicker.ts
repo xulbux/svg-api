@@ -196,7 +196,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
         const catalog: Record<IconPickerSetId, string[]> = { brands: [], lucide: [] };
         for (const set of ['lucide', 'brands'] as const) {
           for (const slug of index.sets[set]) {
-            // Only offer icons that render as shown (e.g., Lucide wins slug collisions outside tech stacks).
+            // Only offer icons that render as shown (e.g., Lucide wins slug collisions outside tech stacks):
             if (resolver.resolve(slug, schema.isBrandFirst) === set) {
               catalog[set].push(slug);
             }
@@ -243,7 +243,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
         }
       },
       () => {
-        // Render again on the next change (the failed page is retried then).
+        // Render again on the next change (the failed page is retried then):
         delete container.dataset.slug;
       }
     );
@@ -286,7 +286,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
         valueElement.classList.toggle('is-placeholder', !slug);
         form.querySelector(`[data-icon-clear="${inputId}"]`)?.toggleAttribute('hidden', !slug);
         const glyph = trigger.querySelector('[data-glyph-for]');
-        // Glyphs need the icon index; They are rendered again once it has loaded.
+        // Glyphs need the icon index; they are rendered again once it has loaded:
         if (glyph instanceof HTMLElement && iconResolver && glyph.dataset.slug !== slug) {
           glyph.dataset.slug = slug;
           renderInputGlyph(glyph, slug);
@@ -471,7 +471,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     pickerSelectedSlug = iconResolver?.locate(currentSlug, schema.isBrandFirst)?.slug ?? '';
     pickerMatches = computePickerMatches(iconIndex, pickerCatalog);
     pickerRendered = 0;
-    // Disconnect before dropping the old tiles, so detached tiles are never kept alive by the observers.
+    // Disconnect before dropping the old tiles, so detached tiles are never kept alive by the observers:
     tileObserver?.disconnect();
     sentinelObserver?.disconnect();
     pickerGrid.replaceChildren();

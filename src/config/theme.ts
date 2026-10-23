@@ -22,16 +22,16 @@ type RgbTuple = [red: number, green: number, blue: number];
 
 /** Tailwind v4 OKLCH shade seeds required to derive a complete badge theme palette. */
 interface TailwindFamilyScale {
+  /** Shade `300` OKLCH coordinates (used for readable neutral accent text). */
+  300: OklchColor;
+  /** Shade `400` OKLCH coordinates (used for chromatic accent text and icons). */
+  400: OklchColor;
+  /** Shade `500` OKLCH coordinates (used for secondary tints, borders, and status dots). */
+  500: OklchColor;
+  /** Shade `600` OKLCH coordinates (used as `--color-kumo-brand` primary base). */
+  600: OklchColor;
   /** Whether the family is a low-chroma neutral gray scale. */
   isNeutral?: boolean;
-  /** Shade `300` OKLCH coordinates (used for readable neutral accent text). */
-  shade300: OklchColor;
-  /** Shade `400` OKLCH coordinates (used for chromatic accent text and icons). */
-  shade400: OklchColor;
-  /** Shade `500` OKLCH coordinates (used for secondary tints, borders, and status dots). */
-  shade500: OklchColor;
-  /** Shade `600` OKLCH coordinates (used as `--color-kumo-brand` primary base). */
-  shade600: OklchColor;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -48,141 +48,141 @@ const MAX_SEARCH_CHROMA = 0.4;
 /** Official Tailwind CSS v4 OKLCH color scales for all 22 families (17 chromatic + 5 neutral), sorted alphabetically. */
 const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> = {
   amber: {
-    shade300: { chroma: 0.169, hue: 91.605, lightness: 87.9 },
-    shade400: { chroma: 0.189, hue: 84.429, lightness: 82.8 },
-    shade500: { chroma: 0.188, hue: 70.08, lightness: 76.9 },
-    shade600: { chroma: 0.179, hue: 58.318, lightness: 66.6 },
+    300: { chroma: 0.169, hue: 91.605, lightness: 87.9 },
+    400: { chroma: 0.189, hue: 84.429, lightness: 82.8 },
+    500: { chroma: 0.188, hue: 70.08, lightness: 76.9 },
+    600: { chroma: 0.179, hue: 58.318, lightness: 66.6 },
   },
   blue: {
-    shade300: { chroma: 0.105, hue: 251.813, lightness: 80.9 },
-    shade400: { chroma: 0.165, hue: 254.624, lightness: 70.7 },
-    shade500: { chroma: 0.214, hue: 259.815, lightness: 62.3 },
-    shade600: { chroma: 0.245, hue: 262.881, lightness: 54.6 },
+    300: { chroma: 0.105, hue: 251.813, lightness: 80.9 },
+    400: { chroma: 0.165, hue: 254.624, lightness: 70.7 },
+    500: { chroma: 0.214, hue: 259.815, lightness: 62.3 },
+    600: { chroma: 0.245, hue: 262.881, lightness: 54.6 },
   },
   cyan: {
-    shade300: { chroma: 0.127, hue: 207.078, lightness: 86.5 },
-    shade400: { chroma: 0.154, hue: 211.53, lightness: 78.9 },
-    shade500: { chroma: 0.143, hue: 215.221, lightness: 71.5 },
-    shade600: { chroma: 0.126, hue: 221.723, lightness: 60.9 },
+    300: { chroma: 0.127, hue: 207.078, lightness: 86.5 },
+    400: { chroma: 0.154, hue: 211.53, lightness: 78.9 },
+    500: { chroma: 0.143, hue: 215.221, lightness: 71.5 },
+    600: { chroma: 0.126, hue: 221.723, lightness: 60.9 },
   },
   emerald: {
-    shade300: { chroma: 0.143, hue: 164.978, lightness: 84.5 },
-    shade400: { chroma: 0.177, hue: 163.223, lightness: 76.5 },
-    shade500: { chroma: 0.17, hue: 162.48, lightness: 69.6 },
-    shade600: { chroma: 0.145, hue: 163.225, lightness: 59.6 },
+    300: { chroma: 0.143, hue: 164.978, lightness: 84.5 },
+    400: { chroma: 0.177, hue: 163.223, lightness: 76.5 },
+    500: { chroma: 0.17, hue: 162.48, lightness: 69.6 },
+    600: { chroma: 0.145, hue: 163.225, lightness: 59.6 },
   },
   fuchsia: {
-    shade300: { chroma: 0.145, hue: 321.434, lightness: 83.3 },
-    shade400: { chroma: 0.238, hue: 322.16, lightness: 74 },
-    shade500: { chroma: 0.295, hue: 322.15, lightness: 66.7 },
-    shade600: { chroma: 0.293, hue: 322.896, lightness: 59.1 },
+    300: { chroma: 0.145, hue: 321.434, lightness: 83.3 },
+    400: { chroma: 0.238, hue: 322.16, lightness: 74 },
+    500: { chroma: 0.295, hue: 322.15, lightness: 66.7 },
+    600: { chroma: 0.293, hue: 322.896, lightness: 59.1 },
   },
   gray: {
+    300: { chroma: 0.01, hue: 258.338, lightness: 87.2 },
+    400: { chroma: 0.022, hue: 261.325, lightness: 70.7 },
+    500: { chroma: 0.027, hue: 264.364, lightness: 55.1 },
+    600: { chroma: 0.03, hue: 256.802, lightness: 44.6 },
     isNeutral: true,
-    shade300: { chroma: 0.01, hue: 258.338, lightness: 87.2 },
-    shade400: { chroma: 0.022, hue: 261.325, lightness: 70.7 },
-    shade500: { chroma: 0.027, hue: 264.364, lightness: 55.1 },
-    shade600: { chroma: 0.03, hue: 256.802, lightness: 44.6 },
   },
   green: {
-    shade300: { chroma: 0.15, hue: 154.449, lightness: 87.1 },
-    shade400: { chroma: 0.209, hue: 151.711, lightness: 79.2 },
-    shade500: { chroma: 0.219, hue: 149.579, lightness: 72.3 },
-    shade600: { chroma: 0.194, hue: 149.214, lightness: 62.7 },
+    300: { chroma: 0.15, hue: 154.449, lightness: 87.1 },
+    400: { chroma: 0.209, hue: 151.711, lightness: 79.2 },
+    500: { chroma: 0.219, hue: 149.579, lightness: 72.3 },
+    600: { chroma: 0.194, hue: 149.214, lightness: 62.7 },
   },
   indigo: {
-    shade300: { chroma: 0.115, hue: 274.713, lightness: 78.5 },
-    shade400: { chroma: 0.182, hue: 276.935, lightness: 67.3 },
-    shade500: { chroma: 0.233, hue: 277.117, lightness: 58.5 },
-    shade600: { chroma: 0.262, hue: 276.966, lightness: 51.1 },
+    300: { chroma: 0.115, hue: 274.713, lightness: 78.5 },
+    400: { chroma: 0.182, hue: 276.935, lightness: 67.3 },
+    500: { chroma: 0.233, hue: 277.117, lightness: 58.5 },
+    600: { chroma: 0.262, hue: 276.966, lightness: 51.1 },
   },
   lime: {
-    shade300: { chroma: 0.196, hue: 126.665, lightness: 89.7 },
-    shade400: { chroma: 0.238, hue: 128.85, lightness: 84.1 },
-    shade500: { chroma: 0.233, hue: 130.85, lightness: 76.8 },
-    shade600: { chroma: 0.2, hue: 131.684, lightness: 64.8 },
+    300: { chroma: 0.196, hue: 126.665, lightness: 89.7 },
+    400: { chroma: 0.238, hue: 128.85, lightness: 84.1 },
+    500: { chroma: 0.233, hue: 130.85, lightness: 76.8 },
+    600: { chroma: 0.2, hue: 131.684, lightness: 64.8 },
   },
   neutral: {
+    300: { chroma: 0, hue: 0, lightness: 87 },
+    400: { chroma: 0, hue: 0, lightness: 70.8 },
+    500: { chroma: 0, hue: 0, lightness: 55.6 },
+    600: { chroma: 0, hue: 0, lightness: 43.9 },
     isNeutral: true,
-    shade300: { chroma: 0, hue: 0, lightness: 87 },
-    shade400: { chroma: 0, hue: 0, lightness: 70.8 },
-    shade500: { chroma: 0, hue: 0, lightness: 55.6 },
-    shade600: { chroma: 0, hue: 0, lightness: 43.9 },
   },
   orange: {
-    shade300: { chroma: 0.128, hue: 66.29, lightness: 83.7 },
-    shade400: { chroma: 0.183, hue: 55.934, lightness: 75 },
-    shade500: { chroma: 0.213, hue: 47.604, lightness: 70.5 },
-    shade600: { chroma: 0.222, hue: 41.116, lightness: 64.6 },
+    300: { chroma: 0.128, hue: 66.29, lightness: 83.7 },
+    400: { chroma: 0.183, hue: 55.934, lightness: 75 },
+    500: { chroma: 0.213, hue: 47.604, lightness: 70.5 },
+    600: { chroma: 0.222, hue: 41.116, lightness: 64.6 },
   },
   pink: {
-    shade300: { chroma: 0.12, hue: 346.018, lightness: 82.3 },
-    shade400: { chroma: 0.202, hue: 349.761, lightness: 71.8 },
-    shade500: { chroma: 0.241, hue: 354.308, lightness: 65.6 },
-    shade600: { chroma: 0.249, hue: 0.584, lightness: 59.2 },
+    300: { chroma: 0.12, hue: 346.018, lightness: 82.3 },
+    400: { chroma: 0.202, hue: 349.761, lightness: 71.8 },
+    500: { chroma: 0.241, hue: 354.308, lightness: 65.6 },
+    600: { chroma: 0.249, hue: 0.584, lightness: 59.2 },
   },
   purple: {
-    shade300: { chroma: 0.119, hue: 306.383, lightness: 82.7 },
-    shade400: { chroma: 0.203, hue: 305.504, lightness: 71.4 },
-    shade500: { chroma: 0.265, hue: 303.9, lightness: 62.7 },
-    shade600: { chroma: 0.288, hue: 302.321, lightness: 55.8 },
+    300: { chroma: 0.119, hue: 306.383, lightness: 82.7 },
+    400: { chroma: 0.203, hue: 305.504, lightness: 71.4 },
+    500: { chroma: 0.265, hue: 303.9, lightness: 62.7 },
+    600: { chroma: 0.288, hue: 302.321, lightness: 55.8 },
   },
   red: {
-    shade300: { chroma: 0.114, hue: 19.571, lightness: 80.8 },
-    shade400: { chroma: 0.191, hue: 22.216, lightness: 70.4 },
-    shade500: { chroma: 0.237, hue: 25.331, lightness: 63.7 },
-    shade600: { chroma: 0.245, hue: 27.325, lightness: 57.7 },
+    300: { chroma: 0.114, hue: 19.571, lightness: 80.8 },
+    400: { chroma: 0.191, hue: 22.216, lightness: 70.4 },
+    500: { chroma: 0.237, hue: 25.331, lightness: 63.7 },
+    600: { chroma: 0.245, hue: 27.325, lightness: 57.7 },
   },
   rose: {
-    shade300: { chroma: 0.117, hue: 11.638, lightness: 81 },
-    shade400: { chroma: 0.194, hue: 13.428, lightness: 71.2 },
-    shade500: { chroma: 0.246, hue: 16.439, lightness: 64.5 },
-    shade600: { chroma: 0.253, hue: 17.585, lightness: 58.6 },
+    300: { chroma: 0.117, hue: 11.638, lightness: 81 },
+    400: { chroma: 0.194, hue: 13.428, lightness: 71.2 },
+    500: { chroma: 0.246, hue: 16.439, lightness: 64.5 },
+    600: { chroma: 0.253, hue: 17.585, lightness: 58.6 },
   },
   sky: {
-    shade300: { chroma: 0.111, hue: 230.318, lightness: 82.8 },
-    shade400: { chroma: 0.16, hue: 232.661, lightness: 74.6 },
-    shade500: { chroma: 0.169, hue: 237.323, lightness: 68.5 },
-    shade600: { chroma: 0.158, hue: 241.966, lightness: 58.8 },
+    300: { chroma: 0.111, hue: 230.318, lightness: 82.8 },
+    400: { chroma: 0.16, hue: 232.661, lightness: 74.6 },
+    500: { chroma: 0.169, hue: 237.323, lightness: 68.5 },
+    600: { chroma: 0.158, hue: 241.966, lightness: 58.8 },
   },
   slate: {
+    300: { chroma: 0.022, hue: 252.894, lightness: 86.9 },
+    400: { chroma: 0.04, hue: 256.788, lightness: 70.4 },
+    500: { chroma: 0.046, hue: 257.417, lightness: 55.4 },
+    600: { chroma: 0.043, hue: 257.281, lightness: 44.6 },
     isNeutral: true,
-    shade300: { chroma: 0.022, hue: 252.894, lightness: 86.9 },
-    shade400: { chroma: 0.04, hue: 256.788, lightness: 70.4 },
-    shade500: { chroma: 0.046, hue: 257.417, lightness: 55.4 },
-    shade600: { chroma: 0.043, hue: 257.281, lightness: 44.6 },
   },
   stone: {
+    300: { chroma: 0.005, hue: 56.366, lightness: 86.9 },
+    400: { chroma: 0.01, hue: 56.259, lightness: 70.9 },
+    500: { chroma: 0.013, hue: 58.071, lightness: 55.3 },
+    600: { chroma: 0.011, hue: 73.639, lightness: 44.4 },
     isNeutral: true,
-    shade300: { chroma: 0.005, hue: 56.366, lightness: 86.9 },
-    shade400: { chroma: 0.01, hue: 56.259, lightness: 70.9 },
-    shade500: { chroma: 0.013, hue: 58.071, lightness: 55.3 },
-    shade600: { chroma: 0.011, hue: 73.639, lightness: 44.4 },
   },
   teal: {
-    shade300: { chroma: 0.138, hue: 181.071, lightness: 85.5 },
-    shade400: { chroma: 0.152, hue: 181.912, lightness: 77.7 },
-    shade500: { chroma: 0.14, hue: 182.503, lightness: 70.4 },
-    shade600: { chroma: 0.118, hue: 184.704, lightness: 60 },
+    300: { chroma: 0.138, hue: 181.071, lightness: 85.5 },
+    400: { chroma: 0.152, hue: 181.912, lightness: 77.7 },
+    500: { chroma: 0.14, hue: 182.503, lightness: 70.4 },
+    600: { chroma: 0.118, hue: 184.704, lightness: 60 },
   },
   violet: {
-    shade300: { chroma: 0.111, hue: 293.571, lightness: 81.1 },
-    shade400: { chroma: 0.183, hue: 293.541, lightness: 70.2 },
-    shade500: { chroma: 0.25, hue: 292.717, lightness: 60.6 },
-    shade600: { chroma: 0.281, hue: 293.009, lightness: 54.1 },
+    300: { chroma: 0.111, hue: 293.571, lightness: 81.1 },
+    400: { chroma: 0.183, hue: 293.541, lightness: 70.2 },
+    500: { chroma: 0.25, hue: 292.717, lightness: 60.6 },
+    600: { chroma: 0.281, hue: 293.009, lightness: 54.1 },
   },
   yellow: {
-    shade300: { chroma: 0.182, hue: 98.111, lightness: 90.5 },
-    shade400: { chroma: 0.199, hue: 91.936, lightness: 85.2 },
-    shade500: { chroma: 0.184, hue: 86.047, lightness: 79.5 },
-    shade600: { chroma: 0.162, hue: 75.834, lightness: 68.1 },
+    300: { chroma: 0.182, hue: 98.111, lightness: 90.5 },
+    400: { chroma: 0.199, hue: 91.936, lightness: 85.2 },
+    500: { chroma: 0.184, hue: 86.047, lightness: 79.5 },
+    600: { chroma: 0.162, hue: 75.834, lightness: 68.1 },
   },
   zinc: {
+    300: { chroma: 0.006, hue: 286.286, lightness: 87.1 },
+    400: { chroma: 0.015, hue: 286.067, lightness: 70.5 },
+    500: { chroma: 0.016, hue: 285.938, lightness: 55.2 },
+    600: { chroma: 0.017, hue: 285.786, lightness: 44.2 },
     isNeutral: true,
-    shade300: { chroma: 0.006, hue: 286.286, lightness: 87.1 },
-    shade400: { chroma: 0.015, hue: 286.067, lightness: 70.5 },
-    shade500: { chroma: 0.016, hue: 285.938, lightness: 55.2 },
-    shade600: { chroma: 0.017, hue: 285.786, lightness: 44.2 },
   },
 };
 
@@ -343,19 +343,18 @@ function getOrBuildPalette(colorName: ThemeColorName): ThemePalette {
   }
 
   const scale = TAILWIND_V4_SCALES[colorName];
-  const isNeutral = Boolean(scale.isNeutral);
-  const brand = scale.shade600;
-  const tintChannels = oklchToSrgbChannels(isNeutral ? scale.shade400 : scale.shade500);
+  const { 600: brand, isNeutral = false } = scale;
+  const tintChannels = oklchToSrgbChannels(isNeutral ? scale[400] : scale[500]);
 
   const palette: ThemePalette = {
-    accentText: oklchToHex(isNeutral ? scale.shade300 : scale.shade400),
+    accentText: oklchToHex(isNeutral ? scale[300] : scale[400]),
     borderColor: formatRgba(tintChannels, isNeutral ? 0.35 : 0.45),
     emphasisBg: oklchToHex(mixOklchWithWhite(brand, 0.3)),
     emphasisRing: oklchToHex(mixOklchWithBlack(brand, 0.1)),
-    glowColor: oklchToHex(scale.shade500),
+    glowColor: oklchToHex(scale[500]),
     gradEnd: oklchToHex(brand),
     gradStart: oklchToHex(mixOklchWithWhite(brand, 0.15)),
-    iconColor: oklchToHex(scale.shade400),
+    iconColor: oklchToHex(scale[400]),
     tintBg: formatRgba(tintChannels, isNeutral ? 0.14 : 0.16),
   };
 
@@ -376,7 +375,7 @@ function createLazyPaletteMap<T>(
       },
     });
   }
-  // Every `ThemeColorName` key was defined as a getter above, so the record is complete.
+  // Every `ThemeColorName` key was defined as a getter above, so the record is complete:
   return target as Record<ThemeColorName, T>;
 }
 

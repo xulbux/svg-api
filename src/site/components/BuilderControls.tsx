@@ -809,7 +809,7 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
   const { field, schema } = props;
   const controlId = buildFieldId(field);
   const isSingleControl = SINGLE_CONTROL_TYPES.has(field.control);
-  // Fields with a runtime requirement (service owners) get a hidden mark the builder script toggles.
+  // Fields with a runtime requirement (service owners) get a hidden mark the builder script toggles:
   const requiredMark =
     field.isRequired || field.hasDynamicRequirement ? (
       <span class="builder-required" aria-hidden="true" hidden={!field.isRequired}>
@@ -842,7 +842,7 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
     ) : (
       labelElement
     );
-  // Dropdowns and the color radiogroup label themselves; Other composite controls are labeled groups.
+  // Dropdowns and the color radiogroup label themselves; other composite controls are labeled groups:
   const isGroup = !isSingleControl && !SELF_LABELED_CONTROL_TYPES.has(field.control);
 
   return (

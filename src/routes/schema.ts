@@ -313,16 +313,19 @@ function collectRedirectProbes(
       owners.push(defaultOwner ?? '');
     }
   }
+
   const targets = [REDIRECT_VERIFY_TARGET];
   if ((service.route.target.maxSegments ?? 1) > 1) {
     targets.push(REDIRECT_VERIFY_PATH_TARGET);
   }
+
   const probes: RedirectProbe[] = [];
   for (const owner of owners) {
     for (const target of targets) {
       probes.push({ owner, target });
     }
   }
+
   return probes;
 }
 
@@ -341,6 +344,7 @@ function deriveRedirectTemplate(
   const template = buildPageUrl({ owner: derivationOwner, target: REDIRECT_TEMPLATE_PROBE.target })
     .replaceAll(REDIRECT_TEMPLATE_PROBE.owner, REDIRECT_OWNER_PLACEHOLDER)
     .replaceAll(REDIRECT_TEMPLATE_PROBE.target, REDIRECT_TARGET_PLACEHOLDER);
+
   if (!template.includes(REDIRECT_TARGET_PLACEHOLDER)) {
     return undefined;
   }
@@ -349,6 +353,7 @@ function deriveRedirectTemplate(
       return undefined;
     }
   }
+
   return template;
 }
 
@@ -368,6 +373,7 @@ function buildServiceOptions(): BuilderServiceOption[] {
         value: metric,
       });
     }
+
     services.push({
       defaultOwner,
       key,
@@ -381,6 +387,7 @@ function buildServiceOptions(): BuilderServiceOption[] {
       title: service.docs.title,
     });
   }
+
   return services;
 }
 

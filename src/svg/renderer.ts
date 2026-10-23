@@ -786,7 +786,7 @@ function buildSparklinePoints(
 
   for (const [i, value] of values.entries()) {
     const pointX = startX + (i / (values.length - 1)) * width;
-    // Flat series (all values equal) are drawn through the vertical center instead of the bottom edge.
+    // Flat series (all values equal) are drawn through the vertical center instead of the bottom edge:
     const normalized = range > 0 ? (value - minValue) / range : 0.5;
     const pointY = strokeTopY + strokeHeight - normalized * strokeHeight;
     linePoints += `${i > 0 ? ' ' : ''}${pointX.toFixed(1)},${pointY.toFixed(1)}`;
@@ -1235,7 +1235,7 @@ function renderRingWidgetMarkup(
   const circleGeometry = `cx="${ringCx}" cy="${ringCy}" r="${radius}"`;
   const trackCircle = `<circle ${circleGeometry} ${paint.trackAttrs} stroke-width="${strokeWidth}" />`;
   if (arcLength <= 0) {
-    // A zero-length dash with a round line cap would still draw a dot.
+    // A zero-length dash with a round line cap would still draw a dot:
     return trackCircle;
   }
   const pulseAnim = hasPulse
@@ -1450,7 +1450,7 @@ function packCompartment(
   if (firstItemWidth > 0 && activeCount > 1) {
     rawWidth += extraFirstGap;
   }
-  // Empty compartments collapse to zero width; Their offsets all stay at the left padding.
+  // Empty compartments collapse to zero width; their offsets all stay at the left padding:
   const paddedWidth = leftPad + rawWidth + rightPad;
   const width = activeCount === 0 ? 0 : Math.round(paddedWidth);
   let cursor = activeCount === 0 ? leftPad : leftPad + (width - paddedWidth) / 2;
@@ -1529,7 +1529,7 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
     padX,
     1
   );
-  // `packCompartment` returns one offset per item, so the defaults never apply.
+  // `packCompartment` returns one offset per item, so the defaults never apply:
   const [dotX = 0, leftIconX = 0, labelX = 0, trailingIconX = 0] = leftPack.offsets;
   const [specialOffsetX = 0, valueOffsetX = 0, rightIconOffsetX = 0] = rightPack.offsets;
 
@@ -1689,7 +1689,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
     valueWidth: measureTextWidth(valueText, fontSize, true),
   });
 
-  // A dot-only badge with no text or right compartment also uses the dark carbon surface so status dots never sit on a primary gradient.
+  // A dot-only badge with no text or right compartment also uses the dark carbon surface so status dots never sit on a primary gradient:
   const surfaceVariant: BadgeVariant = hasDot && !layout.isSplit && variant === '1' ? '3' : variant;
   const isOnPrimary = surfaceVariant === '1';
   const specialElement = renderSpecialElement(special, {
@@ -1783,7 +1783,7 @@ export function renderButton(options: ButtonRenderOptions): string {
     metrics,
     palette,
     specialMarkup: '',
-    // The value of a split primary button is secondary text next to the fully white label.
+    // The value of a split primary button is secondary text next to the fully white label:
     valueColor:
       isPrimary && layout.isSplit
         ? resolveForegroundColor(true, palette.accentText)
@@ -1835,19 +1835,19 @@ export function renderIcon(options: IconRenderOptions): string {
   const iconData = lookup.data ?? resolvePlaceholderIcon();
   const iconColor = lookup.data ? THEMES[options.color].iconColor : THEMES.red.iconColor;
   const slot: IconSlot = { data: iconData, key: lookup.key, slug };
-  // Per-icon pairs (e.g., `nudge,shake`) apply their first motion to the single standalone icon.
+  // Per-icon pairs (e.g., `nudge,shake`) apply their first motion to the single standalone icon:
   const { leftMotion } = resolveIconAnimationPair(animMode, { left: slot, right: EMPTY_ICON_SLOT });
 
   let sheenDef = '';
   let body = iconData.innerSvg;
   if (isSheenMode(animMode)) {
-    // The sheen and body IDs depend only on content, never on the (untrusted) slug.
+    // The sheen and body IDs depend only on content, never on the (untrusted) slug:
     const sheenId = buildIconSheenId(iconData.coordScale);
     const bodyId = buildIconBodyId(iconData, ICON_BODY_ID_PREFIX);
     const sheenPaint =
       iconData.type === 'lucide' ? `stroke="url(#${sheenId})"` : `fill="url(#${sheenId})"`;
     sheenDef = renderIconSheenGradientDef(iconData.coordScale);
-    // Reference the body instead of inlining it twice (bodies may carry their own `id` attributes).
+    // Reference the body instead of inlining it twice (bodies may carry their own `id` attributes):
     body = `<g id="${bodyId}">${iconData.innerSvg}</g><use href="#${bodyId}" ${sheenPaint} />`;
   }
 

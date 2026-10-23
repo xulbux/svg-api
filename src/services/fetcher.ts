@@ -944,6 +944,7 @@ async function fetchUpstreamBody(
       ? { ...target.headers, 'If-None-Match': ifNoneMatch }
       : target.headers;
   const signal = AbortSignal.timeout(UPSTREAM_TIMEOUT);
+
   let response: Response | undefined = undefined;
   try {
     response = target.send
@@ -958,6 +959,7 @@ async function fetchUpstreamBody(
     const isTimeout = error instanceof Error && error.name === 'TimeoutError';
     return { status: isTimeout ? 504 : 502 };
   }
+
   if (response.status === NOT_MODIFIED_STATUS) {
     cancelBody(response.body);
     return {
@@ -977,13 +979,15 @@ async function fetchUpstreamBody(
     cancelBody(response.body);
     return { status: 202 };
   }
-  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early, so only the streaming byte counter may reject them.
+
+  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early, so only the streaming byte counter may reject them:
   const { extractKeys } = target;
   const contentLength = Number(response.headers.get('content-length') ?? '0');
   if (extractKeys === undefined && contentLength > MAX_UPSTREAM_BYTES) {
     cancelBody(response.body);
     return { status: TOO_LARGE_STATUS };
   }
+
   const now = Date.now();
   const adaptiveTtl = readAdaptiveTtlSeconds(response, now);
   const etag = readBoundedEtag(response, 'etag');
@@ -1068,7 +1072,7 @@ function buildFetchedOutcome(
   if (projected === undefined) {
     return [buildFailureOutcome(404), undefined];
   }
-  // Keep the verbatim body of unprojected payloads; Serialize projections (always small).
+  // Keep the verbatim body of unprojected payloads; serialize projections (always small):
   const edgeBody =
     endpoint.project || fetched.text === undefined ? JSON.stringify(projected) : fetched.text;
   const effectiveTtl = Math.max(endpoint.ttl, fetched.adaptiveTtl ?? 0);
@@ -1268,7 +1272,7 @@ async function loadUpstreamJson(
   }
 
   const load = loadThroughEdgeCache(endpoint, target, staleMemory, executionCtx)
-    // A rejected load must never reject every coalesced request.
+    // A rejected load must never reject every coalesced request:
     .catch((): UpstreamOutcome => buildFailureOutcome(502))
     .then((outcome) => {
       writeLruCache(MEMORY_CACHE, cacheKeyUrl, outcome);

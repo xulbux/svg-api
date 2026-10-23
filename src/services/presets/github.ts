@@ -518,7 +518,7 @@ export const GITHUB_SERVICE = defineService({
       (repo) => buildRatioSpecials(repo.forks_count, repo.stargazers_count)
     ),
     issues: createCountMetric(ISSUES_ENDPOINT, ISSUES, (counts) => counts.issues ?? counts.total),
-    // The repository root renders any license file (`LICENSE.md`, `COPYING`, …).
+    // The repository root renders any license file (`LICENSE.md`, `COPYING`, …):
     license: createMetric(REPO_ENDPOINT, LICENSE, transformGitHubLicense),
     prs: createCountMetric(PRS_ENDPOINT, PULL_REQUESTS, (counts) => counts.prs ?? counts.total),
     release: createReleaseMetric(RELEASE_ENDPOINT, (release) => release.tag_name),

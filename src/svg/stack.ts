@@ -283,7 +283,7 @@ function buildMeasuredBands(
     for (const rawGroup of rawBand) {
       const tiles: StackTile[] = [];
       for (const slug of rawGroup.icons) {
-        // Check the cap first so over-long icon lists are never normalized or resolved.
+        // Check the cap first so over-long icon lists are never normalized or resolved:
         if (allTitles.length >= MAX_STACK_ICONS) {
           break;
         }
@@ -380,7 +380,7 @@ function renderSingleStackTile(
 ): string {
   const { iconScale, iconSize, radius, tileSize, variant } = context;
   const icon = resolveStackTileIcon(tile, context);
-  // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile.
+  // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile:
   const visualCenterX = ((icon.data.minX + icon.data.maxX) / 2) * iconScale;
   const iconX = roundCoord(tileX + tileSize / 2 - visualCenterX);
   const iconY = roundCoord(tileY + (tileSize - iconSize) / 2);
