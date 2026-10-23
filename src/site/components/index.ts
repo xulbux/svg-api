@@ -2,32 +2,30 @@
  * Website UI components barrel – Re-exports layout shell, navigation chrome, showcase cards, parameter tables, builder controls, and UI icons from `src/site/components/`.
  */
 
-export { BuilderFieldView } from './BuilderControls';
-export { BuilderOutputPanel } from './BuilderOutputPanel';
-export { DocsPager } from './DocsPager';
-export type { DocsPagerProps } from './DocsPager';
-export { Footer, renderFooter } from './Footer';
-export { HeaderNav, renderHeaderNav } from './HeaderNav';
-export { IconPickerPopover, renderIconPickerHtml } from './IconPickerPopover';
-export { getHeadScriptBody, PageLayout, renderFaviconSvg } from './PageLayout';
-export { AliasList, ParamTable, renderAliasList, renderParamTable } from './ParamTable';
-export { RoutePills, SectionHeader, SectionSubhead } from './SectionHeader';
-export type { RoutePillsProps, SectionHeaderProps, SectionSubheadProps } from './SectionHeader';
-export { CardGrid, ShowcaseCard } from './ShowcaseCard';
-export { Sidebar } from './Sidebar';
+// -------------------------------------- PUBLIC API -------------------------------------
+
+export { BuilderFieldView } from '@/site/components/BuilderControls';
+export { BuilderOutputPanel } from '@/site/components/BuilderOutputPanel';
+export { DocsPager } from '@/site/components/DocsPager';
+export { Footer } from '@/site/components/Footer';
+export { HeaderNav } from '@/site/components/HeaderNav';
+export { IconPickerPopover } from '@/site/components/IconPickerPopover';
+export { getHeadScriptBody, PageLayout, renderFaviconSvg } from '@/site/components/PageLayout';
+export { AliasList, ParamTable, renderParamTable } from '@/site/components/ParamTable';
+export { RoutePills, SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
+export { CardGrid, ShowcaseCard, splitTrailingParenthetical } from '@/site/components/ShowcaseCard';
+export { Sidebar } from '@/site/components/Sidebar';
 export {
   AnchorLink,
   BRAND_FILL_ATTRS,
   CopyButton,
+  formatInlineMarkupHtml,
   InlineMarkup,
   LUCIDE_STROKE_ATTRS,
-  UiIcon,
-  UiSprite,
-  formatInlineMarkupHtml,
-  renderUiIcon,
-  renderUiSprite,
   serializeInlineJson,
   slugifyText,
   stripInlineMarkup,
-} from './UiIcon';
-export { UrlAnatomy } from './UrlAnatomy';
+  UiIcon,
+  UiSprite,
+} from '@/site/components/UiIcon';
+export { UrlAnatomy } from '@/site/components/UrlAnatomy';

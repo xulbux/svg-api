@@ -7,7 +7,12 @@ import type { HighlightToken, SnippetSet, SnippetTokenSet } from '@/types';
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Entity replacements of characters escaped inside double-quoted HTML attribute values. */
-const HTML_ENTITIES: Readonly<Record<string, string>> = { '"': '&quot;', '<': '&lt;', '>': '&gt;' };
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  '"': '&quot;',
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -17,12 +22,12 @@ const MARKDOWN_ALT_RX = /[[\]\\]/g;
 /** Matches characters percent-encoded inside Markdown link destinations. */
 const MARKDOWN_DESTINATION_RX = /[ ()<>]/g;
 
-/** Matches characters escaped inside double-quoted HTML attribute values. */
-const HTML_ATTR_RX = /["<>]/g;
+/** Matches `"`, `<`, `>`, and `&` starting an HTML character reference inside double-quoted attributes. */
+const HTML_ATTR_RX = /&(?=(?:#\d+|#x[\da-fA-F]+|[a-zA-Z][\da-zA-Z]*);)|["<>]/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Escape a value for a double-quoted HTML attribute (`&quot;`, `&lt;`, `&gt;`). */
+/** Escape a value for a double-quoted HTML attribute (`&quot;`, `&lt;`, `&gt;`, and ambiguous `&amp;`). */
 function escapeHtmlAttribute(value: string): string {
   return value.replace(HTML_ATTR_RX, (char) => HTML_ENTITIES[char] ?? char);
 }

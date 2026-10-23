@@ -208,6 +208,15 @@ function initBuilderDom(): void {
               site?.placePopover(popover, trigger, { align, gap: 6 });
             }
           });
+          popover.addEventListener('focusout', (event) => {
+            if (
+              event.relatedTarget instanceof Node &&
+              !popover.contains(event.relatedTarget) &&
+              !trigger.contains(event.relatedTarget)
+            ) {
+              site?.closePopover(popover);
+            }
+          });
         }
       }
     }
@@ -265,6 +274,9 @@ function initBuilderDom(): void {
 
     previewImage?.addEventListener('load', () => {
       previewImage.classList.remove('is-loading');
+      if (!outputController.getCurrentPreviewPath()) {
+        return;
+      }
       if (buildPath(schema, state).missing.length === 0) {
         const notice = outputController.getCrossBuilderNotice();
         outputController.setStatus(notice, Boolean(notice));
@@ -272,6 +284,9 @@ function initBuilderDom(): void {
     });
     previewImage?.addEventListener('error', () => {
       previewImage.classList.remove('is-loading');
+      if (!outputController.getCurrentPreviewPath()) {
+        return;
+      }
       outputController.setStatus('The preview could not be loaded; Check the route values.', true);
     });
     reducedMotionQuery.addEventListener('change', () =>
@@ -316,6 +331,9 @@ function initBuilderDom(): void {
       }
       if (linkInput) {
         linkInput.value = '';
+      }
+      if (stackGroupToggle && !stackGroupToggle.checked) {
+        stackGroupToggle.checked = true;
       }
       if (stackCategorySearch && stackCategorySearch.value) {
         stackCategorySearch.value = '';

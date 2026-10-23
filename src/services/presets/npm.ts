@@ -14,6 +14,7 @@ import {
   SERIES_DELTA_SPECIALS,
   bucketSeries,
   buildSeriesSpecials,
+  compareTrailingWindows,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
@@ -147,25 +148,17 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
   }
   const totalDays = daily.length;
   const recent30d = daily.slice(-30);
-  const halfRecent = Math.floor(recent30d.length / 2);
-  let currDl: number | undefined = undefined;
-  let prevDl: number | undefined = undefined;
-  if (totalDays >= 60) {
-    currDl = sumSeries(daily, totalDays - 30);
-    prevDl = sumSeries(daily, totalDays - 60, totalDays - 30);
-  } else if (halfRecent >= 2) {
-    currDl = sumSeries(recent30d, halfRecent);
-    prevDl = sumSeries(recent30d, 0, halfRecent);
-  }
+  const [currDl, prevDl] = compareTrailingWindows(daily, 30, 2);
+  const [dw, prevDw] = compareTrailingWindows(daily, 7, 7);
   return {
     bars12m: bucketSeries(daily, 12),
     bars30d: bucketSeries(recent30d, 10),
     currDl,
     dl: sumSeries(daily, totalDays - 30),
-    dw: sumSeries(daily, totalDays - 7),
+    dw: dw ?? sumSeries(daily, totalDays - 7),
     dy: sumSeries(daily),
     prevDl,
-    prevDw: totalDays >= 14 ? sumSeries(daily, totalDays - 14, totalDays - 7) : undefined,
+    prevDw,
     series7d: daily.slice(-7),
     series30d: bucketSeries(recent30d, 15),
   };

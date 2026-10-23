@@ -24,8 +24,8 @@ export function BadgesSection(): HtmlFragment {
   return (
     <section class="doc-section" id="badges">
       <SectionHeader
-        description={`Two-segment and single-segment ${BADGE_HEIGHT}px badges with pulsing radar dots, inline charts, and ${VARIANT_TOKENS.length} visual hierarchy tiers.`}
-        routes={['/badge/:label/:value', '/badge/:label']}
+        description={`Two-segment, single-segment, value-only, and icon-only ${BADGE_HEIGHT}px badges with pulsing radar dots, inline charts, and ${VARIANT_TOKENS.length} visual hierarchy tiers.`}
+        routes={['/badge/:label/:value', '/badge/:label', '/badge//:value', '/badge']}
         title="Status & Metadata Badges"
       />
       <ParamTable rows={buildBadgeParamRows()} label="Badge route segments and query parameters" />

@@ -2,7 +2,13 @@
  * Service metric helpers – Compact number, byte size, date, version, and license formatting plus typed metric factories, the shared download period and community count tables, and badge presentations for service presets.
  */
 
-import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  OWNER_REPO_ROUTE,
+  createEndpoint,
+  createMetric,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import { MAX_BARS_POINTS, MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
 import type {
@@ -15,6 +21,7 @@ import type {
   MetricResult,
   RawCount,
   ScoreColorThreshold,
+  SeriesSpecialsOptions,
   ServiceDefinition,
   ServiceMetricConfig,
   ServiceRouteParams,
@@ -23,18 +30,6 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Options for building time-series and delta inline widgets (`buildSeriesSpecials`). */
-export interface SeriesSpecialsOptions {
-  /** Numeric bar heights for `bars` (defaults to `sparklineValues` when omitted). */
-  barsValues?: readonly number[];
-  /** Current period value for `delta` percentage comparison. */
-  current?: RawCount;
-  /** Previous period value for `delta` percentage comparison. */
-  previous?: RawCount;
-  /** Numeric series points for `sparkline` (defaults to `barsValues` when omitted). */
-  sparklineValues?: readonly number[];
-}
 
 /** Badge color and value suffix of a download period. */
 interface DownloadPeriodSpec {
@@ -619,18 +614,19 @@ export function formatLicense(rawLicense: string | null | undefined): string {
 }
 
 /**
- * Read a license name from an SPDX string, a string array, or a `{ type }` / `{ id }` license object.
+ * Read a license name from an SPDX string, an array of strings or license objects, or a `{ type }` / `{ id }` / `{ name }` object.
  * @param rawLicense   Upstream `license` or `licenses` field.
  * @returns License name, or `undefined` when missing.
  */
 export function readLicenseName(rawLicense: unknown): string | undefined {
   if (typeof rawLicense === 'string') {
-    return rawLicense;
+    return readText(rawLicense);
   }
   if (Array.isArray(rawLicense)) {
     for (const item of rawLicense) {
-      if (typeof item === 'string' && item.trim() !== '') {
-        return item;
+      const parsed = readLicenseName(item);
+      if (parsed !== undefined) {
+        return parsed;
       }
     }
     return undefined;
@@ -638,10 +634,7 @@ export function readLicenseName(rawLicense: unknown): string | undefined {
   if (!isJsonObject(rawLicense)) {
     return undefined;
   }
-  if (typeof rawLicense.type === 'string') {
-    return rawLicense.type;
-  }
-  return typeof rawLicense.id === 'string' ? rawLicense.id : undefined;
+  return readText(rawLicense.type) ?? readText(rawLicense.id) ?? readText(rawLicense.name);
 }
 
 /**
@@ -682,6 +675,28 @@ export function sumSeries(
     }
   }
   return total;
+}
+
+/**
+ * Sum two adjacent, equal-width trailing windows (`[end - 2 * width, end - width)` vs `[end - width, end)`).
+ * When `values.length < maxWindow * 2`, `width` falls back to `Math.floor(values.length / 2)` so odd-length
+ * series drop the oldest unpaired element instead of comparing unequal window widths.
+ * @param values      Chronological numeric series.
+ * @param maxWindow   Maximum window width in elements (defaults to `Math.floor(values.length / 2)`).
+ * @param minWindow   Minimum required window width in elements (defaults to `1`).
+ * @returns `[currentSum, previousSum]`, or `[undefined, undefined]` when fewer than `minWindow` elements per window exist.
+ */
+export function compareTrailingWindows(
+  values: readonly number[],
+  maxWindow: number = Math.floor(values.length / 2),
+  minWindow = 1
+): readonly [current: number | undefined, previous: number | undefined] {
+  const width = Math.min(maxWindow, Math.floor(values.length / 2));
+  if (width < minWindow) {
+    return [undefined, undefined];
+  }
+  const end = values.length;
+  return [sumSeries(values, end - width, end), sumSeries(values, end - width * 2, end - width)];
 }
 
 /**
@@ -1008,15 +1023,15 @@ export function createReleaseMetric<P>(
 /**
  * Create a license metric (`license`).
  * @param endpoint      Upstream endpoint.
- * @param readLicense   Reads the raw license string from the projected payload.
+ * @param readLicense   Reads the raw license string, array, or object from the projected payload.
  * @returns Metric rendering (e.g., `'MIT'`), or `'unknown'` when the license is missing.
  */
 export function createLicenseMetric<P>(
   endpoint: MetricEndpoint<P>,
-  readLicense: (payload: P) => string | null | undefined
+  readLicense: (payload: P) => unknown
 ): ServiceMetricConfig {
   return createMetric(endpoint, LICENSE, (payload) => ({
-    value: formatLicense(readLicense(payload)),
+    value: formatLicense(readLicenseName(readLicense(payload))),
   }));
 }
 
@@ -1305,6 +1320,6 @@ export function createCoverageService<P extends object>(
   return defineService({
     docs: { description: options.description, title: options.title },
     metrics: { coverage: coverageMetric },
-    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+    route: OWNER_REPO_ROUTE,
   });
 }

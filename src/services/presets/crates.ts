@@ -10,6 +10,7 @@ import {
   SERIES_DELTA_SPECIALS,
   bucketSeries,
   buildSeriesSpecials,
+  compareTrailingWindows,
   createBytesMetric,
   createDownloadsMetric,
   createLicenseMetric,
@@ -84,16 +85,7 @@ function projectCratesDownloads(data: unknown): CratesDownloadsProjection | unde
     daily.push(byDate.get(dateKey) ?? 0);
   }
   const totalDays = daily.length;
-  const mid = Math.floor(totalDays / 2);
-  let currWindow: number | undefined = undefined;
-  let prevWindow: number | undefined = undefined;
-  if (totalDays >= 60) {
-    currWindow = sumSeries(daily, totalDays - 30);
-    prevWindow = sumSeries(daily, totalDays - 60, totalDays - 30);
-  } else if (mid >= 1) {
-    currWindow = sumSeries(daily, mid);
-    prevWindow = sumSeries(daily, 0, mid);
-  }
+  const [currWindow, prevWindow] = compareTrailingWindows(daily, 30);
   return {
     bars: totalDays >= 2 ? bucketSeries(daily, 12) : undefined,
     currWindow,

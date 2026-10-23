@@ -511,7 +511,7 @@ function renderSingleStackTile(
  */
 export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
   const { colorOverride, slug: cleanSlug } = splitTileToken(slug);
-  const cleanKey = normalizeIconSlug(cleanSlug).replace(BRAND_SLUG_CLEAN_RX, '');
+  const cleanKey = normalizeIconSlug(cleanSlug, true).replace(BRAND_SLUG_CLEAN_RX, '');
   return colorOverride ?? fallback ?? resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
 }
 

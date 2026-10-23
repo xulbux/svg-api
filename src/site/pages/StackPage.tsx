@@ -2,7 +2,7 @@
  * Tech stack documentation page – Renders the Grouped Tech Stack Icon Grids (`/docs/stack`) section (`<StackSection />`).
  */
 
-import { STACK_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_STACK_MOTION_TOKENS } from '@/routes/params';
 import {
   buildStackParamRows,
   buildStackVariantCards,
@@ -21,7 +21,7 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="stack">` JSX fragment.
  */
 export function StackSection(): HtmlFragment {
-  const activeMotions = STACK_MOTION_TOKENS.filter((token) => token !== 'none').join('|');
+  const activeMotions = ACTIVE_STACK_MOTION_TOKENS.join('|');
   return (
     <section class="doc-section" id="stack">
       <SectionHeader

@@ -181,6 +181,9 @@ function handleSelectKeydown(
   wrapper: Element,
   site: SvgSite | undefined
 ): void {
+  if (event.isComposing) {
+    return;
+  }
   const { target } = event;
   const offsets: Readonly<Record<string, number>> = {
     ArrowDown: 1,
@@ -195,7 +198,13 @@ function handleSelectKeydown(
     moveOptionFocus(wrapper, offset);
   } else if (event.key === 'Enter' || (event.key === ' ' && !isSearch)) {
     event.preventDefault();
-    const item = isSearch ? wrapper.querySelector('.select-option') : target;
+    const hasSearchQuery = isSearch && target.value.trim().length > 0;
+    const item = isSearch
+      ? ((hasSearchQuery
+          ? undefined
+          : wrapper.querySelector('.select-option[aria-selected="true"]')) ??
+        wrapper.querySelector('.select-option'))
+      : target;
     if (item instanceof HTMLElement && item.dataset.value !== undefined) {
       chooseSelectOption(wrapper, item.dataset.value, site);
     }

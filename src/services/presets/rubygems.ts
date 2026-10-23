@@ -9,7 +9,6 @@ import {
   createLicenseMetric,
   createRelativeDateMetric,
   createVersionMetric,
-  readLicenseName,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -47,7 +46,7 @@ export const RUBYGEMS_SERVICE = defineService({
   metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(RUBYGEMS_ENDPOINT, 'dt', (gem) => gem.downloads),
-    license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) => readLicenseName(gem.licenses)),
+    license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) => gem.licenses),
     updated: createRelativeDateMetric(RUBYGEMS_ENDPOINT, UPDATED, (gem) => gem.version_created_at),
     v: createVersionMetric(
       RUBYGEMS_ENDPOINT,

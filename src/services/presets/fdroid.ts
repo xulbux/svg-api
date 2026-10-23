@@ -21,7 +21,7 @@ function projectFdroidPackage(data: unknown): FdroidPackageProjection | undefine
     return undefined;
   }
   const builds = data.packages;
-  if (!Array.isArray(builds)) {
+  if (!Array.isArray(builds) || builds.length === 0) {
     return undefined;
   }
   let newestVersion: string | undefined = undefined;

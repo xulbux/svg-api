@@ -12,21 +12,20 @@ import {
   splitIconPair,
 } from '@/site/shared/fields';
 import type {
+  ActiveServiceMetric,
   BuilderField,
   BuilderOption,
   BuilderSchema,
-  BuilderServiceMetric,
-  BuilderServiceOption,
   BuilderState,
 } from '@/types';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Resolve the active service and metric options for a `service` builder state. */
-function resolveActiveServiceMetric(
+function resolveServiceMetricSelection(
   schema: BuilderSchema,
   state: BuilderState
-): { metric: BuilderServiceMetric | undefined; service: BuilderServiceOption | undefined } {
+): ActiveServiceMetric {
   const service = findService(schema, readState(state, 'service')) ?? schema.services?.[0];
   const metric = findOption(service?.metrics, readState(state, 'metric')) ?? service?.metrics[0];
   return { metric, service };
@@ -38,7 +37,7 @@ function resolveServiceFieldDefault(
   state: BuilderState,
   field: BuilderField
 ): string | undefined {
-  const { metric, service } = resolveActiveServiceMetric(schema, state);
+  const { metric, service } = resolveServiceMetricSelection(schema, state);
   if (field.id === 'service') {
     return service?.key ?? '';
   }
@@ -89,7 +88,7 @@ function normalizeIconPairFieldValue(
   if (schema.kind !== 'service') {
     return composeIconPair(rawLeft, right, hasPresetIcon);
   }
-  const { metric } = resolveActiveServiceMetric(schema, state);
+  const { metric } = resolveServiceMetricSelection(schema, state);
   const isRedundantPresetLeft =
     Boolean(metric && !metric.hasDynamicIcon) &&
     rawLeft.toLowerCase() === (metric?.defaultIcon ?? '').toLowerCase();
@@ -141,6 +140,22 @@ function isValueEqualToEffectiveDefault(
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Resolve the active service preset and metric option for a `service` builder state.
+ * @param schema   Builder schema.
+ * @param state    Current builder state.
+ * @returns Active `service` and `metric` options (`undefined` when unavailable).
+ */
+export function resolveActiveServiceMetric(
+  schema: BuilderSchema,
+  state: BuilderState
+): ActiveServiceMetric {
+  if (schema.kind !== 'service') {
+    return { metric: undefined, service: undefined };
+  }
+  return resolveServiceMetricSelection(schema, state);
+}
 
 /**
  * Check whether a typing builder field applies to the currently selected container layout.

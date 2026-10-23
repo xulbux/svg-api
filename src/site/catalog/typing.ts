@@ -21,10 +21,11 @@ import {
   formatRange,
 } from '@/site/catalog/shared';
 import { formatConjunctionList } from '@/site/glossary';
-import { ICON_SOURCE_SETS } from '@/svg/icons';
+import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
 import {
   DEFAULT_IDE_TITLE,
   DEFAULT_LAYOUT_FONTS,
+  DEFAULT_TYPING_ALIGN,
   DEFAULT_TYPING_CURSOR,
   DEFAULT_TYPING_ERASE,
   DEFAULT_TYPING_LAYOUT,
@@ -55,7 +56,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Prompt Bar Typing',
-        path: '/typing/Search+components...;Deploy+to+Cloudflare+Workers;Generate+live+SVG+badges?layout=prompt&color=cyan&icon=sparkles&hint=icon:command+K',
+        path: '/typing/Search+components%E2%80%A6;Deploy+to+Cloudflare+Workers;Generate+live+SVG+badges?layout=prompt&color=cyan&icon=sparkles&hint=icon:command+K',
       },
     ],
     subtitle:
@@ -117,8 +118,8 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Secondary tinted dark window with glowing orange border, Rust icon in the header bar (?icon=rust), and terminal block cursor (?cursor=block).',
-    title: 'variant=2 · Secondary Tinted + Block Cursor',
+      'Secondary tinted dark window with glowing orange border, Rust icon in the header bar (?icon=rust), and terminal block cursor (?cursor=block) (Default).',
+    title: 'variant=2 · Secondary Tinted + Block Cursor (Default)',
   },
   {
     items: [
@@ -128,8 +129,8 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Tertiary neutral dark surface with underscore cursor (?cursor=underscore) and periodic diagonal sheen (?anim=sheen) (Default).',
-    title: 'variant=3 · Tertiary Neutral + Underscore Cursor (Default)',
+      'Tertiary neutral dark surface with underscore cursor (?cursor=underscore) and periodic diagonal sheen (?anim=sheen).',
+    title: 'variant=3 · Tertiary Neutral + Underscore Cursor',
   },
 ];
 
@@ -181,7 +182,6 @@ export function buildTypingParamRows(): ParamTableRow[] {
     (font) =>
       `${font} (${TYPING_LAYOUT_TOKENS.filter((layout) => DEFAULT_LAYOUT_FONTS[layout] === font).join(', ')})`
   ).join(' / ');
-  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
   return [
     {
       defaultVal: '~required',
@@ -243,8 +243,8 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: TYPING_ERASE_TOKENS.join(' | '),
     },
     {
-      defaultVal: 'left (framed) / center (none)',
-      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align left); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
+      defaultVal: `${DEFAULT_TYPING_ALIGN} (framed) / center (none)`,
+      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align ${DEFAULT_TYPING_ALIGN}); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
       name: '?align= / ?center=',
       values: TYPING_ALIGN_TOKENS.join(' | '),
     },
@@ -257,7 +257,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: '~none',
-      description: `Optional ${formatConjunctionList(allIconSets, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
+      description: `Optional ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
       name: '?icon=',
       values: 'terminal | search | sparkles | rust | ts | none',
     },

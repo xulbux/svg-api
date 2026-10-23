@@ -10,6 +10,7 @@ import {
   buildShareUrl,
   buildSnippetTokens,
   findService,
+  handleRovingTabKeydown,
   readState,
 } from '@/site/client/builder/core';
 import type { SvgSite } from '@/site/client/site/types';
@@ -152,6 +153,8 @@ export function createBuilderOutputController(
     if (previewSrc) {
       previewImage.classList.add('is-loading');
       previewImage.src = previewSrc;
+    } else {
+      previewImage.classList.remove('is-loading');
     }
   }
 
@@ -252,32 +255,7 @@ export function createBuilderOutputController(
   }
 
   function handleTabKeydown(event: KeyboardEvent): void {
-    const tabs = [...document.querySelectorAll('.builder-tab')];
-    if (tabs.length === 0) {
-      return;
-    }
-    let current = 0;
-    for (const [i, tab] of tabs.entries()) {
-      if (tab.getAttribute('aria-selected') === 'true') {
-        current = i;
-      }
-    }
-    let nextIndex: number | undefined = undefined;
-    if (event.key === 'ArrowLeft') {
-      nextIndex = (current - 1 + tabs.length) % tabs.length;
-    } else if (event.key === 'ArrowRight') {
-      nextIndex = (current + 1) % tabs.length;
-    } else if (event.key === 'Home') {
-      nextIndex = 0;
-    } else if (event.key === 'End') {
-      nextIndex = tabs.length - 1;
-    }
-    const next = nextIndex !== undefined ? tabs[nextIndex] : undefined;
-    if (next instanceof HTMLElement) {
-      event.preventDefault();
-      selectTab(next);
-      next.focus();
-    }
+    handleRovingTabKeydown(event, [...document.querySelectorAll('.builder-tab')], selectTab);
   }
 
   function copyShareLink(): void {

@@ -2,11 +2,14 @@
  * OpenGraph rasterizer types – Shared color, gradient, geometry, and module shapes for build-time SVG-to-PNG rendering.
  */
 
+import type { RgbTuple } from '@/types';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+export type { RgbTuple } from '@/types';
+
 /** 2D Cartesian coordinate `[pointX, pointY]` in canvas pixels. */
 export type Point2D = readonly [pointX: number, pointY: number];
-
-/** 8-bit RGB color channels `[red, green, blue]` in `[0, 255]`. */
-export type RgbTuple = readonly [red: number, green: number, blue: number];
 
 /** Floating-point premultiplied-ready RGBA color `[red, green, blue, alpha]` (`rgb` in `[0, 255]`, `alpha` in `[0, 1]`). */
 export type RgbaTuple = readonly [red: number, green: number, blue: number, alpha: number];
@@ -81,10 +84,10 @@ export interface DirectedEdge {
 
 /** Scanline intersection with a directed polygon edge. */
 export interface ScanlineCrossing {
+  /** Horizontal intersection coordinate in canvas pixels. */
+  crossingX: number;
   /** Edge winding direction (`1` or `-1`). */
   dir: -1 | 1;
-  /** Horizontal intersection coordinate in canvas pixels. */
-  x: number;
 }
 
 /** Directed scanline edge list and axis-aligned bounding box of a flattened `<path>`. */

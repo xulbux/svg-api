@@ -798,6 +798,7 @@ describe('route parsing regressions', () => {
       '/badge/a/b?color=constructor&dot=toString&icon=hasOwnProperty&anim=auto',
       '/button/a?size=constructor',
       '/quote/a?size=toString',
+      '/typing/a?layout=constructor&font=toString&cursor=hasOwnProperty',
     ];
     const responses = await requestAll(paths, TEST_ENV);
     const svgs = await Promise.all(responses.map((response) => response.text()));
@@ -940,6 +941,10 @@ describe('SVG route table & edge cache keys', () => {
     expect(
       resolveSvgRequest(new URL('/badge/npm/hono/v?label=x&foo=1&anim=none', SITE_ORIGIN))?.cacheKey
     ).toBe(`${SITE_ORIGIN}/badge/npm/hono/v?anim=none&label=x`);
+    expect(
+      resolveSvgRequest(new URL('/badge/build/passing?label=ignored&color=emerald', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/build/passing?color=emerald`);
     expect(resolveSvgRequest(new URL('/badge/?icon=github', SITE_ORIGIN))?.cacheKey).toBe(
       `${SITE_ORIGIN}/badge?icon=github`
     );
@@ -983,6 +988,8 @@ describe('response headers & revalidation', () => {
       ['/icon/zap', 3600],
       ['/stack/react', 3600],
       ['/quote/Hello', 3600],
+      ['/typing/Hello', 3600],
+      ['/type/Hello', 3600],
     ];
     const responses = await requestAll(
       cases.map(([path]) => path),
@@ -1215,7 +1222,15 @@ describe('unexpected errors', () => {
       expect(nonHtmlResponse.status, nonHtmlUrls[i]).toBe(500);
       expect(nonHtmlResponse.headers.get('Content-Type'), nonHtmlUrls[i]).toContain('text/plain');
       expect(nonHtmlResponse.headers.get('Cache-Control'), nonHtmlUrls[i]).toBe('no-store');
+      expect(nonHtmlResponse.headers.get('X-Content-Type-Options'), nonHtmlUrls[i]).toBe('nosniff');
+      expect(nonHtmlResponse.headers.get('Content-Security-Policy'), nonHtmlUrls[i]).toBeNull();
       expect(nonHtmlBodies[i], nonHtmlUrls[i]).toBe('Internal Server Error');
     }
+  });
+
+  it('strips URL fragments when reading raw pathnames (regression: #fragment leaked into trailing route segment)', async () => {
+    const response = await app.request('https://svg.xul.is/badge/status/ok#readme', {}, TEST_ENV);
+    expect(response.status).toBe(200);
+    expect(extractAriaLabel(await response.text())).toBe('status: ok');
   });
 });

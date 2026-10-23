@@ -13,7 +13,7 @@
   }
 }
 
-/* Form & Panel Surfaces: */
+/* Form & Panel Surfaces */
 
 .builder-form,
 .builder-panel-inner {
@@ -283,21 +283,12 @@
   background: var(--swatch);
 }
 
-/* Listbox Panel: */
+/* Listbox Panel */
 
 .select-menu {
   min-inline-size: 180px;
   max-inline-size: calc(100vw - 16px);
-  max-block-size: min(320px, 60vh);
-}
-
-/* Fallback without the Popover API; the menu stays in flow, so position it below the trigger: */
-
-.select-menu.is-open {
-  position: absolute;
-  inset-block-start: calc(100% + 4px);
-  inset-inline-start: 0;
-  z-index: var(--z-popover);
+  max-block-size: min(320px, 60dvh);
 }
 
 /* Search Fields (dropdown listboxes and the icon picker): */
@@ -392,7 +383,7 @@
   flex-shrink: 0;
   padding: 1px 6px;
   border: 1px solid var(--c-border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -406,7 +397,7 @@
   color: var(--c-text-3);
 }
 
-/* Color Swatches: */
+/* Color Swatches */
 
 .swatch-grid {
   display: flex;
@@ -723,11 +714,11 @@
   margin-block-start: 14px;
 }
 
-/* Icon Picker Popover: */
+/* Icon Picker Popover */
 
 .icon-picker {
   inline-size: min(384px, calc(100vw - 16px));
-  block-size: min(452px, 72vh);
+  block-size: min(452px, 72dvh);
   border-radius: var(--radius-lg);
   box-shadow: var(--c-shadow-dialog);
 }
@@ -1111,7 +1102,7 @@
 .typing-line-row.is-dragging {
   z-index: 2;
   background: var(--c-bg-soft);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.32);
+  box-shadow: var(--c-shadow-popover);
 }
 
 .typing-line-handle {

@@ -27,7 +27,32 @@ const PLUS_SIGN_RX = /\+/g;
 /** Matches line breaks (with surrounding spaces) in multi-line builder inputs. */
 export const LINE_BREAK_RX = /\s*\n\s*/g;
 
+/** Matches hyphen, underscore, or dot characters stripped from brand icon slugs before lookup. */
+export const BRAND_SLUG_CLEAN_RX = /[-_.]/g;
+
+/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in a hint string. */
+export const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
+
+/** Matches hyphen or underscore word separators in icon slugs. */
+const SLUG_SEPARATOR_RX = /[-_]/g;
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Capitalize the first letter of every `-`/`_`-separated slug part and join the parts with `joiner`.
+ * @param slug     Hyphen- or underscore-separated slug.
+ * @param joiner   Optional separator inserted between capitalized parts.
+ * @returns Joined capitalized string.
+ */
+export function capitalizeSlugParts(slug: string, joiner = ''): string {
+  let result = '';
+  for (const part of slug.split(SLUG_SEPARATOR_RX)) {
+    if (part.length > 0) {
+      result += `${result.length > 0 ? joiner : ''}${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    }
+  }
+  return result;
+}
 
 /**
  * Encode text for a URL path segment the way `decodeSegment` decodes it (spaces become `+`).

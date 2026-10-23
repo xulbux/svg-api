@@ -3,11 +3,12 @@
  *
  * The PyPI JSON document lists every release file (e.g., `~3.3 MB` for `boto3`), but its leading
  * `info` object holds every needed field, so the body stream is cancelled as soon as `info` is
- * complete (`leadingKey`).
+ * complete (`extractKeys`).
  */
 
 import {
   CACHE_TTL,
+  PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -154,7 +155,7 @@ function buildClickPyPageUrl({ target }: ServiceRouteParams): string {
 /** PyPI package metadata endpoint (`info` prefix only). */
 const PYPI_ENDPOINT = createEndpoint({
   api: 'https://pypi.org/pypi/{target}/json',
-  leadingKey: 'info',
+  extractKeys: ['info'],
   page: 'https://pypi.org/project/{target}/',
   project: projectPyPiInfo,
 });
@@ -224,5 +225,5 @@ export const PYPI_SERVICE = defineService({
       (info) => info.version
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

@@ -2,7 +2,7 @@
  * Hackage service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { PACKAGE_ROUTE, createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import { createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -37,5 +37,5 @@ export const HACKAGE_SERVICE = defineService({
       }
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

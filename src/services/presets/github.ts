@@ -10,6 +10,7 @@
 
 import {
   CACHE_TTL,
+  OWNER_REPO_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -471,7 +472,7 @@ function transformGitHubActivity(
 const ISSUES_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/search/issues?q=repo:{owner}/{target}+type:issue+state:open&per_page=1',
   buildRequest: buildGitHubCountsRequest,
-  leadingKey: 'total_count',
+  extractKeys: ['total_count'],
   missingStatuses: [422],
   page: 'https://github.com/{owner}/{target}/issues',
   project: projectGitHubCounts,
@@ -482,7 +483,7 @@ const ISSUES_ENDPOINT = createEndpoint({
 const PRS_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/search/issues?q=repo:{owner}/{target}+type:pr+state:open&per_page=1',
   buildRequest: buildGitHubCountsRequest,
-  leadingKey: 'total_count',
+  extractKeys: ['total_count'],
   missingStatuses: [422],
   page: 'https://github.com/{owner}/{target}/pulls',
   project: projectGitHubCounts,
@@ -534,5 +535,5 @@ export const GITHUB_SERVICE = defineService({
       (repo) => repo.stargazers_count
     ),
   },
-  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+  route: OWNER_REPO_ROUTE,
 });

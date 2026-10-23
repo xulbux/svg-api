@@ -78,8 +78,23 @@ export const ISOLUX_SYNTAX = {
   string: { dark: '#909FFF', light: '#4F48EC' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
-/** Website brand indigo (Tailwind `indigo-400` to `indigo-600`; Brand mark, favicon, links, and primary buttons). */
-export const BRAND_INDIGO = { 400: '#818CF8', 500: '#6366F1', 600: '#4F46E5' } as const;
+/** Website brand indigo (Tailwind `indigo-300` to `indigo-600`; Brand mark, favicon, OpenGraph card accents, and links). */
+export const BRAND_INDIGO = {
+  300: '#A5B4FC',
+  400: '#818CF8',
+  500: '#6366F1',
+  600: '#4F46E5',
+} as const;
+
+/** Indigo-tinted dark surface stops for the OpenGraph social preview card. */
+export const OG_CARD_SURFACE = {
+  /** Bottom-right stop of the OpenGraph background gradient. */
+  bgEnd: '#141420',
+  /** Top-left stop of the OpenGraph background gradient. */
+  bgStart: '#0D0D12',
+  /** Raised background fill of the OpenGraph sample URL capsule. */
+  pillBg: '#181824',
+} as const;
 
 /** Tailwind `rose-200` (negative tint on solid primary surfaces). */
 export const ROSE_200 = '#FECDD3';

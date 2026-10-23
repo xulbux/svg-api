@@ -38,8 +38,7 @@ interface PuppetReleaseProjection {
 
 /** Puppet Forge module endpoint (only the download and feedback counters are cached). */
 const MODULE_ENDPOINT = createEndpoint({
-  api: ({ owner, target }) =>
-    `https://forgeapi.puppet.com/v3/modules/${encodeURIComponent(owner)}-${encodeURIComponent(target)}`,
+  api: 'https://forgeapi.puppet.com/v3/modules/{owner}-{target}',
   page: 'https://forge.puppet.com/modules/{owner}/{target}',
   project: pickFields<PuppetModulePayload>(['downloads', 'feedback_score']),
 });
@@ -59,8 +58,7 @@ function projectPuppetRelease(data: unknown): PuppetReleaseProjection | undefine
 
 /** Puppet Forge newest release endpoint (an empty `results` list is not found). */
 const RELEASE_ENDPOINT = createEndpoint({
-  api: ({ owner, target }) =>
-    `https://forgeapi.puppet.com/v3/releases?module=${encodeURIComponent(`${owner}-${target}`)}&limit=1&sort_by=release_date&exclude_fields=readme,changelog,license,reference,tasks,plans`,
+  api: 'https://forgeapi.puppet.com/v3/releases?module={owner}-{target}&limit=1&sort_by=release_date&exclude_fields=readme,changelog,license,reference,tasks,plans',
   page: 'https://forge.puppet.com/modules/{owner}/{target}',
   project: projectPuppetRelease,
 });

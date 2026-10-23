@@ -10,14 +10,13 @@ import {
   PRIMARY_FOREGROUND_OPACITY,
   buildThemeGradientId,
   clampInt,
-  clampNumber,
-  hasOwnKey,
   prepareDisplayText,
   renderKumoBoxSurface,
   renderSheenOverlay,
   renderSurfaceGradientDefs,
   renderSvgDocument,
   resolveForegroundColor,
+  resolveScaledFontSize,
   resolveSurfaceTextColor,
   roundCoord,
   roundTenths,
@@ -238,12 +237,12 @@ function resolveQuoteMetrics(
 ): QuoteMetrics {
   const defaultPreset: SizePreset =
     layout === 'vertical' ? DEFAULT_VERTICAL_QUOTE_SIZE : DEFAULT_HORIZONTAL_QUOTE_SIZE;
-  let fontSize = QUOTE_SIZE_MAP[defaultPreset];
-  if (typeof sizeOption === 'number') {
-    fontSize = clampNumber(sizeOption, QUOTE_FONT_SIZE_RANGE, fontSize);
-  } else if (typeof sizeOption === 'string' && hasOwnKey(QUOTE_SIZE_MAP, sizeOption)) {
-    fontSize = QUOTE_SIZE_MAP[sizeOption];
-  }
+  const fontSize = resolveScaledFontSize(
+    sizeOption,
+    QUOTE_SIZE_MAP,
+    QUOTE_FONT_SIZE_RANGE,
+    defaultPreset
+  );
 
   const scale = fontSize / 15;
   return {

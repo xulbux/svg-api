@@ -3,21 +3,12 @@
  */
 
 import type { HtmlFragment } from '@/site/jsx';
+import type { UrlAnatomyPart } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Highlighted part of a URL anatomy example. */
-export interface UrlAnatomyPart {
-  /** Syntax highlighting class (`hl-*`). */
-  readonly className: string;
-  /** Optional legend label (omitted on repeated roles in the URL). */
-  readonly label?: string | undefined;
-  /** Literal URL text. */
-  readonly text: string;
-}
-
 /** Props for the `<UrlAnatomy />` component. */
-export interface UrlAnatomyProps {
+interface UrlAnatomyProps {
   /** Highlighted URL parts and legend entries. */
   readonly parts: readonly UrlAnatomyPart[];
 }

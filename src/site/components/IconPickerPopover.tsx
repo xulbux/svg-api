@@ -35,13 +35,10 @@ const GLYPH_PAINT_ATTRS: Readonly<Record<IconPickerSetId, string>> = {
 /** Memoized icon picker popover HTML (`undefined` until first rendered). */
 let iconPickerHtmlCache: string | undefined = undefined;
 
-// -------------------------------------- PUBLIC API -------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Render (once per isolate) the shared icon picker dialog popover (tabs, search, the lazily filled grid, and glyph templates).
- * @returns Icon picker popover HTML string.
- */
-export function renderIconPickerHtml(): string {
+/** Render (once per isolate) the shared icon picker dialog popover HTML. */
+function renderIconPickerHtml(): string {
   if (iconPickerHtmlCache === undefined) {
     const tabs: HtmlFragment[] = [];
     for (const [i, tab] of ICON_PICKER_TABS.entries()) {
@@ -101,6 +98,8 @@ export function renderIconPickerHtml(): string {
   }
   return iconPickerHtmlCache;
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render the shared icon picker dialog popover as a JSX component.

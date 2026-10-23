@@ -3,7 +3,7 @@
  */
 
 import { DEFAULT_THEME_COLOR, THEME_COLOR_NAMES } from '@/config/theme';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_ICON_MOTION_TOKENS } from '@/routes/params';
 import { DEFAULT_BADGE_VARIANT } from '@/routes/svg';
 import {
   buildAnimParamRow,
@@ -13,7 +13,6 @@ import {
   buildVariantCards,
   buildVariantParamRow,
 } from '@/site/catalog/shared';
-import type { VariantDescriptor } from '@/site/catalog/shared';
 import { formatSpecialExamples } from '@/site/glossary';
 import {
   MAX_BARS_POINTS,
@@ -23,7 +22,13 @@ import {
   MIN_SERIES_POINTS,
   STRIP_TICK_MAX_STATE,
 } from '@/svg/renderer';
-import type { BadgeVariant, ParamTableRow, ShowcaseCardConfig, ShowcaseItem } from '@/types';
+import type {
+  BadgeVariant,
+  ParamTableRow,
+  ShowcaseCardConfig,
+  ShowcaseItem,
+  VariantDescriptor,
+} from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -79,9 +84,6 @@ export function buildBadgeVariantCards(): ShowcaseCardConfig[] {
  * @returns Showcase card configurations.
  */
 export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
-  const activeIconMotions = ICON_MOTION_TOKENS.filter(
-    (token) => token !== 'default' && token !== 'none'
-  );
   return [
     {
       items: [
@@ -184,7 +186,7 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
           path: '/badge/Aura/Glow?icon=flame&color=orange&variant=3&anim=breathe',
         },
       ],
-      subtitle: `Surface sheen, icon motion presets (${activeIconMotions.join('/')}), or combined sheen,auto via ?anim=.`,
+      subtitle: `Surface sheen, icon motion presets (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or combined sheen,auto via ?anim=.`,
       title: 'SVG Micro-Animations (?anim=)',
     },
   ];

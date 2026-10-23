@@ -24,6 +24,11 @@ interface NuGetSearchProjection {
   versionDownloads?: number[];
 }
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches valid NuGet package IDs (`<= 100` chars) so Lucene query operators cannot enter `q=packageid:{target}`. */
+const NUGET_PACKAGE_ID_RX = /^(?=.{1,100}$)\w+(?:[.-]\w+)*$/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Project the first NuGet search entry to its version, total downloads, and recent per-version series. */
@@ -81,5 +86,5 @@ export const NUGET_SERVICE = defineService({
       (entry) => entry.version
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: { target: { pattern: NUGET_PACKAGE_ID_RX, placeholder: ':package' } },
 });

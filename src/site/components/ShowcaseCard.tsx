@@ -10,20 +10,12 @@ import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { buildMarkdownSnippetTokens } from '@/site/shared/snippets';
 import { hashText } from '@/svg/shared';
-import type { HighlightToken, ShowcaseCardConfig } from '@/types';
+import type { HighlightToken, ShowcaseCardConfig, TrailingParenthetical } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Leading and trailing parts of a `main (parenthetical)` string. */
-export interface TrailingParenthetical {
-  /** Text before the trailing parenthetical group. */
-  main: string;
-  /** Text inside the trailing parenthetical group. */
-  paren: string;
-}
-
 /** Props for the `<CardGrid />` component. */
-export interface CardGridProps {
+interface CardGridProps {
   /** Showcase card configurations to render inside the grid. */
   readonly cards: readonly ShowcaseCardConfig[];
   /** Whether to use the 3-column variant grid modifier (`is-3col`). */
@@ -62,7 +54,7 @@ function renderHighlightTokenLine(tokens: readonly HighlightToken[]): HtmlFragme
  * @param text   Trimmed input text (e.g., `'Primary Badge (Default)'`).
  * @returns Main text and parenthetical content, or `undefined` when there is no trailing group.
  */
-export function splitTrailingParenthetical(text: string): TrailingParenthetical | undefined {
+function splitTrailingParenthetical(text: string): TrailingParenthetical | undefined {
   if (!text.endsWith(')')) {
     return undefined;
   }
@@ -127,6 +119,8 @@ function renderCardTitleChildren(rawTitle: string): HtmlFragment {
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { splitTrailingParenthetical };
 
 /**
  * Render a showcase card containing SVG previews (rendered from each item's documented path through the

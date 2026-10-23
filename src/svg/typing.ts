@@ -18,16 +18,17 @@ import {
   renderTextPathMarkup,
   resolveCharGlyph,
 } from '@/svg/measure';
-import type { GlyphLineLayout, PositionedCharGlyph } from '@/svg/measure';
 import {
   ELLIPSIS,
+  HINT_ICON_REST_RX,
   PRIMARY_FOREGROUND_OPACITY,
+  buildBottomCrescentPath,
   clampInt,
-  clampNumber,
+  computeIconTranslateX,
   getOwnValue,
-  hasOwnKey,
   hashText,
   isAnimationDisabled,
+  measureIconVisualWidth,
   prepareDisplayText,
   renderIconGroup,
   renderKumoBoxSurface,
@@ -36,6 +37,7 @@ import {
   renderSvgDocument,
   resolveForegroundColor,
   resolveForegroundPaint,
+  resolveScaledFontSize,
   resolveSurfaceTextColor,
   roundCoord,
   roundScale,
@@ -45,7 +47,9 @@ import type {
   AnimationMode,
   BadgeVariant,
   ForegroundPaint,
+  GlyphLineLayout,
   NumericRange,
+  PositionedCharGlyph,
   ResolvedIcon,
   SizePreset,
   ThemeColorName,
@@ -124,8 +128,16 @@ interface ResolvedTypingHint {
 
 /** Pre-measured dimensions and reserved widths of the optional trailing hint badge (independent of container `width`). */
 interface HintBadgeGeometry {
+  /** Total vertical height of the hint pill or keycap in pixels. */
+  badgeHeight: number;
+  /** Corner radius of the hint pill or keycap in pixels. */
+  badgeRadius: number;
+  /** Distance from the container's right edge to the right edge of the hint badge in pixels. */
+  badgeRightInset: number;
   /** Total horizontal width of the hint pill or keycap in pixels. */
   badgeWidth: number;
+  /** Top Y coordinate of the hint pill or keycap in pixels. */
+  badgeY: number;
   /** Width of the inner icon + gap + text content in pixels. */
   contentWidth: number;
   /** Rendered icon box size in pixels. */
@@ -152,6 +164,8 @@ interface LeadingPromptLayout {
 interface CursorGeometry {
   /** Fill opacity of the cursor when visible. */
   activeOpacity: number;
+  /** Top Y coordinate of the cursor rectangle in pixels. */
+  cursorY: number;
   /** Cursor rectangle height in pixels. */
   height: number;
   /** Horizontal offset from the current character's cursor X coordinate in pixels. */
@@ -160,8 +174,6 @@ interface CursorGeometry {
   radius: number;
   /** Cursor rectangle width in pixels. */
   width: number;
-  /** Top Y coordinate of the cursor rectangle in pixels. */
-  y: number;
 }
 
 /** Single scheduled character appearance and disappearance interval in milliseconds. */
@@ -176,10 +188,10 @@ interface ScheduledGlyph {
   eraseStartMs: number;
   /** `<defs>` glyph path ID (`type-g-<hash>`). */
   glyphId: string;
+  /** Absolute horizontal baseline X coordinate of the character in pixels. */
+  glyphX: number;
   /** Whether the character belongs to the completed first line (shown in non-SMIL static viewers). */
   isFirstLineChar: boolean;
-  /** Absolute horizontal baseline X coordinate of the character in pixels. */
-  x: number;
 }
 
 /** Selection highlight flash interval for `erase = 'select'` on a single line. */
@@ -270,6 +282,310 @@ interface TypingBodyRenderContext {
   width: number;
 }
 
+/** Deterministic QWERTY neighbor typo target for a single line. */
+interface ResolvedLineTypo {
+  /** Positioned wrong-key glyph rendered briefly before backspace recovery. */
+  typoGlyph: PositionedCharGlyph;
+  /** Character index in `glyphs` where the typo occurs. */
+  typoIndex: number;
+}
+
+/** Options for `scheduleLineErasePhase`. */
+interface ScheduleLineEraseOptions {
+  /** Active cursor fill opacity. */
+  activeOpacity: number;
+  /** Cursor X coordinate at the end of the line in pixels. */
+  endCursorX: number;
+  /** Line erase transition mode. */
+  eraseMode: TypingEraseMode;
+  /** Laid-out character glyphs of the line. */
+  glyphs: readonly PositionedCharGlyph[];
+  /** Scheduled visible glyph records of the line. */
+  lineScheduledRecords: ScheduledGlyph[];
+  /** Leftmost baseline X coordinate of the line in pixels. */
+  lineStartX: number;
+  /** Cursor X coordinate at the start of the following line in pixels. */
+  nextLineStartCursorX: number;
+  /** Horizontal offset of the cursor relative to the character baseline X in pixels. */
+  offsetX: number;
+  /** Cursor X coordinate at the start of the current line in pixels. */
+  startCursorX: number;
+  /** Mutable cycle timeline accumulator. */
+  state: CycleTimelineState;
+  /** Total horizontal advance width of the line in pixels. */
+  totalAdvance: number;
+}
+
+/** Options for `scheduleLineTimeline`. */
+interface ScheduleLineTimelineOptions {
+  /** Caret cursor rectangle geometry. */
+  cursorGeometry: CursorGeometry;
+  /** Line erase transition mode. */
+  eraseMode: TypingEraseMode;
+  /** Prepared line layout and optional typo target. */
+  line: PreparedTypingLine;
+  /** Target typing duration for this line in milliseconds. */
+  lineDurationMs: number;
+  /** Zero-based index of this line in the cycle. */
+  lineIndex: number;
+  /** Cursor X coordinate at the start of the following line in pixels. */
+  nextLineStartCursorX: number;
+  /** Reading pause duration at the end of the line in milliseconds. */
+  pauseMs: number;
+  /** Mutable cycle timeline accumulator. */
+  state: CycleTimelineState;
+}
+
+/** Options for `renderPositionedIconSlot`. */
+interface PositionedIconSlotOptions {
+  /** Target square icon box size in pixels. */
+  boxSize: number;
+  /** Left X coordinate of the icon slot in pixels. */
+  boxX: number;
+  /** Top Y coordinate of the icon slot in pixels. */
+  boxY: number;
+  /** Stroke or fill color of the icon. */
+  color: string;
+  /** Resolved icon data and fallback flag. */
+  iconSlot: ResolvedTypingIconSlot;
+  /** Whether to center visible ink inside `boxSize` instead of left-aligning at `boxX`. */
+  isBoxCentered?: boolean;
+  /** Whether the icon sits on a vivid primary surface. */
+  isOnPrimary: boolean;
+  /** Optional group opacity. */
+  opacity: number | undefined;
+}
+
+/** Rendered SVG markup and visible ink width of a positioned icon slot. */
+interface RenderedIconSlot {
+  /** Rendered `<g>` icon markup. */
+  markup: string;
+  /** Visible horizontal ink width in pixels. */
+  renderedWidth: number;
+}
+
+/** Options for `renderHintBadgeInner`. */
+interface HintBadgeInnerOptions {
+  /** Badge height in pixels. */
+  badgeHeight: number;
+  /** Badge width in pixels. */
+  badgeWidth: number;
+  /** Badge left X coordinate in pixels. */
+  badgeX: number;
+  /** Badge top Y coordinate in pixels. */
+  badgeY: number;
+  /** Combined inner content width in pixels. */
+  contentWidth: number;
+  /** Resolved hint icon and/or text. */
+  hint: ResolvedTypingHint;
+  /** Hint text font size in pixels. */
+  hintFontSize: number;
+  /** Hint icon box size in pixels. */
+  iconBoxSize: number;
+  /** Gap between hint icon and text in pixels. */
+  iconTextGap: number;
+  /** Visible ink width of the hint icon in pixels. */
+  iconVisualWidth: number;
+  /** Whether the surface is a vivid primary fill. */
+  isOnPrimary: boolean;
+  /** Fill color of the hint text. */
+  keycapTextFill: string;
+  /** Muted secondary text color. */
+  mutedTextColor: string;
+  /** Vertical optical nudge in pixels (`-0.5` on 3D recessed keycaps, `0` otherwise). */
+  verticalNudge: number;
+}
+
+/** Fill, border stroke, and text colors of a keycap or header hint badge. */
+interface HintBadgePaint {
+  /** Background fill color of the keycap or pill. */
+  keycapFill: string;
+  /** Border stroke color of the keycap or pill. */
+  keycapStroke: string;
+  /** Text fill color inside the keycap or pill. */
+  keycapTextFill: string;
+}
+
+/** Options for `renderHintBadge`. */
+interface RenderHintBadgeOptions {
+  /** Pre-measured hint badge geometry (`undefined` when hidden). */
+  geometry: HintBadgeGeometry | undefined;
+  /** Resolved hint content (`undefined` when hidden). */
+  hint: ResolvedTypingHint | undefined;
+  /** Active container layout. */
+  layout: TypingLayout;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Resolved theme palette. */
+  palette: ThemePalette;
+  /** Variant- and layout-dependent paint tokens. */
+  styleTokens: TypingStyleTokens;
+  /** Surface hierarchy tier. */
+  variant: BadgeVariant;
+  /** Total container width in pixels. */
+  width: number;
+}
+
+/** Horizontal geometry of the 3-dot window/browser traffic-light controls. */
+interface TrafficLightLayout {
+  /** Center Y (and first-dot center X) coordinate in pixels. */
+  dotCy: number;
+  /** Horizontal center-to-center spacing between adjacent dots in pixels. */
+  dotGap: number;
+  /** Dot circle radius in pixels. */
+  dotRadius: number;
+  /** Rightmost edge X coordinate of the third dot in pixels. */
+  rightEdgeX: number;
+}
+
+/** Rendered traffic-light `<circle>` markup and rightmost X coordinate. */
+interface RenderedTrafficLightDots {
+  /** Concatenated `<circle>` SVG elements. */
+  dotsMarkup: string;
+  /** Rightmost edge X coordinate of the third dot in pixels. */
+  rightEdgeX: number;
+}
+
+/** Horizontal geometry and inner spacing of the active file tab in `ide` layout. */
+interface IdeTabMetrics {
+  /** Gap between the tab title and close mark in pixels. */
+  closeGap: number;
+  /** Square size of the tab close `×` mark in pixels. */
+  closeSize: number;
+  /** Gap between the tab icon and title in pixels. */
+  iconGap: number;
+  /** Rendered square box size of the tab icon in pixels. */
+  tabIconSize: number;
+  /** Horizontal inner padding of the tab in pixels. */
+  tabPadX: number;
+  /** Left X coordinate of the active tab in pixels. */
+  tabStartX: number;
+  /** Unclamped total width of the active tab in pixels. */
+  tabWidth: number;
+}
+
+/** Options for `renderWindowHeaderChrome`. */
+interface WindowHeaderChromeOptions {
+  /** Rendered traffic-light `<circle>` markup. */
+  dotsMarkup: string;
+  /** Optional header icon slot. */
+  iconSlot: ResolvedTypingIconSlot | undefined;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Variant- and layout-dependent paint tokens. */
+  styleTokens: TypingStyleTokens;
+  /** Sanitized window title text. */
+  titleText: string;
+  /** Total container width in pixels. */
+  width: number;
+}
+
+/** Options for `renderIdeHeaderAndGutterChrome`. */
+interface IdeHeaderChromeOptions {
+  /** Rendered traffic-light `<circle>` markup. */
+  dotsMarkup: string;
+  /** Total container height in pixels. */
+  height: number;
+  /** Optional tab file icon slot. */
+  iconSlot: ResolvedTypingIconSlot | undefined;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Rightmost edge X coordinate of the traffic-light dots in pixels. */
+  rightEdgeX: number;
+  /** Variant- and layout-dependent paint tokens. */
+  styleTokens: TypingStyleTokens;
+  /** Sanitized active tab filename. */
+  titleText: string;
+  /** Total container width in pixels. */
+  width: number;
+}
+
+/** Options for `renderTypingContainerSurface`. */
+interface TypingContainerSurfaceOptions {
+  /** Theme color token. */
+  color: ThemeColorName;
+  /** Total container height in pixels. */
+  height: number;
+  /** Optional leading/header icon slot. */
+  iconSlot: ResolvedTypingIconSlot | undefined;
+  /** Container layout style. */
+  layout: TypingLayout;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Resolved theme palette. */
+  palette: ThemePalette;
+  /** Variant- and layout-dependent paint tokens. */
+  styleTokens: TypingStyleTokens;
+  /** Sanitized header or tab title text. */
+  titleText: string;
+  /** Surface hierarchy tier. */
+  variant: BadgeVariant;
+  /** Total container width in pixels. */
+  width: number;
+}
+
+/** Options for `renderLeadingPrompt`. */
+interface LeadingPromptOptions {
+  /** Vertical baseline Y coordinate of the body row in pixels. */
+  baselineY: number;
+  /** Active font family. */
+  fontFamily: TypingFont;
+  /** Optional leading icon slot. */
+  iconSlot: ResolvedTypingIconSlot | undefined;
+  /** Container layout style. */
+  layout: TypingLayout;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Sanitized static prefix text. */
+  prefixText: string;
+  /** Variant- and layout-dependent paint tokens. */
+  styleTokens: TypingStyleTokens;
+}
+
+/** Measured `(0, 0)` glyph layouts and maximum advance width across all lines. */
+interface MeasuredRawTypingLines {
+  /** Largest horizontal advance width across all lines in pixels. */
+  maxRawAdvance: number;
+  /** Per-line `(0, 0)` glyph layouts. */
+  rawLayouts: GlyphLineLayout[];
+}
+
+/** Options for `buildPreparedTypingLines`. */
+interface BuildPreparedLinesOptions {
+  /** Horizontal alignment mode. */
+  align: TypingAlign;
+  /** Horizontal center anchor X coordinate in pixels. */
+  centerAnchorX: number;
+  /** Active font family. */
+  fontFamily: TypingFont;
+  /** Typed text font size in pixels. */
+  fontSize: number;
+  /** Whether simulated QWERTY neighbor typos are enabled. */
+  hasTypo: boolean;
+  /** Whether typed text uses the bold font weight. */
+  isBoldText: boolean;
+  /** Maximum available width for typed text in pixels. */
+  maxTextWidth: number;
+  /** Unclamped `(0, 0)` glyph layouts for each line. */
+  rawLayouts: readonly GlyphLineLayout[];
+  /** Leftmost X coordinate of the typed text column in pixels. */
+  textStartX: number;
+}
+
+/** Options for `computeMinHeaderWidth`. */
+interface MinHeaderWidthOptions {
+  /** Optional header/tab icon slot. */
+  iconSlot: ResolvedTypingIconSlot | undefined;
+  /** Container layout style. */
+  layout: TypingLayout;
+  /** Typography and spacing metrics. */
+  metrics: TypingMetrics;
+  /** Horizontal space reserved by an optional right-aligned header hint pill in pixels. */
+  reservedHeaderWidth: number;
+  /** Sanitized header or tab title text. */
+  titleText: string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Container width bounds in pixels (auto-fits the longest line when omitted). */
@@ -318,6 +634,9 @@ const DEFAULT_TYPING_LINES: readonly string[] = [
 
 /** Default container layout when layout parameters are omitted. */
 export const DEFAULT_TYPING_LAYOUT: TypingLayout = 'window';
+
+/** Default horizontal text alignment on framed layouts when `align` is omitted. */
+export const DEFAULT_TYPING_ALIGN: TypingAlign = 'left';
 
 /** Default caret cursor shape when omitted. */
 export const DEFAULT_TYPING_CURSOR: TypingCursor = 'bar';
@@ -472,9 +791,6 @@ const SHIFTED_CHAR_RX = /[A-Z!@#$%^&*()_+{}|:"<>?~]/;
 /** Matches ASCII letters eligible for a QWERTY neighbor typo. */
 const ASCII_LETTER_RX = /[A-Za-z]/;
 
-/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in a hint string. */
-const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
-
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Normalize user-supplied lines (array or `;`-separated string) into at most `MAX_TYPING_LINES` clean strings. */
@@ -512,12 +828,7 @@ function resolveTypingMetrics(
   sizeOption: SizePreset | number | undefined,
   layout: TypingLayout
 ): TypingMetrics {
-  let fontSize = TYPING_SIZE_MAP.md;
-  if (typeof sizeOption === 'number') {
-    fontSize = clampNumber(sizeOption, TYPING_FONT_SIZE_RANGE, fontSize);
-  } else if (typeof sizeOption === 'string' && hasOwnKey(TYPING_SIZE_MAP, sizeOption)) {
-    fontSize = TYPING_SIZE_MAP[sizeOption];
-  }
+  const fontSize = resolveScaledFontSize(sizeOption, TYPING_SIZE_MAP, TYPING_FONT_SIZE_RANGE, 'md');
 
   const scale = fontSize / TYPING_SIZE_MAP.md;
   const isFrameless = layout === 'none';
@@ -685,11 +996,11 @@ function computeCursorGeometry(
     const height = roundCoord(fontSize * 1.14);
     return {
       activeOpacity: 0.52,
+      cursorY: roundCoord(baselineY - fontSize * 0.88),
       height,
       offsetX: roundCoord(fontSize * 0.06),
       radius: 2,
       width,
-      y: roundCoord(baselineY - fontSize * 0.88),
     };
   }
   if (cursor === 'underscore') {
@@ -697,22 +1008,22 @@ function computeCursorGeometry(
     const height = roundCoord(Math.max(2, fontSize * 0.14));
     return {
       activeOpacity: 0.95,
+      cursorY: roundCoord(baselineY + fontSize * 0.12),
       height,
       offsetX: roundCoord(fontSize * 0.06),
       radius: roundCoord(height / 2),
       width,
-      y: roundCoord(baselineY + fontSize * 0.12),
     };
   }
   const width = roundCoord(Math.max(2, fontSize * 0.13));
   const height = roundCoord(fontSize * 1.16);
   return {
     activeOpacity: 0.95,
+    cursorY: roundCoord(baselineY - fontSize * 0.9),
     height,
     offsetX: roundCoord(fontSize * 0.08),
     radius: roundCoord(width / 2),
     width,
-    y: roundCoord(baselineY - fontSize * 0.9),
   };
 }
 
@@ -733,20 +1044,20 @@ function clampLineGlyphsToWidth(
   let cursorX = 0;
 
   for (const glyph of layout.glyphs) {
-    if (glyph.x + glyph.advance > targetWidth) {
+    if (glyph.glyphX + glyph.advance > targetWidth) {
       break;
     }
     fitted.push(glyph);
-    cursorX = glyph.x + glyph.advance;
+    cursorX = glyph.glyphX + glyph.advance;
   }
 
   while (fitted.length > 0 && fitted[fitted.length - 1]?.char === ' ') {
     fitted.pop();
     const last = fitted[fitted.length - 1];
-    cursorX = last ? last.x + last.advance : 0;
+    cursorX = last ? last.glyphX + last.advance : 0;
   }
 
-  const placedEllipsis: PositionedCharGlyph = { ...ellipsisGlyph, x: roundCoord(cursorX) };
+  const placedEllipsis: PositionedCharGlyph = { ...ellipsisGlyph, glyphX: roundCoord(cursorX) };
   fitted.push(placedEllipsis);
   return { glyphs: fitted, totalAdvance: roundCoord(cursorX + placedEllipsis.advance) };
 }
@@ -818,7 +1129,7 @@ function resolveLineTypo(
   fontSize: number,
   isBold: boolean,
   fontFamily: TypingFont
-): { typoGlyph: PositionedCharGlyph; typoIndex: number } | undefined {
+): ResolvedLineTypo | undefined {
   if (glyphs.length < 4) {
     return undefined;
   }
@@ -856,7 +1167,7 @@ function resolveLineTypo(
   if (wrongLayout.pathData.length === 0) {
     return undefined;
   }
-  return { typoGlyph: { ...wrongLayout, x: targetGlyph.x }, typoIndex: chosenIndex };
+  return { typoGlyph: { ...wrongLayout, glyphX: targetGlyph.glyphX }, typoIndex: chosenIndex };
 }
 
 /** Append a `(timeMs, value)` keyframe point, keeping timestamps strictly increasing and collapsing redundant holds. */
@@ -964,19 +1275,7 @@ function registerGlyphDef(pathData: string, glyphDefsById: Map<string, string>):
 }
 
 /** Schedule the line erase phase and smooth cursor flight to `nextLineStartCursorX`. */
-function scheduleLineErasePhase(options: {
-  activeOpacity: number;
-  endCursorX: number;
-  eraseMode: TypingEraseMode;
-  glyphs: readonly PositionedCharGlyph[];
-  lineScheduledRecords: ScheduledGlyph[];
-  lineStartX: number;
-  nextLineStartCursorX: number;
-  offsetX: number;
-  startCursorX: number;
-  state: CycleTimelineState;
-  totalAdvance: number;
-}): void {
+function scheduleLineErasePhase(options: ScheduleLineEraseOptions): void {
   const {
     activeOpacity,
     endCursorX,
@@ -1040,7 +1339,7 @@ function scheduleLineErasePhase(options: {
     if (glyph) {
       const stepDelay = i === glyphs.length - 1 ? 65 : perCharEraseMs;
       state.currentTimeMs += stepDelay;
-      const targetCursorX = roundCoord(lineStartX + glyph.x + offsetX);
+      const targetCursorX = roundCoord(lineStartX + glyph.glyphX + offsetX);
       appendTimelinePoint(state.cursorXPoints, state.currentTimeMs, targetCursorX);
 
       if (glyph.pathData.length > 0 && visibleRecordCursor >= 0) {
@@ -1065,16 +1364,7 @@ function scheduleLineErasePhase(options: {
 }
 
 /** Schedule one line's typing, optional typo, reading pause, and erase transitions onto `state`. */
-function scheduleLineTimeline(options: {
-  cursorGeometry: CursorGeometry;
-  eraseMode: TypingEraseMode;
-  line: PreparedTypingLine;
-  lineDurationMs: number;
-  lineIndex: number;
-  nextLineStartCursorX: number;
-  pauseMs: number;
-  state: CycleTimelineState;
-}): void {
+function scheduleLineTimeline(options: ScheduleLineTimelineOptions): void {
   const {
     cursorGeometry,
     eraseMode,
@@ -1118,8 +1408,10 @@ function scheduleLineTimeline(options: {
       const typoStartMs = state.currentTimeMs + Math.round(stepMs * 0.45);
       const typoFadeEndMs = typoStartMs + CHAR_FADE_IN_MS;
       const typoBackspaceMs = typoFadeEndMs + TYPO_RECOGNITION_PAUSE_MS;
-      const typoCursorTargetX = roundCoord(lineStartX + typoGlyph.x + typoGlyph.advance + offsetX);
-      const preTypoCursorX = roundCoord(lineStartX + glyph.x + offsetX);
+      const typoCursorTargetX = roundCoord(
+        lineStartX + typoGlyph.glyphX + typoGlyph.advance + offsetX
+      );
+      const preTypoCursorX = roundCoord(lineStartX + glyph.glyphX + offsetX);
 
       appendTimelinePoint(state.cursorXPoints, typoStartMs, preTypoCursorX);
       appendTimelinePoint(state.cursorXPoints, typoStartMs + CURSOR_GLIDE_MS, typoCursorTargetX);
@@ -1133,8 +1425,8 @@ function scheduleLineTimeline(options: {
         eraseEndMs: typoBackspaceMs + CHAR_FAST_FADE_OUT_MS,
         eraseStartMs: typoBackspaceMs,
         glyphId: typoGlyphId,
+        glyphX: roundCoord(lineStartX + typoGlyph.glyphX),
         isFirstLineChar: false,
-        x: roundCoord(lineStartX + typoGlyph.x),
       });
 
       state.currentTimeMs = typoBackspaceMs + TYPO_RECOVERY_PAUSE_MS;
@@ -1144,8 +1436,8 @@ function scheduleLineTimeline(options: {
 
     const appearStartMs = state.currentTimeMs;
     const appearEndMs = appearStartMs + CHAR_FADE_IN_MS;
-    const prevCursorX = roundCoord(lineStartX + glyph.x + offsetX);
-    const nextCursorX = roundCoord(lineStartX + glyph.x + glyph.advance + offsetX);
+    const prevCursorX = roundCoord(lineStartX + glyph.glyphX + offsetX);
+    const nextCursorX = roundCoord(lineStartX + glyph.glyphX + glyph.advance + offsetX);
 
     appendTimelinePoint(state.cursorXPoints, appearStartMs, prevCursorX);
     appendTimelinePoint(state.cursorXPoints, appearStartMs + CURSOR_GLIDE_MS, nextCursorX);
@@ -1158,8 +1450,8 @@ function scheduleLineTimeline(options: {
         eraseEndMs: appearEndMs + 100,
         eraseStartMs: appearEndMs + 80,
         glyphId,
+        glyphX: roundCoord(lineStartX + glyph.glyphX),
         isFirstLineChar: lineIndex === 0,
-        x: roundCoord(lineStartX + glyph.x),
       };
       lineScheduledRecords.push(record);
       state.scheduledGlyphs.push(record);
@@ -1198,23 +1490,14 @@ function scheduleLineTimeline(options: {
 }
 
 /** Render a resolved icon slot at `(boxX, boxY)` and return its SVG markup and visual width. */
-function renderPositionedIconSlot(options: {
-  boxSize: number;
-  boxX: number;
-  boxY: number;
-  color: string;
-  iconSlot: ResolvedTypingIconSlot;
-  isBoxCentered?: boolean;
-  isOnPrimary: boolean;
-  opacity: number | undefined;
-}): { markup: string; renderedWidth: number } {
+function renderPositionedIconSlot(options: PositionedIconSlotOptions): RenderedIconSlot {
   const { boxSize, boxX, boxY, color, iconSlot, isBoxCentered, isOnPrimary, opacity } = options;
   const resolvedIcon = iconSlot.data;
   const scaleNum = boxSize / 24;
   const iconScale = roundScale(scaleNum);
-  const renderedWidth = roundCoord((resolvedIcon.maxX - resolvedIcon.minX) * scaleNum);
+  const renderedWidth = measureIconVisualWidth(resolvedIcon, boxSize);
   const visualStartX = isBoxCentered ? roundCoord(boxX + (boxSize - renderedWidth) / 2) : boxX;
-  const iconOffsetX = roundCoord(visualStartX - resolvedIcon.minX * scaleNum);
+  const iconOffsetX = computeIconTranslateX(visualStartX, resolvedIcon, scaleNum);
   const markup = renderIconGroup({
     color,
     innerSvg: resolvedIcon.innerSvg,
@@ -1229,22 +1512,7 @@ function renderPositionedIconSlot(options: {
 }
 
 /** Render the inner icon and/or text markup inside a positioned hint pill or 3D keycap. */
-function renderHintBadgeInner(options: {
-  badgeHeight: number;
-  badgeWidth: number;
-  badgeX: number;
-  badgeY: number;
-  contentWidth: number;
-  hint: ResolvedTypingHint;
-  hintFontSize: number;
-  iconBoxSize: number;
-  iconTextGap: number;
-  iconVisualWidth: number;
-  isOnPrimary: boolean;
-  keycapTextFill: string;
-  mutedTextColor: string;
-  verticalNudge: number;
-}): string {
+function renderHintBadgeInner(options: HintBadgeInnerOptions): string {
   const {
     badgeHeight,
     badgeWidth,
@@ -1326,7 +1594,7 @@ function resolveHintBadgePaint(
   variant: BadgeVariant,
   palette: ThemePalette,
   mutedTextColor: string
-): { keycapFill: string; keycapStroke: string; keycapTextFill: string } {
+): HintBadgePaint {
   if (isOnPrimary) {
     return {
       keycapFill: 'rgba(0,0,0,0.11)',
@@ -1339,30 +1607,6 @@ function resolveHintBadgePaint(
     keycapStroke: variant === '2' ? palette.borderColor : BASE_DARK.borderNeutral,
     keycapTextFill: mutedTextColor,
   };
-}
-
-/**
- * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
- * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
- * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
- * bottom corner curves without extending up the vertical sides.
- */
-function buildBottomCrescentPath(
-  startX: number,
-  endX: number,
-  radius: number,
-  bottomY: number
-): string {
-  const innerRadius = roundCoord(radius - 1);
-  const innerRadiusY = roundCoord(innerRadius - 1);
-  const leftTangentX = roundCoord(startX + 1);
-  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
-  const rightArcStart = roundCoord(endX - 1 - innerRadius);
-  const rightTangentX = roundCoord(endX - 1);
-  const outerBottomY = roundCoord(bottomY - 1);
-  const innerBottomY = roundCoord(bottomY - 2);
-  const cornerStartY = roundCoord(outerBottomY - innerRadius);
-  return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
 }
 
 /** Measure the dimensions and horizontal reserved space of a trailing hint badge before `width` is finalized. */
@@ -1378,10 +1622,7 @@ function measureHintBadgeGeometry(
   const { bodyHeight, headerHeight, hintFontSize, scale } = metrics;
   const isHeaderBadge = layout === 'window' || layout === 'ide';
   const iconBoxSize = Math.round((isHeaderBadge ? 11.5 : 13) * scale);
-  const iconScaleNum = iconBoxSize / 24;
-  const iconVisualWidth = hint.iconSlot
-    ? roundCoord((hint.iconSlot.data.maxX - hint.iconSlot.data.minX) * iconScaleNum)
-    : 0;
+  const iconVisualWidth = measureIconVisualWidth(hint.iconSlot?.data, iconBoxSize);
   const textWidth = hint.text ? measureTextWidth(hint.text, hintFontSize, true, false, 'mono') : 0;
   const iconTextGap =
     hint.iconSlot && hint.text ? Math.round((isHeaderBadge ? 4.5 : 5) * scale) : 0;
@@ -1393,10 +1634,14 @@ function measureHintBadgeGeometry(
       : Math.max(Math.round(24 * scale), Math.ceil(contentWidth + badgePadX * 2));
 
   if (isHeaderBadge) {
-    const pillHeight = Math.round(18 * scale);
-    const inset = roundCoord((headerHeight - pillHeight) / 2);
+    const badgeHeight = Math.round(18 * scale);
+    const inset = roundCoord((headerHeight - badgeHeight) / 2);
     return {
+      badgeHeight,
+      badgeRadius: roundCoord(badgeHeight / 2),
+      badgeRightInset: inset,
       badgeWidth,
+      badgeY: inset,
       contentWidth,
       iconBoxSize,
       iconTextGap,
@@ -1409,10 +1654,15 @@ function measureHintBadgeGeometry(
   if (layout === 'browser') {
     const wellInsetY = roundCoord(Math.max(6, Math.round(7 * scale)));
     const wellHeight = roundCoord(bodyHeight - 2 * wellInsetY);
-    const keycapHeight = Math.round(22 * scale);
-    const innerInset = roundCoord((wellHeight - keycapHeight) / 2);
+    const badgeHeight = Math.round(22 * scale);
+    const innerInset = roundCoord((wellHeight - badgeHeight) / 2);
+    const badgeInset = roundCoord(wellInsetY + innerInset);
     return {
+      badgeHeight,
+      badgeRadius: Math.max(4, Math.round(5 * scale)),
+      badgeRightInset: badgeInset,
       badgeWidth,
+      badgeY: badgeInset,
       contentWidth,
       iconBoxSize,
       iconTextGap,
@@ -1422,10 +1672,14 @@ function measureHintBadgeGeometry(
     };
   }
 
-  const keycapHeight = Math.round(23 * scale);
-  const inset = roundCoord((bodyHeight - keycapHeight) / 2);
+  const badgeHeight = Math.round(23 * scale);
+  const inset = roundCoord((bodyHeight - badgeHeight) / 2);
   return {
+    badgeHeight,
+    badgeRadius: Math.max(5, Math.round(6 * scale)),
+    badgeRightInset: inset,
     badgeWidth,
+    badgeY: inset,
     contentWidth,
     iconBoxSize,
     iconTextGap,
@@ -1436,24 +1690,24 @@ function measureHintBadgeGeometry(
 }
 
 /** Render the trailing hint badge according to the active container layout. */
-function renderHintBadge(options: {
-  geometry: HintBadgeGeometry | undefined;
-  hint: ResolvedTypingHint | undefined;
-  layout: TypingLayout;
-  metrics: TypingMetrics;
-  palette: ThemePalette;
-  styleTokens: TypingStyleTokens;
-  variant: BadgeVariant;
-  width: number;
-}): string {
+function renderHintBadge(options: RenderHintBadgeOptions): string {
   const { geometry, hint, layout, metrics, palette, styleTokens, variant, width } = options;
   if (!geometry || !hint || layout === 'none') {
     return '';
   }
 
-  const { badgeWidth, contentWidth, iconBoxSize, iconTextGap, iconVisualWidth } = geometry;
-  const { bodyHeight, headerHeight, hintFontSize, scale } = metrics;
-  const isHeaderBadge = layout === 'window' || layout === 'ide';
+  const {
+    badgeHeight,
+    badgeRadius,
+    badgeRightInset,
+    badgeWidth,
+    badgeY,
+    contentWidth,
+    iconBoxSize,
+    iconTextGap,
+    iconVisualWidth,
+  } = geometry;
+  const badgeX = roundCoord(width - badgeRightInset - badgeWidth);
 
   const { keycapFill, keycapStroke, keycapTextFill } = resolveHintBadgePaint(
     styleTokens.isOnPrimary,
@@ -1462,10 +1716,13 @@ function renderHintBadge(options: {
     styleTokens.mutedTextColor
   );
   const baseInnerOptions = {
+    badgeHeight,
     badgeWidth,
+    badgeX,
+    badgeY,
     contentWidth,
     hint,
-    hintFontSize,
+    hintFontSize: metrics.hintFontSize,
     iconBoxSize,
     iconTextGap,
     iconVisualWidth,
@@ -1474,49 +1731,22 @@ function renderHintBadge(options: {
     mutedTextColor: styleTokens.mutedTextColor,
   };
 
-  if (isHeaderBadge) {
-    const pillHeight = Math.round(18 * scale);
-    const pillRadius = roundCoord(pillHeight / 2);
-    const inset = roundCoord((headerHeight - pillHeight) / 2);
-    const pillX = roundCoord(width - inset - badgeWidth);
-    const innerMarkup = renderHintBadgeInner({
-      ...baseInnerOptions,
-      badgeHeight: pillHeight,
-      badgeX: pillX,
-      badgeY: inset,
-      verticalNudge: 0,
-    });
-    return `<rect x="${pillX}" y="${inset}" width="${badgeWidth}" height="${pillHeight}" rx="${pillRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
+  if (layout === 'window' || layout === 'ide') {
+    const innerMarkup = renderHintBadgeInner({ ...baseInnerOptions, verticalNudge: 0 });
+    return `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
   }
 
   if (layout === 'browser') {
-    const wellInsetY = roundCoord(Math.max(6, Math.round(7 * scale)));
-    const wellHeight = roundCoord(bodyHeight - 2 * wellInsetY);
-    const keycapHeight = Math.round(22 * scale);
-    const innerInset = roundCoord((wellHeight - keycapHeight) / 2);
-    const keycapRadius = Math.max(4, Math.round(5 * scale));
-    const keycapX = roundCoord(width - wellInsetY - innerInset - badgeWidth);
-    const keycapY = roundCoord(wellInsetY + innerInset);
-    const innerMarkup = renderHintBadgeInner({
-      ...baseInnerOptions,
-      badgeHeight: keycapHeight,
-      badgeX: keycapX,
-      badgeY: keycapY,
-      verticalNudge: 0,
-    });
-    return `<rect x="${keycapX}" y="${keycapY}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />${innerMarkup}`;
+    const innerMarkup = renderHintBadgeInner({ ...baseInnerOptions, verticalNudge: 0 });
+    return `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" />${innerMarkup}`;
   }
 
   // `layout === 'prompt'`; recessed 3D keycap with Kumo lower-edge crescent and outer border ring:
-  const keycapHeight = Math.round(23 * scale);
-  const keycapRadius = Math.max(5, Math.round(6 * scale));
-  const inset = roundCoord((bodyHeight - keycapHeight) / 2);
-  const keycapX = roundCoord(width - inset - badgeWidth);
   const bottomCrescentPath = buildBottomCrescentPath(
-    keycapX,
-    keycapX + badgeWidth,
-    keycapRadius,
-    inset + keycapHeight
+    badgeX,
+    badgeX + badgeWidth,
+    badgeRadius,
+    badgeY + badgeHeight
   );
   const crescentFill = !styleTokens.isOnPrimary && variant === '2' ? palette.borderColor : WHITE;
   let crescentOpacity = '0.065';
@@ -1525,19 +1755,41 @@ function renderHintBadge(options: {
   } else if (variant === '2') {
     crescentOpacity = '0.45';
   }
-  const ringGeometry = `x="${roundCoord(keycapX + 0.5)}" y="${roundCoord(inset + 0.5)}" width="${roundCoord(badgeWidth - 1)}" height="${roundCoord(keycapHeight - 1)}" rx="${roundCoord(keycapRadius - 0.5)}"`;
-  const innerMarkup = renderHintBadgeInner({
-    ...baseInnerOptions,
-    badgeHeight: keycapHeight,
-    badgeX: keycapX,
-    badgeY: inset,
-    verticalNudge: -0.5,
-  });
+  const ringGeometry = `x="${roundCoord(badgeX + 0.5)}" y="${roundCoord(badgeY + 0.5)}" width="${roundCoord(badgeWidth - 1)}" height="${roundCoord(badgeHeight - 1)}" rx="${roundCoord(badgeRadius - 0.5)}"`;
+  const innerMarkup = renderHintBadgeInner({ ...baseInnerOptions, verticalNudge: -0.5 });
   return (
-    `<rect x="${keycapX}" y="${inset}" width="${badgeWidth}" height="${keycapHeight}" rx="${keycapRadius}" fill="${keycapFill}" />` +
+    `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" />` +
     `<path d="${bottomCrescentPath}" fill="${crescentFill}" fill-opacity="${crescentOpacity}" />` +
     `<rect ${ringGeometry} stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`
   );
+}
+
+/** Compute traffic-light dot geometry where left X-padding equals vertical Y-padding in `bandHeight`. */
+function computeTrafficLightLayout(bandHeight: number, scale: number): TrafficLightLayout {
+  const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
+  const dotGap = roundCoord(Math.max(12, 14 * scale));
+  const dotCy = roundCoord(bandHeight / 2);
+  return { dotCy, dotGap, dotRadius, rightEdgeX: roundCoord(dotCy + 2 * dotGap + dotRadius) };
+}
+
+/** Compute horizontal geometry of the active file tab in `ide` layout. */
+function computeIdeTabMetrics(
+  rightEdgeX: number,
+  scale: number,
+  titleWidth: number,
+  iconSlot: ResolvedTypingIconSlot | undefined
+): IdeTabMetrics {
+  const tabStartX = roundCoord(rightEdgeX + Math.round(12 * scale));
+  const tabPadX = Math.round(10 * scale);
+  const tabIconSize = Math.round(13 * scale);
+  const iconGap = Math.round(6 * scale);
+  const closeGap = Math.round(8 * scale);
+  const closeSize = roundCoord(Math.max(4.5, 5 * scale));
+  const iconVisualWidth = measureIconVisualWidth(iconSlot?.data, tabIconSize);
+  const tabContentWidth =
+    (iconSlot ? iconVisualWidth + iconGap : 0) + titleWidth + closeGap + closeSize;
+  const tabWidth = Math.max(Math.round(84 * scale), Math.ceil(tabContentWidth + tabPadX * 2));
+  return { closeGap, closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth };
 }
 
 /** Render traffic-light window control dots with left X-padding matching their vertical Y-padding in `bandHeight`. */
@@ -1546,16 +1798,12 @@ function renderTrafficLightDots(
   scale: number,
   variant: BadgeVariant,
   isOnPrimary: boolean
-): { dotsMarkup: string; rightEdgeX: number } {
-  const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
-  const dotGap = roundCoord(Math.max(12, 14 * scale));
-  const dotCy = roundCoord(bandHeight / 2);
-  // Left X-padding from the container edge to the left edge of dot 0 equals `dotCy - dotRadius`:
-  const firstDotCx = dotCy;
+): RenderedTrafficLightDots {
+  const { dotCy, dotGap, dotRadius, rightEdgeX } = computeTrafficLightLayout(bandHeight, scale);
   let dotsMarkup = '';
 
   for (let i = 0; i < 3; i += 1) {
-    const dotCx = roundCoord(firstDotCx + i * dotGap);
+    const dotCx = roundCoord(dotCy + i * dotGap);
     if (isOnPrimary) {
       const opacity = PRIMARY_WINDOW_DOT_OPACITIES[i] ?? '0.4';
       dotsMarkup += `<circle cx="${dotCx}" cy="${dotCy}" r="${dotRadius}" fill="${WHITE}" fill-opacity="${opacity}" />`;
@@ -1566,18 +1814,11 @@ function renderTrafficLightDots(
     }
   }
 
-  return { dotsMarkup, rightEdgeX: roundCoord(firstDotCx + 2 * dotGap + dotRadius) };
+  return { dotsMarkup, rightEdgeX };
 }
 
 /** Render the top chrome of `layout === 'window'`. */
-function renderWindowHeaderChrome(options: {
-  dotsMarkup: string;
-  iconSlot: ResolvedTypingIconSlot | undefined;
-  metrics: TypingMetrics;
-  styleTokens: TypingStyleTokens;
-  titleText: string;
-  width: number;
-}): string {
+function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
   const { dotsMarkup, iconSlot, metrics, styleTokens, titleText, width } = options;
   const { headerHeight, radius, scale, titleFontSize } = metrics;
   const innerRadius = Math.max(1, radius - 1);
@@ -1596,9 +1837,7 @@ function renderWindowHeaderChrome(options: {
     titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
 
   if (iconSlot && titleText.length > 0) {
-    const iconProbeWidth = roundCoord(
-      (iconSlot.data.maxX - iconSlot.data.minX) * (headerIconSize / 24)
-    );
+    const iconProbeWidth = measureIconVisualWidth(iconSlot.data, headerIconSize);
     const gap = Math.round(6 * scale);
     const totalPairWidth = iconProbeWidth + gap + titleWidth;
     const pairStartX = roundCoord((width - totalPairWidth) / 2);
@@ -1655,38 +1894,22 @@ function renderWindowHeaderChrome(options: {
 }
 
 /** Render the seamless active file tab, recessed tab bar, and line-number gutter of `layout === 'ide'`. */
-function renderIdeHeaderAndGutterChrome(options: {
-  dotsMarkup: string;
-  height: number;
-  iconSlot: ResolvedTypingIconSlot | undefined;
-  metrics: TypingMetrics;
-  rightEdgeX: number;
-  styleTokens: TypingStyleTokens;
-  titleText: string;
-  width: number;
-}): string {
+function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string {
   const { dotsMarkup, height, iconSlot, metrics, rightEdgeX, styleTokens, titleText, width } =
     options;
   const { bodyHeight, headerHeight, radius, scale, titleFontSize } = metrics;
   const innerRadius = Math.max(1, radius - 1);
-  const tabStartX = roundCoord(rightEdgeX + Math.round(12 * scale));
   const tabTopY = roundCoord(Math.max(4, Math.round(5 * scale)));
   const tabHeight = headerHeight - tabTopY;
   const tabRadius = Math.max(5, Math.round(6 * scale));
-  const tabPadX = Math.round(10 * scale);
-  const tabIconSize = Math.round(13 * scale);
-  const iconGap = Math.round(6 * scale);
-  const closeGap = Math.round(8 * scale);
-  const closeSize = roundCoord(Math.max(4.5, 5 * scale));
-
-  const iconVisualWidth = iconSlot
-    ? roundCoord((iconSlot.data.maxX - iconSlot.data.minX) * (tabIconSize / 24))
-    : 0;
   const titleWidth =
     titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
-  const tabContentWidth =
-    (iconSlot ? iconVisualWidth + iconGap : 0) + titleWidth + closeGap + closeSize;
-  const tabWidth = Math.max(Math.round(84 * scale), Math.ceil(tabContentWidth + tabPadX * 2));
+  const { closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth } = computeIdeTabMetrics(
+    rightEdgeX,
+    scale,
+    titleWidth,
+    iconSlot
+  );
   const tabEndX = roundCoord(Math.min(width - Math.round(24 * scale), tabStartX + tabWidth));
 
   // Darken the recessed tab strip outside the active tab so the active tab seamlessly shares the editor surface:
@@ -1763,18 +1986,7 @@ function renderIdeHeaderAndGutterChrome(options: {
 }
 
 /** Render the Kumo container surface and layout-specific chrome. */
-function renderTypingContainerSurface(options: {
-  color: ThemeColorName;
-  height: number;
-  iconSlot: ResolvedTypingIconSlot | undefined;
-  layout: TypingLayout;
-  metrics: TypingMetrics;
-  palette: ThemePalette;
-  styleTokens: TypingStyleTokens;
-  titleText: string;
-  variant: BadgeVariant;
-  width: number;
-}): string {
+function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): string {
   const {
     color,
     height,
@@ -1867,10 +2079,7 @@ function resolveBodyStartX(layout: TypingLayout, metrics: TypingMetrics): number
     return Math.round(36 * scale) + Math.round(12 * scale);
   }
   if (layout === 'browser') {
-    const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
-    const dotGap = roundCoord(Math.max(12, 14 * scale));
-    const firstDotCx = roundCoord(bodyHeight / 2);
-    const rightEdgeX = roundCoord(firstDotCx + 2 * dotGap + dotRadius);
+    const { rightEdgeX } = computeTrafficLightLayout(bodyHeight, scale);
     const wellX = roundCoord(rightEdgeX + Math.round(12 * scale));
     return roundCoord(wellX + Math.round(11 * scale));
   }
@@ -1878,15 +2087,7 @@ function resolveBodyStartX(layout: TypingLayout, metrics: TypingMetrics): number
 }
 
 /** Render the leading icon and static prefix in the body row and return `textStartX`. */
-function renderLeadingPrompt(options: {
-  baselineY: number;
-  fontFamily: TypingFont;
-  iconSlot: ResolvedTypingIconSlot | undefined;
-  layout: TypingLayout;
-  metrics: TypingMetrics;
-  prefixText: string;
-  styleTokens: TypingStyleTokens;
-}): LeadingPromptLayout {
+function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout {
   const { baselineY, fontFamily, iconSlot, layout, metrics, prefixText, styleTokens } = options;
   const { bodyHeight, fontSize, headerHeight, iconBoxSize, scale } = metrics;
   let currentX = resolveBodyStartX(layout, metrics);
@@ -1965,7 +2166,7 @@ function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
     for (const glyph of firstLine.glyphs) {
       if (glyph.pathData.length > 0) {
         const glyphId = registerGlyphDef(glyph.pathData, staticGlyphDefs);
-        const charX = roundCoord(firstLine.lineStartX + glyph.x);
+        const charX = roundCoord(firstLine.lineStartX + glyph.glyphX);
         staticCharsMarkup += `<use href="#${glyphId}" x="${charX}" y="${baselineY}" fill="${styleTokens.textColor}" />`;
       }
     }
@@ -1975,7 +2176,7 @@ function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
     ? firstLine.lineStartX + firstLine.totalAdvance
     : leading.textStartX;
   const staticCursorX = roundCoord(staticCursorBaseX + cursorGeometry.offsetX);
-  const staticCursorMarkup = `<rect x="${staticCursorX}" y="${cursorGeometry.y}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" fill-opacity="${cursorGeometry.activeOpacity}" />`;
+  const staticCursorMarkup = `<rect x="${staticCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" fill-opacity="${cursorGeometry.activeOpacity}" />`;
 
   let defsMarkup = styleTokens.gradDefs;
   for (const defMarkup of staticGlyphDefs.values()) {
@@ -2075,7 +2276,7 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
       Math.min(0.9999, Math.max(t3 + 0.0002, scheduled.eraseEndMs / totalCycleMs))
     );
     const baseOpacityAttr = scheduled.isFirstLineChar ? '' : ' opacity="0"';
-    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.x}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
+    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.glyphX}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
   }
   charsMarkup += '</g>';
 
@@ -2091,7 +2292,7 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     totalCycleMs,
     cycleDurAttr
   );
-  const cursorMarkup = `<rect x="${timelineState.firstLineEndCursorX}" y="${cursorGeometry.y}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" opacity="${cursorGeometry.activeOpacity}">${xAnimate}${opacityAnimate}</rect>`;
+  const cursorMarkup = `<rect x="${timelineState.firstLineEndCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" opacity="${cursorGeometry.activeOpacity}">${xAnimate}${opacityAnimate}</rect>`;
 
   const sheen =
     layout === 'none'
@@ -2119,7 +2320,7 @@ function measureRawTypingLines(
   fontSize: number,
   isBoldText: boolean,
   fontFamily: TypingFont
-): { maxRawAdvance: number; rawLayouts: GlyphLineLayout[] } {
+): MeasuredRawTypingLines {
   const rawLayouts: GlyphLineLayout[] = [];
   let maxRawAdvance = 0;
   for (const line of lines) {
@@ -2133,17 +2334,7 @@ function measureRawTypingLines(
 }
 
 /** Width-fit, align, and attach optional QWERTY neighbor typos to a sparse subset of lines. */
-function buildPreparedTypingLines(options: {
-  align: TypingAlign;
-  centerAnchorX: number;
-  fontFamily: TypingFont;
-  fontSize: number;
-  hasTypo: boolean;
-  isBoldText: boolean;
-  maxTextWidth: number;
-  rawLayouts: readonly GlyphLineLayout[];
-  textStartX: number;
-}): PreparedTypingLine[] {
+function buildPreparedTypingLines(options: BuildPreparedLinesOptions): PreparedTypingLine[] {
   const {
     align,
     centerAnchorX,
@@ -2186,49 +2377,27 @@ function buildPreparedTypingLines(options: {
 }
 
 /** Compute the minimum container width in pixels required so the `window` or `ide` header bar never collides. */
-function computeMinHeaderWidth(options: {
-  iconSlot: ResolvedTypingIconSlot | undefined;
-  layout: TypingLayout;
-  metrics: TypingMetrics;
-  reservedHeaderWidth: number;
-  titleText: string;
-}): number {
+function computeMinHeaderWidth(options: MinHeaderWidthOptions): number {
   const { iconSlot, layout, metrics, reservedHeaderWidth, titleText } = options;
   if (layout !== 'window' && layout !== 'ide') {
     return 0;
   }
 
   const { headerHeight, scale, titleFontSize } = metrics;
-  const dotRadius = roundCoord(Math.max(4, 4.5 * scale));
-  const dotGap = roundCoord(Math.max(12, 14 * scale));
-  const firstDotCx = roundCoord(headerHeight / 2);
-  const rightEdgeX = roundCoord(firstDotCx + 2 * dotGap + dotRadius);
+  const { rightEdgeX } = computeTrafficLightLayout(headerHeight, scale);
   const titleWidth =
     titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
 
   if (layout === 'window') {
     const headerIconSize = Math.round(14 * scale);
-    const iconVisualWidth = iconSlot
-      ? roundCoord((iconSlot.data.maxX - iconSlot.data.minX) * (headerIconSize / 24))
-      : 0;
+    const iconVisualWidth = measureIconVisualWidth(iconSlot?.data, headerIconSize);
     const centerWidth =
       iconVisualWidth + (iconSlot && titleText.length > 0 ? Math.round(6 * scale) : 0) + titleWidth;
     const sideClearance = Math.max(rightEdgeX + Math.round(12 * scale), reservedHeaderWidth);
     return Math.ceil(centerWidth + sideClearance * 2);
   }
 
-  const tabStartX = roundCoord(rightEdgeX + Math.round(12 * scale));
-  const tabPadX = Math.round(10 * scale);
-  const tabIconSize = Math.round(13 * scale);
-  const iconVisualWidth = iconSlot
-    ? roundCoord((iconSlot.data.maxX - iconSlot.data.minX) * (tabIconSize / 24))
-    : 0;
-  const tabContentWidth =
-    (iconSlot ? iconVisualWidth + Math.round(6 * scale) : 0) +
-    titleWidth +
-    Math.round(8 * scale) +
-    roundCoord(Math.max(4.5, 5 * scale));
-  const tabWidth = Math.max(Math.round(84 * scale), Math.ceil(tabContentWidth + tabPadX * 2));
+  const { tabStartX, tabWidth } = computeIdeTabMetrics(rightEdgeX, scale, titleWidth, iconSlot);
   const rightClearance = Math.max(Math.round(24 * scale), reservedHeaderWidth);
   return Math.ceil(tabStartX + tabWidth + rightClearance);
 }

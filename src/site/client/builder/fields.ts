@@ -8,7 +8,7 @@ import {
   composeIconPair,
   composeSpecial,
   findOption,
-  findService,
+  resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
   splitAnim,
   splitHint,
@@ -148,12 +148,7 @@ export function createBuilderFieldsController(
   }
 
   function getActiveServiceMetric(): BuilderServiceMetric | undefined {
-    if (schema.kind !== 'service') {
-      return undefined;
-    }
-    const state = getState();
-    const service = findService(schema, state.service) ?? schema.services?.[0];
-    return findOption(service?.metrics, state.metric ?? '') ?? service?.metrics[0];
+    return resolveActiveServiceMetric(schema, getState())?.metric;
   }
 
   function getActiveAutoSpecials(): readonly string[] {

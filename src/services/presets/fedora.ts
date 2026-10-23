@@ -33,13 +33,6 @@ const FEDORA_ENDPOINT = createEndpoint({
   project: pickFields<FedoraPackagePayload>(['epoch', 'release', 'version']),
 });
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Resolve the default Fedora branch. */
-function resolveDefaultFedoraBranch(): string {
-  return DEFAULT_FEDORA_BRANCH;
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Fedora service preset (`fedora`). */
@@ -56,11 +49,7 @@ export const FEDORA_SERVICE = defineService({
     ),
   },
   route: {
-    owner: {
-      isRequired: false,
-      placeholder: ':branch',
-      resolveDefault: resolveDefaultFedoraBranch,
-    },
+    owner: { defaultValue: DEFAULT_FEDORA_BRANCH, isRequired: false, placeholder: ':branch' },
     target: { placeholder: ':pkg' },
   },
 });

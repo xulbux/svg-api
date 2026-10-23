@@ -10,12 +10,15 @@ import type { HtmlFragment } from '@/site/jsx';
 import {
   findOption,
   findService,
+  resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
+  resolveIconSelectDisplay,
   splitAnim,
   splitIconPair,
   splitSize,
   splitSpecial,
 } from '@/site/shared';
+import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/svg/typing';
 import type {
   BuilderControl,
   BuilderField,
@@ -27,7 +30,7 @@ import type {
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<BuilderFieldView />` component. */
-export interface BuilderFieldViewProps {
+interface BuilderFieldViewProps {
   /** Builder field schema definition. */
   readonly field: BuilderField;
   /** Enclosing builder schema. */
@@ -173,11 +176,7 @@ function renderCustomSelect(
 
 /** Resolve the initial active service metric of the `service` builder schema. */
 function resolveInitialServiceMetric(schema: BuilderSchema): BuilderServiceMetric | undefined {
-  if (schema.kind !== 'service') {
-    return undefined;
-  }
-  const service = findService(schema, schema.initialState.service) ?? schema.services?.[0];
-  return findOption(service?.metrics, schema.initialState.metric ?? '') ?? service?.metrics[0];
+  return resolveActiveServiceMetric(schema, schema.initialState).metric;
 }
 
 /** Render the service options of the service badge builder (`PyPI (pypi)`), marking services that support automatic inline widgets. */
@@ -239,17 +238,12 @@ function renderIconSelect(options: IconSelectOptions): HtmlFragment {
   const labelId = sublabel ? `${inputId}-label` : `${buildFieldId(field)}-label`;
   const clearLabel = (sublabel ?? field.label).toLowerCase();
   const rawSlug = (initialValue ?? '').trim();
-  const isExplicitNone = rawSlug.toLowerCase() === 'none';
-
-  let displayLabel = placeholder;
-  let isPlaceholder = true;
-  if (!isExplicitNone && rawSlug) {
-    displayLabel = rawSlug;
-    isPlaceholder = false;
-  } else if (!isExplicitNone && presetIcon) {
-    displayLabel = isPresetDynamic ? 'Auto' : presetIcon;
-    isPlaceholder = false;
-  }
+  const { displayLabel, isPlaceholder } = resolveIconSelectDisplay(
+    rawSlug,
+    placeholder,
+    presetIcon,
+    Boolean(isPresetDynamic)
+  );
 
   return (
     <div class="icon-input">
@@ -808,8 +802,8 @@ function renderTypingLinesControl(
   controlId: string,
   initialValue: string
 ): HtmlFragment {
-  const maxLines = field.max ?? 12;
-  const maxLength = field.maxLength ?? 80;
+  const maxLines = field.max ?? MAX_TYPING_LINES;
+  const maxLength = field.maxLength ?? MAX_TYPING_LINE_LENGTH;
   const initialLines: string[] = [];
   for (const rawLine of initialValue.split(';')) {
     const trimmedLine = rawLine.trim();

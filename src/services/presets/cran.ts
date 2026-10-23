@@ -4,6 +4,7 @@
 
 import {
   CACHE_TTL,
+  PACKAGE_ROUTE,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -13,6 +14,7 @@ import {
   SERIES_DELTA_SPECIALS,
   bucketSeries,
   buildSeriesSpecials,
+  compareTrailingWindows,
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
@@ -34,6 +36,8 @@ interface CranPackagePayload {
 interface CranDownloadsProjection {
   /** 10-bar 30-day download histogram. */
   bars30d?: number[];
+  /** Downloads in the recent half of the 30-day window. */
+  currDl?: number;
   /** Downloads on the latest recorded day. */
   dd?: number;
   /** Downloads in the last 30 days. */
@@ -42,6 +46,8 @@ interface CranDownloadsProjection {
   dw?: number;
   /** Downloads on the preceding day. */
   prevDd?: number;
+  /** Downloads in the prior half of the 30-day window. */
+  prevDl?: number;
   /** Downloads in the preceding 7-day window. */
   prevDw?: number;
   /** 15-point 30-day download series. */
@@ -89,13 +95,17 @@ function projectCranDownloads(data: unknown): CranDownloadsProjection | undefine
     return undefined;
   }
   const totalDays = daily.length;
+  const [currDl, prevDl] = compareTrailingWindows(daily, 15, 2);
+  const [dw, prevDw] = compareTrailingWindows(daily, 7, 7);
   return {
     bars30d: bucketSeries(daily, 10),
+    currDl,
     dd: daily.at(-1),
     dl: sumSeries(daily),
-    dw: sumSeries(daily, totalDays - 7),
+    dw: dw ?? sumSeries(daily, totalDays - 7),
     prevDd: totalDays >= 2 ? daily.at(-2) : undefined,
-    prevDw: totalDays >= 14 ? sumSeries(daily, totalDays - 14, totalDays - 7) : undefined,
+    prevDl,
+    prevDw,
     series7d: daily.slice(-7),
     series30d: bucketSeries(daily, 15),
   };
@@ -139,8 +149,8 @@ export const CRAN_SERVICE = defineService({
       (stats) =>
         buildSeriesSpecials({
           barsValues: stats.bars30d,
-          current: stats.dw,
-          previous: stats.prevDw,
+          current: stats.currDl,
+          previous: stats.prevDl,
           sparklineValues: stats.series30d,
         })
     ),
@@ -166,5 +176,5 @@ export const CRAN_SERVICE = defineService({
       (pkg) => pkg.Version
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

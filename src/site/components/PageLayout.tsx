@@ -14,12 +14,12 @@ import type { HtmlFragment, JsxChild } from '@/site/jsx';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START, DARK_BG, LIGHT_BG } from '@/site/styles';
 import { resolveIcon } from '@/svg/icons';
-import type { NavPageId, PageSidebar } from '@/types';
+import type { NavPageId, PageSidebar, SiteClientConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<PageLayout />` document shell component. */
-export interface PageLayoutProps {
+interface PageLayoutProps {
   /** Active top-level navigation tab. */
   readonly activeNav: NavPageId;
   /** Canonical path starting with `/` (omitted on `noindex` error pages). */
@@ -52,10 +52,10 @@ const PREVIEW_BG_STORAGE_KEY = 'preview-bg';
 const DRAWER_MEDIA_QUERY = '(max-width: 960px)';
 
 /** Page background per color scheme (`theme-color` meta tags, also following the manual scheme override). */
-const THEME_COLORS: Readonly<Record<'dark' | 'light', string>> = { dark: DARK_BG, light: LIGHT_BG };
+const THEME_COLORS: SiteClientConfig['themeColors'] = { dark: DARK_BG, light: LIGHT_BG };
 
 /** Allowed preview stage background values (`'auto'` follows the page theme and removes `data-preview-bg`). */
-const PREVIEW_BG_VALUES: readonly string[] = ['auto', 'inverse'];
+const PREVIEW_BG_VALUES: SiteClientConfig['previewBgValues'] = ['auto', 'inverse'];
 
 /** Accessible description of the OpenGraph social preview card. */
 const OG_IMAGE_ALT = `${SITE_HOST} – Dynamic SVG graphics and live repository telemetry at the edge.`;
@@ -95,13 +95,16 @@ function renderHeadScript(): string {
 
 /** Render (once per isolate) the `#site-config` JSON element read by the site script (`SiteClientConfig`). */
 function renderSiteConfig(): string {
-  siteConfigHtmlCache ??= `<script type="application/json" id="site-config">${serializeInlineJson({
-    drawerMediaQuery: DRAWER_MEDIA_QUERY,
-    previewBgStorageKey: PREVIEW_BG_STORAGE_KEY,
-    previewBgValues: PREVIEW_BG_VALUES,
-    schemeStorageKey: COLOR_SCHEME_STORAGE_KEY,
-    themeColors: THEME_COLORS,
-  })}</script>`;
+  if (siteConfigHtmlCache === undefined) {
+    const siteConfig: SiteClientConfig = {
+      drawerMediaQuery: DRAWER_MEDIA_QUERY,
+      previewBgStorageKey: PREVIEW_BG_STORAGE_KEY,
+      previewBgValues: PREVIEW_BG_VALUES,
+      schemeStorageKey: COLOR_SCHEME_STORAGE_KEY,
+      themeColors: THEME_COLORS,
+    };
+    siteConfigHtmlCache = `<script type="application/json" id="site-config">${serializeInlineJson(siteConfig)}</script>`;
+  }
   return siteConfigHtmlCache;
 }
 
@@ -147,7 +150,7 @@ export function renderFaviconSvg(): string {
 /**
  * Render the complete HTML document shell as a JSX component.
  * @param props   Page layout props.
- * @returns Complete `<!DOCTYPE html><html>...</html>` JSX fragment.
+ * @returns Complete `<!DOCTYPE html><html>…</html>` JSX fragment.
  */
 export function PageLayout(props: PageLayoutProps): HtmlFragment {
   const canonicalUrl =

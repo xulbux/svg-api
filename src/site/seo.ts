@@ -2,19 +2,19 @@
  * SEO, crawler & AI discoverability – Generates `/robots.txt`, `/sitemap.xml`, `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
  */
 
-import { ISOLUX_GRAY, WHITE } from '@/config/palette';
+import { BRAND_INDIGO, ISOLUX_GRAY, OG_CARD_SURFACE, WHITE } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
 import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
-  ICON_MOTION_TOKENS,
+  ACTIVE_ICON_MOTION_TOKENS,
   SIZE_TOKENS,
   SPECIAL_ELEMENT_KINDS,
   STACK_MOTION_TOKENS,
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { SVG_ROUTES } from '@/routes/svg';
-import { listServiceMetricAliases } from '@/services/fetcher';
+import { buildServiceRoutePattern, formatServiceMetrics } from '@/site/catalog/services';
 import { ENDPOINT_ROUTES } from '@/site/catalog/shared';
 import { formatVariantTierSummary } from '@/site/glossary';
 import {
@@ -25,10 +25,9 @@ import {
   DOCS_PAGES,
 } from '@/site/navigation';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START } from '@/site/styles';
-import { ICON_SOURCE_SETS, resolveIcon } from '@/svg/icons';
+import { ALL_ICON_SOURCE_NAMES, resolveIcon } from '@/svg/icons';
 import { renderTextPathMarkup } from '@/svg/measure';
 import { escapeXml } from '@/svg/shared';
-import type { ServiceDefinition } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -54,35 +53,6 @@ let llmsTxtCache: string | undefined = undefined;
 let ogImageSvgCache: string | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Build the public route pattern of a registered service preset for `/llms.txt`. */
-function formatServiceRoute(key: string, service: ServiceDefinition): string {
-  const { owner, target } = service.route;
-  if (!owner) {
-    return `/badge/${key}/${target.placeholder}/:metric`;
-  }
-  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
-  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
-}
-
-/** Format a service's canonical metrics and aliases for `/llms.txt`. */
-function formatServiceMetrics(service: ServiceDefinition): string {
-  const aliasesByMetric = new Map<string, string[]>();
-  for (const [alias, metric] of listServiceMetricAliases(service)) {
-    const existing = aliasesByMetric.get(metric);
-    if (existing) {
-      existing.push(alias);
-    } else {
-      aliasesByMetric.set(metric, [alias]);
-    }
-  }
-  const parts: string[] = [];
-  for (const metric of Object.keys(service.metrics)) {
-    const aliases = aliasesByMetric.get(metric);
-    parts.push(aliases ? `${metric} (${aliases.join(', ')})` : metric);
-  }
-  return parts.join(' | ');
-}
 
 /** Build a Schema.org `BreadcrumbList` node from ordered `[name, path]` pairs. */
 function buildBreadcrumbListJsonLd(
@@ -276,7 +246,7 @@ export function renderLlmsTxt(): string {
     const serviceItems: string[] = [];
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
       serviceItems.push(
-        `- \`${formatServiceRoute(key, service)}\` (${service.docs.title}): ${formatServiceMetrics(service)}`
+        `- \`${buildServiceRoutePattern(key, service)}\` (${service.docs.title}): ${formatServiceMetrics(service, 'parens')}`
       );
     }
     const aliasRoutes: string[] = [];
@@ -285,7 +255,8 @@ export function renderLlmsTxt(): string {
         aliasRoutes.push(`\`/${route.prefix}/*\``);
       }
     }
-    const iconSetNames = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand].join(', ');
+    const iconSetNames = ALL_ICON_SOURCE_NAMES.join(', ');
+    const iconMotions = [...ACTIVE_ICON_MOTION_TOKENS, 'none'];
     llmsTxtCache = [
       `# ${SITE_HOST}`,
       '',
@@ -304,7 +275,7 @@ export function renderLlmsTxt(): string {
       `- \`?icon=\`: \`<slug>\` | \`<left>,<right>\` | \`none,<right>\` (${iconSetNames})`,
       '- `?dot=`: `none` | any theme color (pulsing status dot on badges)',
       `- \`?special=\`: ${SPECIAL_ELEMENT_KINDS.map((kind) => `\`${kind}\``).join(' | ')} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
-      `- \`?anim=\`: \`sheen\` | ${ICON_MOTION_TOKENS.map((token) => `\`${token}\``).join(' | ')} (stacks also support ${STACK_MOTION_TOKENS.map((token) => `\`${token}\``).join(' | ')})`,
+      `- \`?anim=\`: \`sheen\` | ${iconMotions.map((token) => `\`${token}\``).join(' | ')} (stacks also support ${STACK_MOTION_TOKENS.map((token) => `\`${token}\``).join(' | ')})`,
       '',
       '## Documentation',
       '',
@@ -374,7 +345,7 @@ export function renderOgImageSvg(): string {
         align: 'left',
         anchorX: 112,
         baselineY: 525,
-        fill: '#A5B4FC',
+        fill: BRAND_INDIGO[300],
         font: 'mono',
         fontSize: 20,
         isBold: false,
@@ -386,8 +357,8 @@ export function renderOgImageSvg(): string {
       `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_HOST} – Edge SVG Engine for READMEs and Documentation">`,
       '<defs>',
       '<linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">',
-      '<stop offset="0%" stop-color="#0D0D12" />',
-      '<stop offset="100%" stop-color="#141420" />',
+      `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
+      `<stop offset="100%" stop-color="${OG_CARD_SURFACE.bgEnd}" />`,
       '</linearGradient>',
       '<linearGradient id="og-brand" x1="0" y1="0" x2="1" y2="1">',
       `<stop offset="0%" stop-color="${BRAND_GRADIENT_START}" />`,
@@ -407,7 +378,7 @@ export function renderOgImageSvg(): string {
       titleLine1,
       titleLine2,
       subtitle,
-      `<rect x="88" y="488" width="${OG_IMAGE_WIDTH - 176}" height="58" rx="14" fill="#181824" stroke="${ISOLUX_GRAY[600]}" />`,
+      `<rect x="88" y="488" width="${OG_IMAGE_WIDTH - 176}" height="58" rx="14" fill="${OG_CARD_SURFACE.pillBg}" stroke="${ISOLUX_GRAY[600]}" />`,
       urlSample,
       '</svg>',
     ].join('');

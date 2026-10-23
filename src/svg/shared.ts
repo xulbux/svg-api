@@ -15,6 +15,7 @@ import type {
   NumericRange,
   ResolvedIcon,
   StackAnimationMode,
+  StackTileMotion,
   StripTickState,
   SweepTiming,
   ThemeColorName,
@@ -154,6 +155,19 @@ export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
   'whirl',
 ];
 
+/** Active per-icon motion tokens excluding static and default sentinel modes. */
+export const ACTIVE_ICON_MOTION_TOKENS: readonly IconMotionMode[] = ICON_MOTION_TOKENS.filter(
+  (token) => token !== 'default' && token !== 'none'
+);
+
+/** Valid per-tile stack motion tokens in display order. */
+export const STACK_MOTION_TOKENS: readonly StackTileMotion[] = ['wave', 'float', 'pulse', 'none'];
+
+/** Active per-tile stack motion tokens excluding the static sentinel mode. */
+export const ACTIVE_STACK_MOTION_TOKENS: readonly StackTileMotion[] = STACK_MOTION_TOKENS.filter(
+  (token) => token !== 'none'
+);
+
 /** Timing of the diagonal surface sheen sweep (also the base timing of the standalone icon sheen). */
 export const SHEEN_SWEEP_TIMING: Readonly<SweepTiming> = {
   duration: '4s',
@@ -181,6 +195,12 @@ const XML_REPLACEMENT_MAP: Readonly<Record<string, string>> = {
 
 /** Set of valid per-icon motion tokens (derived from `ICON_MOTION_TOKENS`). */
 const ICON_MOTION_MODES: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
+
+/** Set of valid per-tile stack motion tokens (including `'default'`). */
+const STACK_MOTION_MODES: ReadonlySet<string> = new Set<string>([
+  'default',
+  ...STACK_MOTION_TOKENS,
+]);
 
 /** Default empty theme color list for surfaces without a vivid theme gradient. */
 const NO_THEME_COLORS: readonly ThemeColorName[] = [];
@@ -318,6 +338,62 @@ function buildTopCrescentPath(
   return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
 }
 
+/**
+ * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest tenth.
+ */
+function roundTenths(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest hundredth.
+ */
+function roundCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest ten-thousandth.
+ */
+function roundScale(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/**
+ * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
+ * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
+ * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
+ * bottom corner curves without extending up the vertical sides.
+ * @param startX    Left X coordinate of the box in pixels.
+ * @param endX      Right X coordinate of the box in pixels.
+ * @param radius    Outer corner radius in pixels.
+ * @param bottomY   Bottom Y coordinate of the box in pixels.
+ * @returns SVG `<path>` `d` string.
+ */
+function buildBottomCrescentPath(
+  startX: number,
+  endX: number,
+  radius: number,
+  bottomY: number
+): string {
+  const innerRadius = roundCoord(radius - 1);
+  const innerRadiusY = roundCoord(innerRadius - 1);
+  const leftTangentX = roundCoord(startX + 1);
+  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
+  const rightArcStart = roundCoord(endX - 1 - innerRadius);
+  const rightTangentX = roundCoord(endX - 1);
+  const outerBottomY = roundCoord(bottomY - 1);
+  const innerBottomY = roundCoord(bottomY - 2);
+  const cornerStartY = roundCoord(outerBottomY - innerRadius);
+  return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
+}
+
 /** Build the SVG `<path>` `d` attribute for the left capsule of a split badge (rounded left corners, square right edge). */
 function buildLeftCapsulePath(
   startX: number,
@@ -346,7 +422,19 @@ function buildRightCapsulePath(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { buildThemeGradientId, renderVerticalGradientDef };
+export {
+  buildBottomCrescentPath,
+  buildThemeGradientId,
+  renderVerticalGradientDef,
+  roundCoord,
+  roundScale,
+  roundTenths,
+};
+export {
+  BRAND_SLUG_CLEAN_RX,
+  capitalizeSlugParts,
+  HINT_ICON_REST_RX,
+} from '@/site/shared/encoding';
 
 /**
  * Look up an own (non-inherited) property of a lookup table by a user-supplied key.
@@ -379,6 +467,15 @@ export function hasOwnKey<K extends string>(
  */
 export function isIconMotionMode(token: string | undefined): token is IconMotionMode {
   return token !== undefined && ICON_MOTION_MODES.has(token);
+}
+
+/**
+ * Check whether an optional token is a valid per-tile stack motion token (anything in `STACK_MOTION_TOKENS`).
+ * @param token   Candidate animation token.
+ * @returns `true` when `token` is a `StackTileMotion`.
+ */
+export function isStackMotionMode(token: string | undefined): token is StackTileMotion {
+  return token !== undefined && STACK_MOTION_MODES.has(token);
 }
 
 /**
@@ -424,33 +521,6 @@ export function resolveIconMotionTokens(animMode: AnimationMode): IconMotionMode
 }
 
 /**
- * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest tenth.
- */
-export function roundTenths(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-/**
- * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest hundredth.
- */
-export function roundCoord(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/**
- * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest ten-thousandth.
- */
-export function roundScale(value: number): number {
-  return Math.round(value * 10_000) / 10_000;
-}
-
-/**
  * Clamp a numeric option to `[range.min, range.max]`, substituting `fallback` when `value` is `undefined` or non-finite.
  * @param value      Candidate numeric value.
  * @param range      Allowed bounds and default value.
@@ -479,6 +549,61 @@ export function clampInt(
   fallback = range.default
 ): number {
   return Math.round(clampNumber(value, range, fallback));
+}
+
+/**
+ * Measure the rendered horizontal ink width in pixels of a resolved icon (`(maxX - minX) * (iconSize / 24)`).
+ * @param iconData   Resolved icon geometry (`undefined` returns `0`).
+ * @param iconSize   Target square icon box size in pixels.
+ * @returns Rendered horizontal ink width in pixels, rounded to 2 decimal places.
+ */
+export function measureIconVisualWidth(
+  iconData: ResolvedIcon | undefined,
+  iconSize: number
+): number {
+  if (!iconData) {
+    return 0;
+  }
+  return roundCoord((iconData.maxX - iconData.minX) * (iconSize / 24));
+}
+
+/**
+ * Compute the `translate(x, …)` X coordinate so a `24x24` icon's leftmost visible ink pixel lands at `visualStartX`.
+ * @param visualStartX   Target leftmost visible X coordinate in pixels.
+ * @param iconData       Resolved icon geometry.
+ * @param scaleNum       Unrounded scale factor (`iconSize / 24`).
+ * @returns Rounded `translate` X coordinate in pixels.
+ */
+export function computeIconTranslateX(
+  visualStartX: number,
+  iconData: ResolvedIcon,
+  scaleNum: number
+): number {
+  return roundCoord(visualStartX - iconData.minX * scaleNum);
+}
+
+/**
+ * Resolve a font size in pixels from a named preset token or custom numeric size option.
+ * @param sizeOption      Optional preset token or custom pixel size.
+ * @param presetMap       Font sizes in pixels keyed by preset token.
+ * @param range           Allowed custom numeric font size bounds.
+ * @param defaultPreset   Fallback preset token when `sizeOption` is omitted or invalid.
+ * @returns Resolved font size in pixels.
+ */
+export function resolveScaledFontSize<Preset extends string>(
+  sizeOption: Preset | number | undefined,
+  presetMap: Readonly<Record<Preset, number>>,
+  range: NumericRange,
+  defaultPreset: Preset
+): number {
+  const fallback = presetMap[defaultPreset];
+  if (typeof sizeOption === 'number') {
+    return clampNumber(sizeOption, range, fallback);
+  }
+  if (typeof sizeOption === 'string' && hasOwnKey(presetMap, sizeOption)) {
+    return presetMap[sizeOption];
+  }
+  return fallback;
 }
 
 /**

@@ -14,19 +14,8 @@ import type {
   ParamTableRow,
   ShowcaseCardConfig,
   ShowcaseItem,
+  VariantDescriptor,
 } from '@/types';
-
-// ---------------------------------------- TYPES ----------------------------------------
-
-/** Descriptor for a visual hierarchy variant showcase card. */
-export interface VariantDescriptor {
-  /** Short explanation of the visual hierarchy tier. */
-  readonly description: string;
-  /** Variant query parameter identifier. */
-  readonly id: BadgeVariant;
-  /** Display title for the variant card. */
-  readonly title: string;
-}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 

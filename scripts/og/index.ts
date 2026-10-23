@@ -59,7 +59,7 @@ async function evaluateLiveOgSvg(): Promise<LiveOgModule> {
       loader: 'ts',
       resolveDir: REPO_ROOT,
     },
-    target: 'node24',
+    target: 'node26',
     tsconfig: path.resolve(REPO_ROOT, 'tsconfig.json'),
   });
 

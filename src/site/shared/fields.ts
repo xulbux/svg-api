@@ -2,16 +2,20 @@
  * Composite builder parameter codecs – Composes and splits multi-part query DSL values (`?icon=`, `?hint=`, `?anim=`, `?special=`, and `?size=`).
  */
 
-import { findOption } from '@/site/shared/encoding';
-import type { BuilderOption } from '@/types';
+import { findOption, HINT_ICON_REST_RX } from '@/site/shared/encoding';
+import type {
+  AnimSplitParts,
+  BuilderOption,
+  HintSplitParts,
+  IconSelectDisplay,
+  SizeSplitParts,
+  SpecialSplitParts,
+} from '@/types';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches comma or whitespace separators in list-style payloads. */
 export const LIST_SEPARATOR_RX = /[,\s]+/;
-
-/** Matches `<slug>` and optional trailing `<text>` after an `icon:` prefix in `?hint=`. */
-const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -96,7 +100,7 @@ export function composeHint(icon: string, text: string): string {
  * @param value   Serialized `?hint=` value.
  * @returns `{ icon, text }` parts.
  */
-export function splitHint(value: string): { icon: string; text: string } {
+export function splitHint(value: string): HintSplitParts {
   const trimmed = value.trim();
   if (!trimmed || trimmed.toLowerCase() === 'none') {
     return { icon: '', text: '' };
@@ -137,10 +141,7 @@ export function composeAnim(hasSheen: boolean, left: string, right: string): str
  * @param options   Optional `anim` field options used to canonicalize aliases and reject unknown tokens.
  * @returns Sheen flag and left/right icon motion tokens.
  */
-export function splitAnim(
-  value: string,
-  options?: readonly BuilderOption[]
-): { hasSheen: boolean; left: string; right: string } {
+export function splitAnim(value: string, options?: readonly BuilderOption[]): AnimSplitParts {
   const motions: string[] = [];
   let hasSheen = false;
   for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
@@ -204,10 +205,7 @@ export function composeSpecial(
  * @param options   Widget kind options of the `special` field.
  * @returns Parsed `kind`, `modifier`, and `payload`.
  */
-export function splitSpecial(
-  value: string,
-  options: readonly BuilderOption[]
-): { kind: string; modifier: string; payload: string } {
+export function splitSpecial(value: string, options: readonly BuilderOption[]): SpecialSplitParts {
   const trimmed = value.trim();
   if (!trimmed) {
     return { kind: '', modifier: '', payload: '' };
@@ -255,10 +253,7 @@ export function splitSpecial(
  * @param options   Named preset options.
  * @returns Preset token (`'custom'` for numeric values) and custom pixel string.
  */
-export function splitSize(
-  value: string,
-  options: readonly BuilderOption[]
-): { custom: string; preset: string } {
+export function splitSize(value: string, options: readonly BuilderOption[]): SizeSplitParts {
   const clean = value.trim().toLowerCase();
   if (!clean) {
     return { custom: '', preset: '' };
@@ -269,4 +264,36 @@ export function splitSize(
   return Number.isFinite(Number(clean))
     ? { custom: clean, preset: 'custom' }
     : { custom: '', preset: '' };
+}
+
+/**
+ * Resolve the display label, glyph slug, and placeholder state of an icon selector trigger.
+ * @param rawSlug           Raw hidden input value.
+ * @param placeholder       Fallback placeholder text.
+ * @param presetIcon        Optional preset icon slug when `rawSlug` is empty.
+ * @param isPresetDynamic   Whether `presetIcon` varies dynamically at runtime (`'Auto'` label).
+ * @returns Display label, glyph slug, and placeholder state flag.
+ */
+export function resolveIconSelectDisplay(
+  rawSlug: string,
+  placeholder: string,
+  presetIcon?: string,
+  isPresetDynamic = false
+): IconSelectDisplay {
+  const trimmed = rawSlug.trim();
+  if (trimmed.toLowerCase() === 'none') {
+    return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+  }
+  if (trimmed) {
+    return { displayLabel: trimmed, glyphSlug: trimmed, isPlaceholder: false };
+  }
+  const cleanPreset = (presetIcon ?? '').trim();
+  if (cleanPreset) {
+    return {
+      displayLabel: isPresetDynamic ? 'Auto' : cleanPreset,
+      glyphSlug: cleanPreset,
+      isPlaceholder: false,
+    };
+  }
+  return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
 }

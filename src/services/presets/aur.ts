@@ -3,6 +3,7 @@
  */
 
 import {
+  PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -72,7 +73,7 @@ export const AUR_SERVICE = defineService({
   },
   metrics: {
     license: createLicenseMetric(AUR_ENDPOINT, (info) =>
-      Array.isArray(info.License) ? info.License[0] : undefined
+      Array.isArray(info.License) ? info.License : undefined
     ),
     popularity: createMetric(
       AUR_ENDPOINT,
@@ -86,5 +87,5 @@ export const AUR_SERVICE = defineService({
     ),
     votes: createCommunityMetric(AUR_ENDPOINT, 'votes', 'archlinux', (info) => info.NumVotes),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

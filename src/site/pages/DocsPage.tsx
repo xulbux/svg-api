@@ -25,7 +25,7 @@ import type { DocsPageSlug, DocsSectionSlug } from '@/types';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<DocsPage />` component. */
-export interface DocsPageProps {
+interface DocsPageProps {
   /** Target documentation page slug (`'overview'` for `/docs`, or a `DocsSectionSlug`). */
   readonly slug?: DocsPageSlug;
 }

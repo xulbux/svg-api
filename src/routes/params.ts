@@ -11,7 +11,7 @@ import {
   MAX_STRIP_TICKS,
   MIN_SERIES_POINTS,
 } from '@/svg/renderer';
-import { getOwnValue, isIconMotionMode, isStripTickState } from '@/svg/shared';
+import { getOwnValue, isIconMotionMode, isStackMotionMode, isStripTickState } from '@/svg/shared';
 import { DEFAULT_TYPING_CURSOR, DEFAULT_TYPING_ERASE, DEFAULT_TYPING_LAYOUT } from '@/svg/typing';
 import type {
   AnimationMode,
@@ -79,8 +79,13 @@ export const SIZE_TOKENS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
 /** Set of valid named size presets (derived from `SIZE_TOKENS`). */
 const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
 
-/** Valid per-icon motion tokens, sorted alphabetically. */
-export { ICON_MOTION_TOKENS } from '@/svg/shared';
+/** Valid per-icon and per-tile motion tokens. */
+export {
+  ACTIVE_ICON_MOTION_TOKENS,
+  ACTIVE_STACK_MOTION_TOKENS,
+  ICON_MOTION_TOKENS,
+  STACK_MOTION_TOKENS,
+} from '@/svg/shared';
 
 /** Shorthand aliases mapped to their canonical per-icon motion tokens. */
 export const ICON_MOTION_ALIASES: Readonly<Record<string, IconMotionMode>> = {
@@ -89,15 +94,6 @@ export const ICON_MOTION_ALIASES: Readonly<Record<string, IconMotionMode>> = {
   'spin-smooth': 'whirl',
   twirl: 'turn',
 };
-
-/** Valid per-tile stack motion tokens in display order. */
-export const STACK_MOTION_TOKENS: readonly StackTileMotion[] = ['wave', 'float', 'pulse', 'none'];
-
-/** Set of valid per-tile stack motion tokens (including `'default'`). */
-const VALID_STACK_MOTIONS: ReadonlySet<string> = new Set<string>([
-  'default',
-  ...STACK_MOTION_TOKENS,
-]);
 
 /** Shorthand aliases mapped to their canonical per-tile stack motion tokens. */
 export const STACK_MOTION_ALIASES: Readonly<Record<string, StackTileMotion>> = {
@@ -425,6 +421,53 @@ function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefine
   return undefined;
 }
 
+/** Parse `?anim=` tokens (optional `'sheen'` plus up to `maxMotions` motion tokens resolved through `aliases`). */
+function resolveAnimationTokens<T extends string>(
+  input: string | null | undefined,
+  fallback: T,
+  aliases: Readonly<Record<string, string>>,
+  isValidMotion: (token: string | undefined) => boolean,
+  maxMotions: number
+): T {
+  const normalized = normalizeQueryToken(input);
+  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
+    return fallback;
+  }
+
+  let hasSheen = false;
+  const motionTokens: string[] = [];
+  for (const token of normalized.split(LIST_SEPARATOR_RX)) {
+    if (token.length > 0) {
+      if (token === 'sheen') {
+        if (hasSheen) {
+          return fallback;
+        }
+        hasSheen = true;
+      } else {
+        const motion = getOwnValue(aliases, token) ?? token;
+        if (!isValidMotion(motion) || motionTokens.length >= maxMotions) {
+          return fallback;
+        }
+        motionTokens.push(motion);
+      }
+    }
+  }
+
+  if (motionTokens.length === 0) {
+    return (hasSheen ? 'sheen' : fallback) as T;
+  }
+  if (
+    hasSheen &&
+    motionTokens.length === 1 &&
+    (motionTokens[0] === 'none' || motionTokens[0] === 'default')
+  ) {
+    return 'sheen' as T;
+  }
+
+  const joined = motionTokens.join(',');
+  return (hasSheen ? `sheen,${joined}` : joined) as T;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 export { decodeSegment } from '@/site/shared';
@@ -529,43 +572,7 @@ export function resolveAnimationMode(
   input: string | null | undefined,
   fallback: AnimationMode = 'default'
 ): AnimationMode {
-  const normalized = normalizeQueryToken(input);
-  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
-    return fallback;
-  }
-
-  let hasSheen = false;
-  const motionTokens: string[] = [];
-  for (const token of normalized.split(LIST_SEPARATOR_RX)) {
-    if (token.length > 0) {
-      if (token === 'sheen') {
-        if (hasSheen) {
-          return fallback;
-        }
-        hasSheen = true;
-      } else {
-        const motion = getOwnValue(ICON_MOTION_ALIASES, token) ?? token;
-        if (!isIconMotionMode(motion) || motionTokens.length >= 2) {
-          return fallback;
-        }
-        motionTokens.push(motion);
-      }
-    }
-  }
-
-  if (motionTokens.length === 0) {
-    return hasSheen ? 'sheen' : fallback;
-  }
-  if (
-    hasSheen &&
-    motionTokens.length === 1 &&
-    (motionTokens[0] === 'none' || motionTokens[0] === 'default')
-  ) {
-    return 'sheen';
-  }
-
-  const joined = motionTokens.join(',');
-  return (hasSheen ? `sheen,${joined}` : joined) as AnimationMode;
+  return resolveAnimationTokens(input, fallback, ICON_MOTION_ALIASES, isIconMotionMode, 2);
 }
 
 /**
@@ -578,37 +585,7 @@ export function resolveStackAnimationMode(
   input: string | null | undefined,
   fallback: StackAnimationMode = 'default'
 ): StackAnimationMode {
-  const normalized = normalizeQueryToken(input);
-  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
-    return fallback;
-  }
-
-  let hasSheen = false;
-  let motionToken: StackTileMotion | undefined = undefined;
-  for (const token of normalized.split(LIST_SEPARATOR_RX)) {
-    if (token.length > 0) {
-      if (token === 'sheen') {
-        if (hasSheen) {
-          return fallback;
-        }
-        hasSheen = true;
-      } else {
-        const motion = getOwnValue(STACK_MOTION_ALIASES, token) ?? token;
-        if (!VALID_STACK_MOTIONS.has(motion) || motionToken !== undefined) {
-          return fallback;
-        }
-        motionToken = motion as StackTileMotion;
-      }
-    }
-  }
-
-  if (motionToken === undefined) {
-    return hasSheen ? 'sheen' : fallback;
-  }
-  if (hasSheen && (motionToken === 'none' || motionToken === 'default')) {
-    return 'sheen';
-  }
-  return (hasSheen ? `sheen,${motionToken}` : motionToken) as StackAnimationMode;
+  return resolveAnimationTokens(input, fallback, STACK_MOTION_ALIASES, isStackMotionMode, 1);
 }
 
 /**

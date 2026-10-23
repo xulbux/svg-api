@@ -2,20 +2,22 @@
  * Documentation catalog barrel – Re-exports the modular catalog data (`src/site/catalog/`).
  */
 
+// -------------------------------------- PUBLIC API -------------------------------------
+
 export {
   BADGE_VARIANT_DESCRIPTORS,
   buildBadgeParamRows,
   buildBadgeUseCaseCards,
   buildBadgeVariantCards,
-} from './badges';
+} from '@/site/catalog/badges';
 export {
   buildButtonParamRows,
   buildButtonVariantCards,
   BUTTON_USE_CASE_CARDS,
   BUTTON_VARIANT_DESCRIPTORS,
-} from './buttons';
-export { buildColorSwatchCards } from './colors';
-export { buildIconParamRows, ICON_CARDS } from './icons';
+} from '@/site/catalog/buttons';
+export { buildColorSwatchCards } from '@/site/catalog/colors';
+export { buildIconParamRows, ICON_CARDS } from '@/site/catalog/icons';
 export {
   buildCachingRows,
   buildSharedParamRows,
@@ -25,26 +27,36 @@ export {
   SEGMENT_ENCODING_ROWS,
   SHARED_PARAM_COLUMNS,
   URL_ANATOMY_PARTS,
-} from './overview';
-export { buildQuoteParamRows, HORIZONTAL_QUOTE_CARDS, VERTICAL_QUOTE_CARDS } from './quotes';
-export { buildServiceParamRows, SERVICE_PRESET_CARDS, SERVICE_ROUTE_PATTERN } from './services';
+} from '@/site/catalog/overview';
+export {
+  buildQuoteParamRows,
+  HORIZONTAL_QUOTE_CARDS,
+  VERTICAL_QUOTE_CARDS,
+} from '@/site/catalog/quotes';
+export {
+  buildServiceParamRows,
+  buildServiceRoutePattern,
+  formatServiceMetrics,
+  SERVICE_PRESET_CARDS,
+  SERVICE_ROUTE_PATTERN,
+} from '@/site/catalog/services';
 export {
   ENCODED_CHAOS_QUOTE,
   ENDPOINT_ROUTES,
   formatCountLowerBound,
   getIconSetCounts,
   STACK_EXAMPLE_GROUPS,
-} from './shared';
+} from '@/site/catalog/shared';
 export {
   buildStackParamRows,
   buildStackVariantCards,
   countStackExampleIcons,
   STACK_ANIMATION_CARDS,
   STACK_VARIANT_DESCRIPTORS,
-} from './stack';
+} from '@/site/catalog/stack';
 export {
   buildTypingParamRows,
   TYPING_BEHAVIOR_CARDS,
   TYPING_LAYOUT_CARDS,
   TYPING_VARIANT_CARDS,
-} from './typing';
+} from '@/site/catalog/typing';

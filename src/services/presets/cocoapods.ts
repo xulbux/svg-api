@@ -6,7 +6,7 @@
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createLicenseMetric, createVersionMetric, readLicenseName } from '@/services/metrics';
+import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -33,7 +33,7 @@ const COCOAPODS_ENDPOINT = createEndpoint({
 export const COCOAPODS_SERVICE = defineService({
   docs: { description: 'Latest pod version and license.', title: 'CocoaPods' },
   metrics: {
-    license: createLicenseMetric(COCOAPODS_ENDPOINT, (spec) => readLicenseName(spec.license)),
+    license: createLicenseMetric(COCOAPODS_ENDPOINT, (spec) => spec.license),
     v: createVersionMetric(
       COCOAPODS_ENDPOINT,
       { defaultColor: 'rose', defaultIcon: 'cocoapods', defaultLabel: 'Pod' },

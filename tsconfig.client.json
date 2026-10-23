@@ -1,22 +1,10 @@
 {
+  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "forceConsistentCasingInFileNames": true,
-    "isolatedModules": true,
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "noEmit": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitReturns": true,
-    "noUncheckedIndexedAccess": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
     "paths": { "@/*": ["./src/*"] },
-    "skipLibCheck": true,
-    "strict": true,
-    "target": "ES2023",
-    "types": [],
-    "verbatimModuleSyntax": true
+    "types": []
   },
+  "exclude": [],
   "include": ["src/site/client/**/*.ts", "src/site/shared/**/*.ts"]
 }

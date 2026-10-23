@@ -24,6 +24,10 @@ function copyWithSelection(text: string): boolean {
   if (!selection) {
     return false;
   }
+  const savedRanges: Range[] = [];
+  for (let i = 0; i < selection.rangeCount; i += 1) {
+    savedRanges.push(selection.getRangeAt(i));
+  }
   const scratch = document.createElement('pre');
   scratch.textContent = text;
   scratch.style.cssText = 'position:fixed;inset:0 auto auto 0;opacity:0;pointer-events:none;';
@@ -41,6 +45,9 @@ function copyWithSelection(text: string): boolean {
   }
   selection.removeAllRanges();
   scratch.remove();
+  for (const savedRange of savedRanges) {
+    selection.addRange(savedRange);
+  }
   return isCopied;
 }
 

@@ -28,11 +28,11 @@
   background: var(--c-border);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--c-btn-hover-bg);
 }
 
-.btn-secondary:hover:not(.is-copied, .is-failed) {
+.btn-secondary:hover:not(:disabled, [aria-disabled='true'], .is-copied, .is-failed) {
   border-color: var(--c-border-strong);
   background: color-mix(in srgb, var(--c-text-1), var(--c-border) 94%);
 }
@@ -43,9 +43,10 @@ button.btn-secondary {
   cursor: pointer;
 }
 
-/* Disabled link buttons (e.g., the builder's `Open SVG` link without an `href` while required fields are empty): */
+/* Disabled buttons and link buttons (e.g., the builder's `Open SVG` link without an `href` while required fields are empty): */
 
-.btn-secondary[aria-disabled='true'] {
+.btn-primary:is(:disabled, [aria-disabled='true']),
+.btn-secondary:is(:disabled, [aria-disabled='true']) {
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
@@ -227,15 +228,7 @@ button.btn-secondary {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
 }
 
-.table-wrapper + .card-grid {
-  margin-block-start: 40px;
-}
-
-.card-grid + .card-grid {
-  margin-block-start: 20px;
-}
-
-/* Outer Card: */
+/* Outer Card */
 
 .card {
   display: flex;
@@ -576,7 +569,7 @@ details.code-drawer[open] .drawer-chevron {
 .btn-secondary.is-copied {
   border-color: var(--c-brand-border);
   color: var(--c-brand-1);
-  background: color-mix(in srgb, var(--c-brand-soft) 85%, var(--c-bg-soft) 60%);
+  background: color-mix(in srgb, var(--c-bg-soft) 84%, var(--c-brand-1) 16%);
 }
 
 .copy-btn.is-failed,

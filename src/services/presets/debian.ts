@@ -32,11 +32,6 @@ const DEBIAN_SUITE_ALIASES: Readonly<Record<string, string>> = {
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Resolve the default Debian suite. */
-function resolveDefaultDebianSuite(): string {
-  return DEFAULT_DEBIAN_SUITE;
-}
-
 /** Project a Debian Sources response into its newest version per suite (`undefined` when not found). */
 function projectDebianSource(data: unknown): DebianSourceProjection | undefined {
   if (!isJsonObject(data) || data.error !== undefined || !Array.isArray(data.versions)) {
@@ -91,7 +86,7 @@ export const DEBIAN_SERVICE = defineService({
     ),
   },
   route: {
-    owner: { isRequired: false, placeholder: ':suite', resolveDefault: resolveDefaultDebianSuite },
+    owner: { defaultValue: DEFAULT_DEBIAN_SUITE, isRequired: false, placeholder: ':suite' },
     target: { placeholder: ':pkg' },
   },
 });

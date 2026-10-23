@@ -3,8 +3,27 @@
  */
 
 import type { ServicePreviewSample } from './service';
+import type { BadgeVariant } from './theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Pre-escaped HTML fragment produced by a JSX element, fragment, or `raw()` call. */
+export interface HtmlFragment {
+  /** Pre-escaped HTML markup string. */
+  readonly rawHtml: string;
+  /** Returns the raw HTML string. */
+  toString: () => string;
+}
+
+/** Valid child values inside a JSX element or fragment. */
+export type JsxChild =
+  | HtmlFragment
+  | readonly JsxChild[]
+  | boolean
+  | number
+  | string
+  | null
+  | undefined;
 
 /** Supported documentation section slugs. */
 export type DocsSectionSlug =
@@ -231,4 +250,43 @@ export interface PopoverPlacement {
   minWidth: number | undefined;
   /** Top edge in viewport pixels. */
   top: number;
+}
+
+/** Pure helpers exposed by the site script when evaluated without a DOM (`svgSiteCore`). */
+export interface SiteClientCore {
+  /** Compute the viewport position of a popover below or above its anchor. */
+  computePopoverPlacement: (
+    anchorRect: PopoverAnchorRect,
+    popoverSize: PopoverSize,
+    viewportSize: PopoverSize,
+    options: PopoverPlacementOptions
+  ) => PopoverPlacement;
+}
+
+/** Descriptor for a visual hierarchy variant showcase card. */
+export interface VariantDescriptor {
+  /** Short explanation of the visual hierarchy tier. */
+  readonly description: string;
+  /** Variant query parameter identifier. */
+  readonly id: BadgeVariant;
+  /** Display title for the variant card. */
+  readonly title: string;
+}
+
+/** Highlighted part of a URL anatomy example. */
+export interface UrlAnatomyPart {
+  /** Syntax highlighting class (`hl-*`). */
+  readonly className: string;
+  /** Optional legend label (omitted on repeated roles in the URL). */
+  readonly label?: string | undefined;
+  /** Literal URL text. */
+  readonly text: string;
+}
+
+/** Leading and trailing parts of a `main (parenthetical)` string. */
+export interface TrailingParenthetical {
+  /** Text before the trailing parenthetical group. */
+  main: string;
+  /** Text inside the trailing parenthetical group. */
+  paren: string;
 }

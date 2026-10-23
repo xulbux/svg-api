@@ -4,6 +4,7 @@
  * URL templates substitute `encodeURIComponent`-encoded route params, so presets never
  * interpolate raw route input into upstream URLs:
  * - `{owner}` / `{target}`: Owner and target (multi-segment targets are encoded per segment and keep their `/` separators).
+ * - `{scope}`: Scope (`owner` with an optional leading `@` stripped), encoded as one component.
  * - `{path}`: `[owner/]target`, encoded per segment (e.g., Clojars `[:group/]:artifact`).
  * - `{id}`: `[owner/]target` encoded as one component (`/` -> `%2F`, e.g., GitLab project IDs).
  * - `{npm}`: `[@scope/]target` with scope and package encoded individually (e.g., `@hono/node-server` or `hono`).
@@ -36,8 +37,6 @@ interface EndpointOptions<P> {
   buildRequest?: ServiceRequestBuilder;
   /** Top-level JSON object keys whose values are the only parts needed. */
   extractKeys?: readonly string[];
-  /** Single top-level JSON object key whose value is the only part needed. */
-  leadingKey?: string;
   /** Upstream error statuses reported as not found. */
   missingStatuses?: readonly number[];
   /** Browser redirect URL template or builder. */
@@ -51,7 +50,7 @@ interface EndpointOptions<P> {
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a URL template placeholder (captured, so `split` keeps the placeholder names). */
-const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|target|path|id|npm-id|npm)\}/;
+const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|scope|target|path|id|npm-id|npm)\}/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -101,6 +100,9 @@ function resolvePlaceholder(name: string, params: ServiceRouteParams): string {
   switch (name) {
     case 'owner': {
       return encodePathSegments(params.owner);
+    }
+    case 'scope': {
+      return encodeURIComponent(stripScopePrefix(params.owner));
     }
     case 'path': {
       return encodePathSegments(joinRoutePath(params));
@@ -152,6 +154,15 @@ export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const sati
   Record<string, number>
 >;
 
+/** Shared route schema for `:owner/:repo` repository services. */
+export const OWNER_REPO_ROUTE: ServiceRoute = {
+  owner: { isRequired: true, placeholder: ':owner' },
+  target: { placeholder: ':repo' },
+};
+
+/** Shared route schema for single-segment `:pkg` package services. */
+export const PACKAGE_ROUTE: ServiceRoute = { target: { placeholder: ':pkg' } };
+
 /** Shared route schema for `[:scope/]:pkg` package services. */
 export const NPM_PACKAGE_ROUTE: ServiceRoute = {
   owner: { isRequired: false, placeholder: ':scope' },
@@ -170,21 +181,27 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * Narrow an unknown JSON value to a plain object, returning `undefined` otherwise.
+ * @param value   Parsed JSON value.
+ * @returns Plain object record, or `undefined` for primitives, `null`, or arrays.
+ */
+export function asJsonObject(value: unknown): Record<string, unknown> | undefined {
+  return isJsonObject(value) ? value : undefined;
+}
+
+/**
  * Create an upstream endpoint from URL templates (or builders), a cache TTL, and an optional projection.
- * @param options   API and page URL sources, TTL, leading key, missing statuses, and projection.
+ * @param options   API and page URL sources, TTL, extracted keys, missing statuses, and projection.
  * @returns Endpoint whose URL templates are compiled lazily on first use.
  */
 export function createEndpoint<P = Record<string, unknown>>(
   options: EndpointOptions<P>
 ): MetricEndpoint<P> {
-  const extractKeys =
-    options.extractKeys ?? (options.leadingKey === undefined ? undefined : [options.leadingKey]);
   return {
     buildApiUrl: toUrlBuilder(options.api),
     buildPageUrl: toUrlBuilder(options.page),
     buildRequest: options.buildRequest,
-    extractKeys,
-    leadingKey: options.leadingKey,
+    extractKeys: options.extractKeys,
     missingStatuses: options.missingStatuses,
     project: options.project,
     ttl: options.ttl ?? CACHE_TTL.default,

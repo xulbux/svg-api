@@ -22,7 +22,7 @@ interface NavTab {
 }
 
 /** Props for the `<HeaderNav />` component. */
-export interface HeaderNavProps {
+interface HeaderNavProps {
   /** Active top-level navigation tab. */
   readonly activeNav: NavPageId;
   /** Optional grouped left sidebar configuration (renders the narrow-screen drawer toggle when present). */
@@ -78,16 +78,11 @@ function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
   );
 }
 
-// -------------------------------------- PUBLIC API -------------------------------------
-
 /**
  * Render (once per active tab and sidebar page) the sticky top navigation bar matching the VitePress text-link
  * navbar style; On narrow screens, the nav row wraps below the brand and holds the sidebar drawer toggle.
- * @param activeNav   Active top-level navigation tab.
- * @param sidebar     Optional sidebar configuration.
- * @returns Header HTML string.
  */
-export function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined): string {
+function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined): string {
   // Sidebar pages are a fixed set, so the cache stays bounded by the number of pages:
   const cacheKey = `${activeNav}|${sidebar?.activeHref ?? ''}`;
   const cached = HEADER_HTML_CACHE.get(cacheKey);
@@ -167,6 +162,8 @@ export function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | und
   HEADER_HTML_CACHE.set(cacheKey, headerHtml);
   return headerHtml;
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render the sticky top navigation bar as a JSX component.

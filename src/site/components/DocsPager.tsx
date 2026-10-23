@@ -10,7 +10,7 @@ import type { DocsPageSlug } from '@/types';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<DocsPager />` component. */
-export interface DocsPagerProps {
+interface DocsPagerProps {
   /** Current documentation page slug. */
   readonly slug: DocsPageSlug;
 }

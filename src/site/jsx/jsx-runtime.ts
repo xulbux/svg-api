@@ -6,26 +6,11 @@
  */
 
 import { escapeXml } from '@/svg/shared';
+import type { HtmlFragment, JsxChild } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Pre-escaped HTML fragment produced by a JSX element, fragment, or `raw()` call. */
-export interface HtmlFragment {
-  /** Pre-escaped HTML markup string. */
-  readonly rawHtml: string;
-  /** Returns the raw HTML string. */
-  toString: () => string;
-}
-
-/** Valid child values inside a JSX element or fragment. */
-export type JsxChild =
-  | HtmlFragment
-  | readonly JsxChild[]
-  | boolean
-  | number
-  | string
-  | null
-  | undefined;
+export type { HtmlFragment, JsxChild } from '@/types';
 
 /** Base props accepted by every intrinsic HTML and SVG element. */
 export interface IntrinsicElementAttributes {
@@ -35,7 +20,7 @@ export interface IntrinsicElementAttributes {
   class?: string | undefined;
   /** React-style alias for `class`. */
   className?: string | undefined;
-  /** Label target ID (`<label for="...">`). */
+  /** Label target ID (`<label for="…">`). */
   for?: string | undefined;
   /** React-style alias for `for`. */
   htmlFor?: string | undefined;
@@ -58,10 +43,14 @@ export type FunctionComponent<TProps = Record<string, unknown>> = (props: TProps
 
 // oxlint-disable-next-line typescript/no-namespace -- TypeScript's `react-jsx` transform requires the `JSX` namespace on the runtime module.
 export namespace JSX {
+  /** Serialized HTML fragment returned by JSX expressions. */
   export type Element = HtmlFragment;
+  /** Prop key carrying JSX child nodes. */
   export interface ElementChildrenAttribute {
+    /** Child nodes passed inside JSX opening/closing tags. */
     children: Record<string, unknown>;
   }
+  /** Attribute map accepted by intrinsic HTML and SVG tags. */
   export type IntrinsicElements = Record<string, IntrinsicElementAttributes>;
 }
 
@@ -94,7 +83,6 @@ const BOOLEAN_ATTRIBUTES: ReadonlySet<string> = new Set([
   'inert',
   'novalidate',
   'open',
-  'popover',
   'readonly',
   'required',
   'selected',
@@ -166,11 +154,17 @@ function serializeAttributes(props: Readonly<Record<string, unknown>>): string {
       }
     } else {
       const name = ATTRIBUTE_ALIASES[rawName] ?? rawName;
-      if (
+      if (name === 'popover') {
+        if (rawValue === true || rawValue === '') {
+          attrsHtml += ' popover';
+        } else if (rawValue !== false) {
+          attrsHtml += ` popover="${escapeXml(String(rawValue))}"`;
+        }
+      } else if (
         BOOLEAN_ATTRIBUTES.has(name) ||
         (name.startsWith('data-') && typeof rawValue === 'boolean')
       ) {
-        if (rawValue === true || (name === 'popover' && rawValue === '')) {
+        if (rawValue === true) {
           attrsHtml += ` ${name}`;
         }
       } else if (typeof rawValue === 'boolean') {
@@ -206,7 +200,7 @@ export function renderHtml(fragment: HtmlFragment): string {
 }
 
 /**
- * Render a JSX fragment (`<>...</>`) by concatenating its serialized children.
+ * Render a JSX fragment (`<>…</>`) by concatenating its serialized children.
  * @param props   Fragment props containing `children`.
  * @returns Pre-escaped `HtmlFragment`.
  */

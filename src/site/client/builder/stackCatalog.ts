@@ -6,6 +6,7 @@ import {
   BRAND_SLUG_CLEAN_RX,
   collectStackTileTokens,
   composeCategorizedStack,
+  handleRovingTabKeydown,
   readState,
   stripStackTileColor,
 } from '@/site/client/builder/core';
@@ -340,21 +341,11 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
       }
     });
     modeTabList?.addEventListener('keydown', (event) => {
-      const keyEvent = event as KeyboardEvent;
-      const tabs = [...modeTabList.querySelectorAll('.stack-mode-tab')];
-      let next: Element | undefined = undefined;
-      if (keyEvent.key === 'ArrowLeft' || keyEvent.key === 'ArrowRight') {
-        next = tabs.find((candidate) => candidate.getAttribute('aria-selected') !== 'true');
-      } else if (keyEvent.key === 'Home') {
-        [next] = tabs;
-      } else if (keyEvent.key === 'End') {
-        next = tabs.at(-1);
-      }
-      if (next instanceof HTMLElement) {
-        keyEvent.preventDefault();
-        selectStackModeTab(next);
-        next.focus();
-      }
+      handleRovingTabKeydown(
+        event as KeyboardEvent,
+        [...modeTabList.querySelectorAll('.stack-mode-tab')],
+        selectStackModeTab
+      );
     });
   }
 

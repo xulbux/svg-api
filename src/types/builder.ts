@@ -3,7 +3,7 @@
  */
 
 import type { BadgeSpecialKind } from './badge';
-import type { IconPickerSetId } from './icon';
+import type { IconPickerIndex, IconPickerSetId } from './icon';
 import type { ServiceOwnerMode } from './service';
 import type { BuilderKind, HighlightToken } from './site';
 import type { ThemeColorName } from './theme';
@@ -258,4 +258,154 @@ export interface IconResolver {
   locate: (slug: string, isBrandFirst: boolean) => IconLocation | undefined;
   /** Resolve the icon set of `slug` (`'none'` when empty/`none`, `undefined` when unknown). */
   resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined;
+}
+
+/** Decomposed sheen toggle and left/right icon motion tokens of a `?anim=` value. */
+export interface AnimSplitParts {
+  /** Whether the periodic diagonal surface sheen sweep is enabled. */
+  hasSheen: boolean;
+  /** Left or single icon motion token (`''` when static). */
+  left: string;
+  /** Right icon motion token (`''` when static or single-icon). */
+  right: string;
+}
+
+/** Decomposed optional icon slug and label text of a `?hint=` value. */
+export interface HintSplitParts {
+  /** Leading icon slug (`''` when none). */
+  icon: string;
+  /** Trailing hint label text (`''` when none). */
+  text: string;
+}
+
+/** Decomposed widget kind, modifier, and payload of a `?special=` value. */
+export interface SpecialSplitParts {
+  /** Canonical widget kind (`''` when none). */
+  kind: string;
+  /** Optional trailing modifier token (`''` when omitted). */
+  modifier: string;
+  /** Widget data payload (`''` when omitted or automatic). */
+  payload: string;
+}
+
+/** Decomposed named preset and custom pixel value of a `?size=` value. */
+export interface SizeSplitParts {
+  /** Custom numeric pixel string (`''` when using a named preset). */
+  custom: string;
+  /** Named preset token or `'custom'` (`''` when omitted). */
+  preset: string;
+}
+
+/** Resolved active service and metric options for a `service` builder state. */
+export interface ActiveServiceMetric {
+  /** Active metric option (`undefined` when the service has none). */
+  metric: BuilderServiceMetric | undefined;
+  /** Active service preset option (`undefined` when none). */
+  service: BuilderServiceOption | undefined;
+}
+
+/** Resolved display label, glyph slug, and placeholder state of an icon selector trigger. */
+export interface IconSelectDisplay {
+  /** Visible trigger label text (`'Auto'`, icon slug, or placeholder). */
+  displayLabel: string;
+  /** Icon slug rendered in the trigger glyph preview (`''` when none). */
+  glyphSlug: string;
+  /** Whether the trigger displays muted placeholder text. */
+  isPlaceholder: boolean;
+}
+
+/** Filtered icon picker matches and optional per-tab match counts for a search query. */
+export interface IconCatalogFilterResult {
+  /** Match count per icon set (`undefined` when the search query is empty). */
+  counts: Record<IconPickerSetId, number> | undefined;
+  /** Ordered matches for the active icon picker tab. */
+  matches: IconMatch[];
+}
+
+/** Pure helpers exposed on `globalThis.svgBuilderCore` when the builder client runs without a DOM. */
+export interface BuilderClientCore {
+  /** Build a human-readable default alt text for the current element state. */
+  buildAltText: (schema: BuilderSchema, state: BuilderState) => string;
+  /** Build the default click-through target URL for a service badge or element. */
+  buildDefaultLinkTarget: (schema: BuilderSchema, state: BuilderState, url: string) => string;
+  /** Build the relative SVG request path and list of missing required fields. */
+  buildPath: (schema: BuilderSchema, state: BuilderState) => BuilderBuildResult;
+  /** Append `anim=none` when reduced motion is enabled. */
+  buildPreviewPath: (path: string, isReducedMotion: boolean) => string;
+  /** Build the shareable builder URL for the current element path and snippet options. */
+  buildShareUrl: (href: string, path: string, alt: string, link: string) => string;
+  /** Build the syntax-highlighted token lists for the Markdown, HTML, and URL snippets. */
+  buildSnippetTokens: (url: string, alt: string, link: string) => SnippetTokenSet;
+  /** Build the plain-text Markdown, HTML, and URL copy snippets. */
+  buildSnippets: (url: string, alt: string, link: string) => SnippetSet;
+  /** Split a stack groups string into individual non-empty icon slugs. */
+  collectStackSlugs: (groups: string) => string[];
+  /** Compose an `?anim=` query value from the sheen toggle and left/right icon motion tokens. */
+  composeAnim: (hasSheen: boolean, left: string, right: string) => string;
+  /** Compose the `/stack/:icons` path segment from categorized icon groups. */
+  composeCategorizedStack: (
+    categoryGroups: readonly (readonly string[])[],
+    isGroupedByCategory: boolean,
+    rawPerLine?: string
+  ) => string;
+  /** Compose a `?hint=` query value from an optional icon slug and label text. */
+  composeHint: (icon: string, text: string) => string;
+  /** Compose an `?icon=` query value from left and right icon slugs. */
+  composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
+  /** Compose a `?special=` query value from its kind, payload, and modifier. */
+  composeSpecial: (
+    kind: string,
+    payload: string,
+    modifier: string,
+    isAutoAllowed?: boolean
+  ) => string;
+  /** Compute the next focused grid cell index for an arrow/`Home`/`End` key press. */
+  computeGridFocusIndex: (
+    key: string,
+    index: number,
+    columns: number,
+    total: number
+  ) => number | undefined;
+  /** Memoize an async loader by key, evicting failed promises so retries work. */
+  createAsyncCache: <T>(load: (key: string) => Promise<T>) => (key: string) => Promise<T>;
+  /** Create an icon slug resolver from the icon picker index. */
+  createIconResolver: (index: IconPickerIndex, maxSlugLength: number) => IconResolver;
+  /** Decode a URL path segment (`+` to space, percent-encoding to UTF-8). */
+  decodeSegment: (raw: string) => string;
+  /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */
+  encodeSegment: (text: string) => string;
+  /** Filter icon picker matches across both sets for a search query. */
+  filterIconCatalog: (
+    index: IconPickerIndex,
+    catalog: Record<IconPickerSetId, string[]>,
+    activeSet: IconPickerSetId,
+    rawQuery: string
+  ) => IconCatalogFilterResult;
+  /** Check whether a typing builder field applies to the selected container layout. */
+  isTypingFieldActiveForLayout: (fieldId: string, layoutValue: string) => boolean;
+  /** Parse a relative SVG path and query string into a builder form state. */
+  parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
+  /** Resolve the effective default value of a field under the current state. */
+  resolveEffectiveFieldDefault: (
+    schema: BuilderSchema,
+    state: BuilderState,
+    field: BuilderField
+  ) => string;
+  /** Resolve the display label, glyph slug, and placeholder state of an icon selector trigger. */
+  resolveIconSelectDisplay: (
+    rawSlug: string,
+    placeholder: string,
+    presetIcon?: string,
+    isPresetDynamic?: boolean
+  ) => IconSelectDisplay;
+  /** Split an `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
+  splitAnim: (value: string, options?: readonly BuilderOption[]) => AnimSplitParts;
+  /** Split a `?hint=` query value into its optional icon slug and label text. */
+  splitHint: (value: string) => HintSplitParts;
+  /** Split an `?icon=` query value into `[left, right]` icon slugs. */
+  splitIconPair: (value: string, hasPresetIcon: boolean) => [left: string, right: string];
+  /** Split a `?size=` query value into a named preset or custom pixel value. */
+  splitSize: (value: string, options: readonly BuilderOption[]) => SizeSplitParts;
+  /** Split a `?special=` query value into its kind, payload, and modifier. */
+  splitSpecial: (value: string, options: readonly BuilderOption[]) => SpecialSplitParts;
 }

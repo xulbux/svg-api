@@ -9,13 +9,13 @@ import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { DEFAULT_THEME_COLOR, DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
 import {
+  ACTIVE_STACK_MOTION_TOKENS,
   FALSY_FLAG_LIST,
   ICON_MOTION_ALIASES,
   ICON_MOTION_TOKENS,
   QUOTE_LAYOUT_TOKENS,
   SPECIAL_ELEMENT_KINDS,
   STACK_MOTION_ALIASES,
-  STACK_MOTION_TOKENS,
   TRUTHY_FLAG_LIST,
   TYPING_ALIGN_MAP,
   TYPING_ALIGN_TOKENS,
@@ -120,9 +120,9 @@ interface ColorFieldOptions {
 
 /** Owner and target values of one redirect template probe. */
 interface RedirectProbe {
-  /** Effective owner passed to `buildRedirectUrl`. */
+  /** Effective owner passed to `buildPageUrl`. */
   owner: string;
-  /** Target passed to `buildRedirectUrl`. */
+  /** Target passed to `buildPageUrl`. */
   target: string;
 }
 
@@ -179,6 +179,23 @@ function collectAliasesForValue(
 ): string[] | undefined {
   const aliases = collectAliasesForTarget(aliasMap, targetValue);
   return aliases.length > 0 ? aliases : undefined;
+}
+
+/** Build `BuilderOption[]` from canonical tokens, their alias map, and an optional label formatter. */
+function buildMappedOptions<T extends string>(
+  tokens: readonly T[],
+  aliasMap: Readonly<Record<string, T>>,
+  formatLabel: (token: T) => string = capitalizeWord
+): BuilderOption[] {
+  const options: BuilderOption[] = [];
+  for (const token of tokens) {
+    options.push({
+      aliases: collectAliasesForValue(aliasMap, token),
+      label: formatLabel(token),
+      value: token,
+    });
+  }
+  return options;
 }
 
 /** Build the `?variant=` field. */
@@ -304,26 +321,23 @@ function buildAnimField(scope: BuilderAnimScope): BuilderField {
     }
   } else if (scope === 'stack') {
     options.push({ aliases: ['none'], label: 'Static', value: '' });
-    for (const motion of STACK_MOTION_TOKENS) {
-      if (motion !== 'none') {
-        options.push({
-          aliases: collectAliasesForValue(STACK_MOTION_ALIASES, motion),
-          label: capitalizeWord(motion),
-          value: motion,
-        });
-      }
+    for (const motion of ACTIVE_STACK_MOTION_TOKENS) {
+      options.push({
+        aliases: collectAliasesForValue(STACK_MOTION_ALIASES, motion),
+        label: capitalizeWord(motion),
+        value: motion,
+      });
     }
   } else if (scope === 'typing') {
     options.push(buildDefaultOption('Typing'), { label: 'Static (none)', value: 'none' });
   } else {
     options.push(buildDefaultOption('Static'));
   }
-  const activeStackMotions = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
   const descriptions: Readonly<Record<BuilderAnimScope, string>> = {
     pair: 'Surface sheen plus one motion per icon; None also stops widget and dot animations.',
     sheen: 'Diagonal sheen sweep across the whole element.',
     single: 'Diagonal sheen plus one icon motion (Auto picks a motion per icon).',
-    stack: `Diagonal sheen sweep and/or staggered per-tile ${formatConjunctionList(activeStackMotions, 'or')} motion.`,
+    stack: `Diagonal sheen sweep and/or staggered per-tile ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS, 'or')} motion.`,
     typing: 'Diagonal sheen sweep or static reduced-motion snapshot (none).',
   };
   return {
@@ -389,7 +403,10 @@ function buildSizePresetField(
 }
 
 /** Build the owner segment placeholder of a service preset (default owner, optional, or required). */
-function buildServiceOwnerHint(service: ServiceDefinition): string | undefined {
+function buildServiceOwnerHint(
+  service: ServiceDefinition,
+  defaultOwner: string | undefined
+): string | undefined {
   const { owner } = service.route;
   if (!owner) {
     return undefined;
@@ -397,7 +414,6 @@ function buildServiceOwnerHint(service: ServiceDefinition): string | undefined {
   if (owner.isRequired) {
     return 'required';
   }
-  const defaultOwner = owner.resolveDefault?.();
   return defaultOwner ? `${defaultOwner} (default)` : 'optional';
 }
 
@@ -472,7 +488,7 @@ function buildServiceOptions(): BuilderServiceOption[] {
   const services: BuilderServiceOption[] = [];
   for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
     const { owner, target } = service.route;
-    const defaultOwner = owner?.resolveDefault?.() || undefined;
+    const defaultOwner = owner?.defaultValue || undefined;
     const metrics: BuilderServiceMetric[] = [];
     for (const [metric, config] of Object.entries(service.metrics)) {
       metrics.push({
@@ -496,7 +512,7 @@ function buildServiceOptions(): BuilderServiceOption[] {
       maxTargetSegments: target.maxSegments ?? 1,
       metricAliases: Object.fromEntries(listServiceMetricAliases(service)),
       metrics,
-      ownerHint: buildServiceOwnerHint(service),
+      ownerHint: buildServiceOwnerHint(service, defaultOwner),
       ownerMode: resolveServiceOwnerMode(service),
       ownerName: owner?.placeholder,
       targetName: target.placeholder,
@@ -507,10 +523,19 @@ function buildServiceOptions(): BuilderServiceOption[] {
   return services;
 }
 
-/** Check whether a parsed service request matches the service's required/optional owner arity. */
+/** Check whether a parsed service request matches the service's required/optional owner and target segment arity. */
 function isEditableServiceRequest(request: ServiceRequest): boolean {
   const service = getOwnValue(SERVICES_CONFIG, request.service);
-  if (!service) {
+  if (!service || !request.target) {
+    return false;
+  }
+  const { maxSegments = 1, minSegments = 1 } = service.route.target;
+  const targetSegments = request.target.split('/');
+  if (
+    targetSegments.length < minSegments ||
+    targetSegments.length > maxSegments ||
+    targetSegments.includes('')
+  ) {
     return false;
   }
   const ownerMode = resolveServiceOwnerMode(service);
@@ -518,7 +543,7 @@ function isEditableServiceRequest(request: ServiceRequest): boolean {
     return request.owner === undefined;
   }
   if (ownerMode === 'required') {
-    return request.owner !== undefined;
+    return Boolean(request.owner);
   }
   return true;
 }
@@ -742,50 +767,15 @@ function buildTypingFields(): BuilderField[] {
     prompt: 'Prompt',
     window: 'Window',
   };
-  const layoutOptions: BuilderOption[] = [];
-  for (const token of TYPING_LAYOUT_TOKENS) {
-    layoutOptions.push({
-      aliases: collectAliasesForValue(TYPING_LAYOUT_MAP, token),
-      label: layoutLabels[token],
-      value: token,
-    });
-  }
-
-  const fontOptions: BuilderOption[] = [];
-  for (const token of TYPING_FONT_TOKENS) {
-    fontOptions.push({
-      aliases: collectAliasesForValue(TYPING_FONT_MAP, token),
-      label: capitalizeWord(token),
-      value: token,
-    });
-  }
-
-  const cursorOptions: BuilderOption[] = [];
-  for (const token of TYPING_CURSOR_TOKENS) {
-    cursorOptions.push({
-      aliases: collectAliasesForValue(TYPING_CURSOR_MAP, token),
-      label: capitalizeWord(token),
-      value: token,
-    });
-  }
-
-  const eraseOptions: BuilderOption[] = [];
-  for (const token of TYPING_ERASE_TOKENS) {
-    eraseOptions.push({
-      aliases: collectAliasesForValue(TYPING_ERASE_MAP, token),
-      label: capitalizeWord(token),
-      value: token,
-    });
-  }
-
-  const alignOptions: BuilderOption[] = [];
-  for (const token of TYPING_ALIGN_TOKENS) {
-    alignOptions.push({
-      aliases: collectAliasesForValue(TYPING_ALIGN_MAP, token),
-      label: capitalizeWord(token),
-      value: token,
-    });
-  }
+  const layoutOptions = buildMappedOptions(
+    TYPING_LAYOUT_TOKENS,
+    TYPING_LAYOUT_MAP,
+    (token) => layoutLabels[token]
+  );
+  const fontOptions = buildMappedOptions(TYPING_FONT_TOKENS, TYPING_FONT_MAP);
+  const cursorOptions = buildMappedOptions(TYPING_CURSOR_TOKENS, TYPING_CURSOR_MAP);
+  const eraseOptions = buildMappedOptions(TYPING_ERASE_TOKENS, TYPING_ERASE_MAP);
+  const alignOptions = buildMappedOptions(TYPING_ALIGN_TOKENS, TYPING_ALIGN_MAP);
 
   const [primaryTruthyFlag, ...truthyFlagAliases] = TRUTHY_FLAG_LIST;
 

@@ -14,7 +14,11 @@
     "noUncheckedIndexedAccess": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "paths": { "@/*": ["./src/*"], "@bundles/*": ["./dist/client/*"] },
+    "paths": {
+      "@/*": ["./src/*"],
+      "@bundles/*": ["./dist/client/*"],
+      "@scripts/*": ["./scripts/*"]
+    },
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": true,

@@ -1,7 +1,5 @@
-# This workflow validates the `svg-api` Worker on every push and PR, and deploys to Cloudflare on `main`.
-# Tool versions are inherited from `package.json`; Node.js from `engines.node`, `pnpm` from `packageManager`.
-# One job runs the full `pnpm run check` suite (formatting, linting, Markdown linting, type checking,
-# tests, and the Worker bundle dry-run) and deploys right after it passes.
+# Validate `svg-api` on every push and PR via `pnpm run check` (inheriting Node.js and `pnpm`
+# versions from `package.json`), then deploy to Cloudflare Workers on `main`:
 
 name: CI
 permissions:

@@ -8,12 +8,13 @@ import { HTTPException } from 'hono/http-exception';
 import ogImagePngBuffer from '@/assets/og.png';
 import { DEFAULT_ENV } from '@/config/site';
 import {
+  buildConditionalBodyResponse,
   buildSvgCacheControl,
+  buildSvgHeaders,
   buildSvgResponse,
   computeEtag,
   HTML_SECURITY_HEADERS,
   isDocumentNavigation,
-  isEtagMatch,
   MAX_REQUEST_URL_LENGTH,
   NOSNIFF_HEADERS,
   sanitizeRedirectUrl,
@@ -51,12 +52,12 @@ import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
 /** Hono request context with Worker bindings. */
 type AppContext = Context<{ Bindings: Env }>;
 
-/** Memoized documentation page with its precomputed entity tag. */
-interface MemoizedHtmlPage {
-  /** Weak `ETag` header value computed once from `html`. */
+/** Memoized static document with its precomputed entity tag. */
+interface MemoizedDocument {
+  /** Complete text/HTML/SVG document body. */
+  body: string;
+  /** Weak `ETag` header value computed once from `body`. */
   etag: string;
-  /** Complete HTML document. */
-  html: string;
 }
 
 /** Freshly built SVG response and whether it may be stored in the edge cache. */
@@ -102,7 +103,7 @@ const SERVER_ERROR_HTML_HEADERS: Readonly<Record<string, string>> = {
 
 /** Headers of the plain-text `500` response for failed non-HTML and fallback error paths. */
 const INTERNAL_ERROR_HEADERS: Readonly<Record<string, string>> = {
-  ...HTML_SECURITY_HEADERS,
+  ...NOSNIFF_HEADERS,
   'Cache-Control': 'no-store',
   'Content-Type': 'text/plain; charset=utf-8',
 };
@@ -140,14 +141,8 @@ const TRAILING_SLASH_PATHS: readonly string[] = [
   '/docs/:section/',
 ];
 
-/** Memoized HTML/crawler pages and their entity tags keyed by internal page identifier. */
-const HTML_PAGE_CACHE = new Map<string, MemoizedHtmlPage>();
-
-/** Lazily rendered favicon SVG markup (rendered once per isolate). */
-let faviconSvg: string | undefined = undefined;
-
-/** Lazily rendered OpenGraph social card SVG markup (rendered once per isolate). */
-let ogImageSvg: string | undefined = undefined;
+/** Memoized HTML, crawler, and brand SVG documents and their entity tags keyed by internal identifier. */
+const DOCUMENT_CACHE = new Map<string, MemoizedDocument>();
 
 /** Lazily computed entity tag of the bundled `/og.png` social card. */
 let ogImagePngEtag: string | undefined = undefined;
@@ -167,35 +162,31 @@ function guardRequestUrlLength(
   return next();
 }
 
-/** Resolve a memoized documentation page, computing its entity tag only once. */
-function getMemoizedPage(pageId: string, render: () => string): MemoizedHtmlPage {
-  let page = HTML_PAGE_CACHE.get(pageId);
-  if (!page) {
-    const html = render();
-    page = { etag: computeEtag(html), html };
-    HTML_PAGE_CACHE.set(pageId, page);
+/** Resolve a memoized static document, computing its entity tag only once per isolate. */
+function getMemoizedDocument(documentId: string, render: () => string): MemoizedDocument {
+  let doc = DOCUMENT_CACHE.get(documentId);
+  if (!doc) {
+    const body = render();
+    doc = { body, etag: computeEtag(body) };
+    DOCUMENT_CACHE.set(documentId, doc);
   }
-  return page;
+  return doc;
 }
 
 /** Serve a memoized documentation page with security headers, answering matching revalidations with `304`. */
 function buildHtmlResponse(context: AppContext, pageId: string, render: () => string): Response {
-  const page = getMemoizedPage(pageId, render);
-  const headers = {
+  const page = getMemoizedDocument(pageId, render);
+  return buildConditionalBodyResponse(page.body, page.etag, context.req.header('If-None-Match'), {
     ...HTML_SECURITY_HEADERS,
     'Cache-Control': HTML_CACHE_CONTROL,
-    ETag: page.etag,
-  };
-  if (isEtagMatch(context.req.header('If-None-Match'), page.etag)) {
-    return new Response(undefined, { headers, status: 304 });
-  }
-  return context.html(page.html, 200, headers);
+    'Content-Type': 'text/html; charset=utf-8',
+  });
 }
 
 /** Serve the memoized branded `404` HTML page with `noindex` metadata and security headers. */
 function buildNotFoundHtmlResponse(context: AppContext): Response {
-  const page = getMemoizedPage('404', renderNotFoundHtml);
-  return context.html(page.html, 404, {
+  const page = getMemoizedDocument('404', renderNotFoundHtml);
+  return context.html(page.body, 404, {
     ...HTML_SECURITY_HEADERS,
     'Cache-Control': NOT_FOUND_CACHE_CONTROL,
   });
@@ -208,17 +199,27 @@ function buildCrawlerFileResponse(
   contentType: string,
   render: () => string
 ): Response {
-  const page = getMemoizedPage(pageId, render);
-  const headers = {
+  const page = getMemoizedDocument(pageId, render);
+  return buildConditionalBodyResponse(page.body, page.etag, context.req.header('If-None-Match'), {
     ...NOSNIFF_HEADERS,
     'Cache-Control': CRAWLER_FILE_CACHE_CONTROL,
     'Content-Type': contentType,
-    ETag: page.etag,
-  };
-  if (isEtagMatch(context.req.header('If-None-Match'), page.etag)) {
-    return new Response(undefined, { headers, status: 304 });
-  }
-  return new Response(page.html, { headers, status: 200 });
+  });
+}
+
+/** Serve a memoized static SVG asset (e.g., `/favicon.svg` or `/og.svg`) with precomputed `ETag`. */
+function buildMemoizedSvgResponse(
+  context: AppContext,
+  documentId: string,
+  render: () => string
+): Response {
+  const doc = getMemoizedDocument(documentId, render);
+  return buildConditionalBodyResponse(
+    doc.body,
+    doc.etag,
+    context.req.header('If-None-Match'),
+    buildSvgHeaders(FAVICON_TTL_SECONDS, doc.etag)
+  );
 }
 
 /** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
@@ -231,9 +232,9 @@ function getSafeExecutionContext(context: AppContext): WaitUntilContext | undefi
 }
 
 /**
- * Extract the raw (still percent-encoded) pathname Hono routes on. The SVG dispatcher decodes every
- * segment itself, and Hono's default decoded path made wildcard routes miss line terminators
- * (`%0A`, `%0D`, `%E2%80%A8`), turning such badges into `404`s.
+ * Extract the raw (still percent-encoded) pathname Hono routes on, stripping any query or `#fragment`.
+ * The SVG dispatcher decodes every segment itself, and Hono's default decoded path made wildcard routes
+ * miss line terminators (`%0A`, `%0D`, `%E2%80%A8`), turning such badges into `404`s.
  */
 function getRawPathname(request: Request): string {
   const { url } = request;
@@ -242,7 +243,27 @@ function getRawPathname(request: Request): string {
     return '/';
   }
   const queryStart = url.indexOf('?', pathStart);
-  return queryStart === -1 ? url.slice(pathStart) : url.slice(pathStart, queryStart);
+  const hashStart = url.indexOf('#', pathStart);
+  let pathEnd = url.length;
+  if (queryStart !== -1 && queryStart < pathEnd) {
+    pathEnd = queryStart;
+  }
+  if (hashStart !== -1 && hashStart < pathEnd) {
+    pathEnd = hashStart;
+  }
+  return url.slice(pathStart, pathEnd);
+}
+
+/** Extract the raw `?query` string (excluding any `#fragment`) without allocating `new URL(...)`. */
+function getRawSearch(request: Request): string {
+  const { url } = request;
+  const queryStart = url.indexOf('?');
+  if (queryStart === -1) {
+    return '';
+  }
+  const hashStart = url.indexOf('#', queryStart);
+  const search = hashStart === -1 ? url.slice(queryStart) : url.slice(queryStart, hashStart);
+  return search === '?' ? '' : search;
 }
 
 /** Serve an SVG from the Tier-2 edge cache, or build it and store cacheable responses (skipped when no cache exists, e.g., in tests). */
@@ -330,11 +351,7 @@ function handleSvgRoute(context: AppContext): Response | Promise<Response> {
 
 /** Handle `/favicon.svg` with the memoized brand SVG mark. */
 function handleFaviconRoute(context: AppContext): Response {
-  faviconSvg ??= renderFaviconSvg();
-  return toConditionalResponse(
-    buildSvgResponse(faviconSvg, FAVICON_TTL_SECONDS),
-    context.req.header('If-None-Match')
-  );
+  return buildMemoizedSvgResponse(context, 'favicon.svg', renderFaviconSvg);
 }
 
 /** Permanently redirect `/favicon.ico` to `/favicon.svg`. */
@@ -344,28 +361,24 @@ function handleFaviconIcoRoute(context: AppContext): Response {
 
 /** Handle `/og.svg` with the memoized vector OpenGraph social card. */
 function handleOgImageRoute(context: AppContext): Response {
-  ogImageSvg ??= renderOgImageSvg();
-  return toConditionalResponse(
-    buildSvgResponse(ogImageSvg, FAVICON_TTL_SECONDS),
-    context.req.header('If-None-Match')
-  );
+  return buildMemoizedSvgResponse(context, 'og.svg', renderOgImageSvg);
 }
 
 /** Handle `/og.png` with the bundled raster OpenGraph social card. */
 function handleOgImagePngRoute(context: AppContext): Response {
   ogImagePngEtag ??= `W/"${hashBytes(ogImagePngBuffer)}-${ogImagePngBuffer.byteLength.toString(36)}"`;
-  const headers = {
-    ...NOSNIFF_HEADERS,
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': buildSvgCacheControl(FAVICON_TTL_SECONDS),
-    'Content-Security-Policy': "default-src 'none'",
-    'Content-Type': 'image/png',
-    ETag: ogImagePngEtag,
-  };
-  if (isEtagMatch(context.req.header('If-None-Match'), ogImagePngEtag)) {
-    return new Response(undefined, { headers, status: 304 });
-  }
-  return new Response(ogImagePngBuffer, { headers, status: 200 });
+  return buildConditionalBodyResponse(
+    ogImagePngBuffer,
+    ogImagePngEtag,
+    context.req.header('If-None-Match'),
+    {
+      ...NOSNIFF_HEADERS,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': buildSvgCacheControl(FAVICON_TTL_SECONDS),
+      'Content-Security-Policy': "default-src 'none'",
+      'Content-Type': 'image/png',
+    }
+  );
 }
 
 /** Handle `/robots.txt` crawler directives. */
@@ -405,7 +418,7 @@ function handleDocsIndexRoute(context: AppContext): Response {
 
 /** Permanently redirect the legacy `/preview` route to `/docs` (preserving query parameters). */
 function handlePreviewRoute(context: AppContext): Response {
-  return context.redirect(`/docs${new URL(context.req.url).search}`, 301);
+  return context.redirect(`/docs${getRawSearch(context.req.raw)}`, 301);
 }
 
 /** Handle the `/docs/:section` documentation subpage route (unknown sections return `404`). */
@@ -420,7 +433,7 @@ function handleDocsSectionRoute(context: AppContext): Response {
 /** Permanently redirect `/builder` to the default builder page (preserving query parameters such as `?path=…`). */
 function handleBuilderIndexRoute(context: AppContext): Response {
   return context.redirect(
-    `${buildBuilderPath(DEFAULT_BUILDER_KIND)}${new URL(context.req.url).search}`,
+    `${buildBuilderPath(DEFAULT_BUILDER_KIND)}${getRawSearch(context.req.raw)}`,
     301
   );
 }
@@ -438,7 +451,7 @@ function handleBuilderRoute(context: AppContext): Response {
 function handleTrailingSlashRoute(context: AppContext): Response {
   // Every `TRAILING_SLASH_PATHS` pattern ends in exactly one slash:
   const canonicalPath = getRawPathname(context.req.raw).slice(0, -1);
-  return context.redirect(`${canonicalPath}${new URL(context.req.url).search}`, 301);
+  return context.redirect(`${canonicalPath}${getRawSearch(context.req.raw)}`, 301);
 }
 
 /** Handle versioned `/assets/:name` static assets (immutable when `?v=` matches or for font binaries). */
@@ -451,21 +464,16 @@ function handleAssetRoute(context: AppContext): Response | Promise<Response> {
   // The version is a content hash, so it doubles as a weak entity tag (scoped to this URL):
   const etag = `W/"${asset.version}"`;
   const isImmutable = context.req.query('v') === asset.version || asset.contentType === 'font/ttf';
-  const headers = {
+  return buildConditionalBodyResponse(asset.body, etag, context.req.header('If-None-Match'), {
     ...NOSNIFF_HEADERS,
     'Cache-Control': isImmutable ? IMMUTABLE_ASSET_CACHE_CONTROL : HTML_CACHE_CONTROL,
     'Content-Type': asset.contentType,
-    ETag: etag,
-  };
-  if (isEtagMatch(context.req.header('If-None-Match'), etag)) {
-    return new Response(undefined, { headers, status: 304 });
-  }
-  return new Response(asset.body, { headers, status: 200 });
+  });
 }
 
 /** Answer unmatched asset and SVG routes with a compact plain-text `404` and site routes with the branded `404` HTML page. */
 function handleNotFound(context: AppContext): Response {
-  const prefix = getRawPathname(context.req.raw).split('/')[1] ?? '';
+  const prefix = getRawPathname(context.req.raw).split('/', 2)[1] ?? '';
   if (prefix === 'assets' || findSvgRoute(prefix)) {
     return new Response('404 Not Found', { headers: PLAIN_NOT_FOUND_HEADERS, status: 404 });
   }
@@ -480,7 +488,7 @@ function handleAppError(error: Error, context: AppContext): Response {
   // oxlint-disable-next-line no-console -- Surface unexpected failures in Workers Logs (observability).
   console.error(`Unhandled ${context.req.method} ${context.req.url}:`, error);
   const pathname = getRawPathname(context.req.raw);
-  const prefix = pathname.split('/')[1] ?? '';
+  const prefix = pathname.split('/', 2)[1] ?? '';
   if (findSvgRoute(prefix)) {
     try {
       return buildSvgResponse(renderInternalErrorBadge(), SERVICE_ERROR_TTL_SECONDS);
@@ -489,8 +497,8 @@ function handleAppError(error: Error, context: AppContext): Response {
     }
   } else if (prefix !== 'assets' && !NON_HTML_ROOT_PATHS.has(pathname)) {
     try {
-      const page = getMemoizedPage('500', renderServerErrorHtml);
-      return new Response(page.html, { headers: SERVER_ERROR_HTML_HEADERS, status: 500 });
+      const page = getMemoizedDocument('500', renderServerErrorHtml);
+      return new Response(page.body, { headers: SERVER_ERROR_HTML_HEADERS, status: 500 });
     } catch {
       // Rendering the error page failed as well; fall back to the plain-text response below.
     }

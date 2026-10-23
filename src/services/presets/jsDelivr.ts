@@ -13,10 +13,10 @@ import {
   SERIES_DELTA_SPECIALS,
   bucketSeries,
   buildSeriesSpecials,
+  compareTrailingWindows,
   createCountMetric,
   readDateKeyedSeries,
   readFiniteNumber,
-  sumSeries,
 } from '@/services/metrics';
 import type { MetricEndpoint, MetricPresentation } from '@/types';
 
@@ -58,12 +58,10 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   const total = readFiniteNumber(hits?.total);
   const prevTotal = readFiniteNumber(prev?.total);
   const daily = readDateKeyedSeries(hits?.dates);
-  const mid = Math.floor(daily.length / 2);
   let currDelta = total !== undefined && prevTotal !== undefined ? total : undefined;
   let prevDelta = total !== undefined && prevTotal !== undefined ? prevTotal : undefined;
-  if (currDelta === undefined && mid >= 1) {
-    currDelta = sumSeries(daily, mid, daily.length);
-    prevDelta = sumSeries(daily, 0, mid);
+  if (currDelta === undefined) {
+    [currDelta, prevDelta] = compareTrailingWindows(daily);
   }
   return {
     bars: daily.length >= 2 ? bucketSeries(daily, 12) : undefined,

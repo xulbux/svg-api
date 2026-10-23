@@ -26,6 +26,7 @@ import {
 import {
   buildPackageVersion,
   buildTrailingSeriesSpecials,
+  compareTrailingWindows,
   createRatingMetric,
   createScoreMetric,
   createVersionMetric,
@@ -1365,6 +1366,40 @@ describe('upstream caching & redirects', () => {
     expect(settled[0]?.result.value).toBe('v1.0.0');
   });
 
+  it('serves stale in-memory payloads when distinct in-flight loads hit MAX_IN_FLIGHT_LOADS (regression: MAX_IN_FLIGHT_LOADS shed stale-if-error rescues with 429)', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    const resolvers: ((response: Response) => void)[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => Promise.resolve(Response.json({ version: '4.2.0' })))
+      .mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvers.push(resolve);
+          })
+      );
+
+    expect(await describeMetric('/badge/npm/hono/v')).toBe('npm: v4.2.0');
+    // Advance past the fresh TTL (`900s`) while staying inside the `stale-if-error` window:
+    nowSpy.mockReturnValue(REFERENCE_NOW + 901_000);
+
+    const pendingLoads = Array.from({ length: 64 }, (_unused, index) =>
+      resolvePathMetric(`/badge/npm/saturated-${index}/v`)
+    );
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(65);
+    });
+
+    const rescued = await resolvePathMetric('/badge/npm/hono/v');
+    expect(rescued.status).toBe(200);
+    expect(rescued.result.value).toBe('v4.2.0');
+
+    for (const resolve of resolvers) {
+      resolve(Response.json({ version: '1.0.0' }));
+    }
+    await Promise.all(pendingLoads);
+  });
+
   it('keeps edge hits in memory only for their remaining TTL (regression: edge hits got a full fresh TTL)', async () => {
     const stub = installEdgeCacheStub();
     const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
@@ -2358,6 +2393,7 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
 
   it('resolves the suggested F-Droid version and falls back to the newest build', async () => {
     mockUpstream({
+      'f-droid.org/api/v1/packages/org.empty.app': { packages: [] },
       'f-droid.org/api/v1/packages/org.example.app': {
         packages: [{ versionCode: 3, versionName: '3.0' }],
         suggestedVersionCode: 9,
@@ -2372,6 +2408,7 @@ describe('ecosystem presets (Puppet Forge, Ansible Galaxy, F-Droid, Read the Doc
     });
     expect(await describeMetric('/badge/fdroid/org.fdroid.fdroid/v')).toBe('F-Droid: v1.23.2');
     expect(await describeMetric('/badge/fdroid/org.example.app/v')).toBe('F-Droid: v3.0');
+    expect(await describeMetric('/badge/fdroid/org.empty.app/v')).toBe('F-Droid: not found');
     expect(await describeMetric('/badge/fdroid/org.missing.app/v')).toBe('F-Droid: not found');
     expect(resolvePathRedirect('/badge/fdroid/org.fdroid.fdroid/v')).toBe(
       'https://f-droid.org/packages/org.fdroid.fdroid/'
@@ -2651,8 +2688,24 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
           ],
         },
       },
+      'component=empty_measures&': { component: { key: 'empty_measures', measures: [] } },
       'component=failing_project&': {
         component: { measures: [{ metric: 'alert_status', value: 'ERROR' }] },
+      },
+      'component=large_gate&': {
+        component: {
+          measures: [
+            { metric: 'alert_status', value: 'ERROR' },
+            {
+              metric: 'quality_gate_details',
+              value: JSON.stringify({
+                conditions: Array.from({ length: 25 }, (_unused, index) => ({
+                  level: index < 20 ? 'OK' : 'ERROR',
+                })),
+              }),
+            },
+          ],
+        },
       },
       'component=odd_project&': { component: { key: 'odd_project' } },
     });
@@ -2698,6 +2751,16 @@ describe('infrastructure, quality & game presets (deps.dev, Terraform, Artifact 
     );
     const failing = await resolvePathMetric('/badge/sonarcloud/failing_project/gate');
     expect(failing.result).toMatchObject({ color: 'rose', value: 'failed' });
+    const largeGate = await resolvePathMetric('/badge/sonarcloud/large_gate/quality');
+    expect(largeGate.result.specials?.ring).toEqual({ type: 'ring', value: 80 });
+    expect(largeGate.result.specials?.steps).toEqual({ done: 8, total: 10, type: 'steps' });
+    expect(largeGate.result.specials?.strip?.type).toBe('strip');
+    if (largeGate.result.specials?.strip?.type === 'strip') {
+      expect(largeGate.result.specials.strip.states).toHaveLength(10);
+    }
+    expect(await describeMetric('/badge/sonarcloud/empty_measures/quality')).toBe(
+      'Quality Gate: not found'
+    );
     expect(await describeMetric('/badge/sonarcloud/odd_project/quality')).toBe(
       'Quality Gate: not found'
     );
@@ -3247,5 +3310,21 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
 
     const packagistDd = await resolvePathMetric('/badge/packagist/laravel/framework/dd');
     expect(packagistDd.result.specials?.delta).toEqual({ type: 'delta', value: '+50%' });
+
+    // Odd-length trailing series compare equal-width trailing windows (`[100, 200]` vs `[200, 300]`) instead of unequal slices:
+    expect(compareTrailingWindows([100, 100, 200, 200, 300])).toEqual([500, 300]);
+    expect(compareTrailingWindows([100])).toEqual([undefined, undefined]);
+    expect(buildTrailingSeriesSpecials([300, 450])?.delta).toEqual({
+      type: 'delta',
+      value: '+50%',
+    });
+
+    // NuGet package IDs with leading/consecutive dots or invalid characters are rejected before any fetch:
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const priorCalls = fetchSpy.mock.calls.length;
+    expect(await describeMetric('/badge/nuget/.bad/v')).toBe('nuget: invalid name');
+    expect(await describeMetric('/badge/nuget/bad..id/v')).toBe('nuget: invalid name');
+    expect(await describeMetric('/badge/nuget/bad$/v')).toBe('nuget: invalid name');
+    expect(fetchSpy).toHaveBeenCalledTimes(priorCalls);
   });
 });

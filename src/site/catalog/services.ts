@@ -40,35 +40,6 @@ function formatUpperThresholds(
   return `${label} ${parts.join(', ')}`;
 }
 
-/** Build the route pattern of a service preset (e.g., `/badge/npm/[:scope/]:pkg/:metric`). */
-function buildServiceRoutePattern(key: string, service: ServiceDefinition): string {
-  const { owner, target } = service.route;
-  if (!owner) {
-    return `/badge/${key}/${target.placeholder}/:metric`;
-  }
-  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
-  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
-}
-
-/** Format a service's metrics with their effective aliases as a parameter value (e.g., `'v | dt | license [l]'`). */
-function formatServiceMetricValues(service: ServiceDefinition): string {
-  const aliasesByMetric = new Map<string, string[]>();
-  for (const [alias, metric] of listServiceMetricAliases(service)) {
-    const aliases = aliasesByMetric.get(metric);
-    if (aliases) {
-      aliases.push(alias);
-    } else {
-      aliasesByMetric.set(metric, [alias]);
-    }
-  }
-  const metricValues: string[] = [];
-  for (const metric of Object.keys(service.metrics)) {
-    const aliases = aliasesByMetric.get(metric);
-    metricValues.push(aliases ? `${metric} [${aliases.join(', ')}]` : metric);
-  }
-  return metricValues.join(' | ');
-}
-
 /** Format the `Default` cell of a service route row (default owner, optional owner, or required owner). */
 function formatServiceDefaultValue(service: ServiceDefinition): string {
   const { owner } = service.route;
@@ -79,11 +50,57 @@ function formatServiceDefaultValue(service: ServiceDefinition): string {
   if (ownerMode === 'required') {
     return `~${owner.placeholder} required`;
   }
-  const defaultOwner = owner.resolveDefault?.();
-  return defaultOwner ? `${defaultOwner} (${owner.placeholder})` : `~${owner.placeholder} optional`;
+  return owner.defaultValue
+    ? `${owner.defaultValue} (${owner.placeholder})`
+    : `~${owner.placeholder} optional`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Build the route pattern of a service preset (e.g., `/badge/npm/[:scope/]:pkg/:metric`).
+ * @param key       Service route key.
+ * @param service   Service definition.
+ * @returns Route pattern string.
+ */
+export function buildServiceRoutePattern(key: string, service: ServiceDefinition): string {
+  const { owner, target } = service.route;
+  if (!owner) {
+    return `/badge/${key}/${target.placeholder}/:metric`;
+  }
+  const ownerPart = owner.isRequired ? `${owner.placeholder}/` : `[${owner.placeholder}/]`;
+  return `/badge/${key}/${ownerPart}${target.placeholder}/:metric`;
+}
+
+/**
+ * Format a service's canonical metrics with their effective aliases.
+ * @param service      Service definition.
+ * @param aliasStyle   Delimiter style around aliases (`'brackets'` for parameter tables, `'parens'` for plain text).
+ * @returns Pipe-separated metric summary string.
+ */
+export function formatServiceMetrics(
+  service: ServiceDefinition,
+  aliasStyle: 'brackets' | 'parens' = 'brackets'
+): string {
+  const aliasesByMetric = new Map<string, string[]>();
+  for (const [alias, metric] of listServiceMetricAliases(service)) {
+    const aliases = aliasesByMetric.get(metric);
+    if (aliases) {
+      aliases.push(alias);
+    } else {
+      aliasesByMetric.set(metric, [alias]);
+    }
+  }
+  const [openBracket, closeBracket] = aliasStyle === 'parens' ? ['(', ')'] : ['[', ']'];
+  const metricValues: string[] = [];
+  for (const metric of Object.keys(service.metrics)) {
+    const aliases = aliasesByMetric.get(metric);
+    metricValues.push(
+      aliases ? `${metric} ${openBracket}${aliases.join(', ')}${closeBracket}` : metric
+    );
+  }
+  return metricValues.join(' | ');
+}
 
 /** Showcase cards for the dedicated `/docs/services` page (sample values; No network access). */
 export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
@@ -730,7 +747,7 @@ export function buildServiceParamRows(): ParamTableRow[] {
       defaultVal: formatServiceDefaultValue(service),
       description: `${service.docs.title}: ${service.docs.description}`,
       name: buildServiceRoutePattern(key, service),
-      values: formatServiceMetricValues(service),
+      values: formatServiceMetrics(service),
     });
   }
   const standardBadgeParams = BADGE_QUERY_PARAMS.filter((param) => param !== 'label')

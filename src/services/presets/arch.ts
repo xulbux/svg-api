@@ -6,6 +6,7 @@
  */
 
 import {
+  PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -73,7 +74,7 @@ export const ARCH_SERVICE = defineService({
   },
   metrics: {
     license: createLicenseMetric(ARCH_ENDPOINT, (info) =>
-      Array.isArray(info.licenses) ? info.licenses[0] : undefined
+      Array.isArray(info.licenses) ? info.licenses : undefined
     ),
     repo: createTextMetric(
       ARCH_ENDPOINT,
@@ -91,5 +92,5 @@ export const ARCH_SERVICE = defineService({
       transformArchVersion
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

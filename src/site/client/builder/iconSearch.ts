@@ -2,7 +2,14 @@
  * Icon picker search & display helpers – Pure search ranking, trigger display state, cursor slug insertion, and `<template>` SVG glyph instantiation.
  */
 
-import type { IconMatch, IconPickerIndex, IconPickerSetId } from '@/types';
+import { resolveIconSelectDisplay as resolvePureIconSelectDisplay } from '@/site/shared';
+import type {
+  IconCatalogFilterResult,
+  IconMatch,
+  IconPickerIndex,
+  IconPickerSetId,
+  IconSelectDisplay,
+} from '@/types';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -83,7 +90,7 @@ export function filterIconCatalog(
   catalog: Record<IconPickerSetId, string[]>,
   activeSet: IconPickerSetId,
   rawQuery: string
-): { counts: Record<IconPickerSetId, number> | undefined; matches: IconMatch[] } {
+): IconCatalogFilterResult {
   const query = rawQuery.trim().toLowerCase();
   if (!query) {
     const allMatches: IconMatch[] = [];
@@ -159,24 +166,13 @@ export function resolveIconSelectDisplay(
   trigger: HTMLElement | undefined,
   rawSlug: string,
   placeholder: string
-): { displayLabel: string; glyphSlug: string; isPlaceholder: boolean } {
-  const trimmed = rawSlug.trim();
-  if (trimmed.toLowerCase() === 'none') {
-    return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
-  }
-  if (trimmed) {
-    return { displayLabel: trimmed, glyphSlug: trimmed, isPlaceholder: false };
-  }
-  const presetIcon = trigger?.dataset.presetIcon?.trim() ?? '';
-  if (presetIcon) {
-    const isPresetDynamic = trigger?.dataset.presetDynamic === 'true';
-    return {
-      displayLabel: isPresetDynamic ? 'Auto' : presetIcon,
-      glyphSlug: presetIcon,
-      isPlaceholder: false,
-    };
-  }
-  return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+): IconSelectDisplay {
+  return resolvePureIconSelectDisplay(
+    rawSlug,
+    placeholder,
+    trigger?.dataset.presetIcon,
+    trigger?.dataset.presetDynamic === 'true'
+  );
 }
 
 /**

@@ -2,40 +2,50 @@
  * Shared isomorphic utilities barrel – Pure snippet tokenizer, parameter codecs, stack DSL helpers, and URL builder core shared by Worker SSR and browser client bundles.
  */
 
-export { isTypingFieldActiveForLayout, resolveEffectiveFieldDefault } from './defaults';
+// -------------------------------------- PUBLIC API -------------------------------------
+
 export {
+  isTypingFieldActiveForLayout,
+  resolveActiveServiceMetric,
+  resolveEffectiveFieldDefault,
+} from '@/site/shared/defaults';
+export {
+  BRAND_SLUG_CLEAN_RX,
+  capitalizeSlugParts,
   decodeSegment,
   encodeSegment,
   findField,
   findOption,
   findService,
+  HINT_ICON_REST_RX,
   readState,
-} from './encoding';
+} from '@/site/shared/encoding';
 export {
   composeAnim,
   composeHint,
   composeIconPair,
   composeSpecial,
+  resolveIconSelectDisplay,
   splitAnim,
   splitHint,
   splitIconPair,
   splitSize,
   splitSpecial,
-} from './fields';
+} from '@/site/shared/fields';
 export {
   buildMarkdownSnippetTokens,
   buildSnippets,
   buildSnippetTokens,
   encodeMarkdownDestination,
   tokenizeUrl,
-} from './snippets';
+} from '@/site/shared/snippets';
 export {
   collectStackSlugs,
   collectStackTileTokens,
   composeCategorizedStack,
   normalizeStackGroups,
   stripStackTileColor,
-} from './stackDsl';
+} from '@/site/shared/stackDsl';
 export {
   buildAltText,
   buildDefaultLinkTarget,
@@ -43,4 +53,4 @@ export {
   buildPreviewPath,
   buildShareUrl,
   parsePath,
-} from './url';
+} from '@/site/shared/url';

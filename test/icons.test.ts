@@ -8,14 +8,15 @@ import {
   ICON_SLUG_ALIASES,
   computeIconXBounds,
   getIconPickerIndex,
+  getIconPickerPage,
   inspectResolvedIconCache,
   normalizeIconSlug,
   resolveIcon,
   resolveIconLookup,
   resolveIconWithFallback,
 } from '@/svg/icons';
-import { resolveStackIconColor } from '@/svg/stack';
-import { requireDefined } from './helpers';
+import { renderStack, resolveStackIconColor } from '@/svg/stack';
+import { extractAriaLabel, requireDefined } from './helpers';
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -235,6 +236,22 @@ describe('resolveIcon', () => {
     }
     expect(cache.totalWeight).toBe(summedWeight);
     expect(cache.totalWeight).toBeLessThanOrEqual(cache.maxWeight);
+  });
+
+  it('canonicalizes Simple Icons aliases for stack colors and titles and paginates icon picker pages cleanly (regressions: Simple Icons aliases fell back to indigo, hyphenated File Icons tie-break)', () => {
+    expect(resolveIconLookup('nuxtdotjs', true).key).toBe('nuxt');
+    expect(resolveStackIconColor('nuxtdotjs')).toBe(resolveStackIconColor('nuxt'));
+    expect(resolveStackIconColor('nuxtdotjs')).not.toBe('indigo');
+    expect(extractAriaLabel(renderStack({ icons: ['nuxtdotjs'] }))).toBe('tech stack: Nuxt');
+
+    expect(resolveIconLookup('amazonaws', true).key).toBe('amazonwebservices');
+    expect(resolveStackIconColor('amazonaws')).toBe(resolveStackIconColor('aws'));
+
+    const firstPage = getIconPickerPage('lucide', 0);
+    expect(firstPage).toBeDefined();
+    expect(Object.keys(firstPage ?? {}).length).toBeGreaterThan(0);
+    expect(getIconPickerPage('lucide', 9999)).toBeUndefined();
+    expect(getIconPickerPage('lucide', -1)).toBeUndefined();
   });
 });
 

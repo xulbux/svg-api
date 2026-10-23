@@ -222,6 +222,51 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       measureTextWidth('⌘K', 16, true, true)
     );
   });
+
+  it('separates cached italic outlines, applies sans tracking and kerning across fallback strings, and prevents outline cache delimiter collisions (regressions: missing sans tracking/kerning in fallback outlines, colon-joined cache keys)', () => {
+    const uprightCached = renderTextPathMarkup('⌘K', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'sans',
+      fontSize: 16,
+      isBold: true,
+      isItalic: false,
+    });
+    const italicCached = renderTextPathMarkup('⌘K', {
+      anchorX: 10,
+      baselineY: 20,
+      fill: '#ffffff',
+      font: 'sans',
+      fontSize: 16,
+      isBold: true,
+      isItalic: true,
+    });
+    expect(italicCached).not.toBe(uprightCached);
+
+    // Mixed strings containing a Mono fallback glyph (`⌘`) must preserve Geist Sans `-0.01em` tracking and `AV` pair kerning:
+    const symbolAdvance = measureTextAdvance('⌘', 16, true);
+    const kernedPairAdvance = measureTextAdvance('AV', 16, true);
+    expect(measureTextAdvance('⌘AV', 16, true) - symbolAdvance).toBeCloseTo(kernedPairAdvance, 2);
+    expect(measureTextWidth('⌘AV', 16, true)).toBe(measureTextWidthUncached('⌘AV', 16, true));
+
+    // Distinct `(font, fontSize, isBold, isItalic, text)` tuples with embedded colons must never collide in `OUTLINE_CACHE`:
+    const colonMarkupA = renderTextPathMarkup('0:0:a', {
+      anchorX: 0,
+      baselineY: 15,
+      fill: '#ffffff',
+      fontSize: 11,
+      isBold: false,
+    });
+    const colonMarkupB = renderTextPathMarkup('a', {
+      anchorX: 0,
+      baselineY: 15,
+      fill: '#ffffff',
+      fontSize: 11,
+      isBold: false,
+    });
+    expect(colonMarkupA).not.toBe(colonMarkupB);
+  });
 });
 
 describe('bounded LRU cache (src/svg/shared.ts)', () => {

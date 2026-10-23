@@ -4,7 +4,7 @@
 
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { ICON_MOTION_TOKENS, STACK_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_STACK_MOTION_TOKENS, ICON_MOTION_TOKENS } from '@/routes/params';
 import {
   SERVICE_ERROR_TTL_SECONDS,
   SERVICE_TTL_SECONDS,
@@ -12,14 +12,13 @@ import {
   SVG_ROUTES,
 } from '@/routes/svg';
 import { formatColorValues } from '@/site/catalog/shared';
-import type { UrlAnatomyPart } from '@/site/components/UrlAnatomy';
 import {
   formatConjunctionList,
   formatVariantTierSummary,
   formatVariantValues,
 } from '@/site/glossary';
-import { ICON_SOURCE_SETS } from '@/svg/icons';
-import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
+import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
+import type { ParamTableRow, ShowcaseCardConfig, UrlAnatomyPart } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -149,10 +148,8 @@ function formatSupportingEndpoints(paramName?: string): string {
  * @returns Parameter table rows.
  */
 export function buildSharedParamRows(): ParamTableRow[] {
-  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
-  const activeStackMotions = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
   const iconMotionSet = new Set<string>(ICON_MOTION_TOKENS);
-  const extraStackMotions = activeStackMotions.filter((token) => !iconMotionSet.has(token));
+  const extraStackMotions = ACTIVE_STACK_MOTION_TOKENS.filter((token) => !iconMotionSet.has(token));
   return [
     {
       defaultVal: formatSupportingEndpoints('color'),
@@ -168,13 +165,13 @@ export function buildSharedParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: formatSupportingEndpoints('icon'),
-      description: `Leading icon, a left,right pair, or a right-only icon (none,right); Any ${formatConjunctionList(allIconSets, 'or')} slug.`,
+      description: `Leading icon, a left,right pair, or a right-only icon (none,right); Any ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug.`,
       name: '?icon=',
       values: 'rocket | book-open,arrow-right | none,external-link',
     },
     {
       defaultVal: formatSupportingEndpoints('anim'),
-      description: `Surface sheen and per-element motions (icon endpoints support per-icon motions; stacks support ${formatConjunctionList(activeStackMotions)}; surface endpoints support sheen and none); none also stops widget, dot, and typing animations.`,
+      description: `Surface sheen and per-element motions (icon endpoints support per-icon motions; stacks support ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS)}; surface endpoints support sheen and none); none also stops widget, dot, and typing animations.`,
       name: '?anim=',
       values: `sheen | ${[...ICON_MOTION_TOKENS, ...extraStackMotions].join(' | ')}`,
     },

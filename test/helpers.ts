@@ -1,5 +1,5 @@
 /**
- * Shared test helpers – Worker environment bindings, SVG attribute extraction, and an in-memory edge cache stub shared by the test suites.
+ * Shared test helpers – Worker environment bindings, SVG attribute extraction, client bundle evaluation, and an in-memory edge cache stub shared by the test suites.
  */
 
 import { vi } from 'vitest';
@@ -87,4 +87,22 @@ export function installEdgeCacheStub(): EdgeCacheStub {
   const stub = createEdgeCacheStub();
   vi.stubGlobal('caches', { default: stub.cache });
   return stub;
+}
+
+/**
+ * Evaluate a bundled browser client script without a DOM and return its exposed global core object.
+ * @param bundleSource   Bundled JavaScript source text.
+ * @param exportName     Property name attached onto `globalThis` by the script.
+ * @returns Exposed pure helper object.
+ * @throws {Error} When the script does not expose `exportName` without a DOM.
+ */
+export function evaluateClientCore<T>(bundleSource: string, exportName: string): T {
+  const sandbox: Record<string, unknown> = {};
+  // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- Evaluates the exact shipped browser bundle in an isolated sandbox.
+  new Function('globalThis', bundleSource)(sandbox);
+  const exposed = sandbox[exportName];
+  if (exposed === undefined) {
+    throw new Error(`The client bundle did not expose ${exportName} without a DOM.`);
+  }
+  return exposed as T;
 }

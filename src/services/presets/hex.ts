@@ -2,7 +2,7 @@
  * Hex.pm service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   buildWindowDeltaSpecials,
@@ -82,5 +82,5 @@ export const HEX_SERVICE = defineService({
       (pkg) => pkg.version
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

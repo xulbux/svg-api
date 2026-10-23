@@ -10,7 +10,7 @@ import { escapeXml } from '@/svg/shared';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the inline `<UiIcon />` component. */
-export interface UiIconProps {
+interface UiIconProps {
   /** Optional additional CSS class name(s) appended to `ui-icon`. */
   readonly extraClass?: string | undefined;
   /** Width and height in pixels (defaults to `16`). */
@@ -20,7 +20,7 @@ export interface UiIconProps {
 }
 
 /** Props for the `<CopyButton />` component. */
-export interface CopyButtonProps {
+interface CopyButtonProps {
   /** Optional ID of the heading or element that describes what this button copies. */
   readonly ariaDescribedBy?: string | undefined;
   /** Optional ID of the target element whose text content is copied (`data-copy-target`). */
@@ -30,7 +30,7 @@ export interface CopyButtonProps {
 }
 
 /** Props for the `<AnchorLink />` permalink component. */
-export interface AnchorLinkProps {
+interface AnchorLinkProps {
   /** Accessible human-readable heading or card label. */
   readonly label: string;
   /** Target anchor element ID (without `#`). */
@@ -38,7 +38,7 @@ export interface AnchorLinkProps {
 }
 
 /** Props for the `<InlineMarkup />` component (`code` and `strong` micro-syntax). */
-export interface InlineMarkupProps {
+interface InlineMarkupProps {
   /** Text with optional `` `code` `` and `**strong**` spans. */
   readonly text: string;
 }
@@ -83,14 +83,74 @@ const SLUG_INVALID_RX = /[^a-z0-9]+/g;
 /** Matches a single leading or trailing dash left over after slug normalization. */
 const SLUG_EDGE_DASH_RX = /^-|-$/g;
 
-/** Matches inline `` `code` `` markup in section titles, descriptions, and subheads. */
-const INLINE_CODE_RX = /`(?<code>[^`]+)`/g;
-
-/** Matches inline `**strong**` markup in section titles and descriptions. */
-const INLINE_STRONG_RX = /\*\*(?<strong>[^*]+)\*\*/g;
+/** Matches inline `` `code` `` or `**strong**` markup in a single non-overlapping pass so code spans protect inner asterisks. */
+const INLINE_MARKUP_TOKEN_RX = /`(?<code>[^`]+)`|\*\*(?<strong>[^*]+)\*\*/g;
 
 /** Matches inline markup characters (backticks and double asterisks) for plain-text labels. */
 const INLINE_MARKUP_CHARS_RX = /`|\*\*/g;
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/**
+ * Render (once per isolate) the hidden UI icon sprite: One `<symbol id="ui-<slug>">` per repeated UI icon,
+ * referenced by `renderUiIcon` with `<use href>`; Every page layout emits it once.
+ */
+function renderUiSprite(): string {
+  if (uiSpriteHtmlCache === undefined) {
+    const symbols: HtmlFragment[] = [];
+    for (const slug of UI_SPRITE_ICON_SLUGS) {
+      symbols.push(
+        <symbol id={`ui-${slug}`} viewBox="0 0 24 24">
+          {raw(resolveIcon(slug)?.innerSvg ?? '')}
+        </symbol>
+      );
+    }
+    uiSpriteHtmlCache = renderHtml(
+      <svg
+        class="ui-sprite"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+        focusable="false">
+        {symbols}
+      </svg>
+    );
+  }
+  return uiSpriteHtmlCache;
+}
+
+/**
+ * Render an inline UI icon (`<svg class="ui-icon">`) from the bundled icon registry;
+ * Repeated icons (`UI_SPRITE_ICON_SLUGS`) reference the page's UI sprite instead of repeating their paths.
+ */
+function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
+  const cacheKey = `${slug}|${size}|${extraClass}`;
+  const cached = UI_ICON_HTML_CACHE.get(cacheKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const resolved = resolveIcon(slug);
+  const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
+  const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : BRAND_FILL_ATTRS;
+  const bodyFragment = UI_SPRITE_ICON_SLUGS.has(slug) ? (
+    <use href={`#ui-${slug}`}></use>
+  ) : (
+    raw(resolved?.innerSvg ?? '')
+  );
+  const iconHtml = resolved
+    ? renderHtml(
+        <svg
+          class={classAttr}
+          rawAttrs={UI_ICON_SVG_ATTRS}
+          width={size}
+          height={size}
+          rawAttrs2={paintAttrs}>
+          {bodyFragment}
+        </svg>
+      )
+    : '';
+  UI_ICON_HTML_CACHE.set(cacheKey, iconHtml);
+  return iconHtml;
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -109,9 +169,11 @@ export function slugifyText(text: string): string {
  * @returns Escaped HTML string.
  */
 export function formatInlineMarkupHtml(text: string): string {
-  return escapeXml(text)
-    .replace(INLINE_CODE_RX, '<code>$<code></code>')
-    .replace(INLINE_STRONG_RX, '<strong>$<strong></strong>');
+  return escapeXml(text).replace(
+    INLINE_MARKUP_TOKEN_RX,
+    (_match, codeText: string | undefined, strongText: string | undefined) =>
+      codeText !== undefined ? `<code>${codeText}</code>` : `<strong>${strongText ?? ''}</strong>`
+  );
 }
 
 /**
@@ -159,77 +221,11 @@ export function AnchorLink(props: AnchorLinkProps): HtmlFragment {
 }
 
 /**
- * Render (once per isolate) the hidden UI icon sprite: One `<symbol id="ui-<slug>">` per repeated UI icon,
- * referenced by `renderUiIcon` with `<use href>`; Every page layout emits it once.
- * @returns Hidden inline `<svg>` sprite HTML.
- */
-export function renderUiSprite(): string {
-  if (uiSpriteHtmlCache === undefined) {
-    const symbols: HtmlFragment[] = [];
-    for (const slug of UI_SPRITE_ICON_SLUGS) {
-      symbols.push(
-        <symbol id={`ui-${slug}`} viewBox="0 0 24 24">
-          {raw(resolveIcon(slug)?.innerSvg ?? '')}
-        </symbol>
-      );
-    }
-    uiSpriteHtmlCache = renderHtml(
-      <svg
-        class="ui-sprite"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden="true"
-        focusable="false">
-        {symbols}
-      </svg>
-    );
-  }
-  return uiSpriteHtmlCache;
-}
-
-/**
  * Render the hidden UI icon sprite as a JSX component.
  * @returns Hidden inline `<svg>` sprite fragment.
  */
 export function UiSprite(): HtmlFragment {
   return raw(renderUiSprite());
-}
-
-/**
- * Render an inline UI icon (`<svg class="ui-icon">`) from the bundled icon registry;
- * Repeated icons (`UI_SPRITE_ICON_SLUGS`) reference the page's UI sprite instead of repeating their paths.
- * @param slug         Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`).
- * @param size         Width and height in pixels (defaults to `16`).
- * @param extraClass   Optional additional CSS class name(s) appended to `ui-icon`.
- * @returns Inline `<svg>` HTML string, or empty string if the slug is not found.
- */
-export function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
-  const cacheKey = `${slug}|${size}|${extraClass}`;
-  const cached = UI_ICON_HTML_CACHE.get(cacheKey);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const resolved = resolveIcon(slug);
-  const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
-  const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : BRAND_FILL_ATTRS;
-  const bodyFragment = UI_SPRITE_ICON_SLUGS.has(slug) ? (
-    <use href={`#ui-${slug}`}></use>
-  ) : (
-    raw(resolved?.innerSvg ?? '')
-  );
-  const iconHtml = resolved
-    ? renderHtml(
-        <svg
-          class={classAttr}
-          rawAttrs={UI_ICON_SVG_ATTRS}
-          width={size}
-          height={size}
-          rawAttrs2={paintAttrs}>
-          {bodyFragment}
-        </svg>
-      )
-    : '';
-  UI_ICON_HTML_CACHE.set(cacheKey, iconHtml);
-  return iconHtml;
 }
 
 /**
@@ -253,7 +249,8 @@ export function CopyButton(props: CopyButtonProps): HtmlFragment {
       class="copy-btn"
       id={props.id}
       aria-describedby={props.ariaDescribedBy}
-      data-copy-target={props.copyTarget}>
+      data-copy-target={props.copyTarget}
+      title="Copy">
       <UiIcon slug="copy" size={15} extraClass="icon-copy" />
       <UiIcon slug="check" size={15} extraClass="icon-check" />
       <span class="visually-hidden" data-copy-label={true} aria-live="polite">

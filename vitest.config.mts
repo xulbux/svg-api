@@ -65,6 +65,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
       '@bundles': path.resolve(import.meta.dirname, 'dist/client'),
+      '@scripts': path.resolve(import.meta.dirname, 'scripts'),
     },
   },
   test: { include: ['test/**/*.test.ts'], restoreMocks: true, root: '.' },

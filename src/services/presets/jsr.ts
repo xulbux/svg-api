@@ -2,7 +2,7 @@
  * JSR service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, pickFields, stripScopePrefix } from '@/services/endpoint';
+import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import { createPercentScoreMetric, createVersionMetric, SCORE } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -17,12 +17,10 @@ interface JsrPackagePayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** JSR package endpoint (the optional `@` of the scope segment is dropped) with package page redirect. */
+/** JSR package endpoint (`{scope}` strips any optional `@` prefix) with package page redirect. */
 const JSR_ENDPOINT = createEndpoint({
-  api: ({ owner, target }) =>
-    `https://api.jsr.io/scopes/${encodeURIComponent(stripScopePrefix(owner))}/packages/${encodeURIComponent(target)}`,
-  page: ({ owner, target }) =>
-    `https://jsr.io/@${encodeURIComponent(stripScopePrefix(owner))}/${encodeURIComponent(target)}`,
+  api: 'https://api.jsr.io/scopes/{scope}/packages/{target}',
+  page: 'https://jsr.io/@{scope}/{target}',
   project: pickFields<JsrPackagePayload>(['latestVersion', 'score']),
 });
 

@@ -32,13 +32,6 @@ const DOCKER_HUB_ENDPOINT = createEndpoint({
   project: pickFields<DockerHubRepoPayload>(['last_updated', 'pull_count', 'star_count']),
 });
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Resolve the default Docker Hub namespace for official images. */
-function resolveDefaultDockerOwner(): string {
-  return OFFICIAL_NAMESPACE;
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Docker Hub service preset (`docker`). */
@@ -62,7 +55,7 @@ export const DOCKER_SERVICE = defineService({
     updated: createRelativeDateMetric(DOCKER_HUB_ENDPOINT, UPDATED, (repo) => repo.last_updated),
   },
   route: {
-    owner: { isRequired: false, placeholder: ':owner', resolveDefault: resolveDefaultDockerOwner },
+    owner: { defaultValue: OFFICIAL_NAMESPACE, isRequired: false, placeholder: ':owner' },
     target: { placeholder: ':repo' },
   },
 });

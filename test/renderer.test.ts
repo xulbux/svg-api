@@ -1279,11 +1279,13 @@ describe('rendering regressions', () => {
       renderIcon({ color: 'indigo', icon: 'rocket' }),
       renderStack({ icons: ['rust'] }),
       renderQuote({ color: 'indigo', text: 'Short quote.' }),
+      renderTyping({ color: 'indigo', lines: ['Hello'] }),
     ];
     for (const svg of svgs) {
       const label = extractAriaLabel(svg) ?? '';
       expect(label.length).toBeGreaterThan(0);
-      expect(svg).toContain(`aria-label="${label}"><title>${label}</title>`);
+      expect(svg).toMatch(/aria-label="[^"]*"[^>]*><title>/);
+      expect(svg).toContain(`<title>${label}</title>`);
     }
     expect(svgs[0]).toContain('<title>a &amp; b: &lt;1&gt;</title>');
   });

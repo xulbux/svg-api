@@ -3,6 +3,8 @@
  */
 
 import siteScript from '@bundles/site.client.js';
+import { rasterizeOgSvgToPng } from '@scripts/og/rasterizer';
+import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
@@ -12,8 +14,9 @@ import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { getSiteAsset } from '@/site/assets';
 import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/site/catalog';
-import { getHeadScriptBody, renderParamTable } from '@/site/components';
+import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
+import { jsx } from '@/site/jsx/jsx-runtime';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/site/navigation';
 import {
   renderBuilderHtml,
@@ -27,7 +30,8 @@ import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
 import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { escapeXml } from '@/svg/shared';
 import { GROUP_GAP_RATIO } from '@/svg/stack';
-import { requireDefined } from './helpers';
+import type { SiteClientCore } from '@/types';
+import { evaluateClientCore, requireDefined } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -45,27 +49,6 @@ interface ListedMetrics {
   aliases: string[];
   /** Listed canonical metrics. */
   metrics: string[];
-}
-
-/** Fallback popover placement options of the site script. */
-interface PopoverPlacementOptions {
-  /** Horizontal alignment with the anchor. */
-  align?: 'end' | 'start';
-  /** Distance between anchor and popover in pixels. */
-  gap?: number;
-  /** Whether the popover is at least as wide as its anchor. */
-  isWidthMatched?: boolean;
-}
-
-/** Pure helpers exposed by the site script without a DOM (`svgSiteCore`). */
-interface SiteCore {
-  /** Compute viewport-clamped popover coordinates next to an anchor rectangle. */
-  computePopoverPlacement: (
-    anchorRect: Readonly<Record<'bottom' | 'left' | 'right' | 'top' | 'width', number>>,
-    popoverSize: Readonly<Record<'height' | 'width', number>>,
-    viewportSize: Readonly<Record<'height' | 'width', number>>,
-    options: PopoverPlacementOptions
-  ) => Readonly<Record<'left' | 'top', number> & Record<'minWidth', number | undefined>>;
 }
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -130,14 +113,8 @@ function readSiteScript(): string {
 }
 
 /** Evaluate the site script without a DOM and return its exposed pure helpers. */
-function loadSiteCore(): SiteCore {
-  const sandbox: { svgSiteCore?: SiteCore } = {};
-  // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- The script is evaluated exactly as shipped to browsers.
-  new Function('globalThis', siteScript)(sandbox);
-  if (!sandbox.svgSiteCore) {
-    throw new Error('The site script did not expose svgSiteCore without a DOM.');
-  }
-  return sandbox.svgSiteCore;
+function loadSiteCore(): SiteClientCore {
+  return evaluateClientCore<SiteClientCore>(siteScript, 'svgSiteCore');
 }
 
 /** Collect a named capture group of every match. */
@@ -1009,5 +986,50 @@ describe('site stylesheet', () => {
     expect(css).toMatch(
       /@media \(forced-colors: active\) \{\s*\.swatch-dot,\s*\.select-swatch,\s*\.anatomy-swatch,\s*\.bg-swatch \{\s*forced-color-adjust: none;\s*\}\s*\}/
     );
+  });
+
+  it('protects asterisks inside inline code spans, serializes string popover attributes, marks variant=2 as the /docs/typing default, and rasterizes <circle> inside <g> (regressions: code-span asterisks became <strong>, string popover coerced to bare popover, /docs/typing variant=1 marked default, missing sparkles <circle> in og.png)', () => {
+    expect(formatInlineMarkupHtml('Match `**glob**` with **care**')).toBe(
+      'Match <code>**glob**</code> with <strong>care</strong>'
+    );
+
+    expect(jsx('div', { popover: 'manual' }).rawHtml).toBe('<div popover="manual"></div>');
+    expect(jsx('div', { popover: true }).rawHtml).toBe('<div popover></div>');
+    expect(jsx('div', { popover: false }).rawHtml).toBe('<div></div>');
+
+    const typingDocsHtml = renderDocsHtml('typing');
+    expect(typingDocsHtml).toContain(
+      '<span class="card-title-text">Secondary Tinted + Block Cursor</span><span class="card-title-pill">Default</span>'
+    );
+    expect(typingDocsHtml).not.toContain(
+      '<span class="card-title-text">Primary Brand Gradient</span><span class="card-title-pill">Default</span>'
+    );
+
+    // `<circle>` inside `<g>` must paint onto the OG canvas instead of being ignored:
+    const emptyGroupPng = rasterizeOgSvgToPng(
+      '<svg width="16" height="16"><rect width="16" height="16" fill="#000000" /><g transform="translate(2, 2)" stroke="#FFFFFF" stroke-width="2"></g></svg>',
+      16,
+      16,
+      '00'
+    );
+    const circleGroupPng = rasterizeOgSvgToPng(
+      '<svg width="16" height="16"><rect width="16" height="16" fill="#000000" /><g transform="translate(2, 2)" stroke="#FFFFFF" stroke-width="2"><circle cx="6" cy="6" r="4" /></g></svg>',
+      16,
+      16,
+      '00'
+    );
+    expect(circleGroupPng.equals(emptyGroupPng)).toBe(false);
+
+    // Multi-stop `<linearGradient>` interpolates intermediate stops instead of skipping straight from first to last:
+    const gradients = parseGradientDefs(
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="100" y2="0"><stop offset="0%" stop-color="#000000" /><stop offset="50%" stop-color="#FF0000" /><stop offset="100%" stop-color="#000000" /></linearGradient></defs>'
+    );
+    const midpointPaint = evaluatePaint('url(#g)', gradients, 50, 0);
+    expect(midpointPaint?.[0]).toBeGreaterThan(200);
+    expect(midpointPaint?.[1]).toBe(0);
+
+    // Smooth curves (`S`, `T`) and packed arc flags (`a5 5 0 015 5`) flatten without dropping segments:
+    const flattened = flattenSvgPath('M0 0 C2 0 4 2 6 2 S10 0 12 0 Q14 2 16 0 T20 0 a5 5 0 015 5');
+    expect(flattened[0]?.points.length).toBeGreaterThan(20);
   });
 });

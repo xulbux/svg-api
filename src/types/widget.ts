@@ -22,6 +22,26 @@ export type TypingEraseMode = 'backspace' | 'fade' | 'select';
 /** Bundled vector font family identifier for typing animations. */
 export type TypingFont = 'mono' | 'sans';
 
+/** Single laid-out character glyph with its horizontal advance and serialized outline at `(0, 0)`. */
+export interface PositionedCharGlyph {
+  /** Horizontal advance width of this character (including tracking and kerning) in pixels. */
+  advance: number;
+  /** Character string (one Unicode code point). */
+  char: string;
+  /** Horizontal baseline X offset from the start of the line in pixels. */
+  glyphX: number;
+  /** Serialized SVG `<path>` `d` attribute at `(0, 0)` (`''` for spaces or missing glyphs). */
+  pathData: string;
+}
+
+/** Per-character glyph layout and total advance width of a line of text. */
+export interface GlyphLineLayout {
+  /** Ordered per-character glyphs along the baseline. */
+  glyphs: PositionedCharGlyph[];
+  /** Total horizontal advance width of the line in pixels. */
+  totalAdvance: number;
+}
+
 /** Horizontal text alignment for typing animations. */
 export type TypingAlign = 'center' | 'left';
 

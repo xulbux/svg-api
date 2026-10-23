@@ -19,11 +19,13 @@ import {
   buildIconBodyId,
   clampInt,
   clampNumber,
+  computeIconTranslateX,
   getOwnValue,
   hasOwnKey,
   isAnimationDisabled,
   isSheenMode,
   isStripTickState,
+  measureIconVisualWidth,
   prepareDisplayText,
   renderIconGroup,
   renderIconPaintAttrs,
@@ -56,7 +58,6 @@ import type {
   IconMotionMode,
   IconRenderOptions,
   NumericRange,
-  ResolvedIcon,
   SizePreset,
   StripTickState,
   SweepTiming,
@@ -956,14 +957,6 @@ function resolveIconPair(iconSpec: string | undefined): ResolvedIconPair {
   };
 }
 
-/** Measure the true rendered horizontal width in pixels of a resolved icon (`(maxX - minX) * (iconSize / 24)`). */
-function measureIconVisualWidth(iconData: ResolvedIcon | undefined, iconSize: number): number {
-  if (!iconData) {
-    return 0;
-  }
-  return roundCoord((iconData.maxX - iconData.minX) * (iconSize / 24));
-}
-
 /** Render the SVG `<g>` markup for a resolved icon slot, aligned so its leftmost visible pixel starts at `visualStartX`. */
 function renderIconMarkup(options: IconMarkupOptions): string {
   const iconData = options.slot.data;
@@ -972,7 +965,7 @@ function renderIconMarkup(options: IconMarkupOptions): string {
   }
   const scaleNum = options.iconSize / 24;
   const scale = roundScale(scaleNum);
-  const translateX = roundCoord(options.visualStartX - iconData.minX * scaleNum);
+  const translateX = computeIconTranslateX(options.visualStartX, iconData, scaleNum);
   return renderIconGroup({
     color: options.paint.color,
     innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),

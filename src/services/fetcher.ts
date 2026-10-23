@@ -56,7 +56,7 @@ interface UpstreamOutcome {
 interface UpstreamBody {
   /** Extended logical TTL in seconds when the upstream rate-limit bucket is running low. */
   adaptiveTtl?: number;
-  /** Leading value already parsed by the streaming prefix reader (`{ [leadingKey]: value }`). */
+  /** Top-level object fields already parsed by the streaming extractor (`extractKeys`). */
   data?: unknown;
   /** Upstream `ETag` response header value (when within `MAX_ETAG_LENGTH`). */
   etag?: string;
@@ -74,6 +74,16 @@ interface EdgeCacheReadResult {
   isFresh: boolean;
   /** Decoded positive or negative outcome. */
   outcome: UpstreamOutcome;
+  /** Verbatim serialized projection read from the edge cache (avoids `JSON.stringify` on `304`/rescue). */
+  rawText?: string;
+}
+
+/** Stale positive projection candidate retained across revalidation (`304` and `stale-if-error`). */
+interface StaleCandidate {
+  /** Expired positive outcome with non-empty `data`. */
+  outcome: UpstreamOutcome;
+  /** Optional already-serialized JSON body when read from the edge cache. */
+  rawText?: string;
 }
 
 /** Concrete HTTP request parameters and cache key for one upstream load. */
@@ -372,8 +382,8 @@ function resolveServiceContext(
     if (ownerSegment.isRequired) {
       return buildRouteErrorResult(serviceKey, 'missing owner');
     }
-    if (ownerSegment.resolveDefault) {
-      owner = ownerSegment.resolveDefault();
+    if (ownerSegment.defaultValue !== undefined) {
+      owner = ownerSegment.defaultValue;
       if (!owner) {
         return buildRouteErrorResult(serviceKey, 'missing owner');
       }
@@ -815,10 +825,7 @@ function createJsonStreamScanner(extractKeys: readonly string[]): JsonStreamScan
 
 /** Resolve the top-level JSON keys to extract while streaming (`undefined` when the full body is read). */
 function resolveExtractKeys(endpoint: MetricEndpoint): readonly string[] | undefined {
-  if (endpoint.extractKeys && endpoint.extractKeys.length > 0) {
-    return endpoint.extractKeys;
-  }
-  return endpoint.leadingKey === undefined ? undefined : [endpoint.leadingKey];
+  return endpoint.extractKeys && endpoint.extractKeys.length > 0 ? endpoint.extractKeys : undefined;
 }
 
 /**
@@ -1109,18 +1116,18 @@ function buildFetchedOutcome(
 function resolveRevalidatedOutcome(
   fetched: UpstreamBody,
   endpoint: MetricEndpoint,
-  stale: UpstreamOutcome | undefined
+  stale: StaleCandidate | undefined
 ): [outcome: UpstreamOutcome, edgeBody: string | undefined] {
   if (fetched.status === NOT_MODIFIED_STATUS) {
-    if (!stale || stale.data === undefined) {
+    if (!stale || stale.outcome.data === undefined) {
       return [buildFailureOutcome(502), undefined];
     }
-    const edgeBody = JSON.stringify(stale.data);
+    const edgeBody = stale.rawText ?? JSON.stringify(stale.outcome.data);
     const effectiveTtl = Math.max(endpoint.ttl, fetched.adaptiveTtl ?? 0);
     return [
       {
-        data: stale.data,
-        etag: fetched.etag ?? stale.etag,
+        data: stale.outcome.data,
+        etag: fetched.etag ?? stale.outcome.etag,
         expiresAt: Date.now() + effectiveTtl * 1000,
         size: edgeBody.length,
         status: 200,
@@ -1129,16 +1136,16 @@ function resolveRevalidatedOutcome(
     ];
   }
   const [freshOutcome, freshEdgeBody] = buildFetchedOutcome(fetched, endpoint);
-  if (stale && stale.data !== undefined && isStaleRescuable(freshOutcome)) {
+  if (stale && stale.outcome.data !== undefined && isStaleRescuable(freshOutcome)) {
     const backoffSeconds =
       freshOutcome.status === 202
         ? ERROR_CACHE_TTL
         : resolveFailureTtl(freshOutcome.status, fetched.retryAfter);
-    const edgeBody = JSON.stringify(stale.data);
+    const edgeBody = stale.rawText ?? JSON.stringify(stale.outcome.data);
     return [
       {
-        data: stale.data,
-        etag: stale.etag,
+        data: stale.outcome.data,
+        etag: stale.outcome.etag,
         expiresAt: Date.now() + backoffSeconds * 1000,
         size: edgeBody.length,
         status: 200,
@@ -1184,6 +1191,7 @@ async function readEdgeCacheEntry(
         size: text.length,
         status: 200,
       },
+      rawText: text,
     };
   } catch {
     return undefined;
@@ -1233,14 +1241,14 @@ async function writeEdgeCacheEntry(
 async function loadThroughEdgeCache(
   endpoint: MetricEndpoint,
   target: ResolvedFetchTarget,
-  staleMemory: UpstreamOutcome | undefined,
+  staleMemory: StaleCandidate | undefined,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
   const edgeCache = getEdgeCache();
   const cacheKey = edgeCache
     ? new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(target.cacheKeyUrl)}`)
     : undefined;
-  let staleEdge: UpstreamOutcome | undefined = undefined;
+  let staleEdge: StaleCandidate | undefined = undefined;
 
   if (edgeCache && cacheKey) {
     let cached: Response | undefined = undefined;
@@ -1253,11 +1261,13 @@ async function loadThroughEdgeCache(
     if (edgeEntry?.isFresh) {
       return edgeEntry.outcome;
     }
-    staleEdge = edgeEntry?.outcome;
+    if (edgeEntry) {
+      staleEdge = { outcome: edgeEntry.outcome, rawText: edgeEntry.rawText };
+    }
   }
 
   const stale = staleEdge ?? staleMemory;
-  const fetched = await fetchUpstreamBody(target, endpoint, stale?.etag);
+  const fetched = await fetchUpstreamBody(target, endpoint, stale?.outcome.etag);
   const [outcome, edgeBody] = resolveRevalidatedOutcome(fetched, endpoint, stale);
   if (edgeCache && cacheKey) {
     await writeEdgeCacheEntry(edgeCache, cacheKey, outcome, edgeBody, executionCtx);
@@ -1277,23 +1287,34 @@ async function loadUpstreamJson(
   if (memoryEntry && memoryEntry.expiresAt > now) {
     return memoryEntry;
   }
-  const staleMemory =
-    memoryEntry && memoryEntry.status === 200 && memoryEntry.data !== undefined
-      ? memoryEntry
-      : undefined;
-  if (memoryEntry) {
-    deleteLruEntry(MEMORY_CACHE, cacheKeyUrl);
-  }
-
   const pending = IN_FLIGHT_LOADS.get(cacheKeyUrl);
   if (pending) {
     return pending;
   }
+  const staleMemory =
+    memoryEntry && memoryEntry.status === 200 && memoryEntry.data !== undefined
+      ? memoryEntry
+      : undefined;
   if (IN_FLIGHT_LOADS.size >= MAX_IN_FLIGHT_LOADS) {
+    if (staleMemory) {
+      const rescued: UpstreamOutcome = {
+        ...staleMemory,
+        expiresAt: now + RATE_LIMIT_CACHE_TTL.min * 1000,
+      };
+      writeLruCache(MEMORY_CACHE, cacheKeyUrl, rescued);
+      return rescued;
+    }
+    if (memoryEntry) {
+      deleteLruEntry(MEMORY_CACHE, cacheKeyUrl);
+    }
     return { expiresAt: 0, size: 0, status: RATE_LIMITED_STATUS };
   }
+  if (memoryEntry) {
+    deleteLruEntry(MEMORY_CACHE, cacheKeyUrl);
+  }
 
-  const load = loadThroughEdgeCache(endpoint, target, staleMemory, executionCtx)
+  const staleCandidate = staleMemory ? { outcome: staleMemory } : undefined;
+  const load = loadThroughEdgeCache(endpoint, target, staleCandidate, executionCtx)
     // A rejected load must never reject every coalesced request:
     .catch((): UpstreamOutcome => buildFailureOutcome(502))
     .then((outcome) => {
@@ -1428,21 +1449,23 @@ export function resolveServicePreview(
   if (typeof sample === 'string') {
     return buildMetricResult(metric, { value: sample }, redirectUrl);
   }
+  const errorOptions: ErrorResultOptions = { icon: metric.defaultIcon, redirectUrl };
   let projected: unknown = undefined;
   try {
     projected = metric.endpoint.project ? metric.endpoint.project(sample) : sample;
   } catch {
-    return buildMetricResult(metric, { color: 'rose', value: 'invalid data' }, redirectUrl);
+    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions)
+      .result;
   }
   const transformed = projected === undefined ? undefined : runTransform(metric, projected, params);
   if (transformed === 'invalid') {
-    return buildMetricResult(metric, { color: 'rose', value: 'invalid data' }, redirectUrl);
+    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions)
+      .result;
   }
-  return buildMetricResult(
-    metric,
-    transformed ?? { color: 'rose', value: 'not found' },
-    redirectUrl
-  );
+  if (!transformed) {
+    return buildErrorResult(metric.defaultLabel, 'not found', 404, errorOptions).result;
+  }
+  return buildMetricResult(metric, transformed, redirectUrl);
 }
 
 /**

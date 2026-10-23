@@ -142,6 +142,26 @@ export function buildSvgCacheControl(ttl: number): string {
 }
 
 /**
+ * Build the response headers of an SVG document.
+ * @param ttl            Shared edge cache TTL in seconds.
+ * @param etag           Entity tag of the SVG body.
+ * @param extraHeaders   Optional additional headers (e.g., `Vary`).
+ * @returns Merged SVG response headers.
+ */
+export function buildSvgHeaders(
+  ttl: number,
+  etag: string,
+  extraHeaders?: Readonly<Record<string, string>>
+): Record<string, string> {
+  return {
+    ...SVG_BASE_HEADERS,
+    'Cache-Control': buildSvgCacheControl(ttl),
+    ETag: etag,
+    ...extraHeaders,
+  };
+}
+
+/**
  * Build an HTTP `200` SVG response with entity tag, edge cache, and security headers.
  * @param svg            Complete SVG markup.
  * @param ttl            Shared edge cache TTL in seconds.
@@ -154,14 +174,30 @@ export function buildSvgResponse(
   extraHeaders?: Readonly<Record<string, string>>
 ): Response {
   return new Response(svg, {
-    headers: {
-      ...SVG_BASE_HEADERS,
-      'Cache-Control': buildSvgCacheControl(ttl),
-      ETag: computeEtag(svg),
-      ...extraHeaders,
-    },
+    headers: buildSvgHeaders(ttl, computeEtag(svg), extraHeaders),
     status: 200,
   });
+}
+
+/**
+ * Build an HTTP `200` response carrying `etag`, or a bodiless `304 Not Modified` response when `ifNoneMatch` matches.
+ * @param body          Complete response body.
+ * @param etag          Entity tag of `body`.
+ * @param ifNoneMatch   Incoming `If-None-Match` request header value.
+ * @param headers       Response headers (merged with `ETag: etag`).
+ * @returns `304` `Response` without a body when current, otherwise `200` `Response`.
+ */
+export function buildConditionalBodyResponse(
+  body: BodyInit,
+  etag: string,
+  ifNoneMatch: string | undefined,
+  headers: Readonly<Record<string, string>>
+): Response {
+  const responseHeaders = { ...headers, ETag: etag };
+  if (isEtagMatch(ifNoneMatch, etag)) {
+    return new Response(undefined, { headers: responseHeaders, status: 304 });
+  }
+  return new Response(body, { headers: responseHeaders, status: 200 });
 }
 
 /**

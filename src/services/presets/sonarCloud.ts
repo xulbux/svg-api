@@ -15,7 +15,7 @@ import {
   formatPointDelta,
   toFiniteNumber,
 } from '@/services/metrics';
-import { MAX_STRIP_TICKS } from '@/svg/renderer';
+import { MAX_STEPS_COUNT, MAX_STRIP_TICKS } from '@/svg/renderer';
 import type {
   BadgeSpecialKind,
   BadgeSpecialMap,
@@ -140,7 +140,11 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
 /** Project a SonarCloud measures response into a `metric -> value` map of the requested measures. */
 function projectSonarMeasures(data: unknown): SonarMeasures | undefined {
   const component = isJsonObject(data) ? data.component : undefined;
-  if (!isJsonObject(component) || !Array.isArray(component.measures)) {
+  if (
+    !isJsonObject(component) ||
+    !Array.isArray(component.measures) ||
+    component.measures.length === 0
+  ) {
     return undefined;
   }
   const measures: SonarMeasures = {};
@@ -177,27 +181,36 @@ function buildQualityGateSpecials(detailsJson: string | undefined): BadgeSpecial
   }
   const states: StripTickState[] = [];
   let passedCount = 0;
-  for (const condition of conditions.slice(0, MAX_STRIP_TICKS)) {
+  let totalCount = 0;
+  for (const condition of conditions) {
     const rawLevel = isJsonObject(condition) ? (condition.level ?? condition.status) : undefined;
     if (typeof rawLevel === 'string') {
+      totalCount += 1;
+      let tick: StripTickState = '0';
       if (rawLevel === 'OK') {
-        states.push('9');
+        tick = '9';
         passedCount += 1;
       } else if (rawLevel === 'WARN') {
-        states.push('4');
-      } else {
-        states.push('0');
+        tick = '4';
+      }
+      if (states.length < MAX_STRIP_TICKS) {
+        states.push(tick);
       }
     }
   }
-  if (states.length === 0) {
+  if (totalCount === 0) {
     return undefined;
   }
-  const total = states.length;
-  const ratio = buildRatioSpecials(passedCount, total);
+  const stepTotal = Math.min(MAX_STEPS_COUNT, totalCount);
+  const rawStepDone =
+    totalCount <= MAX_STEPS_COUNT
+      ? passedCount
+      : Math.round((passedCount / totalCount) * stepTotal);
+  const stepDone = passedCount < totalCount ? Math.min(stepTotal - 1, rawStepDone) : stepTotal;
+  const ratio = buildRatioSpecials(passedCount, totalCount);
   return {
     ...ratio,
-    steps: { done: passedCount, total, type: 'steps' },
+    steps: { done: stepDone, total: stepTotal, type: 'steps' },
     strip: { states, type: 'strip' },
   };
 }

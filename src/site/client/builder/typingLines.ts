@@ -72,6 +72,18 @@ function trySwapDraggedRowOnce(draggedRow: HTMLElement, visualCenterY: number): 
   return false;
 }
 
+/** Split pasted clipboard text into non-empty trimmed lines. */
+function splitPastedLines(pastedText: string): string[] {
+  const pastedLines: string[] = [];
+  for (const part of pastedText.split(LINE_SPLIT_RX)) {
+    const trimmedLine = part.trim();
+    if (trimmedLine) {
+      pastedLines.push(trimmedLine);
+    }
+  }
+  return pastedLines;
+}
+
 /** Swap `draggedRow` across any crossed neighbor midpoints and report whether DOM order changed. */
 function swapDraggedRowWithNeighbors(draggedRow: HTMLElement, visualCenterY: number): boolean {
   let hasSwapped = false;
@@ -309,6 +321,9 @@ export function createTypingLinesController(
   }
 
   function handleKeydown(event: KeyboardEvent): void {
+    if (event.isComposing) {
+      return;
+    }
     const handle =
       event.target instanceof Element
         ? event.target.closest<HTMLButtonElement>('[data-typing-line-handle]')
@@ -325,6 +340,25 @@ export function createTypingLinesController(
     }
   }
 
+  function appendPastedRows(
+    anchorRow: HTMLElement,
+    pastedLines: readonly string[],
+    insertCount: number,
+    afterSelection: string
+  ): HTMLElement {
+    let lastRow = anchorRow;
+    for (let i = 1; i <= insertCount; i += 1) {
+      const segmentText =
+        i === insertCount ? `${pastedLines[i] ?? ''}${afterSelection}` : (pastedLines[i] ?? '');
+      const nextRow = createRow(segmentText.trim());
+      if (nextRow) {
+        lastRow.after(nextRow);
+        lastRow = nextRow;
+      }
+    }
+    return lastRow;
+  }
+
   function handlePaste(event: ClipboardEvent): void {
     const input =
       event.target instanceof HTMLInputElement &&
@@ -336,30 +370,21 @@ export function createTypingLinesController(
     if (!input || !row || !MULTI_LINE_PASTE_RX.test(pastedText)) {
       return;
     }
-    const pastedLines: string[] = [];
-    for (const part of pastedText.split(LINE_SPLIT_RX)) {
-      const trimmedLine = part.trim();
-      if (trimmedLine) {
-        pastedLines.push(trimmedLine);
-      }
-    }
+    const pastedLines = splitPastedLines(pastedText);
     if (pastedLines.length <= 1) {
       return;
     }
     event.preventDefault();
-    input.value = (pastedLines[0] ?? '').slice(0, maxLength);
-    let anchorRow: HTMLElement = row;
-    let currentRowCount = getRows().length;
-    for (let i = 1; i < pastedLines.length && currentRowCount < maxLines; i += 1) {
-      const nextRow = createRow(pastedLines[i] ?? '');
-      if (nextRow) {
-        anchorRow.after(nextRow);
-        anchorRow = nextRow;
-        currentRowCount += 1;
-      }
-    }
+    const startOffset = input.selectionStart ?? input.value.length;
+    const endOffset = input.selectionEnd ?? startOffset;
+    const beforeSelection = input.value.slice(0, startOffset);
+    const afterSelection = input.value.slice(endOffset);
+    const insertCount = Math.min(pastedLines.length - 1, Math.max(0, maxLines - getRows().length));
+    const firstMerged = `${beforeSelection}${pastedLines[0] ?? ''}${insertCount === 0 ? afterSelection : ''}`;
+    input.value = firstMerged.replace(SEMICOLON_RX, ' ').trim().slice(0, maxLength);
+    const lastRow = appendPastedRows(row, pastedLines, insertCount, afterSelection);
     refreshRowMetadata();
-    focusRowInput(anchorRow, true);
+    focusRowInput(lastRow, true);
     notifyChange();
   }
 

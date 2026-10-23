@@ -523,6 +523,9 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
   }
 
   function handlePickerSearchKeydown(event: KeyboardEvent): void {
+    if (event.isComposing) {
+      return;
+    }
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       const rovingTile = pickerGrid?.querySelector('.icon-tile[tabindex="0"]');
@@ -600,7 +603,13 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       const button =
         event.target instanceof Element ? event.target.closest('[data-icon-target]') : undefined;
       if (button instanceof HTMLElement) {
+        const isSwitchingOpenTarget =
+          Boolean(site?.isPopoverOpen(pickerElement)) && button !== pickerTrigger;
         targetPicker(button);
+        if (isSwitchingOpenTarget) {
+          event.preventDefault();
+          openPicker();
+        }
       }
     });
     pickerElement.addEventListener('toggle', (event) => {

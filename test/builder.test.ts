@@ -50,109 +50,15 @@ import {
 } from '@/svg/icons';
 import { STACK_GAP_RANGE, STACK_PER_LINE_RANGE, STACK_TILE_SIZE_RANGE } from '@/svg/stack';
 import type {
+  BuilderClientCore,
   BuilderKind,
-  BuilderOption,
   BuilderSchema,
-  HighlightToken,
+  BuilderState,
   IconPickerIndex,
   IconPickerSetId,
   ServiceRequest,
 } from '@/types';
-
-// ---------------------------------------- TYPES ----------------------------------------
-
-/** Builder state (field ID -> serialized value). */
-type BuilderState = Record<string, string>;
-
-/** Snippet formats produced by the builder client. */
-interface SnippetSet {
-  /** HTML `<img>` snippet. */
-  html: string;
-  /** Markdown image snippet. */
-  markdown: string;
-  /** Plain URL. */
-  url: string;
-}
-
-/** Pure helpers exposed by the builder client script (`svgBuilderCore`). */
-interface BuilderCore {
-  /** Build a human-readable default alt text for the current element state. */
-  buildAltText: (schema: BuilderSchema, state: BuilderState) => string;
-  /** Build the default click-through target URL for a service badge or element. */
-  buildDefaultLinkTarget: (schema: BuilderSchema, state: BuilderState, url: string) => string;
-  /** Build the relative SVG request path and list of missing required fields. */
-  buildPath: (schema: BuilderSchema, state: BuilderState) => { missing: string[]; path: string };
-  /** Append `anim=none` when reduced motion is enabled. */
-  buildPreviewPath: (path: string, isReducedMotion: boolean) => string;
-  /** Build the shareable builder URL for the current element path and snippet options. */
-  buildShareUrl: (href: string, path: string, alt: string, link: string) => string;
-  /** Build the plain-text Markdown, HTML, and URL copy snippets. */
-  buildSnippets: (url: string, alt: string, link: string) => SnippetSet;
-  /** Build the syntax-highlighted token lists for the Markdown, HTML, and URL snippets. */
-  buildSnippetTokens: (
-    url: string,
-    alt: string,
-    link: string
-  ) => Record<keyof SnippetSet, HighlightToken[]>;
-  /** Split a stack groups string into individual non-empty icon slugs. */
-  collectStackSlugs: (groups: string) => string[];
-  /** Compose a `?anim=` query value from the sheen toggle and left/right icon motion tokens. */
-  composeAnim: (hasSheen: boolean, left: string, right: string) => string;
-  /** Compose the `/stack/:icons` path segment from categorized icon groups. */
-  composeCategorizedStack: (
-    categoryGroups: readonly (readonly string[])[],
-    isGroupedByCategory: boolean,
-    rawPerLine?: string
-  ) => string;
-  /** Compose a `?hint=` query value from an optional icon slug and label text. */
-  composeHint: (icon: string, text: string) => string;
-  /** Compose a `?icon=` query value from left and right icon slugs. */
-  composeIconPair: (left: string, right: string, hasPresetIcon: boolean) => string;
-  /** Compose a `?special=` query value from its kind, payload, and modifier. */
-  composeSpecial: (
-    kind: string,
-    payload: string,
-    modifier: string,
-    isAutoAllowed?: boolean
-  ) => string;
-  /** Compute the next focused grid cell index for an arrow/Home/End key press. */
-  computeGridFocusIndex: (
-    key: string,
-    index: number,
-    columns: number,
-    total: number
-  ) => number | undefined;
-  /** Memoize an async loader by key, evicting failed promises so retries work. */
-  createAsyncCache: <T>(load: (key: string) => Promise<T>) => (key: string) => Promise<T>;
-  /** Create an icon slug resolver from the `/assets/icons.json` index. */
-  createIconResolver: (
-    index: IconPickerIndex,
-    maxSlugLength: number
-  ) => { resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined };
-  /** Decode a URL path segment (`+` to space, percent-encoding to UTF-8). */
-  decodeSegment: (raw: string) => string;
-  /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */
-  encodeSegment: (text: string) => string;
-  /** Parse a relative SVG path and query string into a builder form state. */
-  parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
-  /** Resolve the effective default value of a field under the current state. */
-  resolveEffectiveFieldDefault: (
-    schema: BuilderSchema,
-    state: BuilderState,
-    field: BuilderSchema['fields'][number]
-  ) => string;
-  /** Split a `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
-  splitAnim: (value: string) => { hasSheen: boolean; left: string; right: string };
-  /** Split a `?hint=` query value into its optional icon slug and label text. */
-  splitHint: (value: string) => { icon: string; text: string };
-  /** Split a `?icon=` query value into `[left, right]` icon slugs. */
-  splitIconPair: (value: string, hasPresetIcon: boolean) => [left: string, right: string];
-  /** Split a `?special=` query value into its kind, payload, and modifier. */
-  splitSpecial: (
-    value: string,
-    options: readonly BuilderOption[]
-  ) => { kind: string; modifier: string; payload: string };
-}
+import { evaluateClientCore } from './helpers';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -169,18 +75,7 @@ const SMIL_ANIMATION_RX = /<animate/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Evaluate the builder client script without a DOM and return its exposed core. */
-function loadBuilderCore(): BuilderCore {
-  const sandbox: { svgBuilderCore?: BuilderCore } = {};
-  // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- The script is evaluated exactly as shipped to browsers.
-  new Function('globalThis', builderScript)(sandbox);
-  if (!sandbox.svgBuilderCore) {
-    throw new Error('The builder script did not expose svgBuilderCore without a DOM.');
-  }
-  return sandbox.svgBuilderCore;
-}
-
-const core = loadBuilderCore();
+const core = evaluateClientCore<BuilderClientCore>(builderScript, 'svgBuilderCore');
 
 /** Collect the decoded `?path=` of every preview link on a page. */
 function collectPreviewPaths(html: string): string[] {
@@ -1557,6 +1452,16 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(resolveBuilderTarget('/badge/pypi/owner/pkg/v')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/gh/xulbux/svg-api/stars')?.kind).toBe('service');
     expect(resolveBuilderTarget('/badge/gh/svg-api/stars')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/go/github.com/spf13/cobra/v')?.kind).toBe('service');
+    expect(resolveBuilderTarget('/badge/go/a/b/c/d/e/f/g/h/i/v')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/terraform/terraform-aws-modules/vpc/aws/v')?.kind).toBe(
+      'service'
+    );
+    expect(resolveBuilderTarget('/badge/terraform/terraform-aws-modules/vpc/v')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/gitlab/gitlab-org/gitlab-runner/stars')?.kind).toBe(
+      'service'
+    );
+    expect(resolveBuilderTarget('/badge/gitlab/gitlab-runner/stars')).toBeUndefined();
     expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
     expect(resolveBuilderTarget('/icon/a/b')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/a/b/c/d')).toBeUndefined();
@@ -1564,5 +1469,50 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(resolveBuilderTarget('/quote/Hi?layout=vertical')?.href).toBe(
       `/builder/quote?path=${encodeURIComponent('/quote/Hi?layout=vertical')}`
     );
+  });
+
+  it('exposes pure icon catalog filtering, icon select display resolution, and ambiguous HTML character-reference escaping (regressions: &amp; in alt text broke HTML5 img snippets)', () => {
+    const index = getIconPickerIndex();
+    const emptyFilter = core.filterIconCatalog(index, index.sets, 'lucide', '   ');
+    expect(emptyFilter.counts).toBeUndefined();
+    expect(emptyFilter.matches).toHaveLength(index.sets.lucide.length);
+
+    const filteredBrands = core.filterIconCatalog(index, index.sets, 'brands', 'typescript');
+    expect(filteredBrands.counts?.brands).toBeGreaterThanOrEqual(1);
+    expect(filteredBrands.matches.some((match) => match.slug === 'typescript')).toBe(true);
+
+    expect(core.resolveIconSelectDisplay('', 'Select icon')).toEqual({
+      displayLabel: 'Select icon',
+      glyphSlug: '',
+      isPlaceholder: true,
+    });
+    expect(core.resolveIconSelectDisplay('', 'Select icon', 'npm', false)).toEqual({
+      displayLabel: 'npm',
+      glyphSlug: 'npm',
+      isPlaceholder: false,
+    });
+    expect(core.resolveIconSelectDisplay('', 'Select icon', 'circle-check', true)).toEqual({
+      displayLabel: 'Auto',
+      glyphSlug: 'circle-check',
+      isPlaceholder: false,
+    });
+    expect(core.resolveIconSelectDisplay('none', 'Select icon', 'npm')).toEqual({
+      displayLabel: 'Select icon',
+      glyphSlug: '',
+      isPlaceholder: true,
+    });
+    expect(core.resolveIconSelectDisplay(' TS ', 'Select icon')).toEqual({
+      displayLabel: 'TS',
+      glyphSlug: 'TS',
+      isPlaceholder: false,
+    });
+
+    const snippets = core.buildSnippets(
+      'https://svg.xul.is/badge/a/b?color=sky&copy=1',
+      'A &amp; B',
+      ''
+    );
+    expect(snippets.html).toContain('src="https://svg.xul.is/badge/a/b?color=sky&copy=1"');
+    expect(snippets.html).toContain('alt="A &amp;amp; B"');
   });
 });

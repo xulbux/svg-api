@@ -11,7 +11,7 @@ import type { ParamTableRow } from '@/types';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<ParamTable />` component. */
-export interface ParamTableProps {
+interface ParamTableProps {
   /** Column header labels (defaults to `Parameter`, `Values`, `Default`, `Description`). */
   readonly columns?: ParamTableRow | undefined;
   /** Accessible table caption and scroll region label (e.g., `'Badge query parameters'`). */
@@ -21,7 +21,7 @@ export interface ParamTableProps {
 }
 
 /** Props for the `<AliasList />` component. */
-export interface AliasListProps {
+interface AliasListProps {
   /** Alias slugs mapped to their canonical slugs. */
   readonly aliases: Readonly<Record<string, string>>;
   /** Accessible list label (e.g., `'Icon slug aliases'`). */
@@ -186,14 +186,4 @@ export function AliasList(props: AliasListProps): HtmlFragment {
       {items}
     </ul>
   );
-}
-
-/**
- * Render an alphabetically sorted `alias → canonical` list (e.g., icon slug aliases).
- * @param aliases   Alias slugs mapped to their canonical slugs.
- * @param label     Accessible list label (e.g., `'Icon slug aliases'`).
- * @returns HTML string for the alias list.
- */
-export function renderAliasList(aliases: Readonly<Record<string, string>>, label: string): string {
-  return renderHtml(<AliasList aliases={aliases} label={label} />);
 }

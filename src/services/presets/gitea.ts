@@ -5,7 +5,13 @@
  * built by the same `createGiteaService` factory.
  */
 
-import { createEndpoint, defineService, pickFields, withPageSuffix } from '@/services/endpoint';
+import {
+  OWNER_REPO_ROUTE,
+  createEndpoint,
+  defineService,
+  pickFields,
+  withPageSuffix,
+} from '@/services/endpoint';
 import {
   createCountMetric,
   createRelativeDateMetric,
@@ -108,7 +114,7 @@ function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefin
         (repo) => repo.updated_at
       ),
     },
-    route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+    route: OWNER_REPO_ROUTE,
   });
 }
 

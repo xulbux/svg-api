@@ -14,13 +14,13 @@ import type { HtmlFragment, JsxChild } from '@/site/jsx';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<RoutePills />` component. */
-export interface RoutePillsProps {
+interface RoutePillsProps {
   /** Route pattern strings (e.g., `['/badge/:label/:value']`). */
   readonly patterns: readonly string[];
 }
 
 /** Props for the `<SectionHeader />` component. */
-export interface SectionHeaderProps {
+interface SectionHeaderProps {
   /** Optional trailing header action rendered beside the title (e.g., the builder's `Reference` link). */
   readonly action?: JsxChild;
   /** Lead description paragraph (supports inline `` `code` `` and `**strong**` markup). */
@@ -34,7 +34,7 @@ export interface SectionHeaderProps {
 }
 
 /** Props for the `<SectionSubhead />` component. */
-export interface SectionSubheadProps {
+interface SectionSubheadProps {
   /** Lucide icon slug (e.g., `'layers'`). */
   readonly iconSlug: string;
   /** Subheading text (supports inline `` `code` `` markup). */

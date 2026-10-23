@@ -14,14 +14,14 @@ interface ReadTheDocsBuildState {
   code?: string;
 }
 
-/** Partial build entry of a Read the Docs builds payload (`readthedocs.org/api/v3/projects/:project/versions/latest/builds/`). */
+/** Projected build entry of a Read the Docs builds payload (`readthedocs.org/api/v3/projects/:project/versions/latest/builds/`). */
 interface ReadTheDocsBuild {
   /** Build duration in seconds. */
-  duration?: number | null;
-  /** Build state. */
-  state?: ReadTheDocsBuildState | null;
+  duration?: number;
   /** Whether the finished build succeeded. */
-  success?: boolean | null;
+  isSuccess?: boolean;
+  /** Build state. */
+  state?: ReadTheDocsBuildState;
 }
 
 /** Projected Read the Docs recent build history. */
@@ -97,7 +97,7 @@ const READ_THE_DOCS_PROJECT_RX = /^[a-z\d][a-z\d-]*$/i;
 function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
   const code = build.state?.code;
   if (code === 'finished') {
-    return build.success === true ? '9' : '0';
+    return build.isSuccess === true ? '9' : '0';
   }
   if (code === 'cancelled') {
     return '3';
@@ -120,8 +120,8 @@ function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefi
         : undefined;
       recent.push({
         duration: readFiniteNumber(item.duration),
+        isSuccess: typeof item.success === 'boolean' ? item.success : undefined,
         state,
-        success: typeof item.success === 'boolean' ? item.success : undefined,
       });
     }
   }
@@ -155,7 +155,7 @@ function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<M
   const stateCode = latest.state?.code;
   let base: Partial<MetricResult> = UNKNOWN_BUILD;
   if (stateCode === 'finished') {
-    base = latest.success === true ? PASSING_BUILD : FAILING_BUILD;
+    base = latest.isSuccess === true ? PASSING_BUILD : FAILING_BUILD;
   } else if (stateCode === 'cancelled') {
     base = CANCELLED_BUILD;
   } else if (typeof stateCode === 'string' && IN_PROGRESS_STATES.has(stateCode)) {

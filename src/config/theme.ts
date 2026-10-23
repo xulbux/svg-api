@@ -3,7 +3,7 @@
  */
 
 import { ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
-import type { BaseDarkPalette, DotState, ThemeColorName, ThemePalette } from '@/types';
+import type { BaseDarkPalette, DotState, RgbTuple, ThemeColorName, ThemePalette } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -16,9 +16,6 @@ interface OklchColor {
   /** OKLCH perceptual lightness percentage (`0`–`100`). */
   lightness: number;
 }
-
-/** Three-channel RGB tuple (`0`–`1` linear light or `0`–`255` gamma-encoded). */
-type RgbTuple = [red: number, green: number, blue: number];
 
 /** Tailwind v4 OKLCH shade seeds required to derive a complete badge theme palette. */
 interface TailwindFamilyScale {

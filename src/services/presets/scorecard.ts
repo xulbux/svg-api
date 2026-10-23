@@ -2,7 +2,13 @@
  * OpenSSF Scorecard service preset – Live upstream metrics and redirect transformations.
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  OWNER_REPO_ROUTE,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   createScorecardMetric,
   readFiniteNumber,
@@ -53,5 +59,5 @@ export const SCORECARD_SERVICE = defineService({
       (project) => project.checks
     ),
   },
-  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+  route: OWNER_REPO_ROUTE,
 });

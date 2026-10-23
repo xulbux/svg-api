@@ -222,7 +222,9 @@ export function HomePage(): HtmlFragment {
           </a>
         </div>
       </section>
-      <div class="feature-grid">{featureCards}</div>
+      <section class="feature-grid" aria-label="Highlights">
+        {featureCards}
+      </section>
       <section class="doc-section" id="endpoints">
         <SectionHeader
           description="Expand **View Markdown** on any card to inspect and copy its live snippet, or click a preview to customize it in the Builder."

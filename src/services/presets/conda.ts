@@ -32,13 +32,6 @@ const CONDA_ENDPOINT = createEndpoint({
   ttl: CACHE_TTL.daily,
 });
 
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Resolve the default Conda channel. */
-function resolveDefaultCondaChannel(): string {
-  return DEFAULT_CONDA_CHANNEL;
-}
-
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** Conda (Anaconda Cloud) service preset (`conda`). */
@@ -56,11 +49,7 @@ export const CONDA_SERVICE = defineService({
     ),
   },
   route: {
-    owner: {
-      isRequired: false,
-      placeholder: ':channel',
-      resolveDefault: resolveDefaultCondaChannel,
-    },
+    owner: { defaultValue: DEFAULT_CONDA_CHANNEL, isRequired: false, placeholder: ':channel' },
     target: { placeholder: ':pkg' },
   },
 });

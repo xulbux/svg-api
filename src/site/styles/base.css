@@ -94,8 +94,8 @@
   --duration-slow: 0.25s;
 
   /* Stacking Order */
-  --z-popover: 10;
   --z-header: 20;
+  --z-popover: 30;
   --z-skip-link: 50;
 
   interpolate-size: allow-keywords;
@@ -145,7 +145,6 @@ body {
 h1,
 h2,
 h3,
-h4,
 th {
   margin-block: 0;
   text-wrap: balance;
@@ -153,8 +152,7 @@ th {
 
 h1,
 h2,
-h3,
-h4 {
+h3 {
   letter-spacing: -0.02em;
 }
 
@@ -316,6 +314,10 @@ input[type='search']::-webkit-search-decoration {
 
 .popover-panel:not(:where(:popover-open, .is-open)) {
   display: none;
+}
+
+.popover-panel.is-open {
+  z-index: var(--z-popover);
 }
 
 /* Shared Hidden Input Overlays; the native input covers its custom-styled label for clicks and keyboard focus: */

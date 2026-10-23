@@ -41,6 +41,9 @@ export type DotState = ThemeColorName;
 /** Single white highlight gradient stop (`[offset in percent, stop-opacity]`) of a sheen or shimmer band. */
 export type BandStop = readonly [offsetPercent: number, opacity: string];
 
+/** Three-channel RGB tuple (`0`–`1` linear light or `0`–`255` gamma-encoded). */
+export type RgbTuple = readonly [red: number, green: number, blue: number];
+
 /** Timing of a periodic highlight sweep (sheens and shimmers): A spline-eased sweep followed by a pause. */
 export interface SweepTiming {
   /** SMIL `dur` of one full cycle including the pause (e.g., `'4s'`). */

@@ -4,7 +4,13 @@
  * deps.dev mirrors GitHub project metadata roughly once a day, so values may lag behind GitHub.
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  OWNER_REPO_ROUTE,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   FORKS,
   ISSUES,
@@ -96,5 +102,5 @@ export const DEPS_DEV_SERVICE = defineService({
     ),
     stars: createCountMetric(PROJECT_ENDPOINT, STARS, (project) => project.stars),
   },
-  route: { owner: { isRequired: true, placeholder: ':owner' }, target: { placeholder: ':repo' } },
+  route: OWNER_REPO_ROUTE,
 });

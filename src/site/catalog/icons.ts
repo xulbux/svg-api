@@ -3,19 +3,14 @@
  */
 
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_ICON_MOTION_TOKENS, ICON_MOTION_TOKENS } from '@/routes/params';
 import { buildColorParamRow, formatRange } from '@/site/catalog/shared';
 import { formatConjunctionList } from '@/site/glossary';
-import { FALLBACK_ICON_SLUG, ICON_SOURCE_SETS } from '@/svg/icons';
+import { ALL_ICON_SOURCE_NAMES, FALLBACK_ICON_SLUG, ICON_SOURCE_SETS } from '@/svg/icons';
 import { ICON_SIZE_RANGE, ICON_STROKE_RANGE } from '@/svg/renderer';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Active non-default, non-none icon motion presets for card subtitles. */
-const ACTIVE_ICON_MOTIONS = ICON_MOTION_TOKENS.filter(
-  (token) => token !== 'default' && token !== 'none'
-);
 
 /** Showcase cards for the dedicated `/docs/icons` page. */
 export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
@@ -56,7 +51,7 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
       { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
     ],
-    subtitle: `Sheen, icon motion (${ACTIVE_ICON_MOTIONS.join('/')}), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.`,
+    subtitle: `Sheen, icon motion (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.`,
     title: 'Animations & Fallback (?anim=)',
   },
 ];
@@ -68,11 +63,10 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildIconParamRows(): ParamTableRow[] {
-  const allIconSets = [...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand];
   return [
     {
       defaultVal: `~required (unknown slugs fall back to ${FALLBACK_ICON_SLUG})`,
-      description: `${formatConjunctionList(allIconSets)} slug, or one of the slug aliases listed below.`,
+      description: `${formatConjunctionList(ALL_ICON_SOURCE_NAMES)} slug, or one of the slug aliases listed below.`,
       name: ':icon',
       values: 'rocket | star | python | rust | archlinux | …',
     },

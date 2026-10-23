@@ -4,7 +4,7 @@
  * The group segment may be omitted for artifacts whose group equals the artifact name (e.g., `hiccup`).
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
   buildTrailingSeriesSpecials,
@@ -12,82 +12,55 @@ import {
   createLicenseMetric,
   createVersionMetric,
   readFiniteNumber,
+  readLicenseName,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** License declared by a Clojars artifact. */
-interface ClojarsLicense {
-  /** License display name (e.g., `'Eclipse Public License'`). */
-  name?: string;
-}
-
-/** Recent release entry returned by the Clojars artifact API (`recent_versions[]`, newest first). */
-interface ClojarsRecentVersion {
-  /** Downloads of this specific release version. */
+/** Projected Clojars artifact metadata (`clojars.org/api/artifacts/[:group/]:artifact`). */
+interface ClojarsArtifactProjection {
+  /** All-time downloads of every version. */
   downloads?: number;
-  /** Release version string. */
+  /** Primary declared license name. */
+  license?: string;
+  /** Chronological per-release download counts across recent releases. */
+  recentDownloads?: number[];
+  /** Latest non-snapshot release, falling back to the latest snapshot version. */
   version?: string;
 }
 
-/** Partial Clojars artifact API payload (`clojars.org/api/artifacts/[:group/]:artifact`). */
-interface ClojarsArtifactPayload {
-  /** All-time downloads of every version. */
-  downloads: number;
-  /** Legacy per-version download counts (`{ "1.0.0": 4210, … }`). */
-  downloads_per_version?: Record<string, number>;
-  /** Latest non-snapshot release, or `null` when only snapshots exist. */
-  latest_release: string | null;
-  /** Latest version including snapshots. */
-  latest_version: string;
-  /** Declared licenses. */
-  licenses: ClojarsLicense[];
-  /** Recent versions with per-release download counts (newest first). */
-  recent_versions?: ClojarsRecentVersion[];
-}
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Clojars artifact endpoint (`{path}` omits an empty group) with clojars.org artifact page redirect. */
-const CLOJARS_ENDPOINT = createEndpoint({
-  api: 'https://clojars.org/api/artifacts/{path}',
-  page: 'https://clojars.org/{path}',
-  project: pickFields<ClojarsArtifactPayload>([
-    'downloads',
-    'downloads_per_version',
-    'latest_release',
-    'latest_version',
-    'licenses',
-    'recent_versions',
-  ]),
-});
-
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Read the chronological per-version download series and latest-vs-previous release delta from `recent_versions` (or `downloads_per_version`). */
-function buildClojarsDownloadSpecials(artifact: Partial<ClojarsArtifactPayload>) {
+/** Project a Clojars artifact payload to its release version, primary license, total downloads, and recent series. */
+function projectClojarsArtifact(data: unknown): ClojarsArtifactProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
   const series: number[] = [];
-  if (Array.isArray(artifact.recent_versions)) {
-    for (let i = artifact.recent_versions.length - 1; i >= 0; i -= 1) {
-      const entry = artifact.recent_versions[i];
+  if (Array.isArray(data.recent_versions)) {
+    for (let i = Math.min(data.recent_versions.length, 12) - 1; i >= 0; i -= 1) {
+      const entry = data.recent_versions[i];
       const count = isJsonObject(entry) ? readFiniteNumber(entry.downloads) : undefined;
       if (count !== undefined) {
         series.push(count);
       }
     }
   }
-  if (series.length < 2 && isJsonObject(artifact.downloads_per_version)) {
-    series.length = 0;
-    for (const value of Object.values(artifact.downloads_per_version)) {
-      const count = readFiniteNumber(value);
-      if (count !== undefined) {
-        series.push(count);
-      }
-    }
-  }
-  const recent = series.slice(-12);
-  return buildTrailingSeriesSpecials(recent);
+  return {
+    downloads: readFiniteNumber(data.downloads),
+    license: readLicenseName(data.licenses),
+    recentDownloads: series.length >= 2 ? series : undefined,
+    version: readText(data.latest_release) ?? readText(data.latest_version),
+  };
 }
+
+/** Clojars artifact endpoint (`{path}` omits an empty group) with clojars.org artifact page redirect. */
+const CLOJARS_ENDPOINT = createEndpoint({
+  api: 'https://clojars.org/api/artifacts/{path}',
+  page: 'https://clojars.org/{path}',
+  project: projectClojarsArtifact,
+});
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -105,15 +78,13 @@ export const CLOJARS_SERVICE = defineService({
       'dt',
       (artifact) => artifact.downloads,
       { autoSpecials: SERIES_DELTA_SPECIALS },
-      buildClojarsDownloadSpecials
+      (artifact) => buildTrailingSeriesSpecials(artifact.recentDownloads)
     ),
-    license: createLicenseMetric(CLOJARS_ENDPOINT, (artifact) =>
-      Array.isArray(artifact.licenses) ? artifact.licenses[0]?.name : undefined
-    ),
+    license: createLicenseMetric(CLOJARS_ENDPOINT, (artifact) => artifact.license),
     v: createVersionMetric(
       CLOJARS_ENDPOINT,
       { defaultColor: 'blue', defaultIcon: 'clojure', defaultLabel: 'Clojars' },
-      (artifact) => artifact.latest_release ?? artifact.latest_version
+      (artifact) => artifact.version
     ),
   },
   route: {

@@ -39,6 +39,7 @@ Use a **Fine-Grained PAT** scoped to **Public Repositories (read-only)** with ze
 ### `createEndpoint()` URL Placeholders
 
 -   `{owner}`, `{target}` – Single path segment (`encodeURIComponent` per segment)
+-   `{scope}` – `@owner` when `owner` is present (stripping a leading `@`), or empty otherwise
 -   `{path}` – `[owner/]target`
 -   `{id}` – Fully URL-encoded `[owner%2F]target`
 -   `{npm}` / `{npm-id}` – `[@owner/]target` / `[@owner%2F]target`

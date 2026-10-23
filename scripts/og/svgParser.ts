@@ -24,6 +24,14 @@ interface PathFlattenState {
   cursorX: number;
   /** Current pen Y coordinate in path user units. */
   cursorY: number;
+  /** Previous cubic Bezier second control point X in path user units (reflected by `S` / `s`). */
+  lastCubicCtrlX: number | undefined;
+  /** Previous cubic Bezier second control point Y in path user units (reflected by `S` / `s`). */
+  lastCubicCtrlY: number | undefined;
+  /** Previous quadratic Bezier control point X in path user units (reflected by `T` / `t`). */
+  lastQuadCtrlX: number | undefined;
+  /** Previous quadratic Bezier control point Y in path user units (reflected by `T` / `t`). */
+  lastQuadCtrlY: number | undefined;
   /** Subpath origin X coordinate in path user units. */
   startX: number;
   /** Subpath origin Y coordinate in path user units. */
@@ -35,7 +43,7 @@ interface PathFlattenState {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Curve subdivision steps per Bezier or elliptical arc segment. */
-const CURVE_STEPS = 12;
+export const CURVE_STEPS = 12;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -51,11 +59,8 @@ const RADIAL_GRADIENT_RX = /<radialGradient\s+(?<attrs>[^>]+)>(?<body>[\s\S]*?)<
 /** Matches `<stop … />` elements inside gradient definitions. */
 const GRADIENT_STOP_RX = /<stop\s+(?<attrs>[^>]+)\/>/g;
 
-/** Matches SVG path command letters and numeric coordinates in `d="…"`. */
-const PATH_TOKEN_RX = /[A-Za-z]|[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi;
-
-/** Matches a single SVG path command letter token. */
-const COMMAND_LETTER_RX = /^[A-Za-z]$/;
+/** Matches an SVG path number token (integer, decimal, or scientific notation) at `lastIndex` (sticky). */
+const PATH_NUMBER_RX = /[-+]?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?/iy;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -113,13 +118,30 @@ function sampleGradientStops(stops: readonly GradientStop[], position: number): 
   if (!first || !last) {
     return [0, 0, 0, 0];
   }
-  const span = Math.max(1e-6, last.offset - first.offset);
-  const ratio = clampRange((clamped - first.offset) / span, 0, 1);
+  if (clamped <= first.offset) {
+    return [first.color[0], first.color[1], first.color[2], first.opacity];
+  }
+  if (clamped >= last.offset) {
+    return [last.color[0], last.color[1], last.color[2], last.opacity];
+  }
+  let stopA = first;
+  let stopB = last;
+  for (let i = 0; i < stops.length - 1; i += 1) {
+    const current = stops[i];
+    const next = stops[i + 1];
+    if (current && next && clamped >= current.offset && clamped <= next.offset) {
+      stopA = current;
+      stopB = next;
+      break;
+    }
+  }
+  const span = Math.max(1e-6, stopB.offset - stopA.offset);
+  const ratio = clampRange((clamped - stopA.offset) / span, 0, 1);
   return [
-    first.color[0] + (last.color[0] - first.color[0]) * ratio,
-    first.color[1] + (last.color[1] - first.color[1]) * ratio,
-    first.color[2] + (last.color[2] - first.color[2]) * ratio,
-    first.opacity + (last.opacity - first.opacity) * ratio,
+    stopA.color[0] + (stopB.color[0] - stopA.color[0]) * ratio,
+    stopA.color[1] + (stopB.color[1] - stopA.color[1]) * ratio,
+    stopA.color[2] + (stopB.color[2] - stopA.color[2]) * ratio,
+    stopA.opacity + (stopB.opacity - stopA.opacity) * ratio,
   ];
 }
 
@@ -253,16 +275,129 @@ function appendCubicPoints(
   }
 }
 
-/** Execute one parameterized SVG path command (`M`, `L`, `H`, `V`, `Q`, `C`, `A`) against `state`. */
+/** Execute one curved (`Q`, `T`, `C`, `S`) or elliptical arc (`A`) SVG path command against `state`. */
+function stepSvgCurveOrArcCommand(
+  state: PathFlattenState,
+  upper: string,
+  baseX: number,
+  baseY: number,
+  previousCtrlX: number | undefined,
+  previousCtrlY: number | undefined,
+  readNumber: () => number,
+  readArcFlag: () => boolean,
+  toPoint: (rawX: number, rawY: number) => Point2D
+): void {
+  const targetPoints = state.currentSubpath?.points;
+  switch (upper) {
+    case 'Q':
+    case 'T': {
+      const ctrlX =
+        upper === 'Q' ? baseX + readNumber() : 2 * state.cursorX - (previousCtrlX ?? state.cursorX);
+      const ctrlY =
+        upper === 'Q' ? baseY + readNumber() : 2 * state.cursorY - (previousCtrlY ?? state.cursorY);
+      const endX = baseX + readNumber();
+      const endY = baseY + readNumber();
+      if (targetPoints) {
+        appendQuadraticPoints(
+          targetPoints,
+          state.cursorX,
+          state.cursorY,
+          ctrlX,
+          ctrlY,
+          endX,
+          endY,
+          toPoint
+        );
+      }
+      state.lastQuadCtrlX = ctrlX;
+      state.lastQuadCtrlY = ctrlY;
+      state.cursorX = endX;
+      state.cursorY = endY;
+      break;
+    }
+    case 'C':
+    case 'S': {
+      const ctrl1X =
+        upper === 'C' ? baseX + readNumber() : 2 * state.cursorX - (previousCtrlX ?? state.cursorX);
+      const ctrl1Y =
+        upper === 'C' ? baseY + readNumber() : 2 * state.cursorY - (previousCtrlY ?? state.cursorY);
+      const ctrl2X = baseX + readNumber();
+      const ctrl2Y = baseY + readNumber();
+      const endX = baseX + readNumber();
+      const endY = baseY + readNumber();
+      if (targetPoints) {
+        appendCubicPoints(
+          targetPoints,
+          state.cursorX,
+          state.cursorY,
+          ctrl1X,
+          ctrl1Y,
+          ctrl2X,
+          ctrl2Y,
+          endX,
+          endY,
+          toPoint
+        );
+      }
+      state.lastCubicCtrlX = ctrl2X;
+      state.lastCubicCtrlY = ctrl2Y;
+      state.cursorX = endX;
+      state.cursorY = endY;
+      break;
+    }
+    case 'A': {
+      const arcRx = readNumber();
+      const arcRy = readNumber();
+      const rotation = readNumber();
+      const isLargeArc = readArcFlag();
+      const isSweep = readArcFlag();
+      const endX = baseX + readNumber();
+      const endY = baseY + readNumber();
+      const arcPoints: Point2D[] = [];
+      appendArcPoints(
+        arcPoints,
+        state.cursorX,
+        state.cursorY,
+        arcRx,
+        arcRy,
+        rotation,
+        isLargeArc,
+        isSweep,
+        endX,
+        endY
+      );
+      for (const [arcX, arcY] of arcPoints) {
+        targetPoints?.push(toPoint(arcX, arcY));
+      }
+      state.cursorX = endX;
+      state.cursorY = endY;
+      break;
+    }
+    default: {
+      readNumber();
+    }
+  }
+}
+
+/** Execute one parameterized SVG path command (`M`, `L`, `H`, `V`, `Q`, `T`, `C`, `S`, `A`) against `state`. */
 function stepSvgPathCommand(
   state: PathFlattenState,
   upper: string,
   baseX: number,
   baseY: number,
   readNumber: () => number,
+  readArcFlag: () => boolean,
   toPoint: (rawX: number, rawY: number) => Point2D
 ): void {
   const targetPoints = state.currentSubpath?.points;
+  const previousCtrlX = upper === 'Q' || upper === 'T' ? state.lastQuadCtrlX : state.lastCubicCtrlX;
+  const previousCtrlY = upper === 'Q' || upper === 'T' ? state.lastQuadCtrlY : state.lastCubicCtrlY;
+  // Smooth curves only reflect the control point of the immediately preceding curve command:
+  state.lastCubicCtrlX = undefined;
+  state.lastCubicCtrlY = undefined;
+  state.lastQuadCtrlX = undefined;
+  state.lastQuadCtrlY = undefined;
+
   switch (upper) {
     case 'M': {
       const nextX = baseX + readNumber();
@@ -292,82 +427,18 @@ function stepSvgPathCommand(
       targetPoints?.push(toPoint(state.cursorX, state.cursorY));
       break;
     }
-    case 'Q': {
-      const ctrlX = baseX + readNumber();
-      const ctrlY = baseY + readNumber();
-      const endX = baseX + readNumber();
-      const endY = baseY + readNumber();
-      if (targetPoints) {
-        appendQuadraticPoints(
-          targetPoints,
-          state.cursorX,
-          state.cursorY,
-          ctrlX,
-          ctrlY,
-          endX,
-          endY,
-          toPoint
-        );
-      }
-      state.cursorX = endX;
-      state.cursorY = endY;
-      break;
-    }
-    case 'C': {
-      const ctrl1X = baseX + readNumber();
-      const ctrl1Y = baseY + readNumber();
-      const ctrl2X = baseX + readNumber();
-      const ctrl2Y = baseY + readNumber();
-      const endX = baseX + readNumber();
-      const endY = baseY + readNumber();
-      if (targetPoints) {
-        appendCubicPoints(
-          targetPoints,
-          state.cursorX,
-          state.cursorY,
-          ctrl1X,
-          ctrl1Y,
-          ctrl2X,
-          ctrl2Y,
-          endX,
-          endY,
-          toPoint
-        );
-      }
-      state.cursorX = endX;
-      state.cursorY = endY;
-      break;
-    }
-    case 'A': {
-      const arcRx = readNumber();
-      const arcRy = readNumber();
-      const rotation = readNumber();
-      const isLargeArc = readNumber() !== 0;
-      const isSweep = readNumber() !== 0;
-      const endX = baseX + readNumber();
-      const endY = baseY + readNumber();
-      const arcPoints: Point2D[] = [];
-      appendArcPoints(
-        arcPoints,
-        state.cursorX,
-        state.cursorY,
-        arcRx,
-        arcRy,
-        rotation,
-        isLargeArc,
-        isSweep,
-        endX,
-        endY
-      );
-      for (const [arcX, arcY] of arcPoints) {
-        targetPoints?.push(toPoint(arcX, arcY));
-      }
-      state.cursorX = endX;
-      state.cursorY = endY;
-      break;
-    }
     default: {
-      readNumber();
+      stepSvgCurveOrArcCommand(
+        state,
+        upper,
+        baseX,
+        baseY,
+        previousCtrlX,
+        previousCtrlY,
+        readNumber,
+        readArcFlag,
+        toPoint
+      );
     }
   }
 }
@@ -467,41 +538,74 @@ export function flattenSvgPath(
   offsetY = 0,
   scale = 1
 ): FlattenedSubpath[] {
-  const tokens = pathData.match(PATH_TOKEN_RX) ?? [];
   const state: PathFlattenState = {
     command: '',
     currentSubpath: undefined,
     cursorX: 0,
     cursorY: 0,
+    lastCubicCtrlX: undefined,
+    lastCubicCtrlY: undefined,
+    lastQuadCtrlX: undefined,
+    lastQuadCtrlY: undefined,
     startX: 0,
     startY: 0,
     subpaths: [],
   };
-  let index = 0;
+  let cursorIndex = 0;
+
+  function skipSeparators(): void {
+    while (cursorIndex < pathData.length && ' ,\n\t\r'.includes(pathData.charAt(cursorIndex))) {
+      cursorIndex += 1;
+    }
+  }
 
   function toPoint(rawX: number, rawY: number): Point2D {
     return [offsetX + rawX * scale, offsetY + rawY * scale];
   }
 
   function readNumber(): number {
-    const value = Number.parseFloat(tokens[index] ?? '0');
-    index += 1;
-    return value;
+    skipSeparators();
+    PATH_NUMBER_RX.lastIndex = cursorIndex;
+    const match = PATH_NUMBER_RX.exec(pathData);
+    if (!match) {
+      return 0;
+    }
+    cursorIndex += match[0].length;
+    return Number.parseFloat(match[0]);
   }
 
-  while (index < tokens.length) {
-    const token = tokens[index] ?? '';
+  function readArcFlag(): boolean {
+    skipSeparators();
+    const char = pathData.charAt(cursorIndex);
+    if (char === '0' || char === '1') {
+      cursorIndex += 1;
+      return char === '1';
+    }
+    return readNumber() !== 0;
+  }
+
+  while (cursorIndex < pathData.length) {
+    skipSeparators();
+    if (cursorIndex >= pathData.length) {
+      break;
+    }
+    const iterationStart = cursorIndex;
+    const char = pathData.charAt(cursorIndex);
     let isCloseCommand = false;
-    if (COMMAND_LETTER_RX.test(token)) {
-      state.command = token;
-      index += 1;
-      if (token === 'Z' || token === 'z') {
+    if ((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')) {
+      state.command = char;
+      cursorIndex += 1;
+      if (char === 'Z' || char === 'z') {
         if (state.currentSubpath && state.currentSubpath.points.length > 0) {
           state.currentSubpath.isClosed = true;
           state.currentSubpath.points.push(toPoint(state.startX, state.startY));
         }
         state.cursorX = state.startX;
         state.cursorY = state.startY;
+        state.lastCubicCtrlX = undefined;
+        state.lastCubicCtrlY = undefined;
+        state.lastQuadCtrlX = undefined;
+        state.lastQuadCtrlY = undefined;
         isCloseCommand = true;
       }
     }
@@ -513,8 +617,12 @@ export function flattenSvgPath(
         isRelative ? state.cursorX : 0,
         isRelative ? state.cursorY : 0,
         readNumber,
+        readArcFlag,
         toPoint
       );
+    }
+    if (cursorIndex === iterationStart) {
+      cursorIndex += 1;
     }
   }
 

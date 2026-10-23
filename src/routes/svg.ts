@@ -480,6 +480,10 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
   if (!match) {
     return undefined;
   }
+  // Static badges ignore `?label=`, so strip it before forming the Tier-2 edge cache key:
+  if (match.kind === 'static' && route.prefix === 'badge') {
+    query.delete('label');
+  }
   const pathname =
     url.pathname.length > 1 && url.pathname.endsWith('/')
       ? url.pathname.slice(0, -1)

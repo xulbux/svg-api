@@ -2,7 +2,9 @@
  * Builder client core – Pure URL, snippet, grid focus, async cache, and icon resolver helpers exposed on `globalThis.svgBuilderCore` for unit testing and shared by the builder DOM modules.
  */
 
+import { filterIconCatalog } from '@/site/client/builder/iconSearch';
 import {
+  BRAND_SLUG_CLEAN_RX,
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
@@ -10,6 +12,7 @@ import {
   buildShareUrl,
   buildSnippets,
   buildSnippetTokens,
+  capitalizeSlugParts,
   collectStackSlugs,
   composeAnim,
   composeCategorizedStack,
@@ -21,36 +24,60 @@ import {
   isTypingFieldActiveForLayout,
   parsePath,
   resolveEffectiveFieldDefault,
+  resolveIconSelectDisplay,
   splitAnim,
   splitHint,
   splitIconPair,
   splitSize,
   splitSpecial,
 } from '@/site/shared';
-import type { IconMatch, IconPickerIndex, IconPickerSetId, IconResolver } from '@/types';
-
-// ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches `-` and `_` separators in icon slugs. */
-const SLUG_SEPARATOR_RX = /[-_]/;
-
-/** Matches characters stripped from brand slugs before lookup (mirrors the Worker). */
-export const BRAND_SLUG_CLEAN_RX = /[^a-z\d]/g;
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Capitalize every `-`/`_`-separated slug part and join them (mirrors the Worker's Lucide lookup key). */
-function capitalizeSlugParts(slug: string): string {
-  let result = '';
-  for (const part of slug.split(SLUG_SEPARATOR_RX)) {
-    if (part) {
-      result += `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
-    }
-  }
-  return result;
-}
+import type {
+  BuilderClientCore,
+  IconMatch,
+  IconPickerIndex,
+  IconPickerSetId,
+  IconResolver,
+} from '@/types';
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Move roving focus across a horizontal ARIA `tablist` on `ArrowLeft`, `ArrowRight`, `Home`, and `End`.
+ * @param event       Keyboard event from the `tablist` container.
+ * @param tabs        Ordered tab elements inside the `tablist`.
+ * @param selectTab   Callback invoked with the newly selected tab element.
+ */
+export function handleRovingTabKeydown(
+  event: KeyboardEvent,
+  tabs: readonly Element[],
+  selectTab: (tab: HTMLElement) => void
+): void {
+  if (tabs.length === 0) {
+    return;
+  }
+  let current = 0;
+  for (const [i, tab] of tabs.entries()) {
+    if (tab.getAttribute('aria-selected') === 'true') {
+      current = i;
+    }
+  }
+  let nextIndex: number | undefined = undefined;
+  if (event.key === 'ArrowLeft') {
+    nextIndex = (current - 1 + tabs.length) % tabs.length;
+  } else if (event.key === 'ArrowRight') {
+    nextIndex = (current + 1) % tabs.length;
+  } else if (event.key === 'Home') {
+    nextIndex = 0;
+  } else if (event.key === 'End') {
+    nextIndex = tabs.length - 1;
+  }
+  const next = nextIndex !== undefined ? tabs[nextIndex] : undefined;
+  if (next instanceof HTMLElement) {
+    event.preventDefault();
+    selectTab(next);
+    next.focus();
+  }
+}
 
 /**
  * Compute the tile index a grid navigation key moves the roving focus to (arrows by cell or row, `Home` / `End`
@@ -182,7 +209,7 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
 }
 
 /** Pure builder client helpers exposed on `globalThis.svgBuilderCore` for unit testing. */
-export const core = {
+export const core: BuilderClientCore = {
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
@@ -201,9 +228,11 @@ export const core = {
   createIconResolver,
   decodeSegment,
   encodeSegment,
+  filterIconCatalog,
   isTypingFieldActiveForLayout,
   parsePath,
   resolveEffectiveFieldDefault,
+  resolveIconSelectDisplay,
   splitAnim,
   splitHint,
   splitIconPair,
@@ -212,6 +241,7 @@ export const core = {
 };
 
 export {
+  BRAND_SLUG_CLEAN_RX,
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
@@ -235,6 +265,7 @@ export {
   normalizeStackGroups,
   parsePath,
   readState,
+  resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
   splitAnim,
   splitHint,

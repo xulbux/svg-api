@@ -144,11 +144,6 @@ export interface MetricEndpoint<P = unknown> {
    */
   extractKeys?: readonly string[];
   /**
-   * Shorthand for `extractKeys: [leadingKey]` when a single top-level key holds every needed field
-   * (e.g., PyPI's `info`).
-   */
-  leadingKey?: string;
-  /**
    * Additional upstream HTTP error statuses that mean the package does not exist (e.g., Fedora
    * mdapi's `400`); They are reported and cached like a `404`.
    */
@@ -200,6 +195,8 @@ export type ServiceOwnerMode = 'none' | 'optional' | 'required';
 
 /** Owner path segment of a service preset route. */
 export interface ServiceOwnerSegment {
+  /** Default owner used when an optional owner segment is omitted (e.g., `'library'`). */
+  defaultValue?: string;
   /** Whether the owner segment must be present. */
   isRequired: boolean;
   /**
@@ -209,8 +206,6 @@ export interface ServiceOwnerSegment {
   pattern?: RegExp;
   /** Docs placeholder of the owner segment (e.g., `':scope'`, `':vendor'`). */
   placeholder: string;
-  /** Resolves the default owner when an optional owner segment is omitted (e.g., `'library'`). */
-  resolveDefault?: () => string;
 }
 
 /** Target path segment(s) of a service preset route. */
@@ -268,11 +263,23 @@ export interface ServiceDefinition<M extends string = string> {
   route: ServiceRoute;
 }
 
+/** Options for building time-series and delta inline widgets (`buildSeriesSpecials`). */
+export interface SeriesSpecialsOptions {
+  /** Numeric bar heights for `bars` (defaults to `sparklineValues` when omitted). */
+  barsValues?: readonly number[];
+  /** Current period value for `delta` percentage comparison. */
+  current?: RawCount;
+  /** Previous period value for `delta` percentage comparison. */
+  previous?: RawCount;
+  /** Numeric series points for `sparkline` (defaults to `barsValues` when omitted). */
+  sparklineValues?: readonly number[];
+}
+
 /** Parsed service preset route (`/badge/:service/[:owner/]:target/:metric`). */
 export interface ServiceRequest {
   /** Requested metric slug (e.g., `'stars'`, `'v'`, `'dl'`). */
   metric: string;
-  /** Explicit owner segment, or `undefined` for 3-segment routes. */
+  /** Explicit owner segment, or `undefined` when omitted. */
   owner?: string;
   /** Service identifier (e.g., `'gh'`, `'npm'`). */
   service: string;

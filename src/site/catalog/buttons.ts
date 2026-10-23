@@ -14,9 +14,14 @@ import {
   buildVariantParamRow,
   formatRange,
 } from '@/site/catalog/shared';
-import type { VariantDescriptor } from '@/site/catalog/shared';
 import { BUTTON_HEIGHT_RANGE, BUTTON_SIZE_PRESETS } from '@/svg/renderer';
-import type { BadgeVariant, ParamTableRow, ShowcaseCardConfig, ShowcaseItem } from '@/types';
+import type {
+  BadgeVariant,
+  ParamTableRow,
+  ShowcaseCardConfig,
+  ShowcaseItem,
+  VariantDescriptor,
+} from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 

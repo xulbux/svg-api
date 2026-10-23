@@ -3,9 +3,9 @@
  */
 
 import { SITE_HOST } from '@/config/site';
-import { STACK_MOTION_TOKENS, TYPING_LAYOUT_TOKENS } from '@/routes/params';
+import { ACTIVE_STACK_MOTION_TOKENS, TYPING_LAYOUT_TOKENS } from '@/routes/params';
 import { formatConjunctionList } from '@/site/glossary';
-import { ICON_SOURCE_SETS } from '@/svg/icons';
+import { ALL_ICON_SOURCE_NAMES, ICON_SOURCE_SETS } from '@/svg/icons';
 import { BADGE_HEIGHT } from '@/svg/renderer';
 import type {
   BuilderKind,
@@ -20,9 +20,6 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Active stack tile motion tokens (excluding `'none'`) for navigation copy. */
-const ACTIVE_STACK_MOTIONS = STACK_MOTION_TOKENS.filter((token) => token !== 'none');
 
 /** Sidebar groups in display order (shared by the documentation and builder sidebars; Empty groups are skipped). */
 const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
@@ -153,7 +150,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Button Builder',
   },
   {
-    description: `Find any ${formatConjunctionList([...ICON_SOURCE_SETS.stroke, ...ICON_SOURCE_SETS.brand], 'or')} icon in a searchable picker and build standalone icon URLs with size, stroke, color, and motion.`,
+    description: `Find any ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} icon in a searchable picker and build standalone icon URLs with size, stroke, color, and motion.`,
     docsSlug: 'icons',
     group: 'elements',
     kind: 'icon',
@@ -162,7 +159,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Icon Builder',
   },
   {
-    description: `Build grouped tech stack grid URLs with per-group columns, side-by-side groups, row bands, tile variants, spacing, and staggered ${formatConjunctionList(ACTIVE_STACK_MOTIONS, 'or')} animations.`,
+    description: `Build grouped tech stack grid URLs with per-group columns, side-by-side groups, row bands, tile variants, spacing, and staggered ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS, 'or')} animations.`,
     docsSlug: 'stack',
     group: 'elements',
     kind: 'stack',

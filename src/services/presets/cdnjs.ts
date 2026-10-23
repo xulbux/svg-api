@@ -2,7 +2,7 @@
  * cdnjs service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { PACKAGE_ROUTE, createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -40,5 +40,5 @@ export const CDNJS_SERVICE = defineService({
       (lib) => lib.version
     ),
   },
-  route: { target: { placeholder: ':pkg' } },
+  route: PACKAGE_ROUTE,
 });

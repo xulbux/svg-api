@@ -12,13 +12,10 @@ import type { HtmlFragment } from '@/site/jsx';
 /** Memoized footer HTML (`undefined` until first rendered). */
 let footerHtmlCache: string | undefined = undefined;
 
-// -------------------------------------- PUBLIC API -------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Render (once per isolate) the site footer.
- * @returns Footer HTML string.
- */
-export function renderFooter(): string {
+/** Render (once per isolate) the site footer HTML. */
+function renderFooter(): string {
   if (footerHtmlCache === undefined) {
     footerHtmlCache = renderHtml(
       <footer class="site-footer">
@@ -52,6 +49,8 @@ export function renderFooter(): string {
   }
   return footerHtmlCache;
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render the site footer as a JSX component.

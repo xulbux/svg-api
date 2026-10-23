@@ -21,7 +21,7 @@ import {
   roundCoord,
   writeLruCache,
 } from '@/svg/shared';
-import type { TypingFont } from '@/types';
+import type { GlyphLineLayout, PositionedCharGlyph, TypingFont } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -67,26 +67,6 @@ interface ResolvedFontGlyph {
   glyph: Glyph;
 }
 
-/** Single laid-out character glyph with its horizontal advance and serialized outline at `(0, 0)`. */
-export interface PositionedCharGlyph {
-  /** Horizontal advance width of this character (including tracking and kerning) in pixels. */
-  advance: number;
-  /** Character string (one Unicode code point). */
-  char: string;
-  /** Serialized SVG `<path>` `d` attribute at `(0, 0)` (`''` for spaces or missing glyphs). */
-  pathData: string;
-  /** Horizontal baseline X offset from the start of the line in pixels. */
-  x: number;
-}
-
-/** Per-character glyph layout and total advance width of a line of text. */
-export interface GlyphLineLayout {
-  /** Ordered per-character glyphs along the baseline. */
-  glyphs: PositionedCharGlyph[];
-  /** Total horizontal advance width of the line in pixels. */
-  totalAdvance: number;
-}
-
 /** Options for `renderTextPathMarkup`. */
 interface TextPathOptions {
   /** Horizontal alignment mode (defaults to `'center'`). */
@@ -117,6 +97,9 @@ interface TextPathOptions {
 /** Default OpenType layout options (`kerning: true`, slight `-0.01em` UI tracking). */
 const PATH_OPTIONS: RenderOptions = { kerning: true, letterSpacing: -0.01 };
 
+/** OpenType layout options for monospace fonts (no kerning or tracking). */
+const MONO_PATH_OPTIONS: RenderOptions = { kerning: false };
+
 /** Half of the proportional font's cap-height-to-em ratio, used for vertical baseline centering. */
 const HALF_CAP_HEIGHT_RATIO = 0.355;
 
@@ -135,7 +118,7 @@ const MAX_CACHED_TEXT_LENGTH = 128;
 /** Lazily parsed OpenType `Font` singletons. */
 const FONT_SINGLETONS: FontSingletons = {};
 
-/** Bounded LRU cache mapping `text|fontSize|bold|italic` to `TextOutline`, weighted by serialized path size. */
+/** Bounded LRU cache of laid-out text outlines, weighted by serialized path size. */
 const OUTLINE_CACHE = createLruCache<TextOutline>(
   MAX_OUTLINE_CACHE_SIZE,
   (outline) => outline.pathData.length,
@@ -148,7 +131,7 @@ const MAX_GLYPH_CACHE_SIZE = 1024;
 /** Maximum summed `pathData` length in UTF-16 code units of the single-glyph outline cache. */
 const MAX_GLYPH_CACHE_WEIGHT = 1_000_000;
 
-/** Bounded LRU cache mapping `font|bold|fontSize|glyphIndex` to serialized single-glyph `pathData`. */
+/** Bounded LRU cache of serialized single-glyph path data at `(0, 0)`. */
 const GLYPH_OUTLINE_CACHE = createLruCache<string>(
   MAX_GLYPH_CACHE_SIZE,
   (pathData) => pathData.length,
@@ -245,11 +228,16 @@ function serializePathCommands(commands: readonly PathCommand[]): string {
 }
 
 /** Compute or retrieve the cached SVG `<path>` `d` outline of a single glyph at `(0, 0)`. */
-function getGlyphPathData(resolved: ResolvedFontGlyph, fontSize: number, isBold: boolean): string {
+function getGlyphPathData(
+  resolved: ResolvedFontGlyph,
+  fontSize: number,
+  isBold: boolean,
+  isItalic = false
+): string {
   if (resolved.glyph.index === 0) {
     return '';
   }
-  const cacheKey = `${resolved.fontKey}|${isBold ? 1 : 0}|${fontSize}|${resolved.glyph.index}`;
+  const cacheKey = `${resolved.fontKey}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}|${fontSize}|${resolved.glyph.index}`;
   const cached = readLruCache(GLYPH_OUTLINE_CACHE, cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -260,13 +248,42 @@ function getGlyphPathData(resolved: ResolvedFontGlyph, fontSize: number, isBold:
 }
 
 /** Compute the ink metrics of a laid-out path (advance width for whitespace-only text). */
-function computeInkMetrics(path: Path, font: Font, text: string, fontSize: number): InkMetrics {
+function computeInkMetrics(
+  path: Path,
+  font: Font,
+  text: string,
+  fontSize: number,
+  options: RenderOptions = PATH_OPTIONS
+): InkMetrics {
   const isEmpty = path.commands.length === 0;
   const bbox = path.getBoundingBox();
   const rawWidth = isEmpty
-    ? font.getAdvanceWidth(text, fontSize, PATH_OPTIONS)
+    ? font.getAdvanceWidth(text, fontSize, options)
     : Math.max(0, bbox.x2 - bbox.x1);
   return { isEmpty, width: roundCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 };
+}
+
+/** Compute the horizontal advance in pixels of `resolved` (including `sans` tracking and pair kerning to `nextResolved`). */
+function computeGlyphStepAdvance(
+  resolved: ResolvedFontGlyph,
+  nextResolved: ResolvedFontGlyph | undefined,
+  fontSize: number
+): number {
+  if (resolved.glyph.index === 0) {
+    return 0;
+  }
+  const scale = fontSize / resolved.font.unitsPerEm;
+  const tracking = resolved.fontKey === 'mono' ? 0 : (PATH_OPTIONS.letterSpacing ?? 0) * fontSize;
+  let stepAdvance = (resolved.glyph.advanceWidth ?? 0) * scale + tracking;
+  if (
+    nextResolved &&
+    resolved.fontKey === 'sans' &&
+    nextResolved.fontKey === 'sans' &&
+    nextResolved.glyph.index !== 0
+  ) {
+    stepAdvance += resolved.font.getKerningValue(resolved.glyph, nextResolved.glyph) * scale;
+  }
+  return Math.max(0, stepAdvance);
 }
 
 /** Check whether `text` contains any character missing (`.notdef`, `index === 0`) in `font`. */
@@ -289,20 +306,20 @@ function buildFallbackTextOutline(
   fontFamily: TypingFont
 ): TextOutline {
   const combinedPath = primaryFont.getPath('', 0, 0, fontSize);
-  let cursorX = 0;
-
+  const resolvedList: ResolvedFontGlyph[] = [];
   for (const char of text) {
-    const resolved = resolveFontGlyph(char, fontFamily, isBold, isItalic);
-    const { font, glyph } = resolved;
-    const scale = fontSize / font.unitsPerEm;
-    if (glyph.index !== 0) {
-      const charPath = glyph.getPath(cursorX, 0, fontSize);
+    resolvedList.push(resolveFontGlyph(char, fontFamily, isBold, isItalic));
+  }
+
+  let cursorX = 0;
+  for (const [i, resolved] of resolvedList.entries()) {
+    if (resolved.glyph.index !== 0) {
+      const charPath = resolved.glyph.getPath(cursorX, 0, fontSize);
       for (const command of charPath.commands) {
         combinedPath.commands.push(command);
       }
     }
-    const rawAdvanceUnits = glyph.advanceWidth ?? font.unitsPerEm * 0.5;
-    cursorX += rawAdvanceUnits * scale;
+    cursorX += computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
   }
 
   const isEmpty = combinedPath.commands.length === 0;
@@ -329,10 +346,10 @@ function buildTextOutline(
   if (hasMissingGlyphInFont(font, text)) {
     return buildFallbackTextOutline(text, font, fontSize, isBold, isItalic, fontFamily);
   }
-  const options = fontFamily === 'mono' ? { kerning: false } : PATH_OPTIONS;
+  const options = fontFamily === 'mono' ? MONO_PATH_OPTIONS : PATH_OPTIONS;
   const path = font.getPath(text, 0, 0, fontSize, options);
   return {
-    ...computeInkMetrics(path, font, text, fontSize),
+    ...computeInkMetrics(path, font, text, fontSize, options),
     pathData: serializePathCommands(path.commands),
   };
 }
@@ -348,8 +365,7 @@ function getTextOutline(
   if (text.length > MAX_CACHED_TEXT_LENGTH) {
     return buildTextOutline(text, fontSize, isBold, isItalic, fontFamily);
   }
-  const fontPrefix = fontFamily === 'mono' ? 'm|' : '';
-  const cacheKey = `${fontPrefix}${text}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}`;
+  const cacheKey = `${fontFamily === 'mono' ? 1 : 0}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}|${text}`;
   const cached = readLruCache(OUTLINE_CACHE, cacheKey);
   if (cached) {
     return cached;
@@ -466,7 +482,7 @@ export function renderTextPathMarkup(text: string, options: TextPathOptions): st
  * @param fontSize     Font size in pixels.
  * @param isBold       Whether to use the bold font weight.
  * @param fontFamily   Font family identifier.
- * @returns Positioned character glyph at `x = 0`.
+ * @returns Positioned character glyph at `glyphX = 0`.
  */
 export function resolveCharGlyph(
   char: string,
@@ -475,22 +491,16 @@ export function resolveCharGlyph(
   fontFamily: TypingFont
 ): PositionedCharGlyph {
   const resolved = resolveFontGlyph(char, fontFamily, isBold);
-  const scale = fontSize / resolved.font.unitsPerEm;
-  const tracking = resolved.fontKey === 'mono' ? 0 : (PATH_OPTIONS.letterSpacing ?? 0) * fontSize;
-  const rawAdvance =
-    resolved.glyph.index === 0
-      ? fontSize * 0.5
-      : (resolved.glyph.advanceWidth ?? 0) * scale + tracking;
   return {
-    advance: roundCoord(Math.max(0, rawAdvance)),
+    advance: roundCoord(computeGlyphStepAdvance(resolved, undefined, fontSize)),
     char,
+    glyphX: 0,
     pathData: getGlyphPathData(resolved, fontSize, isBold),
-    x: 0,
   };
 }
 
 /**
- * Lay out a string character-by-character with pair kerning, returning each character's baseline `x`
+ * Lay out a string character-by-character with pair kerning, returning each character's baseline `glyphX`
  * offset, advance width, and cached `(0, 0)` outline `<path>` data.
  * @param text         Text string to lay out.
  * @param fontSize     Font size in pixels.
@@ -518,28 +528,12 @@ export function layoutTextGlyphs(
 
   for (const [i, resolved] of resolvedList.entries()) {
     const char = chars[i] ?? '';
-    const scale = fontSize / resolved.font.unitsPerEm;
-    const tracking = resolved.fontKey === 'mono' ? 0 : (PATH_OPTIONS.letterSpacing ?? 0) * fontSize;
-    let stepAdvance =
-      resolved.glyph.index === 0
-        ? fontSize * 0.5
-        : (resolved.glyph.advanceWidth ?? 0) * scale + tracking;
-    const nextResolved = resolvedList[i + 1];
-    if (
-      nextResolved &&
-      resolved.fontKey === 'sans' &&
-      nextResolved.fontKey === 'sans' &&
-      resolved.glyph.index !== 0 &&
-      nextResolved.glyph.index !== 0
-    ) {
-      stepAdvance += resolved.font.getKerningValue(resolved.glyph, nextResolved.glyph) * scale;
-    }
-    const clampedAdvance = Math.max(0, stepAdvance);
+    const clampedAdvance = computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
     glyphs.push({
       advance: roundCoord(clampedAdvance),
       char,
+      glyphX: roundCoord(cursorX),
       pathData: getGlyphPathData(resolved, fontSize, isBold),
-      x: roundCoord(cursorX),
     });
     cursorX += clampedAdvance;
   }

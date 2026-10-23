@@ -75,6 +75,7 @@ const [, formatConfig] = await Promise.all([
 await Promise.all(
   CLIENT_BUNDLES.map(async (bundle) => {
     const result = await build({
+      absWorkingDir: REPO_ROOT,
       bundle: true,
       charset: 'utf8',
       entryPoints: [bundle.entryPoint],
@@ -91,7 +92,7 @@ await Promise.all(
     if (outputFile) {
       const normalized = outputFile.text.replace(VOID_ZERO_RX, 'undefined');
       const formatted = await format(bundle.outfile, normalized, formatConfig);
-      await writeFile(bundle.outfile, formatted.code, 'utf8');
+      await writeFile(path.resolve(REPO_ROOT, bundle.outfile), formatted.code, 'utf8');
     }
   })
 );

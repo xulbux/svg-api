@@ -3,7 +3,13 @@
  */
 
 import { clampRange, ditherCanvasToRgb, encodeRgbPng } from './png.ts';
-import { evaluatePaint, flattenSvgPath, parseGradientDefs, parseXmlAttrs } from './svgParser.ts';
+import {
+  CURVE_STEPS,
+  evaluatePaint,
+  flattenSvgPath,
+  parseGradientDefs,
+  parseXmlAttrs,
+} from './svgParser.ts';
 import type {
   DirectedEdge,
   FilledPathEdges,
@@ -32,8 +38,8 @@ const DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/;
 const BODY_PRIMITIVE_RX =
   /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|path)\s+[^>]*\/>)/g;
 
-/** Matches `<path … />` elements inside a `<g>` group. */
-const INNER_PATH_RX = /<path\s+(?<attrs>[^>]*)\/>/g;
+/** Matches `<path … />` and `<circle … />` elements inside a `<g>` group. */
+const INNER_SHAPE_RX = /<(?<tag>path|circle)\s+(?<attrs>[^>]*)\/>/g;
 
 /** Matches `translate(tx ty)` inside a `transform` attribute. */
 const TRANSLATE_RX = /translate\(\s*(?<tx>[-+\d.]+)[\s,]+(?<ty>[-+\d.]+)\s*\)/;
@@ -85,7 +91,50 @@ function signedDistanceRoundedRect(
   return outsideDist + insideDist - clampedRadius;
 }
 
-/** Paint a `<rect>` primitive (solid or gradient fill plus optional 1px stroke) onto `canvas`. */
+/** Blend one `<rect>` pixel sample's fill and stroke coverage onto `canvas`. */
+function blendRectSample(
+  canvas: Float32Array,
+  pixelOffset: number,
+  dist: number,
+  unitX: number,
+  unitY: number,
+  fillSpec: string | undefined,
+  fillOpacity: number,
+  gradients: ReadonlyMap<string, GradientDef>,
+  strokeColor: RgbaTuple | undefined,
+  strokeOpacity: number,
+  halfStroke: number
+): void {
+  if (fillSpec !== undefined && dist < 0.5) {
+    const paint = evaluatePaint(fillSpec, gradients, unitX, unitY);
+    if (paint) {
+      const fillCoverage = clampRange(0.5 - dist, 0, 1);
+      blendPixel(
+        canvas,
+        pixelOffset,
+        paint[0],
+        paint[1],
+        paint[2],
+        paint[3] * fillOpacity * fillCoverage
+      );
+    }
+  }
+  if (strokeColor) {
+    const strokeCoverage = clampRange(halfStroke + 0.5 - Math.abs(dist), 0, 1);
+    if (strokeCoverage > 0) {
+      blendPixel(
+        canvas,
+        pixelOffset,
+        strokeColor[0],
+        strokeColor[1],
+        strokeColor[2],
+        strokeColor[3] * strokeOpacity * strokeCoverage
+      );
+    }
+  }
+}
+
+/** Paint a `<rect>` primitive (solid or gradient fill plus optional stroke) onto `canvas`. */
 function paintRect(
   canvas: Float32Array,
   canvasWidth: number,
@@ -104,19 +153,26 @@ function paintRect(
 
   const fillSpec = attrs.fill ?? '#000000';
   const strokeSpec = attrs.stroke ?? 'none';
-  const hasFill = fillSpec !== 'none';
+  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+  const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
+  const strokeWidth = Number.parseFloat(attrs['stroke-width'] ?? '1');
+  const halfStroke = strokeWidth / 2;
+  const activeFillSpec = fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined;
   const strokeColor =
-    strokeSpec !== 'none' ? evaluatePaint(strokeSpec, gradients, 0, 0) : undefined;
+    strokeSpec !== 'none' && strokeWidth > 0 && strokeOpacity > 0
+      ? evaluatePaint(strokeSpec, gradients, 0, 0)
+      : undefined;
 
   const halfWidth = rectWidth / 2;
   const halfHeight = rectHeight / 2;
   const centerX = rectX + halfWidth;
   const centerY = rectY + halfHeight;
+  const pad = Math.ceil(Math.max(0, halfStroke) + 2);
 
-  const minCol = Math.max(0, Math.floor(rectX - 2));
-  const maxCol = Math.min(canvasWidth - 1, Math.ceil(rectX + rectWidth + 2));
-  const minRow = Math.max(0, Math.floor(rectY - 2));
-  const maxRow = Math.min(canvasHeight - 1, Math.ceil(rectY + rectHeight + 2));
+  const minCol = Math.max(0, Math.floor(rectX - pad));
+  const maxCol = Math.min(canvasWidth - 1, Math.ceil(rectX + rectWidth + pad));
+  const minRow = Math.max(0, Math.floor(rectY - pad));
+  const maxRow = Math.min(canvasHeight - 1, Math.ceil(rectY + rectHeight + pad));
 
   for (let row = minRow; row <= maxRow; row += 1) {
     const sampleY = row + 0.5;
@@ -132,30 +188,19 @@ function paintRect(
         halfHeight,
         cornerRadius
       );
-      const pixelOffset = (row * canvasWidth + col) * 3;
-
-      if (hasFill && dist < 0.5) {
-        const fillCoverage = clampRange(0.5 - dist, 0, 1);
-        const unitX = (sampleX - rectX) / rectWidth;
-        const paint = evaluatePaint(fillSpec, gradients, unitX, unitY);
-        if (paint) {
-          blendPixel(canvas, pixelOffset, paint[0], paint[1], paint[2], paint[3] * fillCoverage);
-        }
-      }
-
-      if (strokeColor) {
-        const strokeCoverage = clampRange(1 - Math.abs(dist), 0, 1);
-        if (strokeCoverage > 0) {
-          blendPixel(
-            canvas,
-            pixelOffset,
-            strokeColor[0],
-            strokeColor[1],
-            strokeColor[2],
-            strokeColor[3] * strokeCoverage
-          );
-        }
-      }
+      blendRectSample(
+        canvas,
+        (row * canvasWidth + col) * 3,
+        dist,
+        (sampleX - rectX) / rectWidth,
+        unitY,
+        activeFillSpec,
+        fillOpacity,
+        gradients,
+        strokeColor,
+        strokeOpacity,
+        halfStroke
+      );
     }
   }
 }
@@ -221,13 +266,13 @@ function accumulateSubRowHits(
   for (const edge of edges) {
     if (scanY >= edge.y1 && scanY < edge.y2) {
       const intersectX = edge.x1 + ((scanY - edge.y1) * (edge.x2 - edge.x1)) / (edge.y2 - edge.y1);
-      crossings.push({ dir: edge.dir, x: intersectX });
+      crossings.push({ crossingX: intersectX, dir: edge.dir });
     }
   }
   if (crossings.length < 2) {
     return;
   }
-  crossings.sort((left, right) => left.x - right.x);
+  crossings.sort((left, right) => left.crossingX - right.crossingX);
 
   let winding = 0;
   let spanStartX = 0;
@@ -235,7 +280,7 @@ function accumulateSubRowHits(
     const prevWinding = winding;
     winding += crossing.dir;
     if (prevWinding === 0 && winding !== 0) {
-      spanStartX = crossing.x;
+      spanStartX = crossing.crossingX;
     } else if (prevWinding !== 0 && winding === 0) {
       const firstSubCol = Math.max(
         startCol * SUPERSAMPLE_COLS,
@@ -243,7 +288,7 @@ function accumulateSubRowHits(
       );
       const lastSubCol = Math.min(
         (endCol + 1) * SUPERSAMPLE_COLS - 1,
-        Math.floor(crossing.x * SUPERSAMPLE_COLS - 0.5)
+        Math.floor(crossing.crossingX * SUPERSAMPLE_COLS - 0.5)
       );
       for (let subCol = firstSubCol; subCol <= lastSubCol; subCol += 1) {
         const colIndex = Math.floor(subCol / SUPERSAMPLE_COLS) - startCol;
@@ -323,7 +368,7 @@ function distToSegmentSquared(
   return (pointX - nearX) * (pointX - nearX) + (pointY - nearY) * (pointY - nearY);
 }
 
-/** Collect flattened line segments and bounding box from `<path>` elements inside a `<g>` group. */
+/** Collect flattened line segments and bounding box from `<path>` and `<circle>` elements inside a `<g>` group. */
 function collectGroupSegments(
   groupBody: string,
   offsetX: number,
@@ -336,21 +381,43 @@ function collectGroupSegments(
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
 
-  for (const pathMatch of groupBody.matchAll(INNER_PATH_RX)) {
-    const pathAttrs = parseXmlAttrs(pathMatch.groups?.attrs ?? '');
-    for (const subpath of flattenSvgPath(pathAttrs.d ?? '', offsetX, offsetY, scale)) {
-      const { points } = subpath;
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const pointA = points[i];
-        const pointB = points[i + 1];
-        if (pointA && pointB) {
-          const [ax, ay] = pointA;
-          const [bx, by] = pointB;
-          segments.push([ax, ay, bx, by]);
-          minX = Math.min(minX, ax, bx);
-          minY = Math.min(minY, ay, by);
-          maxX = Math.max(maxX, ax, bx);
-          maxY = Math.max(maxY, ay, by);
+  function pushSegment(ax: number, ay: number, bx: number, by: number): void {
+    segments.push([ax, ay, bx, by]);
+    minX = Math.min(minX, ax, bx);
+    minY = Math.min(minY, ay, by);
+    maxX = Math.max(maxX, ax, bx);
+    maxY = Math.max(maxY, ay, by);
+  }
+
+  for (const shapeMatch of groupBody.matchAll(INNER_SHAPE_RX)) {
+    const tag = shapeMatch.groups?.tag;
+    const shapeAttrs = parseXmlAttrs(shapeMatch.groups?.attrs ?? '');
+    if (tag === 'circle') {
+      const radius = Number.parseFloat(shapeAttrs.r ?? '0') * scale;
+      if (radius > 0) {
+        const centerX = offsetX + Number.parseFloat(shapeAttrs.cx ?? '0') * scale;
+        const centerY = offsetY + Number.parseFloat(shapeAttrs.cy ?? '0') * scale;
+        const circleSteps = CURVE_STEPS * 2;
+        let prevX = centerX + radius;
+        let prevY = centerY;
+        for (let step = 1; step <= circleSteps; step += 1) {
+          const angle = (Math.PI * 2 * step) / circleSteps;
+          const nextX = centerX + Math.cos(angle) * radius;
+          const nextY = centerY + Math.sin(angle) * radius;
+          pushSegment(prevX, prevY, nextX, nextY);
+          prevX = nextX;
+          prevY = nextY;
+        }
+      }
+    } else {
+      for (const subpath of flattenSvgPath(shapeAttrs.d ?? '', offsetX, offsetY, scale)) {
+        const { points } = subpath;
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const pointA = points[i];
+          const pointB = points[i + 1];
+          if (pointA && pointB) {
+            pushSegment(pointA[0], pointA[1], pointB[0], pointB[1]);
+          }
         }
       }
     }
@@ -444,11 +511,20 @@ function paintBodyPrimitive(
     paintRect(canvas, width, height, attrs, gradients);
   } else if (selfTag.startsWith('<path') && attrs.d) {
     const fillColor = evaluatePaint(attrs.fill ?? '#FFFFFF', gradients, 0, 0);
-    if (fillColor) {
+    const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+    if (fillColor && fillOpacity > 0) {
       const translateMatch = TRANSLATE_RX.exec(attrs.transform ?? '');
       const offsetX = Number.parseFloat(translateMatch?.groups?.tx ?? '0');
       const offsetY = Number.parseFloat(translateMatch?.groups?.ty ?? '0');
-      paintFilledPath(canvas, width, height, attrs.d, fillColor, offsetX, offsetY);
+      paintFilledPath(
+        canvas,
+        width,
+        height,
+        attrs.d,
+        [fillColor[0], fillColor[1], fillColor[2], fillColor[3] * fillOpacity],
+        offsetX,
+        offsetY
+      );
     }
   }
 }

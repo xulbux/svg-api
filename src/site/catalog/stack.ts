@@ -2,7 +2,11 @@
  * Tech stack documentation catalog – Variant descriptors, showcase cards, icon count helper, and parameter reference rows for `/docs/stack`.
  */
 
-import { STACK_MOTION_ALIASES, STACK_MOTION_TOKENS } from '@/routes/params';
+import {
+  ACTIVE_STACK_MOTION_TOKENS,
+  STACK_MOTION_ALIASES,
+  STACK_MOTION_TOKENS,
+} from '@/routes/params';
 import { DEFAULT_STACK_VARIANT } from '@/routes/svg';
 import {
   buildColorParamRow,
@@ -11,7 +15,6 @@ import {
   formatRange,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog/shared';
-import type { VariantDescriptor } from '@/site/catalog/shared';
 import { collectAliasesForTarget, formatConjunctionList } from '@/site/glossary';
 import {
   GROUP_GAP_RATIO,
@@ -27,6 +30,7 @@ import type {
   ShowcaseCardConfig,
   ShowcaseItem,
   StackTileMotion,
+  VariantDescriptor,
 } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -133,7 +137,7 @@ export function buildStackVariantCards(): ShowcaseCardConfig[] {
  * @returns Parameter table rows.
  */
 export function buildStackParamRows(): ParamTableRow[] {
-  const motionSummaries = STACK_MOTION_TOKENS.filter((token) => token !== 'none').map(
+  const motionSummaries = ACTIVE_STACK_MOTION_TOKENS.map(
     (token) => `${token} [${formatStackMotionAliases(token)}]`
   );
   return [

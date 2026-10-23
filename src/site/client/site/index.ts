@@ -42,6 +42,33 @@ function initSiteClient(): void {
   const hasPopoverApi = 'popover' in HTMLElement.prototype;
 
   let activePopover: ActivePopoverState | undefined = undefined;
+  const activeTriggers = new WeakMap<HTMLElement, Element>();
+
+  /** Track the trigger element that opened `popover`, resetting any superseded trigger's `aria-expanded`. */
+  function rememberPopoverTrigger(popover: HTMLElement, trigger: Element): void {
+    const previousTrigger = activeTriggers.get(popover);
+    if (previousTrigger && previousTrigger !== trigger) {
+      previousTrigger.setAttribute('aria-expanded', 'false');
+    }
+    activeTriggers.set(popover, trigger);
+  }
+
+  /** Resolve the active trigger element controlling `popover`. */
+  function resolvePopoverTrigger(popover: HTMLElement): Element | undefined {
+    return (
+      activeTriggers.get(popover) ??
+      (popover.id
+        ? (document.querySelector(
+            `[popovertarget="${popover.id}"]:not([popovertargetaction="hide"])`
+          ) ?? undefined)
+        : undefined)
+    );
+  }
+
+  /** Sync `aria-expanded` on the trigger controlling `popover`. */
+  function syncPopoverExpanded(popover: HTMLElement, isOpen: boolean): void {
+    resolvePopoverTrigger(popover)?.setAttribute('aria-expanded', String(isOpen));
+  }
 
   /** Check whether a popover element is open (native `:popover-open` or the `.is-open` fallback class). */
   function isPopoverOpen(popover: Element): boolean {
@@ -58,9 +85,7 @@ function initSiteClient(): void {
       return;
     }
     popover.classList.add('is-open');
-    document
-      .querySelector(`[popovertarget="${popover.id}"]`)
-      ?.setAttribute('aria-expanded', 'true');
+    syncPopoverExpanded(popover, true);
     dispatchFallbackToggle(popover, 'open');
   }
 
@@ -74,9 +99,7 @@ function initSiteClient(): void {
       return;
     }
     popover.classList.remove('is-open');
-    document
-      .querySelector(`[popovertarget="${popover.id}"]`)
-      ?.setAttribute('aria-expanded', 'false');
+    syncPopoverExpanded(popover, false);
     dispatchFallbackToggle(popover, 'closed');
   }
 
@@ -87,6 +110,12 @@ function initSiteClient(): void {
     options: PopoverPlacementOptions = {}
   ): void {
     activePopover = { anchor, options, popover };
+    if (anchor.hasAttribute('popovertarget') || anchor.hasAttribute('aria-expanded')) {
+      rememberPopoverTrigger(popover, anchor);
+      if (isPopoverOpen(popover)) {
+        anchor.setAttribute('aria-expanded', 'true');
+      }
+    }
     const popoverRect = popover.getBoundingClientRect();
     const placement = computePopoverPlacement(
       anchor.getBoundingClientRect(),
@@ -106,19 +135,53 @@ function initSiteClient(): void {
 
   initThemeAndMotion(siteConfig, rootElement, reducedMotionQuery);
 
+  document.addEventListener(
+    'click',
+    (event) => {
+      const trigger =
+        event.target instanceof Element
+          ? event.target.closest('[popovertarget]:not([popovertargetaction="hide"])')
+          : undefined;
+      const targetId = trigger?.getAttribute('popovertarget');
+      const popover = targetId ? document.getElementById(targetId) : undefined;
+      if (trigger && popover instanceof HTMLElement) {
+        rememberPopoverTrigger(popover, trigger);
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    'toggle',
+    (event) => {
+      const popover = event.target;
+      if (popover instanceof HTMLElement && popover.hasAttribute('popover')) {
+        syncPopoverExpanded(popover, (event as ToggleEvent).newState === 'open');
+      }
+    },
+    true
+  );
+
   // Popovers (mobile sidebar drawer, builder menus); native popovers with a class-toggle fallback:
   if (!hasPopoverApi) {
-    for (const trigger of document.querySelectorAll('[popovertarget]')) {
+    for (const trigger of document.querySelectorAll(
+      '[popovertarget]:not([popovertargetaction="hide"])'
+    )) {
       trigger.setAttribute('aria-expanded', 'false');
     }
     document.addEventListener('click', (event) => {
       const { target } = event;
       const trigger = target instanceof Element ? target.closest('[popovertarget]') : undefined;
+      const action = trigger?.getAttribute('popovertargetaction');
       for (const popover of document.querySelectorAll('[popover]')) {
         if (popover instanceof HTMLElement) {
           const isOwnTrigger = trigger?.getAttribute('popovertarget') === popover.id;
           if (isOwnTrigger) {
-            if (isPopoverOpen(popover)) {
+            if (action === 'hide') {
+              closePopover(popover);
+            } else if (action === 'show') {
+              openPopover(popover);
+            } else if (isPopoverOpen(popover)) {
               closePopover(popover);
             } else {
               openPopover(popover);
@@ -135,8 +198,8 @@ function initSiteClient(): void {
       }
       for (const popover of document.querySelectorAll('[popover]')) {
         if (popover instanceof HTMLElement && isPopoverOpen(popover)) {
+          const trigger = resolvePopoverTrigger(popover);
           closePopover(popover);
-          const trigger = document.querySelector(`[popovertarget="${popover.id}"]`);
           if (trigger instanceof HTMLElement) {
             trigger.focus();
           }
