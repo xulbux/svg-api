@@ -24,7 +24,7 @@ export function ServicesSection(): HtmlFragment {
   return (
     <section class="doc-section" id="services">
       <SectionHeader
-        description={`Auto-fetched metrics from ${serviceCount} public registries and forges (no signup or API keys required) with multi-tier edge caching and smart 302 redirects to the upstream page when opened in a browser tab. The route reference below lists every service with its exact route, metrics (aliases in parentheses), and owner defaults.`}
+        description={`Live metrics from ${serviceCount} public registries, forges, and CDNs, edge-cached with automatic 302 redirects when opened in a browser tab.`}
         routes={[SERVICE_ROUTE_PATTERN]}
         title="Live Service Badges"
       />

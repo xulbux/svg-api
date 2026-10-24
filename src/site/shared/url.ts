@@ -8,13 +8,15 @@ import {
   normalizeQueryFieldValue,
 } from '@/site/shared/defaults';
 import {
-  decodeSegment,
+  decodeRouteSegments,
   encodeSegment,
   findField,
   findOption,
   findService,
+  getOwnValue,
   normalizeTypingLinesInput,
   readState,
+  TRUTHY_FLAG_TOKENS,
 } from '@/site/shared/encoding';
 import { normalizeStackGroups } from '@/site/shared/stackDsl';
 import type {
@@ -40,9 +42,6 @@ interface ParsedRoute {
 
 /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
 const STATIC_ANIM_PAIR = 'anim=none';
-
-/** Normalized `?center=` values treated as truthy layout or alignment flags. */
-const CENTER_FLAG_VALUES: ReadonlySet<string> = new Set(['1', 'true', 'yes']);
 
 /** Cached compiled regex for `BuilderSchema.redirectValuePattern` (`undefined` until first used). */
 let cachedRedirectPatternRx: RegExp | undefined = undefined;
@@ -166,8 +165,7 @@ function readSegmentFallback(schema: BuilderSchema, query: URLSearchParams, id: 
 /** Canonicalize a requested service metric like the Worker (case-insensitive, metric aliases). */
 function canonicalizeMetric(service: BuilderServiceOption, raw: string): string {
   const clean = raw.trim().toLowerCase();
-  const aliases = service.metricAliases;
-  return aliases && Object.hasOwn(aliases, clean) ? (aliases[clean] ?? clean) : clean;
+  return (service.metricAliases ? getOwnValue(service.metricAliases, clean) : undefined) ?? clean;
 }
 
 /** Split a root-relative path or absolute URL into its route prefix, decoded segments, and query. */
@@ -177,14 +175,11 @@ function parseRoute(rawPath: string, origin: string): ParsedRoute | undefined {
   }
   const url = new URL(rawPath, origin);
   const rawParts = url.pathname.split('/');
-  const segments: string[] = [];
-  for (const rawSegment of rawParts.slice(2)) {
-    segments.push(decodeSegment(rawSegment));
-  }
-  if (segments.at(-1) === '') {
-    segments.pop();
-  }
-  return { prefix: rawParts[1] ?? '', query: url.searchParams, segments };
+  return {
+    prefix: rawParts[1] ?? '',
+    query: url.searchParams,
+    segments: decodeRouteSegments(rawParts),
+  };
 }
 
 /** Path segment parsers per element kind; Each one fills `state` and reports whether the route belongs to the builder. */
@@ -215,7 +210,7 @@ const PATH_PARSERS: Readonly<
       ? [layoutField.param, ...(layoutField.aliases ?? [])]
       : [];
     const center = (query.get('center') ?? '').trim().toLowerCase();
-    if (!readQueryParam(query, layoutNames).trim() && CENTER_FLAG_VALUES.has(center)) {
+    if (!readQueryParam(query, layoutNames).trim() && TRUTHY_FLAG_TOKENS.has(center)) {
       state.layout = 'vertical';
     }
     return prefix === 'quote' && segments.length <= 2;
@@ -226,14 +221,22 @@ const PATH_PARSERS: Readonly<
       return false;
     }
     const middle = segments.slice(1, -1);
+    const metric = canonicalizeMetric(service, segments.at(-1) ?? '');
+    if (middle.includes('') || !findOption(service.metrics, metric)) {
+      return false;
+    }
     state.service = service.key;
-    state.metric = canonicalizeMetric(service, segments.at(-1) ?? '');
+    state.metric = metric;
+    const minTargetSegments = service.minTargetSegments ?? 1;
     if (service.maxTargetSegments > 1) {
       const hasOwnerSegment = service.ownerMode === 'required';
       const targetSegments = hasOwnerSegment ? middle.slice(1) : middle;
       state.owner = hasOwnerSegment ? (middle[0] ?? '') : '';
       state.target = targetSegments.join('/');
-      return targetSegments.length >= 1 && targetSegments.length <= service.maxTargetSegments;
+      return (
+        targetSegments.length >= minTargetSegments &&
+        targetSegments.length <= service.maxTargetSegments
+      );
     }
     if (middle.length === 2) {
       state.owner = middle[0] ?? '';
@@ -241,7 +244,7 @@ const PATH_PARSERS: Readonly<
       return service.ownerMode !== 'none';
     }
     state.target = middle[0] ?? '';
-    return middle.length === 1;
+    return middle.length === 1 && service.ownerMode !== 'required';
   },
   stack(state, { prefix, query, segments }, schema) {
     state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
@@ -257,7 +260,7 @@ const PATH_PARSERS: Readonly<
     const alignField = findField(schema, 'align');
     const alignNames = alignField?.param ? [alignField.param, ...(alignField.aliases ?? [])] : [];
     const center = (query.get('center') ?? '').trim().toLowerCase();
-    if (!readQueryParam(query, alignNames).trim() && CENTER_FLAG_VALUES.has(center)) {
+    if (!readQueryParam(query, alignNames).trim() && TRUTHY_FLAG_TOKENS.has(center)) {
       state.align = 'center';
     }
     return (prefix === 'typing' || prefix === 'type') && segments.length <= 2;
@@ -288,10 +291,18 @@ function buildServiceRedirectUrl(schema: BuilderSchema, state: BuilderState): st
   }
   const valuePattern = cachedRedirectPatternRx;
   const explicitOwner = service.ownerMode === 'none' ? '' : readState(state, 'owner');
+  if (service.ownerMode === 'required' && !explicitOwner) {
+    return '';
+  }
   const owner = explicitOwner || service.defaultOwner || '';
   const target = readState(state, 'target');
   const targetSegments = target.split('/');
-  if (targetSegments.length > service.maxTargetSegments || (owner && !valuePattern.test(owner))) {
+  const minTargetSegments = service.minTargetSegments ?? 1;
+  if (
+    targetSegments.length < minTargetSegments ||
+    targetSegments.length > service.maxTargetSegments ||
+    (owner && !valuePattern.test(owner))
+  ) {
     return '';
   }
   for (const segment of targetSegments) {

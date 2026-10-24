@@ -10,10 +10,12 @@ import type { HtmlFragment } from '@/site/jsx';
 import {
   findOption,
   findService,
+  getOwnValue,
   resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
   resolveIconSelectDisplay,
   splitAnim,
+  splitHint,
   splitIconPair,
   splitSize,
   splitSpecial,
@@ -55,6 +57,28 @@ interface IconSelectOptions {
   readonly sublabel?: string;
 }
 
+/** Options for `renderSyntaxHelpPopover`. */
+interface SyntaxHelpPopoverOptions {
+  /** Accessible dialog label (`aria-label`). */
+  readonly ariaLabel: string;
+  /** Introductory description rendered inside `<p class="stack-help-desc">`. */
+  readonly description: HtmlFragment | string;
+  /** Popover DOM ID. */
+  readonly id: string;
+  /** Definition list rows. */
+  readonly rows: readonly SyntaxHelpRow[];
+  /** Heading text rendered inside `<p class="stack-help-title">`. */
+  readonly title: string;
+}
+
+/** Single `<dt>` / `<dd>` entry in a syntax reference popover. */
+interface SyntaxHelpRow {
+  /** Example token rendered inside `<code class="param-code">`. */
+  readonly code: string;
+  /** Description rendered inside `<dd>`. */
+  readonly description: HtmlFragment | string;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Controls that render a single labelable form control (`<label for>`), as opposed to a group of parts. */
@@ -70,6 +94,29 @@ const SELF_LABELED_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderC
   'icon',
   'select',
 ]);
+
+/** Sublabels for single-select `animScope` values. */
+const SINGLE_ANIM_LABELS: Readonly<Record<string, string>> = {
+  single: 'Icon motion',
+  stack: 'Tile motion',
+  typing: 'Typing motion',
+};
+
+/** Syntax reference rows for the `/builder/stack` raw DSL help popover. */
+const STACK_SYNTAX_HELP_ROWS: readonly SyntaxHelpRow[] = [
+  { code: 'rust,go,ts', description: 'Icons in the same group' },
+  { code: 'rust@amber', description: 'Custom tile color per icon' },
+  {
+    code: 'figma,ps,ai:3',
+    description: (
+      <>
+        Columns (<code>:N</code>) for a group
+      </>
+    ),
+  },
+  { code: 'a,b | c,d', description: 'Place groups side by side' },
+  { code: 'row1 ; row2', description: 'Start a new row band' },
+];
 
 /** Number of options above which a dropdown gets a search field (e.g., the service presets). */
 const SEARCHABLE_OPTION_COUNT = 12;
@@ -374,6 +421,9 @@ function renderAnimControl(field: BuilderField, initialValue: string): HtmlFragm
   const sheenId = buildFieldId(field, 'sheen');
   const motionOptions = field.options ?? [];
   const initialAnim = splitAnim(initialValue, motionOptions);
+  const singleAnimLabel = field.animScope
+    ? getOwnValue(SINGLE_ANIM_LABELS, field.animScope)
+    : undefined;
   let motionsFragment: HtmlFragment | undefined = undefined;
   if (field.animScope === 'pair') {
     motionsFragment = (
@@ -382,22 +432,10 @@ function renderAnimControl(field: BuilderField, initialValue: string): HtmlFragm
         {renderSubSelect(field, 'right', 'Right icon motion', motionOptions, initialAnim.right)}
       </div>
     );
-  } else if (field.animScope === 'single') {
+  } else if (singleAnimLabel) {
     motionsFragment = (
       <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Icon motion', motionOptions, initialAnim.left)}
-      </div>
-    );
-  } else if (field.animScope === 'stack') {
-    motionsFragment = (
-      <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Tile motion', motionOptions, initialAnim.left)}
-      </div>
-    );
-  } else if (field.animScope === 'typing') {
-    motionsFragment = (
-      <div class="builder-inline">
-        {renderSubSelect(field, 'left', 'Typing motion', motionOptions, initialAnim.left)}
+        {renderSubSelect(field, 'left', singleAnimLabel, motionOptions, initialAnim.left)}
       </div>
     );
   }
@@ -459,42 +497,59 @@ function renderHelpButton(
   );
 }
 
-/** Render the syntax reference popover of a `special` field. */
-function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
-  const rows: HtmlFragment[] = [];
-  for (const kind of SPECIAL_ELEMENT_KINDS) {
-    const detail = SPECIAL_KIND_DETAILS[kind];
-    rows.push(
+/** Render a syntax reference dialog popover listing example tokens and their meanings. */
+function renderSyntaxHelpPopover(options: SyntaxHelpPopoverOptions): HtmlFragment {
+  const rowNodes: HtmlFragment[] = [];
+  for (const row of options.rows) {
+    rowNodes.push(
       <div class="stack-help-row">
         <dt>
-          <code class="param-code">{detail.example}</code>
+          <code class="param-code">{row.code}</code>
         </dt>
-        <dd>{detail.summary}</dd>
+        <dd>{row.description}</dd>
       </div>
     );
   }
   return (
     <div
       class="popover-panel stack-help-popover"
-      id="special-syntax-help"
+      id={options.id}
       popover={true}
       role="dialog"
-      aria-label="Data widget syntax reference">
+      aria-label={options.ariaLabel}>
       <div class="stack-help-head">
-        <p class="stack-help-title">Data widget syntax</p>
-        <p class="stack-help-desc">
-          Format of the <code>Data</code> field per widget kind
-          {field.hasPresetValue ? (
-            <>
-              ; Leave empty on <code>Auto</code> widgets for live data
-            </>
-          ) : undefined}
-          .
-        </p>
+        <p class="stack-help-title">{options.title}</p>
+        <p class="stack-help-desc">{options.description}</p>
       </div>
-      <dl class="stack-help-list">{rows}</dl>
+      <dl class="stack-help-list">{rowNodes}</dl>
     </div>
   );
+}
+
+/** Render the syntax reference popover of a `special` field. */
+function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
+  const rows: SyntaxHelpRow[] = [];
+  for (const kind of SPECIAL_ELEMENT_KINDS) {
+    const detail = SPECIAL_KIND_DETAILS[kind];
+    rows.push({ code: detail.example, description: detail.summary });
+  }
+  return renderSyntaxHelpPopover({
+    ariaLabel: 'Data widget syntax reference',
+    description: (
+      <>
+        Format of the <code>Data</code> field per widget kind
+        {field.hasPresetValue ? (
+          <>
+            ; Leave empty on <code>Auto</code> widgets for live data
+          </>
+        ) : undefined}
+        .
+      </>
+    ),
+    id: 'special-syntax-help',
+    rows,
+    title: 'Data widget syntax',
+  });
 }
 
 /** Render the composite controls of a `special` field (widget kind, payload, and modifier). */
@@ -615,7 +670,7 @@ function renderStackGroupsControl(
           aria-pressed="false"
           title={`${item.label} (${item.slug})`}>
           <span class="stack-chip-glyph" aria-hidden="true"></span>
-          <span class="stack-chip-label">{item.label}</span>
+          {item.label}
         </button>
       );
     }
@@ -692,14 +747,12 @@ function renderStackGroupsControl(
               role="status"
               aria-live="polite"
               hidden={true}>
-              No matching technologies in the quick categories; Switch to Raw DSL to insert any
-              bundled icon.
+              No matches here; Switch to Raw DSL to use any icon slug.
             </p>
           </div>
         </div>
         <p class="builder-hint">
-          Switch to <strong>Raw DSL</strong> to add any icon from the full catalog or customize
-          per-icon colors.
+          Use <strong>Raw DSL</strong> for any icon slug or per-tile colors.
         </p>
       </div>
       <div
@@ -727,53 +780,17 @@ function renderStackGroupsControl(
             ' stack-help-btn'
           )}
         </div>
-        <div
-          class="popover-panel stack-help-popover"
-          id="stack-syntax-help"
-          popover={true}
-          role="dialog"
-          aria-label="Stack DSL syntax reference">
-          <div class="stack-help-head">
-            <p class="stack-help-title">Stack DSL syntax</p>
-            <p class="stack-help-desc">
+        {renderSyntaxHelpPopover({
+          ariaLabel: 'Stack DSL syntax reference',
+          description: (
+            <>
               Comma-separated icon slugs; Line breaks or <code>;</code> stack row bands.
-            </p>
-          </div>
-          <dl class="stack-help-list">
-            <div class="stack-help-row">
-              <dt>
-                <code class="param-code">rust,go,ts</code>
-              </dt>
-              <dd>Icons in the same group</dd>
-            </div>
-            <div class="stack-help-row">
-              <dt>
-                <code class="param-code">rust@amber</code>
-              </dt>
-              <dd>Custom tile color per icon</dd>
-            </div>
-            <div class="stack-help-row">
-              <dt>
-                <code class="param-code">figma,ps,ai:3</code>
-              </dt>
-              <dd>
-                Columns (<code>:N</code>) for a group
-              </dd>
-            </div>
-            <div class="stack-help-row">
-              <dt>
-                <code class="param-code">a,b | c,d</code>
-              </dt>
-              <dd>Place groups side by side</dd>
-            </div>
-            <div class="stack-help-row">
-              <dt>
-                <code class="param-code">row1 ; row2</code>
-              </dt>
-              <dd>Start a new row band</dd>
-            </div>
-          </dl>
-        </div>
+            </>
+          ),
+          id: 'stack-syntax-help',
+          rows: STACK_SYNTAX_HELP_ROWS,
+          title: 'Stack DSL syntax',
+        })}
       </div>
       <p
         class="builder-hint builder-validation"
@@ -909,11 +926,22 @@ function renderIconPairControl(
 }
 
 /** Render the hint icon + text pair control on `/builder/typing`. */
-function renderHintControl(field: BuilderField): HtmlFragment {
+function renderHintControl(
+  field: BuilderField,
+  initialValue: string,
+  hintId: string | undefined
+): HtmlFragment {
   const textId = buildFieldId(field, 'text');
+  const initialHint = splitHint(initialValue);
   return (
     <div class="builder-inline is-pair">
-      {renderIconSelect({ field, part: 'icon', sublabel: 'Hint icon' })}
+      {renderIconSelect({
+        field,
+        hintId,
+        initialValue: initialHint.icon,
+        part: 'icon',
+        sublabel: 'Hint icon',
+      })}
       <div class="builder-subfield is-grow">
         <label class="builder-sublabel" for={textId}>
           Hint text
@@ -923,8 +951,10 @@ function renderHintControl(field: BuilderField): HtmlFragment {
           id={textId}
           type="text"
           data-part="text"
+          value={initialHint.text || undefined}
           maxlength={field.maxLength}
           placeholder={field.placeholder}
+          aria-describedby={hintId}
           spellcheck={false}
         />
       </div>
@@ -1009,7 +1039,7 @@ function renderFieldControl(
       return renderColorControl(field, schema, selectedValue, hintId);
     }
     case 'hint': {
-      return renderHintControl(field);
+      return renderHintControl(field, initialValue, hintId);
     }
     case 'icon': {
       return renderIconSelect({ field, hintId, initialValue, part: 'main' });

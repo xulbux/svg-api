@@ -3,6 +3,7 @@
  */
 
 import { isThemeColorName } from '@/config/theme';
+import { LIST_SEPARATOR_RX, TRUTHY_FLAG_TOKENS } from '@/site/shared/encoding';
 import { DEFAULT_QUOTE_LAYOUT } from '@/svg/quote';
 import {
   MAX_BARS_POINTS,
@@ -110,14 +111,8 @@ export const STACK_MOTION_ALIASES: Readonly<Record<string, StackTileMotion>> = {
 /** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
 const MAX_ANIMATION_INPUT_LENGTH = 64;
 
-/** Truthy boolean query tokens accepted by boolean flag parameters in display order. */
-export const TRUTHY_FLAG_LIST = ['true', '1', 'yes'] as const;
-
 /** Falsy boolean query tokens accepted as explicit disable aliases in builder forms. */
 export const FALSY_FLAG_LIST = ['0', 'false', 'no'] as const;
-
-/** Normalized boolean flag values treated as truthy (derived from `TRUTHY_FLAG_LIST`). */
-const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set<string>(TRUTHY_FLAG_LIST);
 
 /** Canonical quote card layout tokens in display order. */
 export const QUOTE_LAYOUT_TOKENS: readonly QuoteLayout[] = ['horizontal', 'vertical'];
@@ -229,9 +224,6 @@ export const TYPING_ALIGN_MAP: Readonly<Record<string, TypingAlign>> = {
 };
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches comma or whitespace separators in list-style payloads. */
-const LIST_SEPARATOR_RX = /[,\s]+/;
 
 /** Matches a single comma or whitespace separator character. */
 const SEPARATOR_CHAR_RX = /[,\s]/;
@@ -430,7 +422,7 @@ function resolveAnimationTokens<T extends string>(
   maxMotions: number
 ): T {
   const normalized = normalizeQueryToken(input);
-  if (normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
+  if (!normalized || normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
     return fallback;
   }
 
@@ -470,7 +462,7 @@ function resolveAnimationTokens<T extends string>(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { decodeSegment } from '@/site/shared';
+export { decodeSegment, TRUTHY_FLAG_LIST } from '@/site/shared/encoding';
 
 /**
  * Parse an optional finite number query parameter (e.g., `?size=24`, `?stroke=2.25`).
@@ -631,8 +623,12 @@ export function resolveSizeToken(raw: string | null | undefined): SizePreset | n
 export function parsePerLineList(
   raw: string | null | undefined
 ): (number | undefined)[] | undefined {
+  const cleaned = (raw ?? '').trim();
+  if (!cleaned) {
+    return undefined;
+  }
   const values: (number | undefined)[] = [];
-  for (const part of (raw ?? '').trim().split(LIST_SEPARATOR_RX)) {
+  for (const part of cleaned.split(LIST_SEPARATOR_RX)) {
     const parsed = parseOptionalNumber(part);
     values.push(parsed !== undefined && parsed >= 1 ? Math.round(parsed) : undefined);
   }

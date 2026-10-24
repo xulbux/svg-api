@@ -35,17 +35,17 @@ import type {
 /** Showcase definitions for the badge hierarchy variants. */
 export const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
-    description: '3D brand gradient right cap for primary status and repository metrics.',
+    description: 'Gradient right cap for primary status and metrics.',
     id: '1',
     title: 'variant=1 · Primary Badge (Default)',
   },
   {
-    description: 'Tinted dark 3D right cap with a glowing colored border.',
+    description: 'Tinted dark right cap with a colored border.',
     id: '2',
     title: 'variant=2 · Secondary Badge',
   },
   {
-    description: 'Neutral carbon-dark surface with colored icon and muted value text.',
+    description: 'Neutral dark surface with colored icon and muted value.',
     id: '3',
     title: 'variant=3 · Tertiary Badge',
   },
@@ -116,7 +116,7 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
           path: '/badge/Requests/2.4M%2Fd?color=violet&icon=trending-up&special=delta:%2B38%25',
         },
       ],
-      subtitle: `Embed sparklines, bar histograms, progress bars, step pills, donut rings, ${STRIP_TICK_MAX_STATE + 1}-stage strips, and delta pills via ?special=.`,
+      subtitle: `Sparklines, bar charts, progress bars, step pills, donut rings, ${STRIP_TICK_MAX_STATE + 1}-stage strips, and delta pills via ?special=.`,
       title: 'Inline Data Visualizations (?special=)',
     },
     {
@@ -138,8 +138,8 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         { alt: 'Status Beta', path: '/badge/Status/v3+Engine?variant=2&color=violet&dot=violet' },
         { alt: 'Status Standby', path: '/badge/Status/Warm+Spare?variant=3&color=slate&dot=slate' },
       ],
-      subtitle: `Outward radar ripple, double-beat warning, urgent pulse, breathing, and standby dots across all ${THEME_COLOR_NAMES.length} theme colors via ?dot=.`,
-      title: 'Pulsing Radar Status Dots (?dot=)',
+      subtitle: `Animated status dots across all ${THEME_COLOR_NAMES.length} theme colors via ?dot=.`,
+      title: 'Pulsing Status Dots (?dot=)',
     },
     {
       items: [
@@ -151,8 +151,8 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
         { alt: 'Icon-Only Pill', path: '/badge?variant=3&color=neutral&icon=github' },
       ],
       subtitle:
-        'Omit label or value segments, or set both left and right icons via ?icon=left,right.',
-      title: 'Flexible Structural Layouts (/badge/:label, /badge//:value)',
+        'Omit the label or value segment, or set left and right icons via ?icon=left,right.',
+      title: 'Flexible Layouts (/badge/:label, /badge//:value)',
     },
     {
       items: [
@@ -186,8 +186,8 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
           path: '/badge/Aura/Glow?variant=3&color=orange&icon=flame&anim=breathe',
         },
       ],
-      subtitle: `Surface sheen, icon motion presets (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or combined sheen,auto via ?anim=.`,
-      title: 'SVG Micro-Animations (?anim=)',
+      subtitle: `Surface sheen, icon motions (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or combined sheen,auto via ?anim=.`,
+      title: 'Micro-Animations (?anim=)',
     },
   ];
 }
@@ -199,18 +199,15 @@ export function buildBadgeUseCaseCards(): ShowcaseCardConfig[] {
 export function buildBadgeParamRows(): ParamTableRow[] {
   return [
     buildVariantParamRow(DEFAULT_BADGE_VARIANT, 'Hierarchy tier'),
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
-    ),
+    buildColorParamRow(DEFAULT_THEME_COLOR, 'Theme color for gradients, borders, and icons.'),
     buildIconQueryParamRow(
-      'Leading left icon (icon=name), both left and right icons (icon=left,right), right-only icon (icon=none,right), or none.',
+      'Leading icon (icon=name), left and right icons (icon=left,right), right-only icon (icon=none,right), or none.',
       'circle-check | rocket,arrow-right | none,external-link | none | …'
     ),
-    buildDotParamRow('Pulsing radar status dot.'),
+    buildDotParamRow('Pulsing status dot.'),
     {
       defaultVal: 'none',
-      description: `Inline data widget on the right side: sparkline (${MIN_SERIES_POINTS} to ${MAX_SPARKLINE_POINTS} comma- or space-separated numbers), bars (${MIN_SERIES_POINTS} to ${MAX_BARS_POINTS} numbers as vertical histogram bars), bar or ring percentage (bars shimmer unless :static; rings pulse only with :pulse), steps (done/total up to ${MAX_STEPS_COUNT} discrete pills), strip (up to ${MAX_STRIP_TICKS} ticks from 0 to ${STRIP_TICK_MAX_STATE}, as digits or comma/space-separated), or a delta pill.`,
+      description: `Inline right-side widget: sparkline (${MIN_SERIES_POINTS} to ${MAX_SPARKLINE_POINTS} comma- or space-separated numbers), bars (${MIN_SERIES_POINTS} to ${MAX_BARS_POINTS} numbers), bar or ring percentage (:static disables bar shimmer; :pulse pulses rings), steps (done/total up to ${MAX_STEPS_COUNT}), strip (up to ${MAX_STRIP_TICKS} ticks from 0 to ${STRIP_TICK_MAX_STATE}), or delta.`,
       name: '?special=',
       values: formatSpecialExamples(),
     },

@@ -76,7 +76,7 @@ const SITE_FONT_CACHE = new Map<SiteFontName, SiteAsset<ArrayBuffer>>();
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches icon picker page file names (`icons-lucide-0.json`, `icons-brands-12.json`). */
-const ICON_PAGE_NAME_RX = /^icons-(?<set>brands|lucide)-(?<page>\d{1,3})\.json$/;
+const ICON_PAGE_NAME_RX = /^icons-(?<set>brands|lucide)-(?<page>0|[1-9]\d{0,2})\.json$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 

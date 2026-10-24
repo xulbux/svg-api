@@ -75,15 +75,11 @@ export function BuilderPage(props: BuilderPageProps): HtmlFragment {
       canonicalPath={canonicalPath}
       description={meta.description}
       extraBody={extraBody}
-      jsonLd={buildBuilderJsonLd(pageTitle, meta.description, canonicalPath)}
+      jsonLd={buildBuilderJsonLd(pageTitle, meta.description, canonicalPath, meta.title)}
       sidebar={buildBuilderSidebar(kind)}
       title={pageTitle}>
       <section class="doc-section builder" id="builder" data-builder-kind={kind}>
-        <SectionHeader
-          action={referenceAction}
-          description={`${meta.description} Click any preview in the docs to open it here.`}
-          title={meta.title}
-        />
+        <SectionHeader action={referenceAction} description={meta.description} title={meta.title} />
         <div class="builder-grid">
           <form class="builder-form" id="builder-form" autocomplete="off" novalidate={true}>
             {fieldViews}

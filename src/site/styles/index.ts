@@ -178,11 +178,25 @@ function getThemeTokens(): readonly ThemeToken[] {
   return themeTokensCache;
 }
 
-/** Render the `--c-*` bindings of one color scheme (`hasShared` also emits scheme-independent tokens). */
-function renderThemeTokenBindings(scheme: 'dark' | 'light', hasShared: boolean): string {
+/** Render scheme-independent and non-color `--c-*` bindings for `scheme` (`hasShared` includes shared tokens). */
+function renderBaseTokenBindings(scheme: 'dark' | 'light', hasShared: boolean): string {
   let css = '';
   for (const token of getThemeTokens()) {
-    if (hasShared || token.light !== token.dark) {
+    if (
+      (hasShared && token.light === token.dark) ||
+      (!token.isColor && token.light !== token.dark)
+    ) {
+      css += `  --c-${token.name}: ${token[scheme]};\n`;
+    }
+  }
+  return css;
+}
+
+/** Render legacy scheme-dependent color `--c-*` bindings for browsers without `light-dark()`. */
+function renderLegacyColorTokenBindings(scheme: 'dark' | 'light'): string {
+  let css = '';
+  for (const token of getThemeTokens()) {
+    if (token.isColor && token.light !== token.dark) {
       css += `  --c-${token.name}: ${token[scheme]};\n`;
     }
   }
@@ -205,32 +219,50 @@ function buildSchemeOverrideSelector(scheme: 'dark' | 'light'): string {
   return `:root:has(> head > meta[name="color-scheme"][content="${scheme}"])`;
 }
 
-/** Render the generated design token rules (brand constants, light/dark bindings, explicit overrides, `light-dark()`). */
+/** Render the generated design token rules (`light-dark()` with `@supports not` legacy color fallbacks). */
 function renderTokenCss(): string {
+  const darkOverrideSelector = buildSchemeOverrideSelector('dark');
+  const lightOverrideSelector = buildSchemeOverrideSelector('light');
   return `/* Generated Design Tokens */
 :root {
   --brand-gradient-start: ${BRAND_GRADIENT_START};
   --brand-gradient-end: ${BRAND_GRADIENT_END};
   --font-sans: ${SANS_FONT_STACK};
   --font-mono: ${MONO_FONT_STACK};
-${renderThemeTokenBindings('light', true)}}
+${renderBaseTokenBindings('light', true)}}
 
 @media (prefers-color-scheme: dark) {
   :root {
-${renderThemeTokenBindings('dark', false)}  }
+${renderBaseTokenBindings('dark', false)}  }
 }
 
-${buildSchemeOverrideSelector('dark')} {
+${darkOverrideSelector} {
   color-scheme: dark;
-${renderThemeTokenBindings('dark', false)}}
+${renderBaseTokenBindings('dark', false)}}
 
-${buildSchemeOverrideSelector('light')} {
+${lightOverrideSelector} {
   color-scheme: light;
-${renderThemeTokenBindings('light', false)}}
+${renderBaseTokenBindings('light', false)}}
 
 @supports (color: light-dark(white, black)) {
   :root {
 ${renderLightDarkTokenBindings()}  }
+}
+
+@supports not (color: light-dark(white, black)) {
+  :root {
+${renderLegacyColorTokenBindings('light')}  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+${renderLegacyColorTokenBindings('dark').replaceAll('  --c-', '    --c-')}    }
+  }
+
+  ${darkOverrideSelector} {
+${renderLegacyColorTokenBindings('dark').replaceAll('  --c-', '    --c-')}  }
+
+  ${lightOverrideSelector} {
+${renderLegacyColorTokenBindings('light').replaceAll('  --c-', '    --c-')}  }
 }
 `;
 }

@@ -16,13 +16,10 @@ import { PageLayout } from '@/site/components/PageLayout';
 import { SectionHeader } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
 import { UiIcon } from '@/site/components/UiIcon';
-import { formatConjunctionList } from '@/site/glossary';
 import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/site/navigation';
 import { buildHomeJsonLd } from '@/site/seo';
-import { ICON_SOURCE_SETS } from '@/svg/icons';
-import { BADGE_HEIGHT } from '@/svg/renderer';
 import type { ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -81,7 +78,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=sheen,none,nudge',
       },
     ],
-    subtitle: `Static ${BADGE_HEIGHT}px badges, live package metrics, inline data widgets, and 3D CTA buttons.`,
+    subtitle: 'Status badges, live package metrics, inline charts, and action buttons.',
     title: 'Badges & CTA Buttons (/badge/*, /button/*)',
   },
   {
@@ -95,14 +92,13 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'TypeScript', path: '/icon/ts?color=blue&size=32' },
       { alt: 'Vue.js', path: '/icon/vue?color=emerald&size=32' },
     ],
-    subtitle: `${ICON_SOURCE_SETS.stroke[0]} stroke icons and ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos with OKLCH colors, custom sizing, and SMIL motions.`,
+    subtitle: 'UI icons and brand logos with custom colors, pixel sizing, and animations.',
     title: 'Standalone Icons (/icon/:icon)',
   },
   {
     isCentered: true,
     items: [{ alt: 'Tech Stack', path: `/stack/${STACK_EXAMPLE_GROUPS}` }],
-    subtitle:
-      'Multi-group icon grids with per-group columns (:N), side-by-side groups (|), and row bands (;).',
+    subtitle: 'Grouped technology icon grids with custom columns, row bands, and tile animations.',
     title: 'Grouped Tech Stacks (/stack/:groups)',
   },
   {
@@ -114,7 +110,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Human-cadence typing animations in Kumo 3D terminal windows, command / AI prompt bars, code editors, browser bars, or frameless headlines.',
+      'Realistic typing animations in terminal, prompt, code editor, browser, or frameless layouts.',
     title: 'Typing Animations (/typing/:lines)',
   },
   {
@@ -122,8 +118,7 @@ const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical` },
     ],
-    subtitle:
-      'Vertical and horizontal pull-quote cards with automatic word-wrapping and watermarks.',
+    subtitle: 'Auto-wrapping quote cards in vertical and horizontal layouts.',
     title: 'Quote Cards (/quote/:author/:text)',
   },
 ];
@@ -140,32 +135,31 @@ function formatCountWord(count: number): string {
 
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
 function buildHomeFeatures(): FeatureCardItem[] {
-  const publicServiceTitles: string[] = [];
-  for (const service of Object.values(SERVICES_CONFIG)) {
-    publicServiceTitles.push(service.docs.title);
-  }
+  const serviceCount = Object.keys(SERVICES_CONFIG).length;
   const iconCounts = getIconSetCounts();
   return [
     {
       details:
-        'Deterministic SVG rendering on Cloudflare Workers with in-isolate memoization and multi-tier edge caching.',
+        'Instant edge rendering and global caching for fast loads in any README or docs site.',
       icon: 'zap',
       title: 'Zero Cold Starts',
     },
     {
-      details: `All SVG endpoints share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens.`,
+      details:
+        'One balanced color palette shared across every badge, button, icon, stack, and card.',
       icon: 'palette',
-      title: 'Unified OKLCH Palette',
+      title: `${THEME_COLOR_NAMES.length} Theme Colors`,
     },
     {
-      details: `Combine ${formatCountLowerBound(iconCounts.lucide)} ${ICON_SOURCE_SETS.stroke[0]} stroke icons with ${formatCountLowerBound(iconCounts.brand)} ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos.`,
+      details: `${formatCountLowerBound(iconCounts.lucide)} UI icons and ${formatCountLowerBound(iconCounts.brand)} brand & tech logos ready to use by slug.`,
       icon: 'layers',
-      title: `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Vector Icons`,
+      title: `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Icons`,
     },
     {
-      details: `Live metrics from ${publicServiceTitles.length} public registries and forges (${publicServiceTitles.slice(0, 4).join(', ')}, …) with smart 302 redirects.`,
+      details:
+        'Auto-fetched versions, downloads, stars, and health metrics from public registries and forges.',
       icon: 'cpu',
-      title: 'Live Service Presets',
+      title: `${serviceCount} Live Services`,
     },
   ];
 }
@@ -183,10 +177,10 @@ export function HomePage(): HtmlFragment {
   for (const feature of buildHomeFeatures()) {
     featureCards.push(
       <div class="feature-card">
-        <div class="feature-icon">
-          <UiIcon slug={feature.icon} size={20} />
-        </div>
-        <h2 class="feature-title">{feature.title}</h2>
+        <h2 class="feature-title">
+          <UiIcon slug={feature.icon} size={18} />
+          <span class="feature-title-text">{feature.title}</span>
+        </h2>
         <p class="feature-desc">{feature.details}</p>
       </div>
     );
@@ -206,9 +200,8 @@ export function HomePage(): HtmlFragment {
           One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs & Docs
         </h1>
         <p class="hero-lead">
-          Dynamic status badges, interactive vector graphics, and live upstream metrics: Every
-          element is a plain URL, composed visually in seconds and rendered at the edge; 100% free
-          for everyone, with no signup, no API keys, and no rate limits.
+          Dynamic badges, live service metrics, and animated SVG cards from plain URLs. Public and
+          100% free for everyone, with no signup, API keys, or rate limits.
         </p>
         <div class="hero-cta-row">
           <a href={builderPath} class="btn-primary" tabindex="0">
@@ -218,7 +211,7 @@ export function HomePage(): HtmlFragment {
           </a>
           <a href={docsPath} class="btn-secondary" tabindex="0">
             <UiIcon slug="book-open" size={16} />
-            Explore Docs & Previews
+            Explore Docs
           </a>
         </div>
       </section>
@@ -227,24 +220,24 @@ export function HomePage(): HtmlFragment {
       </section>
       <section class="doc-section" id="endpoints">
         <SectionHeader
-          description="Expand **View Markdown** on any card to inspect and copy its live snippet, or click a preview to customize it in the Builder."
+          description="Click any preview to customize it in the **Builder**, or expand **View Markdown** to copy its snippet."
           headingLevel={2}
           routes={ENDPOINT_ROUTES}
           title={`${formatCountWord(ENDPOINT_ROUTES.length)} Unified Endpoints`}
         />
         <CardGrid cards={HOME_OVERVIEW_CARDS} />
-        <div class="pager-row is-end">
-          <a href={docsPath} class="btn-secondary" tabindex="0">
-            <UiIcon slug="book-open" size={16} />
-            Browse Documentation
-          </a>
-          <a href={builderPath} class="btn-primary" tabindex="0">
-            <UiIcon slug="wand-sparkles" size={16} />
-            Start Building
-            <UiIcon slug="arrow-right" size={16} />
-          </a>
-        </div>
       </section>
+      <div class="pager-row is-end">
+        <a href={docsPath} class="btn-secondary" tabindex="0">
+          <UiIcon slug="book-open" size={16} />
+          Explore Docs
+        </a>
+        <a href={builderPath} class="btn-primary" tabindex="0">
+          <UiIcon slug="wand-sparkles" size={16} />
+          Start Building
+          <UiIcon slug="arrow-right" size={16} />
+        </a>
+      </div>
     </PageLayout>
   );
 }

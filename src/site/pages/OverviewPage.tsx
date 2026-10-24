@@ -29,7 +29,7 @@ export function OverviewSection(): HtmlFragment {
   return (
     <section class="doc-section" id="overview">
       <SectionHeader
-        description="Every element is a plain `GET` URL that returns an SVG image; 100% free for everyone, with no signup, no API keys, and no rate limits. Compose one by hand with the rules below, or click any preview in the docs to open it in the **Builder**."
+        description="Every element is a plain `GET` URL returning an SVG; Public and 100% free with no signup, API keys, or rate limits. Build URLs visually in the **Builder**, or compose them directly below."
         routes={ENDPOINT_ROUTES}
         title="Getting Started"
       />

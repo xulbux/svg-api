@@ -287,7 +287,7 @@
 
 .select-menu {
   min-inline-size: 180px;
-  max-inline-size: calc(100vw - 16px);
+  max-inline-size: calc(100dvw - 16px);
   max-block-size: min(320px, 60dvh);
 }
 
@@ -690,6 +690,7 @@
 /* Wrap long URLs instead of scrolling (the builder shows a single snippet): */
 
 .builder-code {
+  padding-inline-end: 42px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   -webkit-mask-image: none;
@@ -717,7 +718,7 @@
 /* Icon Picker Popover */
 
 .icon-picker {
-  inline-size: min(384px, calc(100vw - 16px));
+  inline-size: min(384px, calc(100dvw - 16px));
   block-size: min(452px, 72dvh);
   border-radius: var(--radius-lg);
   box-shadow: var(--c-shadow-dialog);
@@ -1016,7 +1017,7 @@
 }
 
 .stack-help-popover {
-  inline-size: min(368px, calc(100vw - 16px));
+  inline-size: min(368px, calc(100dvw - 16px));
   padding: 12px 14px;
   border-radius: var(--radius-md);
 }

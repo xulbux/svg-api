@@ -7,6 +7,7 @@ import {
   computeGridFocusIndex,
   createAsyncCache,
   createIconResolver,
+  getOwnValue,
 } from '@/site/client/builder/core';
 import {
   createIconGlyph,
@@ -169,7 +170,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     }
     loadIconPage(glyphLocation).then(
       (bodies) => {
-        const body = bodies[glyphLocation.slug];
+        const body = getOwnValue(bodies, glyphLocation.slug);
         if (body && container.dataset.slug === slug) {
           container.replaceChildren(createGlyph(glyphLocation.set, body));
         }
@@ -294,7 +295,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     tile.dataset.filled = 'true';
     loadIconPage(tileLocation).then(
       (bodies) => {
-        const body = bodies[tileLocation.slug];
+        const body = getOwnValue(bodies, tileLocation.slug);
         if (body) {
           tile.replaceChildren(createGlyph(tileLocation.set, body));
         }

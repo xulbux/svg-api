@@ -486,6 +486,10 @@ interface WindowHeaderChromeOptions {
   iconSlot: ResolvedTypingIconSlot | undefined;
   /** Typography and spacing metrics. */
   metrics: TypingMetrics;
+  /** Horizontal space reserved by an optional right-aligned header hint pill in pixels. */
+  reservedHeaderWidth: number;
+  /** Rightmost edge X coordinate of the traffic-light dots in pixels. */
+  rightEdgeX: number;
   /** Variant- and layout-dependent paint tokens. */
   styleTokens: TypingStyleTokens;
   /** Sanitized window title text. */
@@ -504,6 +508,8 @@ interface IdeHeaderChromeOptions {
   iconSlot: ResolvedTypingIconSlot | undefined;
   /** Typography and spacing metrics. */
   metrics: TypingMetrics;
+  /** Horizontal space reserved by an optional right-aligned header hint pill in pixels. */
+  reservedHeaderWidth: number;
   /** Rightmost edge X coordinate of the traffic-light dots in pixels. */
   rightEdgeX: number;
   /** Variant- and layout-dependent paint tokens. */
@@ -528,6 +534,8 @@ interface TypingContainerSurfaceOptions {
   metrics: TypingMetrics;
   /** Resolved theme palette. */
   palette: ThemePalette;
+  /** Horizontal space reserved by an optional right-aligned header hint pill in pixels. */
+  reservedHeaderWidth: number;
   /** Variant- and layout-dependent paint tokens. */
   styleTokens: TypingStyleTokens;
   /** Sanitized header or tab title text. */
@@ -1074,6 +1082,32 @@ function clampLineGlyphsToWidth(
   const placedEllipsis: PositionedCharGlyph = { ...ellipsisGlyph, glyphX: roundCoord(cursorX) };
   fitted.push(placedEllipsis);
   return { glyphs: fitted, totalAdvance: roundCoord(cursorX + placedEllipsis.advance) };
+}
+
+/** Truncate `text` with `…` so its total advance width fits within `maxWidth` (`''` when even `…` cannot fit). */
+function clampTextToWidth(
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  isBold: boolean,
+  fontFamily: TypingFont
+): string {
+  if (text.length === 0 || maxWidth <= 0) {
+    return '';
+  }
+  const layout = layoutTextGlyphs(text, fontSize, isBold, fontFamily);
+  if (layout.totalAdvance <= maxWidth) {
+    return text;
+  }
+  const clamped = clampLineGlyphsToWidth(layout, maxWidth, fontSize, isBold, fontFamily);
+  if (clamped.totalAdvance > maxWidth) {
+    return '';
+  }
+  let result = '';
+  for (const glyph of clamped.glyphs) {
+    result += glyph.char;
+  }
+  return result;
 }
 
 /** Compute the relative HCI inter-key interval weight before typing `glyphs[index]`. */
@@ -1899,7 +1933,16 @@ function renderTrafficLightDots(
 
 /** Render the top chrome of `layout === 'window'`. */
 function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
-  const { dotsMarkup, iconSlot, metrics, styleTokens, titleText, width } = options;
+  const {
+    dotsMarkup,
+    iconSlot,
+    metrics,
+    reservedHeaderWidth,
+    rightEdgeX,
+    styleTokens,
+    titleText,
+    width,
+  } = options;
   const { headerHeight, radius, scale, titleFontSize } = metrics;
   const innerRadius = Math.max(1, radius - 1);
   const headerTintFill = styleTokens.isOnPrimary ? '#000000' : WHITE;
@@ -1913,42 +1956,72 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
     }`;
 
   const headerIconSize = Math.round(14 * scale);
-  const titleWidth =
-    titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
+  const minCenterX = roundCoord(rightEdgeX + Math.round(10 * scale));
+  const maxCenterX = roundCoord(
+    Math.max(
+      minCenterX,
+      width - (reservedHeaderWidth > 0 ? reservedHeaderWidth : Math.round(12 * scale))
+    )
+  );
+  const availableHeaderWidth = maxCenterX - minCenterX;
 
   if (iconSlot && titleText.length > 0) {
     const iconProbeWidth = measureIconVisualWidth(iconSlot.data, headerIconSize);
     const gap = Math.round(6 * scale);
-    const totalPairWidth = iconProbeWidth + gap + titleWidth;
-    const pairStartX = roundCoord((width - totalPairWidth) / 2);
-    const iconY = roundCoord((headerHeight - headerIconSize) / 2);
-    const renderedIcon = renderPositionedIconSlot({
-      boxSize: headerIconSize,
-      boxX: pairStartX,
-      boxY: iconY,
-      color: styleTokens.iconPaint.color,
-      iconSlot,
-      isOnPrimary: styleTokens.isOnPrimary,
-      opacity: styleTokens.iconPaint.opacity,
-    });
-    markup += renderedIcon.markup;
-    markup += renderTextPathMarkup(titleText, {
-      align: 'left',
-      anchorX: roundCoord(pairStartX + renderedIcon.renderedWidth + gap),
-      baselineY: computeCenteredBaselineY(headerHeight, titleFontSize),
-      fill: styleTokens.mutedTextColor,
-      font: 'mono',
-      fontSize: titleFontSize,
-      isBold: true,
-    });
-    return markup;
+    const rawTitleWidth = measureTextWidth(titleText, titleFontSize, true, false, 'mono');
+    const isPairOverflowing = iconProbeWidth + gap + rawTitleWidth > availableHeaderWidth;
+    const fittedTitle = isPairOverflowing
+      ? clampTextToWidth(
+          titleText,
+          availableHeaderWidth - iconProbeWidth - gap,
+          titleFontSize,
+          true,
+          'mono'
+        )
+      : titleText;
+    if (fittedTitle.length > 0) {
+      const titleWidth =
+        fittedTitle === titleText
+          ? rawTitleWidth
+          : measureTextWidth(fittedTitle, titleFontSize, true, false, 'mono');
+      const totalPairWidth = iconProbeWidth + gap + titleWidth;
+      const idealPairX = (width - totalPairWidth) / 2;
+      const pairStartX = roundCoord(
+        Math.max(minCenterX, Math.min(maxCenterX - totalPairWidth, idealPairX))
+      );
+      const iconY = roundCoord((headerHeight - headerIconSize) / 2);
+      const renderedIcon = renderPositionedIconSlot({
+        boxSize: headerIconSize,
+        boxX: pairStartX,
+        boxY: iconY,
+        color: styleTokens.iconPaint.color,
+        iconSlot,
+        isOnPrimary: styleTokens.isOnPrimary,
+        opacity: styleTokens.iconPaint.opacity,
+      });
+      markup += renderedIcon.markup;
+      markup += renderTextPathMarkup(fittedTitle, {
+        align: 'left',
+        anchorX: roundCoord(pairStartX + renderedIcon.renderedWidth + gap),
+        baselineY: computeCenteredBaselineY(headerHeight, titleFontSize),
+        fill: styleTokens.mutedTextColor,
+        font: 'mono',
+        fontSize: titleFontSize,
+        isBold: true,
+      });
+      return markup;
+    }
   }
 
   if (iconSlot) {
     const iconY = roundCoord((headerHeight - headerIconSize) / 2);
+    const idealBoxX = (width - headerIconSize) / 2;
+    const clampedBoxX = roundCoord(
+      Math.max(minCenterX, Math.min(maxCenterX - headerIconSize, idealBoxX))
+    );
     markup += renderPositionedIconSlot({
       boxSize: headerIconSize,
-      boxX: roundCoord((width - headerIconSize) / 2),
+      boxX: clampedBoxX,
       boxY: iconY,
       color: styleTokens.iconPaint.color,
       iconSlot,
@@ -1960,23 +2033,46 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
   }
 
   if (titleText.length > 0) {
-    markup += renderTextPathMarkup(titleText, {
-      align: 'center',
-      anchorX: roundCoord(width / 2),
-      baselineY: computeCenteredBaselineY(headerHeight, titleFontSize),
-      fill: styleTokens.mutedTextColor,
-      font: 'mono',
-      fontSize: titleFontSize,
-      isBold: true,
-    });
+    const rawTitleWidth = measureTextWidth(titleText, titleFontSize, true, false, 'mono');
+    const fittedTitle =
+      rawTitleWidth > availableHeaderWidth
+        ? clampTextToWidth(titleText, availableHeaderWidth, titleFontSize, true, 'mono')
+        : titleText;
+    if (fittedTitle.length > 0) {
+      const fittedWidth =
+        fittedTitle === titleText
+          ? rawTitleWidth
+          : measureTextWidth(fittedTitle, titleFontSize, true, false, 'mono');
+      const idealStartX = (width - fittedWidth) / 2;
+      const isCenteredFit = idealStartX >= minCenterX && idealStartX + fittedWidth <= maxCenterX;
+      const clampedTitleX = Math.max(minCenterX, Math.min(maxCenterX - fittedWidth, idealStartX));
+      markup += renderTextPathMarkup(fittedTitle, {
+        align: isCenteredFit ? 'center' : 'left',
+        anchorX: roundCoord(isCenteredFit ? width / 2 : clampedTitleX),
+        baselineY: computeCenteredBaselineY(headerHeight, titleFontSize),
+        fill: styleTokens.mutedTextColor,
+        font: 'mono',
+        fontSize: titleFontSize,
+        isBold: true,
+      });
+    }
   }
   return markup;
 }
 
 /** Render the seamless active file tab, recessed tab bar, and line-number gutter of `layout === 'ide'`. */
 function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string {
-  const { dotsMarkup, height, iconSlot, metrics, rightEdgeX, styleTokens, titleText, width } =
-    options;
+  const {
+    dotsMarkup,
+    height,
+    iconSlot,
+    metrics,
+    reservedHeaderWidth,
+    rightEdgeX,
+    styleTokens,
+    titleText,
+    width,
+  } = options;
   const { bodyHeight, headerHeight, radius, scale, titleFontSize } = metrics;
   const innerRadius = Math.max(1, radius - 1);
   const tabTopY = roundCoord(Math.max(4, Math.round(5 * scale)));
@@ -1984,13 +2080,12 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
   const tabRadius = Math.max(5, Math.round(6 * scale));
   const titleWidth =
     titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
-  const { closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth } = computeIdeTabMetrics(
-    rightEdgeX,
-    scale,
-    titleWidth,
-    iconSlot
-  );
-  const tabEndX = roundCoord(Math.min(width - Math.round(24 * scale), tabStartX + tabWidth));
+  const { closeGap, closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth } =
+    computeIdeTabMetrics(rightEdgeX, scale, titleWidth, iconSlot);
+  const rightClearance = Math.max(Math.round(24 * scale), reservedHeaderWidth);
+  const maxTabEndX = Math.max(tabStartX + tabRadius * 2 + 2, width - rightClearance);
+  const isTabClamped = tabStartX + tabWidth > maxTabEndX;
+  const tabEndX = roundCoord(Math.min(maxTabEndX, tabStartX + tabWidth));
 
   // Darken the recessed tab strip outside the active tab so the active tab seamlessly shares the editor surface:
   const inactiveHeaderPath = `M 1 ${headerHeight} V ${1 + innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${1 + innerRadius} 1 H ${width - 1 - innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${width - 1} ${1 + innerRadius} V ${headerHeight} H ${tabEndX} V ${tabTopY + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabEndX - tabRadius} ${tabTopY} H ${tabStartX + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabStartX} ${tabTopY + tabRadius} V ${headerHeight} Z`;
@@ -2021,15 +2116,26 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
   }
 
   if (titleText.length > 0) {
-    markup += renderTextPathMarkup(titleText, {
-      align: 'left',
-      anchorX: cursorX,
-      baselineY: roundCoord(tabTopY + computeCenteredBaselineY(tabHeight, titleFontSize)),
-      fill: styleTokens.textColor,
-      font: 'mono',
-      fontSize: titleFontSize,
-      isBold: true,
-    });
+    const fittedTitle = isTabClamped
+      ? clampTextToWidth(
+          titleText,
+          tabEndX - tabPadX - closeSize - closeGap - cursorX,
+          titleFontSize,
+          true,
+          'mono'
+        )
+      : titleText;
+    if (fittedTitle.length > 0) {
+      markup += renderTextPathMarkup(fittedTitle, {
+        align: 'left',
+        anchorX: cursorX,
+        baselineY: roundCoord(tabTopY + computeCenteredBaselineY(tabHeight, titleFontSize)),
+        fill: styleTokens.textColor,
+        font: 'mono',
+        fontSize: titleFontSize,
+        isBold: true,
+      });
+    }
   }
 
   // Subtle tab close `×` mark on the right side of the active tab:
@@ -2074,6 +2180,7 @@ function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): s
     layout,
     metrics,
     palette,
+    reservedHeaderWidth,
     styleTokens,
     titleText,
     variant,
@@ -2096,7 +2203,16 @@ function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): s
     if (layout === 'window') {
       return (
         markup +
-        renderWindowHeaderChrome({ dotsMarkup, iconSlot, metrics, styleTokens, titleText, width })
+        renderWindowHeaderChrome({
+          dotsMarkup,
+          iconSlot,
+          metrics,
+          reservedHeaderWidth,
+          rightEdgeX,
+          styleTokens,
+          titleText,
+          width,
+        })
       );
     }
     return (
@@ -2106,6 +2222,7 @@ function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): s
         height,
         iconSlot,
         metrics,
+        reservedHeaderWidth,
         rightEdgeX,
         styleTokens,
         titleText,
@@ -2227,12 +2344,15 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
 /** Render the static typing SVG showing the first line and stationary cursor. */
 function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
   const {
+    animMode,
     ariaText,
     baselineY,
     cursorGeometry,
     height,
     hintMarkup,
+    layout,
     leading,
+    metrics,
     preparedLines,
     styleTokens,
     surfaceMarkup,
@@ -2258,14 +2378,25 @@ function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
   const staticCursorX = roundCoord(staticCursorBaseX + cursorGeometry.offsetX);
   const staticCursorMarkup = `<rect x="${staticCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" fill-opacity="${cursorGeometry.activeOpacity}" />`;
 
-  let defsMarkup = styleTokens.gradDefs;
+  const sheen =
+    layout === 'none'
+      ? { clipDef: '', overlay: '' }
+      : renderSheenOverlay({
+          animMode,
+          height,
+          idPrefix: 'typing-sheen',
+          radius: metrics.radius,
+          width,
+        });
+
+  let defsMarkup = `${styleTokens.gradDefs}${sheen.clipDef}`;
   for (const defMarkup of staticGlyphDefs.values()) {
     defsMarkup += defMarkup;
   }
 
   return renderSvgDocument({
     ariaLabel: ariaText,
-    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${staticCharsMarkup}${staticCursorMarkup}`,
+    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${staticCharsMarkup}${staticCursorMarkup}${sheen.overlay}`,
     defs: defsMarkup,
     height,
     width,
@@ -2339,11 +2470,11 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   const selectBoxHeight = roundCoord(fontSize * 1.2);
   for (const flash of timelineState.selectionFlashes) {
     const tStart = roundScale(Math.min(0.9992, Math.max(0.0001, flash.startMs / totalCycleMs)));
-    const tAppear = roundScale(Math.min(0.9994, Math.max(tStart + 0.0001, tStart + 0.002)));
+    const tAppear = roundScale(Math.min(0.9994, tStart + 0.002));
     const tEnd = roundScale(
       Math.min(0.9996, Math.max(tAppear + 0.0002, flash.endMs / totalCycleMs))
     );
-    const tClear = roundScale(Math.min(0.9998, Math.max(tEnd + 0.0001, tEnd + 0.002)));
+    const tClear = roundScale(Math.min(0.9998, tEnd + 0.002));
     selectionMarkup += `<rect x="${flash.rectX}" y="${selectBoxY}" width="${flash.rectWidth}" height="${selectBoxHeight}" rx="3" fill="${styleTokens.selectionColor}" fill-opacity="0.28" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${tStart};${tAppear};${tEnd};${tClear};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" /></rect>`;
   }
 
@@ -2546,7 +2677,7 @@ export function renderTyping(options: TypingRenderOptions): string {
   const cursorGeometry = computeCursorGeometry(cursorStyle, baselineY, fontSize);
   const cursorReserveWidth = Math.ceil(cursorGeometry.offsetX + cursorGeometry.width + 4);
 
-  const leading = renderLeadingPrompt({
+  let leading = renderLeadingPrompt({
     baselineY,
     fontFamily,
     iconSlot,
@@ -2575,6 +2706,36 @@ export function renderTyping(options: TypingRenderOptions): string {
   );
   const width = clampInt(options.width, TYPING_WIDTH_RANGE, idealWidth);
 
+  if (prefixText.length > 0 && leading.textStartX + fontSize * 2 > width - rightInset) {
+    const iconOnlyLeading = renderLeadingPrompt({
+      baselineY,
+      fontFamily,
+      iconSlot,
+      layout,
+      metrics,
+      prefixText: '',
+      styleTokens,
+    });
+    const maxPrefixWidth =
+      width - rightInset - fontSize * 2 - iconOnlyLeading.textStartX - Math.round(9 * scale);
+    const fittedPrefixText = clampTextToWidth(
+      prefixText,
+      maxPrefixWidth,
+      fontSize,
+      true,
+      fontFamily
+    );
+    leading = renderLeadingPrompt({
+      baselineY,
+      fontFamily,
+      iconSlot,
+      layout,
+      metrics,
+      prefixText: fittedPrefixText,
+      styleTokens,
+    });
+  }
+
   const hintMarkup = renderHintBadge({
     geometry: hintGeometry,
     hint: resolvedHint,
@@ -2585,13 +2746,9 @@ export function renderTyping(options: TypingRenderOptions): string {
     variant,
     width,
   });
-  const maxTextWidth = Math.max(
-    fontSize * 3,
-    width - leading.textStartX - padX - reservedBodyWidth - cursorReserveWidth
-  );
-  const centerAnchorX = roundCoord(
-    (leading.textStartX + (width - padX - reservedBodyWidth - cursorReserveWidth)) / 2
-  );
+  const textEndX = Math.max(leading.textStartX, width - rightInset);
+  const maxTextWidth = textEndX - leading.textStartX;
+  const centerAnchorX = roundCoord((leading.textStartX + textEndX) / 2);
 
   const preparedLines = buildPreparedTypingLines({
     align,
@@ -2612,6 +2769,7 @@ export function renderTyping(options: TypingRenderOptions): string {
     layout,
     metrics,
     palette,
+    reservedHeaderWidth,
     styleTokens,
     titleText,
     variant,

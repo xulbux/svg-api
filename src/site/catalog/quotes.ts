@@ -33,7 +33,7 @@ import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
 /** URL-encoded second sample quote text. */
 const ENCODED_EDGE_QUOTE =
-  'Always+creating+more+cool+stuff+for+you%2C+with+balanced+OKLCH+colors+and+zero+cold+starts+at+the+edge.';
+  'Always+creating+more+cool+stuff+for+you%2C+with+crisp+colors+and+zero+cold+starts+at+the+edge.';
 
 /** Vertical layout showcase cards for the dedicated `/docs/quotes` page. */
 export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
@@ -45,7 +45,7 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=1&color=blue`,
       },
     ],
-    subtitle: 'Primary brand gradient card in vertical layout with quote watermarks.',
+    subtitle: 'Primary gradient card with centered quote watermarks.',
     title: 'variant=1 · Vertical Primary Brand Quote',
   },
   {
@@ -56,7 +56,7 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=2`,
       },
     ],
-    subtitle: 'Secondary tinted dark card with glowing indigo border (Default).',
+    subtitle: 'Tinted dark card with an indigo border.',
     title: 'variant=2 · Vertical Secondary Tinted Quote (Default)',
   },
   {
@@ -67,7 +67,7 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=3&color=cyan`,
       },
     ],
-    subtitle: 'Tertiary neutral dark card with subtle border and cyan watermarks.',
+    subtitle: 'Neutral dark card with subtle border and cyan watermarks.',
     title: 'variant=3 · Vertical Tertiary Neutral Quote',
   },
 ];
@@ -76,14 +76,14 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
 export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [{ alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=1` }],
-    subtitle: 'Horizontal layout with left accent bar and primary gradient fill.',
+    subtitle: 'Horizontal card with a left accent bar and gradient fill.',
     title: 'variant=1 · Horizontal Primary Brand Quote',
   },
   {
     items: [
       { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=2&color=cyan` },
     ],
-    subtitle: 'Horizontal layout with glowing cyan border and left accent bar.',
+    subtitle: 'Horizontal card with a cyan border and left accent bar.',
     title: 'variant=2 · Horizontal Secondary Tinted Quote (Default)',
   },
   {
@@ -93,8 +93,7 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/quote/${ENCODED_EDGE_QUOTE}?author=XulbuX&variant=3&anim=sheen`,
       },
     ],
-    subtitle:
-      'Single-segment /quote/:text form with ?author=, a neutral dark surface, and a diagonal sheen (?anim=sheen).',
+    subtitle: 'Single-segment /quote/:text form with ?author= and diagonal sheen (?anim=sheen).',
     title: 'variant=3 · Horizontal Tertiary Neutral Quote',
   },
 ];
@@ -142,10 +141,7 @@ export function buildQuoteParamRows(): ParamTableRow[] {
       values: TRUTHY_FLAG_LIST.join(' | '),
     },
     buildVariantParamRow(DEFAULT_QUOTE_VARIANT, 'Surface tier'),
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent color for surface, border, and quote marks.'
-    ),
+    buildColorParamRow(DEFAULT_THEME_COLOR, 'Theme color for surface, border, and quote marks.'),
     {
       defaultVal: `${DEFAULT_HORIZONTAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_HORIZONTAL_QUOTE_SIZE]}px) / ${DEFAULT_VERTICAL_QUOTE_SIZE} (${QUOTE_SIZE_MAP[DEFAULT_VERTICAL_QUOTE_SIZE]}px, vertical)`,
       description: 'Typography scale preset or custom pixel size.',

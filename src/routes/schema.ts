@@ -512,6 +512,9 @@ function buildServiceOptions(): BuilderServiceOption[] {
       maxTargetSegments: target.maxSegments ?? 1,
       metricAliases: Object.fromEntries(listServiceMetricAliases(service)),
       metrics,
+      ...(target.minSegments && target.minSegments > 1
+        ? { minTargetSegments: target.minSegments }
+        : {}),
       ownerHint: buildServiceOwnerHint(service, defaultOwner),
       ownerMode: resolveServiceOwnerMode(service),
       ownerName: owner?.placeholder,
@@ -661,7 +664,7 @@ function buildIconFields(): BuilderField[] {
     buildColorField(),
     buildNumberField('size', 'Size (px)', ICON_SIZE_RANGE),
     buildNumberField('stroke', 'Stroke width', ICON_STROKE_RANGE, {
-      description: 'Applies to Lucide stroke icons only.',
+      description: 'Applies to UI stroke icons only.',
     }),
     buildAnimField('single'),
   ];

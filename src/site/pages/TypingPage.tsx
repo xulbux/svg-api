@@ -5,7 +5,6 @@
 import {
   TYPING_CURSOR_TOKENS,
   TYPING_ERASE_TOKENS,
-  TYPING_FONT_TOKENS,
   TYPING_LAYOUT_TOKENS,
   VARIANT_TOKENS,
 } from '@/routes/params';
@@ -34,7 +33,7 @@ export function TypingSection(): HtmlFragment {
   return (
     <section class="doc-section" id="typing">
       <SectionHeader
-        description={`Human-cadence typing animations in ${TYPING_LAYOUT_TOKENS.length} container frames (${layoutCodes}), ${VARIANT_TOKENS.length} surface tiers, ${TYPING_CURSOR_TOKENS.length} cursor styles, ${TYPING_ERASE_TOKENS.length} erase modes, and ${TYPING_FONT_TOKENS.length} bundled vector fonts (\`JetBrains Mono\` and \`Geist Sans\`).`}
+        description={`Natural typing animations across ${TYPING_LAYOUT_TOKENS.length} container layouts (${layoutCodes}) with customizable cursors, erase transitions, and fonts.`}
         routes={['/typing/:lines', '/typing/:prefix/:lines', '/type/:lines']}
         title="Realistic SVG Typing Animations"
       />

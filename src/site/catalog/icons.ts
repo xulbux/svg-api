@@ -5,8 +5,7 @@
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import { ACTIVE_ICON_MOTION_TOKENS, ICON_MOTION_TOKENS } from '@/routes/params';
 import { buildColorParamRow, formatRange } from '@/site/catalog/shared';
-import { formatConjunctionList } from '@/site/glossary';
-import { ALL_ICON_SOURCE_NAMES, FALLBACK_ICON_SLUG, ICON_SOURCE_SETS } from '@/svg/icons';
+import { FALLBACK_ICON_SLUG } from '@/svg/icons';
 import { ICON_SIZE_RANGE, ICON_STROKE_RANGE } from '@/svg/renderer';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
@@ -25,8 +24,8 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Quick Start', path: '/icon/zap?color=amber&size=28' },
       { alt: 'Feedback', path: '/icon/heart-handshake?color=rose&size=28' },
     ],
-    subtitle: 'For README section headers (size=28) and inline lists (size=16).',
-    title: `${ICON_SOURCE_SETS.stroke[0]} UI Stroke Icons (size=16 to 28)`,
+    subtitle: 'Crisp stroke icons for section headers (size=28) and inline lists (size=16).',
+    title: 'UI Stroke Icons (size=16 to 28)',
   },
   {
     items: [
@@ -37,8 +36,8 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Cloudflare', path: '/icon/cloudflare?color=orange&size=28' },
       { alt: 'GitHub', path: '/icon/github?color=slate&size=28' },
     ],
-    subtitle: `${formatConjunctionList(ICON_SOURCE_SETS.brand)} vector logos tinted with any OKLCH color.`,
-    title: `Brand & Technology Vector Icons (${ICON_SOURCE_SETS.brandPackages.join(', ')})`,
+    subtitle: 'Technology, language, and platform logos tinted with any theme color.',
+    title: 'Brand & Tech Logos',
   },
   {
     items: [
@@ -51,7 +50,7 @@ export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
       { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
     ],
-    subtitle: `Sheen, icon motion (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), and combined sheen,<motion> via ?anim= (pairs apply their first motion); Unknown slugs render the fallback icon.`,
+    subtitle: `Diagonal sheen, icon motions (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or sheen,<motion>; Unknown slugs render the fallback icon.`,
     title: 'Animations & Fallback (?anim=)',
   },
 ];
@@ -66,14 +65,11 @@ export function buildIconParamRows(): ParamTableRow[] {
   return [
     {
       defaultVal: `~required (unknown slugs fall back to ${FALLBACK_ICON_SLUG})`,
-      description: `${formatConjunctionList(ALL_ICON_SOURCE_NAMES)} slug, or one of the slug aliases listed below.`,
+      description: 'Icon slug from the picker, or any alias listed below.',
       name: ':icon',
       values: 'rocket | star | python | rust | archlinux | …',
     },
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH theme color applied to the icon stroke or fill.'
-    ),
+    buildColorParamRow(DEFAULT_THEME_COLOR, 'Theme color applied to the icon.'),
     {
       defaultVal: `${ICON_SIZE_RANGE.default} (px)`,
       description: 'Intrinsic SVG width and height in pixels.',
@@ -82,14 +78,14 @@ export function buildIconParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: String(ICON_STROKE_RANGE.default),
-      description: 'Stroke width for Lucide stroke icons.',
+      description: 'Stroke width for UI stroke icons (ignored on brand logos).',
       name: '?stroke=',
       values: `${formatRange(ICON_STROKE_RANGE)} (e.g., 1.5, 2.5)`,
     },
     {
       defaultVal: 'default',
       description:
-        'Diagonal sheen, one icon motion (auto picks a motion per icon), or sheen combined with a motion; Per-icon pairs apply their first motion to the single icon.',
+        'Diagonal sheen, an icon motion (auto picks per icon), or sheen,<motion>; Per-icon pairs apply their first motion.',
       name: '?anim=',
       values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')} | sheen,<motion>`,
     },

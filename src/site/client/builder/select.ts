@@ -3,6 +3,7 @@
  */
 
 import type { SvgSite } from '@/site/client/site/types';
+import { getOwnValue } from '@/site/shared';
 import type { BuilderOption } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -191,7 +192,7 @@ function handleSelectKeydown(
     End: Infinity,
     Home: -Infinity,
   };
-  const offset = offsets[event.key];
+  const offset = getOwnValue(offsets, event.key);
   const isSearch = target instanceof HTMLInputElement;
   if (offset !== undefined && !(isSearch && (event.key === 'Home' || event.key === 'End'))) {
     event.preventDefault();

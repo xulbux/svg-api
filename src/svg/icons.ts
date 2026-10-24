@@ -90,21 +90,12 @@ interface LazyIconCache {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Human-readable display names and package names of the bundled stroke and brand icon sets. */
-export const ICON_SOURCE_SETS = {
-  brand: ['Simple Icons', 'Devicon Plain', 'File Icons'],
-  brandPackages: [
-    '@iconify-json/simple-icons',
-    '@iconify-json/devicon-plain',
-    '@iconify-json/file-icons',
-  ],
-  stroke: ['Lucide'],
-} as const;
-
-/** Combined ordered display names of all bundled stroke and brand icon sets. */
+/** Ordered display names of all bundled stroke and brand icon sets. */
 export const ALL_ICON_SOURCE_NAMES: readonly string[] = [
-  ...ICON_SOURCE_SETS.stroke,
-  ...ICON_SOURCE_SETS.brand,
+  'Lucide',
+  'Simple Icons',
+  'Devicon Plain',
+  'File Icons',
 ];
 
 /** Scale factor normalizing Devicon Plain's `128x128` coordinate space to `24x24`. */
@@ -701,18 +692,16 @@ function computeIconXBounds(
   for (const match of svgStr.matchAll(PATH_D_RX)) {
     recordSinglePathD(match.groups?.d ?? '', coordScale, bounds);
   }
-  if (
-    !Number.isFinite(bounds.minX) ||
-    !Number.isFinite(bounds.maxX) ||
-    bounds.maxX <= bounds.minX
-  ) {
+  if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.maxX)) {
     return { ...DEFAULT_ICON_X_BOUNDS };
   }
   const strokePad = isStroke ? STROKE_BOUNDS_PAD : 0;
-  return {
-    maxX: roundCoord(Math.min(24, bounds.maxX + coordOffsetX + strokePad)),
-    minX: roundCoord(Math.max(0, bounds.minX + coordOffsetX - strokePad)),
-  };
+  const maxX = roundCoord(Math.min(24, bounds.maxX + coordOffsetX + strokePad));
+  const minX = roundCoord(Math.max(0, bounds.minX + coordOffsetX - strokePad));
+  if (maxX <= minX) {
+    return { ...DEFAULT_ICON_X_BOUNDS };
+  }
+  return { maxX, minX };
 }
 
 /** Extract the inner markup of the outermost `<svg …>…</svg>` element (`undefined` when malformed). */
@@ -766,11 +755,9 @@ function canonicalizeBrandSlug(slug: string): string {
 
 /** Read a `512`-unit icon body from `@iconify-json/file-icons`, scaled and centered to `24x24` (no ink bounds). */
 function getFileIconBody(slug: string): IconBody | undefined {
-  const cleanSlug = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-  const matchedKey =
-    slug in fileIconSet.icons && Object.hasOwn(fileIconSet.icons, slug)
-      ? slug
-      : resolveFileIconCleanSlug(cleanSlug);
+  const matchedKey = Object.hasOwn(fileIconSet.icons, slug)
+    ? slug
+    : resolveFileIconCleanSlug(slug.replace(BRAND_SLUG_CLEAN_RX, ''));
   const entry = matchedKey ? getOwnValue(fileIconSet.icons, matchedKey) : undefined;
   if (!entry?.body) {
     return undefined;

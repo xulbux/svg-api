@@ -287,15 +287,26 @@ function computeQuoteTextColumn(
 }
 
 /**
- * Shorten `text` until it (plus a trailing ellipsis) fits within `maxWidth` pixels, using binary search over its length.
+ * Shorten `text` until it (plus optional `prefix`/`suffix` decorations and a trailing ellipsis) fits within `maxWidth` pixels, using binary search over its length.
  * Text far longer than any line could hold is first cut to a line-sized prefix (every glyph advances at
  * least `MIN_GLYPH_ADVANCE_RATIO` em), so the ink measurements never lay out thousands of glyphs.
  */
-function truncateToWidth(text: string, maxWidth: number, style: TextStyle): string {
+function truncateToWidth(
+  text: string,
+  maxWidth: number,
+  style: TextStyle,
+  prefix = '',
+  suffix = '',
+  hasForcedEllipsis = false
+): string {
   const { fontSize, isBold, isItalic } = style;
   const maxFittingLength = Math.ceil(maxWidth / (fontSize * MIN_GLYPH_ADVANCE_RATIO)) + 1;
   const isOverlong = text.length > maxFittingLength;
-  if (!isOverlong && measureTextWidthUncached(text, fontSize, isBold, isItalic) <= maxWidth) {
+  if (
+    !hasForcedEllipsis &&
+    !isOverlong &&
+    measureTextWidthUncached(`${prefix}${text}${suffix}`, fontSize, isBold, isItalic) <= maxWidth
+  ) {
     return text;
   }
   const searchText = isOverlong ? sliceAtCodePoint(text, maxFittingLength) : text;
@@ -303,7 +314,7 @@ function truncateToWidth(text: string, maxWidth: number, style: TextStyle): stri
   let high = searchText.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    const candidate = `${sliceAtCodePoint(searchText, mid)}${ELLIPSIS}`;
+    const candidate = `${prefix}${sliceAtCodePoint(searchText, mid)}${ELLIPSIS}${suffix}`;
     if (measureTextWidthUncached(candidate, fontSize, isBold, isItalic) <= maxWidth) {
       low = mid;
     } else {
@@ -340,15 +351,14 @@ function finalizeLastLine(lines: string[], isTruncated: boolean, context: QuoteW
   ) {
     const splitIndex = lastLine.lastIndexOf(' ');
     if (isTruncated || splitIndex <= 0 || lines.length >= MAX_QUOTE_LINES) {
-      const decorationWidth = measureTextWidthUncached(
-        `${lastIndex === 0 ? context.prefix : ''}${context.suffix}`,
-        context.fontSize,
-        context.isBold
-      );
+      const baseLine = lastLine.endsWith(ELLIPSIS) ? lastLine.slice(0, -ELLIPSIS.length) : lastLine;
       lines[lastIndex] = truncateToWidth(
-        `${lastLine}${ellipsis}`,
-        context.maxWidth - decorationWidth,
-        { fontSize: context.fontSize, isBold: context.isBold, isItalic: false }
+        baseLine,
+        context.maxWidth,
+        { fontSize: context.fontSize, isBold: context.isBold, isItalic: false },
+        lastIndex === 0 ? context.prefix : '',
+        context.suffix,
+        true
       );
       return;
     }
@@ -390,7 +400,8 @@ function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
       let word = rawWord;
       let wordAdvance = measureTextAdvance(rawWord, fontSize, isBold);
       if (wordAdvance > maxWordWidth - tolerance) {
-        word = truncateToWidth(rawWord, maxWordWidth, wordStyle);
+        const linePrefix = lines.length === 0 && currentLine.length === 0 ? context.prefix : '';
+        word = truncateToWidth(rawWord, maxWidth, wordStyle, linePrefix);
         wordAdvance = word === rawWord ? wordAdvance : measureTextAdvance(word, fontSize, isBold);
       }
 
@@ -613,10 +624,8 @@ export function renderQuote(options: QuoteRenderOptions): string {
       : '';
 
   const textBlockHeight = lines.length * lineHeight;
-  const verticalQuotesSpace = isVertical
-    ? iconBoxSize * 2 + VERTICAL_MARK_TOP_GAP + VERTICAL_MARK_BOTTOM_GAP
-    : 0;
-  const authorHeightForLayout = isVertical ? authorSpace + 8 : authorSpace;
+  const verticalQuotesSpace = isVertical ? iconBoxSize * 2 + VERTICAL_MARK_BOTTOM_GAP : 0;
+  const authorHeightForLayout = isVertical ? Math.round(authorFontSize * 1.65) : authorSpace;
   const effectiveAuthorSpace = authorLine.length > 0 ? authorHeightForLayout : 0;
   const height = padY + verticalQuotesSpace + textBlockHeight + effectiveAuthorSpace + padY;
 

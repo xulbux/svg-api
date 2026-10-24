@@ -6,6 +6,7 @@ import {
   BRAND_SLUG_CLEAN_RX,
   collectStackTileTokens,
   composeCategorizedStack,
+  getOwnValue,
   handleRovingTabKeydown,
   readState,
   stripStackTileColor,
@@ -231,7 +232,7 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     chip.dataset.filled = 'true';
     loadPage(chipLocation).then(
       (bodies) => {
-        const body = bodies[chipLocation.slug];
+        const body = getOwnValue(bodies, chipLocation.slug);
         if (body) {
           glyphContainer.replaceChildren(createGlyph(chipLocation.set, body));
         }

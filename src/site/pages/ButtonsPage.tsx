@@ -28,7 +28,7 @@ export function ButtonsSection(): HtmlFragment {
   return (
     <section class="doc-section" id="buttons">
       <SectionHeader
-        description={`Dedicated 3D Kumo action buttons with configurable size presets (${sizePresetsMarkup}), trailing icons, and split compartments.`}
+        description={`Action buttons with size presets (${sizePresetsMarkup}), leading and trailing icons, animations, and split compartments.`}
         routes={['/button/:label', '/btn/:label', '/button/:label/:value', '/btn/:label/:value']}
         title="Interactive CTA Buttons"
       />

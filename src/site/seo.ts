@@ -70,6 +70,15 @@ function buildBreadcrumbListJsonLd(
   return { '@type': 'BreadcrumbList', itemListElement };
 }
 
+/** Format string tokens as backticked Markdown items joined by `separator`. */
+function formatBacktickList(tokens: readonly string[], separator: string): string {
+  const formatted: string[] = [];
+  for (const token of tokens) {
+    formatted.push(`\`${token}\``);
+  }
+  return formatted.join(separator);
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -106,26 +115,28 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
 
 /**
  * Build the Schema.org JSON-LD graph (`TechArticle` and `BreadcrumbList`) for a `/docs` or `/docs/:section` page.
- * @param title           Page title.
- * @param description     Page meta description.
- * @param canonicalPath   Root-relative canonical path.
+ * @param title             Page `<title>` string.
+ * @param description       Page meta description.
+ * @param canonicalPath     Root-relative canonical path.
+ * @param breadcrumbLabel   Short page title for the trailing breadcrumb item.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
 export function buildDocsJsonLd(
   title: string,
   description: string,
-  canonicalPath: string
+  canonicalPath: string,
+  breadcrumbLabel = title
 ): Readonly<Record<string, unknown>> {
   const breadcrumbs: (readonly [string, string])[] =
     canonicalPath === '/docs'
       ? [
           ['Home', '/'],
-          [title, canonicalPath],
+          [breadcrumbLabel, canonicalPath],
         ]
       : [
           ['Home', '/'],
           ['Docs', '/docs'],
-          [title, canonicalPath],
+          [breadcrumbLabel, canonicalPath],
         ];
   return {
     '@context': 'https://schema.org',
@@ -147,27 +158,29 @@ export function buildDocsJsonLd(
 
 /**
  * Build the Schema.org JSON-LD graph (`WebApplication` and `BreadcrumbList`) for a `/builder/:kind` page.
- * @param title           Builder page title.
- * @param description     Builder meta description.
- * @param canonicalPath   Root-relative canonical path.
+ * @param title             Builder page `<title>` string.
+ * @param description       Builder meta description.
+ * @param canonicalPath     Root-relative canonical path.
+ * @param breadcrumbLabel   Short builder title for the trailing breadcrumb item.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
 export function buildBuilderJsonLd(
   title: string,
   description: string,
-  canonicalPath: string
+  canonicalPath: string,
+  breadcrumbLabel = title
 ): Readonly<Record<string, unknown>> {
   const defaultBuilderPath = buildBuilderPath(DEFAULT_BUILDER_KIND);
   const breadcrumbs: (readonly [string, string])[] =
     canonicalPath === defaultBuilderPath
       ? [
           ['Home', '/'],
-          [title, canonicalPath],
+          [breadcrumbLabel, canonicalPath],
         ]
       : [
           ['Home', '/'],
           ['Builder', defaultBuilderPath],
-          [title, canonicalPath],
+          [breadcrumbLabel, canonicalPath],
         ];
   return {
     '@context': 'https://schema.org',
@@ -257,6 +270,12 @@ export function renderLlmsTxt(): string {
     }
     const iconSetNames = ALL_ICON_SOURCE_NAMES.join(', ');
     const iconMotions = [...ACTIVE_ICON_MOTION_TOKENS, 'none'];
+    const stackOnlyMotions: string[] = [];
+    for (const token of STACK_MOTION_TOKENS) {
+      if (!iconMotions.includes(token)) {
+        stackOnlyMotions.push(token);
+      }
+    }
     llmsTxtCache = [
       `# ${SITE_HOST}`,
       '',
@@ -265,17 +284,17 @@ export function renderLlmsTxt(): string {
       '## Endpoints',
       '',
       `- Base origin: \`${SITE_ORIGIN}\``,
-      `- Families: ${ENDPOINT_ROUTES.map((route) => `\`${route}\``).join(', ')}${aliasRoutes.length > 0 ? ` (aliases: ${aliasRoutes.join(', ')})` : ''}`,
+      `- Families: ${formatBacktickList(ENDPOINT_ROUTES, ', ')}${aliasRoutes.length > 0 ? ` (aliases: ${aliasRoutes.join(', ')})` : ''}`,
       '',
       '## Shared Query Parameters',
       '',
-      `- \`?variant=\`: ${VARIANT_TOKENS.map((token) => `\`${token}\``).join(' | ')} (${formatVariantTierSummary()})`,
-      `- \`?color=\`: ${THEME_COLOR_NAMES.map((color) => `\`${color}\``).join(' | ')}`,
-      `- \`?size=\`: ${SIZE_TOKENS.map((size) => `\`${size}\``).join(' | ')} (or custom pixel number where supported)`,
-      `- \`?icon=\`: \`<slug>\` | \`<left>,<right>\` | \`none,<right>\` (${iconSetNames})`,
+      `- \`?variant=\`: ${formatBacktickList(VARIANT_TOKENS, ' | ')} (${formatVariantTierSummary()})`,
+      `- \`?color=\`: ${formatBacktickList(THEME_COLOR_NAMES, ' | ')}`,
+      `- \`?size=\`: ${formatBacktickList(SIZE_TOKENS, ' | ')} (or custom pixel number where supported)`,
+      `- \`?icon=\`: \`<slug>\` | \`none\` | \`<left>,<right>\` | \`none,<right>\` | \`,<right>\` (${iconSetNames})`,
       '- `?dot=`: `none` | any theme color (pulsing status dot on badges)',
-      `- \`?special=\`: ${SPECIAL_ELEMENT_KINDS.map((kind) => `\`${kind}\``).join(' | ')} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
-      `- \`?anim=\`: \`sheen\` | ${iconMotions.map((token) => `\`${token}\``).join(' | ')} (stacks also support ${STACK_MOTION_TOKENS.map((token) => `\`${token}\``).join(' | ')})`,
+      `- \`?special=\`: ${formatBacktickList(SPECIAL_ELEMENT_KINDS, ' | ')} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
+      `- \`?anim=\`: \`sheen\` | ${formatBacktickList(iconMotions, ' | ')} (stacks also support ${formatBacktickList(stackOnlyMotions, ' | ')})`,
       '',
       '## Documentation',
       '',

@@ -20,8 +20,6 @@ import {
   buildVariantParamRow,
   formatRange,
 } from '@/site/catalog/shared';
-import { formatConjunctionList } from '@/site/glossary';
-import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
 import {
   DEFAULT_IDE_TITLE,
   DEFAULT_LAYOUT_FONTS,
@@ -49,8 +47,8 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
       },
     ],
-    subtitle: `Kumo 3D terminal window with traffic-light controls, centered header title (?title=zsh), rounded pill badge (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt (Default).`,
-    title: 'layout=window · Kumo App / Terminal Window (Default)',
+    subtitle: `Terminal window with traffic-light dots, centered title (?title=zsh), header pill (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt.`,
+    title: 'layout=window · Terminal Window (Default)',
   },
   {
     items: [
@@ -60,7 +58,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Command / AI prompt bar with an optional accent squircle icon badge (?icon=sparkles), Geist Sans typography, and recessed 3D keycap badge (?hint=icon:command+K).',
+      'Command or AI prompt bar with an accent icon badge (?icon=sparkles) and keycap hint (?hint=icon:command+K).',
     title: 'layout=prompt · Command / AI Prompt Bar',
   },
   {
@@ -70,7 +68,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&title=${DEFAULT_IDE_TITLE}&icon=ts&hint=TS`,
       },
     ],
-    subtitle: `Code editor window with a seamless active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}), top accent bar, subtle line-number gutter, and JetBrains Mono syntax.`,
+    subtitle: `Code editor frame with an active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}) and line-number gutter.`,
     title: 'layout=ide · Code Editor Tab & Line Gutter',
   },
   {
@@ -81,7 +79,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Sleek browser toolbar with traffic-light dots, a recessed search / URL omnibox well (?icon=search), and a borderless keycap badge (?hint=icon:corner-down-left).',
+      'Browser toolbar with traffic-light dots, recessed URL bar (?icon=search), and keycap hint (?hint=icon:corner-down-left).',
     title: 'layout=browser · Browser Search / URL Omnibox',
   },
   {
@@ -93,7 +91,7 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Frameless transparent canvas with centered Geist Sans typography (?size=xl), ideal as a drop-in README hero headline.',
+      'Frameless transparent canvas (?size=xl), ready to drop in as a README hero headline.',
     title: 'layout=none · Frameless Transparent Headline',
   },
 ];
@@ -104,10 +102,10 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Primary Brand Typing',
-        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Pure+SMIL+Vector+Paths?variant=1&color=indigo&title=${SITE_HOST}`,
+        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Crisp+Vector+Typography?variant=1&color=indigo&title=${SITE_HOST}`,
       },
     ],
-    subtitle: 'Vivid primary brand gradient window with crisp white typography and bar cursor.',
+    subtitle: 'Primary gradient window with white text and bar cursor.',
     title: 'variant=1 · Primary Brand Gradient',
   },
   {
@@ -118,7 +116,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Secondary tinted dark window with glowing orange border, Rust icon in the header bar (?icon=rust), and terminal block cursor (?cursor=block) (Default).',
+      'Tinted dark window with orange border, header icon (?icon=rust), and block cursor (?cursor=block).',
     title: 'variant=2 · Secondary Tinted + Block Cursor (Default)',
   },
   {
@@ -129,7 +127,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Tertiary neutral dark surface with underscore cursor (?cursor=underscore) and periodic diagonal sheen (?anim=sheen).',
+      'Neutral dark surface with underscore cursor (?cursor=underscore) and diagonal sheen (?anim=sheen).',
     title: 'variant=3 · Tertiary Neutral + Underscore Cursor',
   },
 ];
@@ -143,9 +141,8 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/typing/Select+All+%2B+Clear;Instant+Highlight+Erase;Clean+Transition?layout=prompt&color=violet&erase=select',
       },
     ],
-    subtitle:
-      'Highlights the whole line with a Cmd+A selection box before clearing simultaneously (?erase=select).',
-    title: 'erase=select · Highlight-All & Clear Transition',
+    subtitle: 'Highlights the whole line before clearing all at once.',
+    title: 'erase=select · Select & Clear',
   },
   {
     items: [
@@ -154,9 +151,8 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/typing/Smooth+Whole-Line+Fade;Proportional+Geist+Sans;Subtle+Editorial+Cadence?layout=prompt&color=rose&icon=wand-sparkles&erase=fade',
       },
     ],
-    subtitle:
-      'Smoothly dissolves the completed line and cursor together before fading into the next line (?erase=fade).',
-    title: 'erase=fade · Smooth Whole-Line Dissolve',
+    subtitle: 'Smoothly fades out the finished line before typing the next.',
+    title: 'erase=fade · Whole-Line Dissolve',
   },
   {
     items: [
@@ -165,9 +161,8 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/typing/Building+resilient+systems;Crafting+delightful+interfaces?color=amber&title=human-typing.ts&typo=true',
       },
     ],
-    subtitle:
-      'Simulates an occasional QWERTY neighbor key slip, brief human recognition pause, and immediate backspace correction (?typo=true).',
-    title: 'typo=true · Realistic Human Keystroke Slip & Correction',
+    subtitle: 'Occasionally slips onto a neighboring key, pauses briefly, and backspaces.',
+    title: 'typo=true · Human Keystroke Slip',
   },
 ];
 
@@ -206,19 +201,18 @@ export function buildTypingParamRows(): ParamTableRow[] {
     {
       defaultVal: DEFAULT_TYPING_LAYOUT,
       description:
-        'Container frame style: window (Kumo terminal window), prompt (command / AI prompt bar), ide (code editor tab + line gutter), browser (search / URL omnibox), or none (frameless transparent canvas).',
+        'Frame style: window (terminal), prompt (command / AI bar), ide (editor tab + gutter), browser (URL bar), or none (frameless).',
       name: '?layout= / ?frame= / ?type=',
       values: TYPING_LAYOUT_TOKENS.join(' | '),
     },
     buildVariantParamRow(DEFAULT_TYPING_VARIANT, 'Surface tier'),
     buildColorParamRow(
       DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent color for surface, border, prompt prefix, and cursor.'
+      'Theme color for surface, border, prompt prefix, and cursor.'
     ),
     {
       defaultVal: fontDefaults,
-      description:
-        'Bundled OpenType font family: mono (JetBrains Mono) or sans (Geist Sans), converted directly into crisp vector <path> outlines with automatic cross-font symbol fallback.',
+      description: 'Typeface: mono (JetBrains Mono) or sans (Geist Sans).',
       name: '?font=',
       values: TYPING_FONT_TOKENS.join(' | '),
     },
@@ -250,42 +244,41 @@ export function buildTypingParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: '~none',
-      description: `Optional ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug (rendered in the header bar on window, active file tab on ide, squircle badge on prompt, or omnibox on browser).`,
+      description:
+        'Optional UI or brand icon slug (header bar on window, file tab on ide, badge on prompt, or URL bar on browser).',
       name: '?icon=',
       values: 'terminal | search | sparkles | rust | ts | none',
     },
     {
       defaultVal: '~none',
       description:
-        'Optional pill badge in the header bar (window, ide), borderless badge in the omnibox (browser), or recessed 3D keycap badge (prompt); Supports text, an icon (icon:<slug>), or both (icon:<slug>+<text>).',
+        'Optional header pill (window, ide), URL badge (browser), or keycap (prompt); Accepts text, icon:<slug>, or icon:<slug>+<text>.',
       name: '?hint=',
       values: 'UTF-8 | icon:corner-down-left | icon:command+K | TS | none',
     },
     {
       defaultVal: DEFAULT_TYPING_CURSOR,
-      description:
-        'Caret cursor shape; Stays solid while actively typing or backspacing and blinks smoothly during reading pauses.',
+      description: 'Caret cursor shape; Stays solid while typing and blinks during pauses.',
       name: '?cursor=',
       values: TYPING_CURSOR_TOKENS.join(' | '),
     },
     {
       defaultVal: DEFAULT_TYPING_ERASE,
       description:
-        'Line erase transition: backspace (rapid OS key-repeat deletion), select (Cmd+A highlight box + clear), or fade (smooth whole-line dissolve).',
+        'Line erase style: backspace (rapid key-repeat), select (select-all + clear), or fade (whole-line dissolve).',
       name: '?erase= / ?delete=',
       values: TYPING_ERASE_TOKENS.join(' | '),
     },
     {
       defaultVal: '~false',
       description:
-        'When enabled, simulates an occasional QWERTY neighbor key slip followed by a brief pause and backspace correction.',
+        'Simulates an occasional neighboring-key slip with a brief pause and backspace fix.',
       name: '?typo=',
       values: TRUTHY_FLAG_LIST.join(' | '),
     },
     {
       defaultVal: String(TYPING_DURATION_RANGE.default),
-      description:
-        'Target typing duration per line in milliseconds (inter-key intervals follow HCI bigram rollover and word-boundary rhythm).',
+      description: 'Target typing duration per line in milliseconds.',
       name: '?duration=',
       values: formatRange(TYPING_DURATION_RANGE),
     },
@@ -296,7 +289,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: formatRange(TYPING_PAUSE_RANGE),
     },
     buildSheenAnimParamRow(
-      'Periodic diagonal sheen sweep across the container surface, or none for a static reduced-motion snapshot.'
+      'Diagonal sheen sweep across the container, or none for a static snapshot.'
     ),
   ];
 }

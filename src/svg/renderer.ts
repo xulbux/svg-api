@@ -43,7 +43,6 @@ import {
   roundCoord,
   roundScale,
   roundTenths,
-  truncateText,
 } from '@/svg/shared';
 import type {
   AnimationMode,
@@ -945,7 +944,12 @@ function resolveIconSlot(rawSlug: string): IconSlot {
   }
   const lookup = resolveIconLookup(slug);
   if (!lookup.data) {
-    return { data: resolvePlaceholderIcon(), isFallback: true, key: FALLBACK_ICON_SLUG, slug };
+    return {
+      data: resolvePlaceholderIcon(),
+      isFallback: true,
+      key: FALLBACK_ICON_SLUG,
+      slug: prepareDisplayText(slug, MAX_LABEL_LENGTH),
+    };
   }
   return { data: lookup.data, key: lookup.key, slug };
 }
@@ -1605,11 +1609,11 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
 /**
  * Build the raw accessible `aria-label` text: `label: <special> <value>`, either side alone, or the
  * first visible icon/dot name, falling back to the generic element name (`'badge'` or `'button'`).
- * The special text is skipped when the value already contains it (e.g., a `94%` bar next to `94%`).
+ * Exact duplicates between the special description and `valueText` are skipped (e.g., `delta:+5%` next to `'+5%'`).
  */
 function buildAriaLabel(parts: AriaLabelParts): string {
   const { labelText, valueText } = parts;
-  const specialText = valueText.includes(parts.specialText) ? '' : parts.specialText;
+  const specialText = valueText === parts.specialText ? '' : parts.specialText;
   const rightText =
     specialText.length > 0 && valueText.length > 0
       ? `${specialText} ${valueText}`
@@ -1643,7 +1647,7 @@ function renderIconSheenGradientDef(coordScale: number): string {
   let gradientDef = ICON_SHEEN_DEF_CACHE.get(coordScale);
   if (gradientDef === undefined) {
     const transformAttr =
-      coordScale === 1 ? '' : ` gradientTransform="scale(${Number((1 / coordScale).toFixed(4))})"`;
+      coordScale === 1 ? '' : ` gradientTransform="scale(${roundScale(1 / coordScale)})"`;
     const sweepX1 = renderSweepAnimation(
       'animate',
       'attributeName="x1"',
@@ -1835,7 +1839,7 @@ export function renderButton(options: ButtonRenderOptions): string {
 export function renderIcon(options: IconRenderOptions): string {
   const animMode: AnimationMode = options.anim ?? 'default';
   const size = clampInt(options.size, ICON_SIZE_RANGE);
-  const strokeWidth = Number(clampNumber(options.strokeWidth, ICON_STROKE_RANGE).toFixed(2));
+  const strokeWidth = roundCoord(clampNumber(options.strokeWidth, ICON_STROKE_RANGE));
 
   const slug = options.icon.trim().toLowerCase() || DEFAULT_ICON_SLUG;
   const lookup = resolveIconLookup(slug);
@@ -1859,7 +1863,7 @@ export function renderIcon(options: IconRenderOptions): string {
   }
 
   return renderSvgDocument({
-    ariaLabel: truncateText(lookup.data ? slug : `unknown icon: ${slug}`, MAX_LABEL_LENGTH),
+    ariaLabel: prepareDisplayText(lookup.data ? slug : `unknown icon: ${slug}`, MAX_LABEL_LENGTH),
     body: wrapIconWithAnimation(body, slot.key, leftMotion),
     defs: sheenDef,
     height: size,

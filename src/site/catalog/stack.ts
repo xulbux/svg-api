@@ -1,5 +1,5 @@
 /**
- * Tech stack documentation catalog – Variant descriptors, showcase cards, icon count helper, and parameter reference rows for `/docs/stack`.
+ * Tech stack documentation catalog – Variant descriptors, showcase cards, and parameter reference rows for `/docs/stack`.
  */
 
 import {
@@ -18,7 +18,6 @@ import {
 import { collectAliasesForTarget, formatConjunctionList } from '@/site/glossary';
 import {
   GROUP_GAP_RATIO,
-  parseStackGroups,
   STACK_GAP_RANGE,
   STACK_GROUP_GAP_RANGE,
   STACK_PER_LINE_RANGE,
@@ -38,17 +37,17 @@ import type {
 /** Showcase definitions for the tech stack tile variants. */
 export const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
-    description: 'Filled 3D brand gradient tiles with crisp white icons.',
+    description: 'Brand gradient tiles with white icons.',
     id: '1',
     title: 'variant=1 · Primary Brand Gradient Stack',
   },
   {
-    description: 'Tinted carbon-dark surface with glowing colored borders and brand-colored icons.',
+    description: 'Tinted dark tiles with colored borders and brand-colored icons.',
     id: '2',
     title: 'variant=2 · Secondary Tinted Dark Stack (Default)',
   },
   {
-    description: 'Neutral carbon-dark tiles with subtle borders and brand-colored icons.',
+    description: 'Neutral dark tiles with subtle borders and brand-colored icons.',
     id: '3',
     title: 'variant=3 · Tertiary Neutral Dark Stack',
   },
@@ -73,7 +72,7 @@ function buildStackVariantItems(variant: BadgeVariant): ShowcaseItem[] {
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Showcase cards demonstrating staggered per-tile SMIL micro-animations on `/docs/stack`. */
+/** Showcase cards demonstrating staggered per-tile animations on `/docs/stack`. */
 export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
   {
     isCentered: true,
@@ -83,8 +82,8 @@ export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=wave',
       },
     ],
-    subtitle: `Staggered vertical bounce rippled left-to-right across tiles (?anim=wave; aliases: ${formatStackMotionAliases('wave')}).`,
-    title: 'anim=wave · Staggered Vertical Wave (?anim=wave)',
+    subtitle: `Left-to-right staggered bounce across tiles (aliases: ${formatStackMotionAliases('wave')}).`,
+    title: 'anim=wave · Staggered Wave',
   },
   {
     isCentered: true,
@@ -94,8 +93,8 @@ export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?variant=1&anim=sheen,float',
       },
     ],
-    subtitle: `Continuous phase-shifted bobbing combined with a diagonal surface sheen (?anim=sheen,float; aliases: ${formatStackMotionAliases('float')}).`,
-    title: 'anim=sheen,float · Continuous Ambient Float (?anim=sheen,float)',
+    subtitle: `Gentle phase-shifted bobbing with a diagonal sheen (aliases: ${formatStackMotionAliases('float')}).`,
+    title: 'anim=sheen,float · Ambient Float',
   },
   {
     isCentered: true,
@@ -105,24 +104,10 @@ export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
         path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=pulse',
       },
     ],
-    subtitle: `Staggered accent border glow and subtle centered icon scale (?anim=pulse; aliases: ${formatStackMotionAliases('pulse')}).`,
-    title: 'anim=pulse · Breathing Accent Glow (?anim=pulse)',
+    subtitle: `Staggered border glow and subtle icon scale (aliases: ${formatStackMotionAliases('pulse')}).`,
+    title: 'anim=pulse · Breathing Glow',
   },
 ];
-
-/**
- * Count the icons of the stack showcase example through the live stack DSL parser.
- * @returns Total icon count in `STACK_EXAMPLE_GROUPS`.
- */
-export function countStackExampleIcons(): number {
-  let iconCount = 0;
-  for (const band of parseStackGroups(STACK_EXAMPLE_GROUPS)) {
-    for (const group of band) {
-      iconCount += group.icons.length;
-    }
-  }
-  return iconCount;
-}
 
 /**
  * Build the variant showcase cards for `/docs/stack`.

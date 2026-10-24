@@ -839,9 +839,7 @@ describe('renderDocsHtml & renderHomeHtml', () => {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).not.toContain('<span>');
       expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(html).toContain(
-        'Missing a public API service, vector icon, or even a whole new SVG element?'
-      );
+      expect(html).toContain('Missing a service, icon, or SVG element?');
     }
 
     expect(docsBySlug.get('badges')).toContain(
@@ -874,9 +872,7 @@ describe('renderDocsHtml & renderHomeHtml', () => {
     expect(docsBySlug.get('quotes')).toContain(
       '<span class="route-method">GET</span>/quote/:author/:text</code>'
     );
-    expect(docsBySlug.get('colors')).toContain(
-      `${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH Theme Colors`
-    );
+    expect(docsBySlug.get('colors')).toContain(`${THEME_COLOR_NAMES.length} Theme Colors`);
   });
 });
 
@@ -1909,5 +1905,103 @@ describe('renderTyping', () => {
       expect(leftClearGap, size).toBeGreaterThan(0);
       expect(leftClearGap, size).toBeCloseTo(middleClearGap, 5);
     }
+  });
+
+  it('preserves surface sheen on anim=sheen,none static typing cards and clamps narrow headers and prefixes (regressions: static typing dropped sheen, narrow typing header and prefix overflow)', () => {
+    const sheenStaticSvg = renderTyping({
+      anim: 'sheen,none',
+      color: 'indigo',
+      lines: 'Static with sheen;Hidden second line',
+    });
+    expect(sheenStaticSvg).toContain('id="typing-sheen-grad-');
+    expect(sheenStaticSvg).not.toContain('<animate attributeName="opacity"');
+    expect(sheenStaticSvg).not.toContain('data-rest-time=');
+    expect(renderSvgPath('/typing/Hello?anim=sheen,none,none')).toContain('id="typing-sheen-grad-');
+
+    const narrowWindowSvg = renderTyping({
+      color: 'indigo',
+      hint: 'icon:command K',
+      layout: 'window',
+      lines: 'Hello world',
+      title: 'extremely-long-terminal-session-window-title.zsh',
+      width: TYPING_WIDTH_RANGE.min,
+    });
+    expect(narrowWindowSvg).toContain(`width="${TYPING_WIDTH_RANGE.min}"`);
+    expect(measureMaxTextInkX(narrowWindowSvg)).toBeLessThan(TYPING_WIDTH_RANGE.min);
+
+    const narrowIdeSvg = renderTyping({
+      color: 'emerald',
+      hint: 'TypeScript',
+      icon: 'ts',
+      layout: 'ide',
+      lines: 'const ok = true;',
+      title: 'extremely-long-active-editor-tab-filename.config.ts',
+      width: TYPING_WIDTH_RANGE.min,
+    });
+    expect(narrowIdeSvg).toContain(`width="${TYPING_WIDTH_RANGE.min}"`);
+    expect(measureMaxTextInkX(narrowIdeSvg)).toBeLessThan(TYPING_WIDTH_RANGE.min);
+
+    const narrowPromptSvg = renderTyping({
+      color: 'cyan',
+      hint: 'Enter',
+      icon: 'terminal',
+      layout: 'prompt',
+      lines: 'deploy --prod',
+      prefix: 'very-long-shell-prompt-user@production-edge-cluster:~/workspace$',
+      width: TYPING_WIDTH_RANGE.min,
+    });
+    expect(measureMaxTextInkX(narrowPromptSvg)).toBeLessThan(TYPING_WIDTH_RANGE.min);
+  });
+
+  it('keeps non-identical delta readouts, sanitizes fallback icon aria-labels, fits single-word quotes with quote marks, and skips sheen/bg-dark on hollow fallback stacks (regressions: substring specialText suppression, unsanitized fallback icon slug, single-word quote mark kerning overflow, sheen and bg-dark on hollow fallback tiles)', () => {
+    expect(readMetricBadgeLabel({ type: 'delta', value: '5%' }, '25%')).toBe('metric: 5% 25%');
+    expect(readMetricBadgeLabel({ type: 'delta', value: '+5%' }, '+5%')).toBe('metric: +5%');
+
+    const rawControlSlug = `bad\u200Bslug-${'x'.repeat(MAX_LABEL_LENGTH + 40)}`;
+    const badgeFallbackAria = extractAriaLabel(
+      renderBadge({ color: 'indigo', icon: rawControlSlug, label: '', variant: '1' })
+    );
+    expect(badgeFallbackAria).not.toContain('\u200B');
+    expect((badgeFallbackAria ?? '').length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
+    const iconFallbackAria = extractAriaLabel(
+      renderIcon({ color: 'indigo', icon: rawControlSlug })
+    );
+    expect(iconFallbackAria).not.toContain('\u200B');
+    expect((iconFallbackAria ?? '').length).toBeLessThanOrEqual(MAX_LABEL_LENGTH);
+
+    // Single overlong word with negative/tight quote-mark kerning stays strictly left of the watermark ink:
+    const singleWordQuoteSvg = renderQuote({
+      color: 'indigo',
+      layout: 'horizontal',
+      text: 'V'.repeat(200),
+      width: 320,
+    });
+    const watermarkMatch = WATERMARK_TRANSFORM_RX.exec(singleWordQuoteSvg)?.groups;
+    const watermarkInkLeft = Number(watermarkMatch?.x) + 2 * Number(watermarkMatch?.scale);
+    expect(measureMaxTextInkX(singleWordQuoteSvg)).toBeLessThanOrEqual(watermarkInkLeft - 15.5);
+
+    // Vertical quote cards keep symmetric optical padding above the top quote mark and below the bottom quote mark / author:
+    const verticalNoAuthorSvg = renderQuote({
+      color: 'indigo',
+      layout: 'vertical',
+      size: 'lg',
+      text: 'Design is how it works.',
+    });
+    const verticalHeight = Number(/height="(?<h>\d+)"/.exec(verticalNoAuthorSvg)?.groups?.h);
+    expect(verticalHeight).toBeGreaterThan(150);
+    expect(verticalHeight).toBeLessThan(190);
+
+    // Hollow fallback tiles never get a sheen `<rect>` or an unused `bg-dark` gradient:
+    const allFallbackStack = renderStack({ anim: 'sheen', icons: ['unknown-xyz-1,unknown-xyz-2'] });
+    expect(allFallbackStack).not.toContain('id="bg-dark"');
+    expect(allFallbackStack).not.toContain('id="stack-sheen-grad-');
+
+    const mixedFallbackStack = renderStack({ anim: 'sheen', icons: ['rust,unknown-xyz-1'] });
+    expect(mixedFallbackStack).toContain('id="bg-dark"');
+    expect(mixedFallbackStack).toContain('id="stack-sheen-grad-');
+    const clipBlock = /<clipPath id="stack-sheen-clip-[^"]+">(?<rects>[\s\S]*?)<\/clipPath>/.exec(
+      mixedFallbackStack
+    )?.groups?.rects;
+    expect((clipBlock ?? '').split('<rect ').length - 1).toBe(1);
   });
 });

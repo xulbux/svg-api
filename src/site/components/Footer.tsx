@@ -21,11 +21,11 @@ function renderFooter(): string {
       <footer class="site-footer">
         <div class="footer-inner">
           <p class="footer-feedback">
-            Missing a public API service, vector icon, or even a whole new SVG element? Feel free to{' '}
+            Missing a service, icon, or SVG element? Reach out at{' '}
             <a href={`mailto:${CONTACT_EMAIL}`} class="text-link" tabindex="0">
-              send an email to {CONTACT_EMAIL}
-            </a>{' '}
-            and let me know!
+              {CONTACT_EMAIL}
+            </a>
+            .
           </p>
           <div class="footer-meta">
             <p class="footer-license">Released under the MIT License.</p>

@@ -338,62 +338,6 @@ function buildTopCrescentPath(
   return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
 }
 
-/**
- * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest tenth.
- */
-function roundTenths(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-/**
- * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest hundredth.
- */
-function roundCoord(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/**
- * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest ten-thousandth.
- */
-function roundScale(value: number): number {
-  return Math.round(value * 10_000) / 10_000;
-}
-
-/**
- * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
- * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
- * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
- * bottom corner curves without extending up the vertical sides.
- * @param startX    Left X coordinate of the box in pixels.
- * @param endX      Right X coordinate of the box in pixels.
- * @param radius    Outer corner radius in pixels.
- * @param bottomY   Bottom Y coordinate of the box in pixels.
- * @returns SVG `<path>` `d` string.
- */
-function buildBottomCrescentPath(
-  startX: number,
-  endX: number,
-  radius: number,
-  bottomY: number
-): string {
-  const innerRadius = roundCoord(radius - 1);
-  const innerRadiusY = roundCoord(innerRadius - 1);
-  const leftTangentX = roundCoord(startX + 1);
-  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
-  const rightArcStart = roundCoord(endX - 1 - innerRadius);
-  const rightTangentX = roundCoord(endX - 1);
-  const outerBottomY = roundCoord(bottomY - 1);
-  const innerBottomY = roundCoord(bottomY - 2);
-  const cornerStartY = roundCoord(outerBottomY - innerRadius);
-  return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
-}
-
 /** Build the SVG `<path>` `d` attribute for the left capsule of a split badge (rounded left corners, square right edge). */
 function buildLeftCapsulePath(
   startX: number,
@@ -422,29 +366,68 @@ function buildRightCapsulePath(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export {
-  buildBottomCrescentPath,
-  buildThemeGradientId,
-  renderVerticalGradientDef,
-  roundCoord,
-  roundScale,
-  roundTenths,
-};
+export { buildThemeGradientId, renderVerticalGradientDef };
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
+  getOwnValue,
   HINT_ICON_REST_RX,
 } from '@/site/shared/encoding';
 
 /**
- * Look up an own (non-inherited) property of a lookup table by a user-supplied key.
- * Prevents keys like `'constructor'` or `'toString'` from resolving to `Object.prototype` members.
- * @param record   Lookup table to read from.
- * @param key      Untrusted lookup key.
- * @returns The own property value, or `undefined` when `key` is not an own property.
+ * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest tenth.
  */
-export function getOwnValue<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
-  return Object.hasOwn(record, key) ? record[key] : undefined;
+export function roundTenths(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest hundredth.
+ */
+export function roundCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest ten-thousandth.
+ */
+export function roundScale(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+/**
+ * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
+ * Uses a circular outer arc (`A r r`) and an elliptical inner return arc (`A r (r - 1)`) so the
+ * crescent is `1px` thick along the bottom straight edge and tapers smoothly to `0px` around the
+ * bottom corner curves without extending up the vertical sides.
+ * @param startX    Left X coordinate of the box in pixels.
+ * @param endX      Right X coordinate of the box in pixels.
+ * @param radius    Outer corner radius in pixels.
+ * @param bottomY   Bottom Y coordinate of the box in pixels.
+ * @returns SVG `<path>` `d` string.
+ */
+export function buildBottomCrescentPath(
+  startX: number,
+  endX: number,
+  radius: number,
+  bottomY: number
+): string {
+  const innerRadius = roundCoord(radius - 1);
+  const innerRadiusY = roundCoord(innerRadius - 1);
+  const leftTangentX = roundCoord(startX + 1);
+  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
+  const rightArcStart = roundCoord(endX - 1 - innerRadius);
+  const rightTangentX = roundCoord(endX - 1);
+  const outerBottomY = roundCoord(bottomY - 1);
+  const innerBottomY = roundCoord(bottomY - 2);
+  const cornerStartY = roundCoord(outerBottomY - innerRadius);
+  return `M ${leftTangentX} ${cornerStartY} A ${innerRadius} ${innerRadius} 0 0 0 ${leftArcEnd} ${outerBottomY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 0 ${rightTangentX} ${cornerStartY} A ${innerRadius} ${innerRadiusY} 0 0 1 ${rightArcStart} ${innerBottomY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 1 ${leftTangentX} ${cornerStartY} Z`;
 }
 
 /**
@@ -502,7 +485,12 @@ export function isSheenMode(animMode: AnimationMode | StackAnimationMode): boole
  * @returns `true` when animated elements must render statically.
  */
 export function isAnimationDisabled(animMode: AnimationMode): boolean {
-  return animMode === 'none' || animMode === 'none,none' || animMode === 'sheen,none,none';
+  return (
+    animMode === 'none' ||
+    animMode === 'none,none' ||
+    animMode === 'sheen,none' ||
+    animMode === 'sheen,none,none'
+  );
 }
 
 /**

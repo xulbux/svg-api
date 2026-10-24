@@ -1,8 +1,8 @@
 /* Hero Banner */
 
 .hero {
-  margin-block-end: 44px;
-  padding: clamp(28px, 4.5vw, 44px);
+  margin-block-end: clamp(18px, 3vw, 24px);
+  padding: clamp(22px, 4.5vw, 44px);
   border-radius: 14px;
 }
 
@@ -20,8 +20,8 @@
 }
 
 .hero-lead {
-  max-inline-size: 66ch;
-  margin-block: 0 22px;
+  max-inline-size: 62ch;
+  margin-block: 0 clamp(18px, 3vw, 22px);
   font-size: clamp(0.95rem, 0.9rem + 0.25vw, 1.05rem);
   color: var(--c-text-2);
 }
@@ -39,34 +39,65 @@
 .feature-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 18px;
-  margin-block-end: 60px;
+  gap: clamp(12px, 2vw, 18px);
+  margin-block-end: clamp(32px, 5.5vw, 56px);
 }
 
 .feature-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 20px 22px;
-}
-
-.feature-icon {
-  display: inline-flex;
-  align-items: center;
-  inline-size: fit-content;
-  margin-block-end: 4px;
-  color: var(--c-brand-1);
+  gap: 6px;
+  padding: clamp(14px, 2.2vw, 20px) clamp(16px, 2.4vw, 22px);
 }
 
 .feature-title {
+  display: flex;
+  align-items: safe center;
+  gap: 8px;
   font-size: 0.95rem;
   font-weight: 700;
+  line-height: 1.35;
   color: var(--c-text-1);
+}
+
+.feature-title .ui-icon {
+  color: var(--c-brand-1);
+}
+
+.feature-title-text {
+  min-inline-size: 0;
 }
 
 .feature-desc {
   margin: 0;
   font-size: 0.84rem;
-  line-height: 1.55;
+  line-height: 1.5;
   color: var(--c-text-2);
+}
+
+/* Narrow Screens; compact 2-column highlight pills without detail paragraphs: */
+
+@media (max-width: 640px) {
+  .feature-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 148px), 1fr));
+    gap: 10px;
+  }
+
+  .feature-card {
+    padding: 11px 12px;
+  }
+
+  .feature-title {
+    gap: 7px;
+    font-size: 0.85rem;
+  }
+
+  .feature-title .ui-icon {
+    inline-size: 16px;
+    block-size: 16px;
+  }
+
+  .feature-desc {
+    display: none;
+  }
 }

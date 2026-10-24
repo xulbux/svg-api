@@ -55,7 +55,7 @@ button.btn-secondary {
 /* Section Headers & Spacious Subsections: */
 
 .doc-section {
-  margin-block-end: 60px;
+  margin-block-end: clamp(36px, 5.5vw, 60px);
 }
 
 .section-header {

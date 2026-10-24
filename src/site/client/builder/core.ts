@@ -23,6 +23,7 @@ import {
   composeSpecial,
   decodeSegment,
   encodeSegment,
+  getOwnValue,
   isTypingFieldActiveForLayout,
   parsePath,
   resolveEffectiveFieldDefault,
@@ -149,9 +150,14 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
   for (const [alias, primary] of Object.entries(index.lucideAliases)) {
     lucideByKey.set(capitalizeSlugParts(alias), primary);
   }
+  const brandByClean = new Map<string, string>();
   const brandPositions = new Map<string, number>();
   for (const [i, slug] of index.sets.brands.entries()) {
     brandPositions.set(slug, i);
+    const cleanKey = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+    if (!brandByClean.has(cleanKey)) {
+      brandByClean.set(cleanKey, slug);
+    }
   }
 
   function findLucide(slug: string): string | undefined {
@@ -160,13 +166,14 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
 
   function findBrand(slug: string): string | undefined {
     const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-    const parent = index.brandAliases[slug] ?? index.brandAliases[normalized];
+    const parent =
+      getOwnValue(index.brandAliases, slug) ?? getOwnValue(index.brandAliases, normalized);
     for (const candidate of [slug, normalized, parent]) {
       if (candidate && brandPositions.has(candidate)) {
         return candidate;
       }
     }
-    return undefined;
+    return brandByClean.get(normalized);
   }
 
   function lookup(slug: string, isBrandFirst: boolean): IconMatch | 'none' | undefined {
@@ -177,7 +184,7 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
     if (rawSlug.length > maxSlugLength) {
       return undefined;
     }
-    const cleanSlug = index.aliases[rawSlug] ?? rawSlug;
+    const cleanSlug = getOwnValue(index.aliases, rawSlug) ?? rawSlug;
     const candidates = cleanSlug === rawSlug ? [cleanSlug] : [cleanSlug, rawSlug];
     const order: readonly IconPickerSetId[] = isBrandFirst
       ? ['brands', 'lucide']
@@ -266,6 +273,7 @@ export {
   findField,
   findOption,
   findService,
+  getOwnValue,
   isTypingFieldActiveForLayout,
   normalizeStackGroups,
   parsePath,

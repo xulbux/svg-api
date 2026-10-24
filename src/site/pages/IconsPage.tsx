@@ -7,9 +7,8 @@ import { formatCountLowerBound, getIconSetCounts } from '@/site/catalog/shared';
 import { AliasList, ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
-import { formatConjunctionList } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
-import { ICON_SLUG_ALIASES, ICON_SOURCE_SETS } from '@/svg/icons';
+import { ICON_SLUG_ALIASES } from '@/svg/icons';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -22,7 +21,7 @@ export function IconsSection(): HtmlFragment {
   return (
     <section class="doc-section" id="icons">
       <SectionHeader
-        description={`${formatCountLowerBound(iconCounts.lucide)} ${ICON_SOURCE_SETS.stroke[0]} stroke icons and ${formatCountLowerBound(iconCounts.brand)} ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand marks with intrinsic pixel dimensions baked into the root \`<svg>\`.`}
+        description={`${formatCountLowerBound(iconCounts.lucide)} UI icons and ${formatCountLowerBound(iconCounts.brand)} brand & technology logos with custom pixel sizing, stroke width, color, and motion.`}
         routes={['/icon/:icon']}
         title="Standalone UI & Brand Icons"
       />

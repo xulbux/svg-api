@@ -75,7 +75,7 @@ export function DocsPage(props: DocsPageProps): HtmlFragment {
       activeNav="docs"
       canonicalPath={canonicalPath}
       description={meta.description}
-      jsonLd={buildDocsJsonLd(pageTitle, meta.description, canonicalPath)}
+      jsonLd={buildDocsJsonLd(pageTitle, meta.description, canonicalPath, meta.title)}
       sidebar={buildDocsSidebar(slug)}
       title={pageTitle}>
       <SectionComponent />

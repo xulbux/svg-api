@@ -28,17 +28,17 @@ import type {
 /** Showcase definitions for the CTA button hierarchy variants. */
 export const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
-    description: '3D Kumo brand gradient surface with upper-edge specular highlight.',
+    description: 'Gradient surface with an upper-edge highlight.',
     id: '1',
     title: 'variant=1 · Primary Button (Default)',
   },
   {
-    description: 'Tinted dark surface with glowing colored border and upper highlight.',
+    description: 'Tinted dark surface with a colored border.',
     id: '2',
     title: 'variant=2 · Secondary Button',
   },
   {
-    description: 'Neutral carbon-dark surface with subtle border and colored icon.',
+    description: 'Neutral dark surface with a subtle border and colored icon.',
     id: '3',
     title: 'variant=3 · Tertiary Button',
   },
@@ -65,7 +65,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
         path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?color=rose&size=xl&icon=flame`,
       },
     ],
-    subtitle: `Scale button height, padding, font size, and icon dimensions with ?size=${SIZE_TOKENS.join('|')} or a custom pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
+    subtitle: `Scale button height, padding, font size, and icons with ?size=${SIZE_TOKENS.join('|')} or a pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
     title: `Button Size Scale (?size=${SIZE_TOKENS.join('|')})`,
   },
   {
@@ -83,7 +83,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Continue', path: '/btn/Continue?color=emerald&icon=none,chevron-right' },
     ],
     subtitle:
-      'Set a leading icon (?icon=name), both leading and trailing icons (?icon=left,right), or a trailing icon only (?icon=none,right).',
+      'Leading icon (?icon=name), leading and trailing icons (?icon=left,right), or trailing icon only (?icon=none,right).',
     title: 'Leading & Trailing Icons (?icon=left,right)',
   },
   {
@@ -104,7 +104,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Combine diagonal surface sheen (?anim=sheen), contextual or explicit icon motion (?anim=pulse|auto|…), and per-icon pairs (?anim=shake,nudge).',
+      'Combine surface sheen (?anim=sheen), icon motions (?anim=pulse|auto|…), and per-icon pairs (?anim=shake,nudge).',
     title: 'Surface Sheen & Icon Motion (?anim=)',
   },
   {
@@ -120,8 +120,8 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Pass a second path segment (/button/:label/:value or /btn/:label/:value) for split action buttons with a vertical divider.',
-    title: 'Two-Segment Split Action Buttons (/button/:label/:value)',
+      'Add a second path segment (/button/:label/:value or /btn/:label/:value) for a split button.',
+    title: 'Split Action Buttons (/button/:label/:value)',
   },
 ];
 
@@ -168,10 +168,7 @@ export function buildButtonParamRows(): ParamTableRow[] {
   }
   return [
     buildVariantParamRow(DEFAULT_BUTTON_VARIANT, 'Surface tier'),
-    buildColorParamRow(
-      DEFAULT_THEME_COLOR,
-      'Tailwind v4 OKLCH accent palette for gradients, borders, and icons.'
-    ),
+    buildColorParamRow(DEFAULT_THEME_COLOR, 'Theme color for gradients, borders, and icons.'),
     {
       defaultVal: `md (${BUTTON_SIZE_PRESETS.md.height}px)`,
       description: `Button scale preset (${presetHeights.join(', ')}) or custom pixel height.`,
@@ -179,7 +176,7 @@ export function buildButtonParamRows(): ParamTableRow[] {
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,
     },
     buildIconQueryParamRow(
-      'Leading left icon (icon=name), both left and right icons (icon=left,right), or trailing right icon only (icon=none,right).',
+      'Leading icon (icon=name), left and right icons (icon=left,right), or trailing icon only (icon=none,right).',
       'rocket | book-open,arrow-right | none,chevron-right | sparkles | …'
     ),
     buildAnimParamRow(),

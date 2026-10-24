@@ -8,7 +8,7 @@ import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
 import { getBuilderSchema } from '@/routes/schema';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { COVERAGE_THRESHOLDS, MAX_SCORECARD_SCORE, SCORECARD_THRESHOLDS } from '@/services/metrics';
-import { formatVariantValues } from '@/site/glossary';
+import { formatConjunctionList, formatVariantValues } from '@/site/glossary';
 import type {
   ParamTableRow,
   ScoreColorThreshold,
@@ -168,8 +168,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
         sample: { component: { measures: [{ metric: 'sqale_rating', value: '1.0' }] } },
       },
     ],
-    subtitle:
-      'Pass a bare widget kind (?special=sparkline, bars, delta, bar, ring, steps, or strip) on supported metrics to populate the widget from live upstream data, ?special=none to hide a default preset widget, or ?special=<kind>:<payload> to supply custom numbers.',
+    subtitle: `Pass ?special=${formatConjunctionList(SPECIAL_ELEMENT_KINDS, 'or')} on supported metrics to render live upstream charts, ?special=none to hide a default widget, or ?special=<kind>:<payload> for custom data.`,
     title: 'Automatic Inline Data Widgets (?special=sparkline|bars|delta|…)',
   },
   {
@@ -188,7 +187,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'Stars, forks, open issues, open pull requests, latest release, last commit age, SPDX license, and 8-week commit activity sparkline for any public GitHub repository.',
+      'Stars, forks, open issues, pull requests, latest release, last commit age, license, and 8-week commit sparkline.',
     title: 'GitHub (/badge/gh/:owner/:repo/:metric)',
   },
   {
@@ -199,8 +198,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'Python Version', path: '/badge/pypi/xulbux/py', sample: '>=3.10' },
       { alt: 'PyPI License', path: '/badge/pypi/xulbux/license', sample: 'MIT' },
     ],
-    subtitle:
-      'Live package version, required Python, license, and ClickHouse ClickPy download stats.',
+    subtitle: 'Package version, required Python, license, and download stats.',
     title: 'PyPI & ClickPy (/badge/pypi/:pkg/:metric)',
   },
   {
@@ -460,7 +458,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle:
-      'SpigotMC resources (via Spiget, by numeric resource ID), Hangar (PaperMC) projects, and Thunderstore mods.',
+      'SpigotMC resources (by numeric resource ID), Hangar (PaperMC) projects, and Thunderstore mods.',
     title:
       'SpigotMC, Hangar & Thunderstore (/badge/spigot/:id/*, /badge/hangar/*, /badge/thunderstore/*)',
   },
@@ -477,7 +475,7 @@ export const SERVICE_PRESET_CARDS: readonly ShowcaseCardConfig[] = [
       { alt: 'CRAN Monthly Downloads', path: '/badge/cran/ggplot2/dl', sample: '2.1M/mo' },
       { alt: 'CRAN License', path: '/badge/cran/ggplot2/license', sample: 'MIT' },
     ],
-    subtitle: 'Flatpak app versions and installs, plus R package versions and cranlogs downloads.',
+    subtitle: 'Flatpak app versions and installs, plus R package versions and downloads.',
     title: 'Flathub & CRAN (/badge/flathub/*, /badge/cran/*)',
   },
   {

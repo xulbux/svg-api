@@ -1,5 +1,5 @@
 /**
- * Colors documentation page – Renders the Tailwind v4 OKLCH Theme Colors (`/docs/colors`) section (`<ColorsSection />`).
+ * Colors documentation page – Renders the Theme Colors (`/docs/colors`) section (`<ColorsSection />`).
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
@@ -11,7 +11,7 @@ import type { HtmlFragment } from '@/site/jsx';
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render the Tailwind v4 OKLCH Theme Colors (`/docs/colors`) documentation section as a JSX component.
+ * Render the Theme Colors (`/docs/colors`) documentation section as a JSX component.
  * @returns Rendered `<section class="doc-section" id="colors">` JSX fragment.
  */
 export function ColorsSection(): HtmlFragment {
@@ -19,8 +19,8 @@ export function ColorsSection(): HtmlFragment {
   return (
     <section class="doc-section" id="colors">
       <SectionHeader
-        description={`Every endpoint accepts any of the ${colorCount} harmonically balanced OKLCH color names below.`}
-        title={`${colorCount} Tailwind v4 OKLCH Theme Colors (\`?color=\`)`}
+        description={`Every endpoint accepts any of the ${colorCount} theme colors below.`}
+        title={`${colorCount} Theme Colors (\`?color=\`)`}
       />
       <SectionSubhead iconSlug="swatch-book" text="Color Swatches by Variant" />
       <CardGrid cards={buildColorSwatchCards()} />

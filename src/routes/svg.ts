@@ -11,7 +11,6 @@ import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
-  decodeSegment,
   isTruthyFlagParam,
   parseOptionalNumber,
   parsePerLineList,
@@ -30,6 +29,7 @@ import {
   resolveVariant,
 } from '@/routes/params';
 import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
+import { decodeRouteSegments } from '@/site/shared/encoding';
 import { renderQuote } from '@/svg/quote';
 import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
@@ -182,21 +182,12 @@ function buildStaticMatch(
   return { kind: 'static', render, ttl };
 }
 
-/** Decode the raw path parts after the route prefix (dropping one trailing empty segment, e.g., `/badge/a/b/` or `/badge/`). */
-function decodeRouteSegments(pathParts: readonly string[]): string[] {
-  const segments: string[] = [];
-  for (const rawSegment of pathParts.slice(2)) {
-    segments.push(decodeSegment(rawSegment));
-  }
-  if (segments.at(-1) === '') {
-    segments.pop();
-  }
-  return segments;
-}
-
 /** Copy only the first value of each recognized query parameter (already sorted by name) into a fresh query. */
 function pickQueryParams(query: URLSearchParams, names: readonly string[]): URLSearchParams {
   const picked = new URLSearchParams();
+  if (query.size === 0) {
+    return picked;
+  }
   for (const name of names) {
     const value = query.get(name);
     if (value !== null) {
@@ -249,8 +240,8 @@ function resolveBadgeRoute(
   }
   if ((service.route.target.maxSegments ?? 1) > 1) {
     // Multi-segment targets (e.g., Go module paths); every middle segment belongs to the target,
-    // except a leading required owner segment:
-    const hasOwnerSegment = service.route.owner?.isRequired === true;
+    // except a leading required owner segment when at least 4 segments are present:
+    const hasOwnerSegment = service.route.owner?.isRequired === true && segments.length >= 4;
     return {
       kind: 'service',
       request: {
@@ -460,8 +451,8 @@ export function findSvgRoute(prefix: string): SvgRouteDefinition | undefined {
 
 /**
  * Resolve a request URL onto an SVG route together with its normalized edge cache key.
- * Only the route's recognized query parameters reach the renderers, so the cache key (origin, raw
- * pathname, and those parameters sorted by name) always determines the rendered SVG.
+ * Only the route's recognized query parameters reach the renderers, and alias prefixes normalize to
+ * their canonical route prefix, so the cache key always determines the rendered SVG.
  * @param url   Request URL (raw percent-encoded pathname and query string).
  * @returns Route match and cache key, or `undefined` when no SVG route matches.
  */
@@ -484,10 +475,13 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
   if (match.kind === 'static' && route.prefix === 'badge') {
     query.delete('label');
   }
-  const pathname =
+  const rawPathname =
     url.pathname.length > 1 && url.pathname.endsWith('/')
       ? url.pathname.slice(0, -1)
       : url.pathname;
+  const pathname = route.aliasOf
+    ? `/${route.aliasOf}${rawPathname.slice(route.prefix.length + 1)}`
+    : rawPathname;
   const queryString = query.toString();
   return { cacheKey: `${url.origin}${pathname}${queryString ? `?${queryString}` : ''}`, match };
 }

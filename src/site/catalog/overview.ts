@@ -17,7 +17,6 @@ import {
   formatVariantTierSummary,
   formatVariantValues,
 } from '@/site/glossary';
-import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
 import type { ParamTableRow, ShowcaseCardConfig, UrlAnatomyPart } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -105,14 +104,13 @@ export const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       { alt: 'Build Status', path: '/badge/Build+Status/Passing?color=emerald&icon=circle-check' },
     ],
-    subtitle:
-      'Paste the Markdown image snippet into any README; GitHub proxies and caches the SVG through its image CDN.',
+    subtitle: 'Paste the Markdown snippet into any README or docs page.',
     title: 'Static Badge (Markdown Image)',
   },
   {
     items: [{ alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' }],
     subtitle:
-      'Live service badges are wrapped in a link to their upstream page; Opening the badge URL itself also redirects there (302).',
+      'Wraps the badge in a link to its upstream page; Visiting the badge URL directly also redirects there (302).',
     title: 'Live Service Badge (Linked Image)',
   },
 ];
@@ -159,19 +157,20 @@ export function buildSharedParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: formatSupportingEndpoints('color'),
-      description: `Any of the ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
+      description: `Any of the ${THEME_COLOR_NAMES.length} theme colors (see Colors); Stacks keep per-icon brand colors unless set.`,
       name: '?color=',
       values: formatColorValues(),
     },
     {
       defaultVal: formatSupportingEndpoints('icon'),
-      description: `Leading icon, a left,right pair, or a right-only icon (none,right); Any ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} slug.`,
+      description:
+        'Leading icon, a left,right pair, or a right-only icon (none,right) using any UI or brand icon slug.',
       name: '?icon=',
       values: 'rocket | book-open,arrow-right | none,external-link',
     },
     {
       defaultVal: formatSupportingEndpoints('anim'),
-      description: `Surface sheen and per-element motions (icon endpoints support per-icon motions; stacks support ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS)}; surface endpoints support sheen and none); none also stops widget, dot, and typing animations.`,
+      description: `Surface sheen and motions (icons support per-icon motions; stacks support ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS)}); none stops all animations.`,
       name: '?anim=',
       values: `sheen | ${[...ICON_MOTION_TOKENS, ...extraStackMotions].join(' | ')}`,
     },

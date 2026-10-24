@@ -5,6 +5,7 @@
 import { WHITE } from '@/config/palette';
 import { resolveStackBrandColor, resolveStackIconTitle } from '@/config/stack';
 import { DEFAULT_THEME_COLOR, resolveOptionalColor, THEMES } from '@/config/theme';
+import { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
 import {
   BRAND_SLUG_CLEAN_RX,
   DEFAULT_ICON_SLUG,
@@ -106,6 +107,8 @@ interface StackSpacing {
 interface StackTileContext {
   /** Optional uniform theme color override. */
   colorOverride: ThemeColorName | undefined;
+  /** Whether at least one non-fallback Kumo surface tile was rendered. */
+  hasFilledTile: boolean;
   /** Content-addressed `<defs>` IDs of every icon body emitted so far (collected while rendering). */
   iconBodyIds: Set<string>;
   /** Summed `innerSvg` length in UTF-16 code units of all collected icon bodies. */
@@ -140,6 +143,14 @@ interface StackTileIcon {
   isFallback: boolean;
 }
 
+/** Rendered SVG markup and fallback status of a single stack tile. */
+interface RenderedStackTile {
+  /** Whether the tile rendered the hollow fallback placeholder frame instead of a Kumo surface. */
+  isFallback: boolean;
+  /** Rendered `<g>` tile markup. */
+  markup: string;
+}
+
 /** Icon list and optional `:N` column suffix of a single group token. */
 interface GroupTokenParts {
   /** Comma/whitespace-separated icon list part. */
@@ -169,9 +180,6 @@ export const STACK_GROUP_GAP_RANGE: NumericRange = { default: 26, max: 64, min: 
 
 /** Ratio of the default inter-group gap to the intra-group gap. */
 export const GROUP_GAP_RATIO = 3.25;
-
-/** Tiles-per-row bounds when not specified per group. */
-export const STACK_PER_LINE_RANGE: NumericRange = { default: 8, max: 20, min: 1 };
 
 /** Maximum total icons rendered across an entire stack SVG. */
 const MAX_STACK_ICONS = 128;
@@ -440,7 +448,7 @@ function renderSingleStackTile(
   translateAnimation: string,
   diagonalStep: number,
   context: StackTileContext
-): string {
+): RenderedStackTile {
   const { iconScale, iconSize, radius, tileMotion, tileSize, variant } = context;
   const icon = resolveStackTileIcon(tile, context);
   // Center the icon's visible ink (not its `24x24` box) horizontally inside the tile:
@@ -463,9 +471,13 @@ function renderSingleStackTile(
       transform: iconTransform,
       type: icon.data.type,
     });
-    return `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${hollowFrame}${placeholderIcon}</g>`;
+    return {
+      isFallback: true,
+      markup: `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${hollowFrame}${placeholderIcon}</g>`,
+    };
   }
 
+  context.hasFilledTile = true;
   const themeColor = tile.colorOverride ?? context.colorOverride ?? tile.color;
   const isOnPrimary = variant === '1';
   if (isOnPrimary) {
@@ -498,10 +510,15 @@ function renderSingleStackTile(
     type: icon.data.type,
   });
 
-  return `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${surfaceMarkup}${pulseGlowMarkup}${iconMarkup}</g>`;
+  return {
+    isFallback: false,
+    markup: `<g><title>${escapeXml(tile.title)}</title>${translateAnimation}${surfaceMarkup}${pulseGlowMarkup}${iconMarkup}</g>`,
+  };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
 
 /**
  * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug or `<slug>@<color>` token.
@@ -604,6 +621,7 @@ export function renderStack(options: StackRenderOptions): string {
   const stepPitch = tileSize + gap;
   const tileContext: StackTileContext = {
     colorOverride: options.color,
+    hasFilledTile: false,
     iconBodyIds: new Set<string>(),
     iconBodyLength: 0,
     iconDefs: '',
@@ -640,7 +658,7 @@ export function renderStack(options: StackRenderOptions): string {
         const diagonalStep = (tileX + tileY) / stepPitch;
         const translateAnimation = buildTileTranslateAnimation(tileMotion, diagonalStep);
 
-        tilesMarkup += renderSingleStackTile(
+        const renderedTile = renderSingleStackTile(
           tile,
           tileX,
           tileY,
@@ -648,8 +666,9 @@ export function renderStack(options: StackRenderOptions): string {
           diagonalStep,
           tileContext
         );
+        tilesMarkup += renderedTile.markup;
 
-        if (hasSheen) {
+        if (hasSheen && !renderedTile.isFallback) {
           clipRects += translateAnimation
             ? `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}">${translateAnimation}</rect>`
             : `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
@@ -671,15 +690,21 @@ export function renderStack(options: StackRenderOptions): string {
   const svgHeight = totalHeight + padY * 2;
   const viewBox = padY > 0 ? `0 ${-padY} ${totalWidth} ${svgHeight}` : undefined;
 
-  const gradientDefs = renderSurfaceGradientDefs(variant !== '1', tileContext.usedPrimaryColors);
-  const sheen = renderSheenOverlay({
-    animMode,
-    clipContent: clipRects,
-    height: svgHeight,
-    idPrefix: 'stack-sheen',
-    radius,
-    width: totalWidth,
-  });
+  const gradientDefs = renderSurfaceGradientDefs(
+    variant !== '1' && tileContext.hasFilledTile,
+    tileContext.usedPrimaryColors
+  );
+  const sheen =
+    clipRects.length === 0
+      ? { clipDef: '', overlay: '' }
+      : renderSheenOverlay({
+          animMode,
+          clipContent: clipRects,
+          height: svgHeight,
+          idPrefix: 'stack-sheen',
+          radius,
+          width: totalWidth,
+        });
 
   return renderSvgDocument({
     ariaLabel: `tech stack: ${allTitles.join(', ')}`,

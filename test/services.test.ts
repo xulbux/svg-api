@@ -848,10 +848,16 @@ describe('new service presets', () => {
     expect(resolvePathRedirect('/badge/gitlab/gitlab-org/charts/gitlab-runner/stars')).toBe(
       'https://gitlab.com/gitlab-org/charts/gitlab-runner/-/starrers'
     );
-    // Every segment is validated individually, and the depth stays bounded:
-    expect(await describeMetric('/badge/gitlab/gitlab-org/../gitlab-runner/stars')).toBe(
+    // Every segment is validated individually, missing owners are reported, and the depth stays bounded:
+    expect(await describeMetric('/badge/gitlab/gitlab-org/.../gitlab-runner/stars')).toBe(
       'gitlab: invalid name'
     );
+    const traversalMetric = await resolveServiceMetric(
+      { metric: 'stars', owner: 'gitlab-org', service: 'gitlab', target: '../gitlab-runner' },
+      TEST_ENV
+    );
+    expect(traversalMetric.result.value).toBe('invalid name');
+    expect(await describeMetric('/badge/gitlab/gitlab-runner/stars')).toBe('gitlab: missing owner');
     expect(await describeMetric('/badge/gitlab/a/b/c/d/e/f/stars')).toBe('gitlab: invalid name');
   });
 

@@ -303,4 +303,10 @@ describe('computeIconXBounds', () => {
       minX: 2,
     });
   });
+
+  it('keeps narrow bounds on single-X vertical stroke icons instead of inflating to 2..22 (regression: single-X vertical stroke bounds)', () => {
+    expect(computeIconXBounds('<path d="M4 4v16" />', true)).toEqual({ maxX: 5.13, minX: 2.88 });
+    const tallyOne = requireDefined(resolveIcon('tally-1'), 'tally-1 icon');
+    expect(tallyOne.maxX - tallyOne.minX).toBeLessThan(3);
+  });
 });

@@ -427,7 +427,7 @@
     position: fixed;
     inset: 0 auto 0 0;
     z-index: var(--z-popover);
-    inline-size: min(300px, 86vw);
+    inline-size: min(300px, 86dvw);
     block-size: 100dvh;
     padding: 24px 22px 40px;
     overscroll-behavior: contain;

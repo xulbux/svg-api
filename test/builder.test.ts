@@ -2065,9 +2065,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toContain('id="stack-group-by-category" checked');
     expect(html).toContain('id="stack-syntax-help" popover role="dialog"');
     expect(html).toContain('<code class="param-code">rust@amber</code>');
-    expect(html).toContain(
-      'Switch to <strong>Raw DSL</strong> to add any icon from the full catalog or customize per-icon colors.'
-    );
+    expect(html).toContain('Use <strong>Raw DSL</strong> for any icon slug or per-tile colors.');
     expect(html).not.toContain('All icons…');
     expect(html.indexOf('data-validation-for="field-groups"')).toBeLessThan(
       html.indexOf('data-stack-raw-actions')
@@ -2341,5 +2339,63 @@ describe('builder pages & "Open in Builder" links', () => {
     );
     expect(snippets.html).toContain('src="https://svg.xul.is/badge/a/b?color=sky&copy=1"');
     expect(snippets.html).toContain('alt="A &amp;amp; B"');
+  });
+
+  it('guards Object.prototype keys in client icon lookup/search, matches clean brand slugs, and enforces service owner and minTargetSegments in builder URLs (regressions: Object.prototype key crash, client clean brand slug parity, missing owner and minTargetSegments in service builder)', () => {
+    const index = getIconPickerIndex();
+    const resolver = core.createIconResolver(index, MAX_ICON_SLUG_LENGTH);
+    for (const protoKey of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+      expect(resolver.resolve(protoKey, false), protoKey).toBeUndefined();
+      expect(resolver.resolve(protoKey, true), protoKey).toBeUndefined();
+      expect(resolver.locate(protoKey, false), protoKey).toBeUndefined();
+    }
+    const syntheticIndex = { ...index, sets: { brands: ['3d-model'], lucide: ['constructor'] } };
+    expect(() =>
+      core.filterIconCatalog(syntheticIndex, syntheticIndex.sets, 'lucide', ' fallback ')
+    ).not.toThrow();
+    const syntheticResolver = core.createIconResolver(syntheticIndex, MAX_ICON_SLUG_LENGTH);
+    expect(syntheticResolver.locate('3dmodel', true)).toEqual({
+      page: 0,
+      set: 'brands',
+      slug: '3d-model',
+    });
+
+    const serviceSchema = getBuilderSchema('service');
+    expect(
+      core.parsePath(serviceSchema, '/badge/terraform/terraform-aws-modules/vpc/v')
+    ).toBeUndefined();
+    expect(
+      core.parsePath(serviceSchema, '/badge/terraform/terraform-aws-modules/vpc/aws/v')
+    ).toMatchObject({
+      metric: 'v',
+      owner: '',
+      service: 'terraform',
+      target: 'terraform-aws-modules/vpc/aws',
+    });
+    expect(core.parsePath(serviceSchema, '/badge/gh/hono/stars')).toBeUndefined();
+    expect(core.parsePath(serviceSchema, '/badge/npm/hono/not-a-metric')).toBeUndefined();
+    expect(core.parsePath(serviceSchema, '/badge/gh//hono/stars')).toBeUndefined();
+
+    expect(
+      core.buildDefaultLinkTarget(
+        serviceSchema,
+        { metric: 'stars', owner: '', service: 'gh', target: 'hono' },
+        'https://svg.xul.is/badge/gh/hono/stars'
+      )
+    ).toBe('https://svg.xul.is/badge/gh/hono/stars');
+    expect(
+      core.buildDefaultLinkTarget(
+        serviceSchema,
+        { metric: 'v', owner: '', service: 'terraform', target: 'terraform-aws-modules/vpc' },
+        'https://svg.xul.is/badge/terraform/terraform-aws-modules/vpc/v'
+      )
+    ).toBe('https://svg.xul.is/badge/terraform/terraform-aws-modules/vpc/v');
+    expect(
+      core.buildDefaultLinkTarget(
+        serviceSchema,
+        { metric: 'v', owner: '', service: 'terraform', target: 'terraform-aws-modules/vpc/aws' },
+        'https://svg.xul.is/badge/terraform/terraform-aws-modules/vpc/aws/v'
+      )
+    ).toBe('https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws');
   });
 });

@@ -3,10 +3,7 @@
  */
 
 import { SITE_HOST } from '@/config/site';
-import { ACTIVE_STACK_MOTION_TOKENS, TYPING_LAYOUT_TOKENS } from '@/routes/params';
-import { formatConjunctionList } from '@/site/glossary';
-import { ALL_ICON_SOURCE_NAMES, ICON_SOURCE_SETS } from '@/svg/icons';
-import { BADGE_HEIGHT } from '@/svg/renderer';
+import { THEME_COLOR_NAMES } from '@/config/theme';
 import type {
   BuilderKind,
   BuilderPageMeta,
@@ -35,7 +32,7 @@ const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
  */
 export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   {
-    description: `Getting started with ${SITE_HOST}: URL anatomy, path segment encoding, shared query parameters, embedding in Markdown and HTML, click-through redirects, and caching.`,
+    description: `Getting started with ${SITE_HOST}: URL anatomy, path encoding, shared parameters, Markdown embeds, and edge caching.`,
     group: 'start',
     navLabel: 'Overview',
     pagerLabel: 'Getting Started',
@@ -43,7 +40,8 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
     title: 'Getting Started',
   },
   {
-    description: `Static ${BADGE_HEIGHT}px badges with pulsing radar dots, inline data widgets, icons, and micro-animations, plus the full query parameter reference.`,
+    description:
+      'Status and metadata badges with icons, pulsing status dots, inline charts, and animations.',
     group: 'badges',
     navLabel: 'Static Badges',
     pagerLabel: 'Static Badges',
@@ -52,7 +50,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Live package registry, CDN, and forge metric badges with edge caching and 302 redirects to the upstream page, generated from the service registry.',
+      'Live package, forge, and CDN metric badges with edge caching and upstream redirects.',
     group: 'badges',
     navLabel: 'Live Services',
     pagerLabel: 'Live Service Badges',
@@ -61,7 +59,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      '3D CTA buttons with size presets, leading and trailing icons, sheen and icon animations, and split two-segment layouts.',
+      'Action buttons with size presets, leading and trailing icons, animations, and split layouts.',
     group: 'elements',
     navLabel: 'Buttons',
     pagerLabel: 'CTA Buttons',
@@ -69,7 +67,8 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
     title: 'CTA Buttons',
   },
   {
-    description: `Standalone ${formatConjunctionList(ICON_SOURCE_SETS.stroke)} UI icons and ${formatConjunctionList(ICON_SOURCE_SETS.brand)} brand logos as tinted SVGs with intrinsic pixel sizing, stroke control, aliases, and animations.`,
+    description:
+      'Standalone UI icons and brand logos with custom pixel sizing, stroke width, colors, and motion.',
     group: 'elements',
     navLabel: 'Icons',
     pagerLabel: 'Standalone Icons',
@@ -78,7 +77,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Grouped tech stack icon grids with per-group columns, side-by-side groups, row bands, tile variants, spacing controls, and staggered per-tile micro-animations.',
+      'Grouped tech stack icon grids with custom columns, row bands, tile variants, and staggered animations.',
     group: 'elements',
     navLabel: 'Tech Stack',
     pagerLabel: 'Tech Stack Grids',
@@ -87,7 +86,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Realistic human-cadence SVG typing animations across Kumo 3D container frames and frameless canvases with blinking cursors, erase transitions, and optional typos.',
+      'Natural SVG typing animations across container frames and frameless headlines with custom cursors and erase modes.',
     group: 'elements',
     navLabel: 'Typing',
     pagerLabel: 'Typing Animations',
@@ -96,7 +95,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   },
   {
     description:
-      'Auto-wrapping README quote cards in horizontal and vertical layouts with size presets, accent colors, surface tiers, and sheen.',
+      'Auto-wrapping README quote cards in horizontal and vertical layouts with custom sizes and colors.',
     group: 'elements',
     navLabel: 'Quotes',
     pagerLabel: 'Quote Cards',
@@ -104,13 +103,12 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
     title: 'Quote Cards',
   },
   {
-    description:
-      'Every Tailwind v4 OKLCH theme color token accepted by ?color= across every SVG endpoint.',
+    description: `All ${THEME_COLOR_NAMES.length} theme colors accepted by ?color= across every SVG endpoint.`,
     group: 'reference',
     navLabel: 'Colors',
     pagerLabel: 'Theme Colors',
     slug: 'colors',
-    title: 'Theme Color Tokens',
+    title: 'Theme Colors',
   },
 ];
 
@@ -120,8 +118,7 @@ export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
  */
 export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
   {
-    description:
-      'Build static badge URLs with labels, icons, colors, status dots, inline data widgets, and animations, then copy the Markdown, HTML, or URL.',
+    description: 'Customize a static status badge and copy its Markdown, HTML, or URL.',
     docsSlug: 'badges',
     group: 'badges',
     kind: 'badge',
@@ -130,8 +127,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Badge Builder',
   },
   {
-    description:
-      'Build live service badge URLs for package registries, forges, and CDNs with metric selection, automatic data widgets (marked Auto), label overrides, and styling, previewed with live data.',
+    description: 'Pick a live service metric, customize its style, and copy the embed snippet.',
     docsSlug: 'services',
     group: 'badges',
     kind: 'service',
@@ -140,8 +136,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Service Badge Builder',
   },
   {
-    description:
-      'Build 3D CTA button URLs with size presets, leading and trailing icons, and sheen or icon animations.',
+    description: 'Design an action button with custom size, icons, colors, and motion.',
     docsSlug: 'buttons',
     group: 'elements',
     kind: 'button',
@@ -150,7 +145,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Button Builder',
   },
   {
-    description: `Find any ${formatConjunctionList(ALL_ICON_SOURCE_NAMES, 'or')} icon in a searchable picker and build standalone icon URLs with size, stroke, color, and motion.`,
+    description: 'Search UI and brand icons and customize size, stroke, color, and motion.',
     docsSlug: 'icons',
     group: 'elements',
     kind: 'icon',
@@ -159,7 +154,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Icon Builder',
   },
   {
-    description: `Build grouped tech stack grid URLs with per-group columns, side-by-side groups, row bands, tile variants, spacing, and staggered ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS, 'or')} animations.`,
+    description: 'Compose grouped tech stack grids by category or with the stack DSL.',
     docsSlug: 'stack',
     group: 'elements',
     kind: 'stack',
@@ -168,7 +163,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Tech Stack Builder',
   },
   {
-    description: `Build realistic SVG typing animation URLs with container frames (${TYPING_LAYOUT_TOKENS.join(', ')}), cursor shapes, erase modes, fonts, and human keystroke cadence.`,
+    description: 'Configure animated typing lines, container frames, cursors, and timing.',
     docsSlug: 'typing',
     group: 'elements',
     kind: 'typing',
@@ -177,8 +172,7 @@ export const BUILDER_PAGES: readonly [BuilderPageMeta, ...BuilderPageMeta[]] = [
     title: 'Typing Animation Builder',
   },
   {
-    description:
-      'Build README quote card URLs with author attribution, horizontal or vertical layouts, size presets, widths, and accent colors.',
+    description: 'Style an auto-wrapping quote card in horizontal or vertical layout.',
     docsSlug: 'quotes',
     group: 'elements',
     kind: 'quote',

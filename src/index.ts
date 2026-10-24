@@ -238,7 +238,8 @@ function getSafeExecutionContext(context: AppContext): WaitUntilContext | undefi
  */
 function getRawPathname(request: Request): string {
   const { url } = request;
-  const pathStart = url.indexOf('/', url.indexOf('://') + 3);
+  const schemeIndex = url.indexOf('://');
+  const pathStart = url.indexOf('/', schemeIndex === -1 ? 0 : schemeIndex + 3);
   if (pathStart === -1) {
     return '/';
   }
@@ -258,10 +259,10 @@ function getRawPathname(request: Request): string {
 function getRawSearch(request: Request): string {
   const { url } = request;
   const queryStart = url.indexOf('?');
-  if (queryStart === -1) {
+  const hashStart = url.indexOf('#');
+  if (queryStart === -1 || (hashStart !== -1 && hashStart < queryStart)) {
     return '';
   }
-  const hashStart = url.indexOf('#', queryStart);
   const search = hashStart === -1 ? url.slice(queryStart) : url.slice(queryStart, hashStart);
   return search === '?' ? '' : search;
 }
@@ -510,10 +511,10 @@ function handleAppError(error: Error, context: AppContext): Response {
 
 const app = new Hono<{ Bindings: Env }>({ getPath: getRawPathname });
 
-// [0] Reject oversized request URLs early:
+// [1] Reject oversized request URLs early:
 app.use('*', guardRequestUrlLength);
 
-// [1] Website pages, discovery metadata, and static assets:
+// [2] Website pages, discovery metadata, and static assets:
 app.get('/', handleRootRoute);
 app.get('/favicon.svg', handleFaviconRoute);
 app.get('/favicon.ico', handleFaviconIcoRoute);
@@ -532,12 +533,12 @@ for (const path of TRAILING_SLASH_PATHS) {
   app.get(path, handleTrailingSlashRoute);
 }
 
-// [2] Registered SVG routes from `SVG_ROUTES`:
+// [3] Registered SVG routes from `SVG_ROUTES`:
 for (const route of SVG_ROUTES) {
   app.get(`/${route.prefix}/*`, handleSvgRoute);
 }
 
-// [3] Unmatched routes and unexpected failures:
+// [4] Unmatched routes and unexpected failures:
 app.notFound(handleNotFound);
 app.onError(handleAppError);
 

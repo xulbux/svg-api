@@ -10,7 +10,18 @@ import type {
   BuilderState,
 } from '@/types';
 
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Truthy boolean query tokens accepted by boolean flag parameters in display order. */
+export const TRUTHY_FLAG_LIST = ['true', '1', 'yes'] as const;
+
+/** Truthy boolean query flag lookup set. */
+export const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set(TRUTHY_FLAG_LIST);
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches comma or whitespace separators in list-style payloads. */
+export const LIST_SEPARATOR_RX = /[,\s]+/;
 
 /** Matches percent-escaped characters that stay readable in paths and query values (`,` `:` `;` `@` `|`). */
 const READABLE_ESCAPE_RX = /%(?:2C|3A|3B|40|7C)/g;
@@ -37,6 +48,17 @@ export const HINT_ICON_REST_RX = /^(?<slug>[^\s:]+)(?:[\s:]+(?<text>[\s\S]*))?$/
 const SLUG_SEPARATOR_RX = /[-_]/g;
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Look up an own (non-inherited) property of a lookup table by a user-supplied key.
+ * Prevents keys like `'constructor'` or `'toString'` from resolving to `Object.prototype` members.
+ * @param record   Lookup table to read from.
+ * @param key      Untrusted lookup key.
+ * @returns The own property value, or `undefined` when `key` is not an own property.
+ */
+export function getOwnValue<V>(record: Readonly<Record<string, V>>, key: string): V | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
 
 /**
  * Capitalize the first letter of every `-`/`_`-separated slug part and join the parts with `joiner`.
@@ -79,6 +101,22 @@ export function decodeSegment(raw: string): string {
   } catch {
     return withSpaces;
   }
+}
+
+/**
+ * Decode the raw path parts after a leading route prefix (dropping one trailing empty segment, e.g., `/badge/a/b/` or `/badge/`).
+ * @param pathParts   Result of `pathname.split('/')`.
+ * @returns Decoded route segments after the prefix.
+ */
+export function decodeRouteSegments(pathParts: readonly string[]): string[] {
+  const segments: string[] = [];
+  for (let i = 2; i < pathParts.length; i += 1) {
+    segments.push(decodeSegment(pathParts[i] ?? ''));
+  }
+  if (segments.at(-1) === '') {
+    segments.pop();
+  }
+  return segments;
 }
 
 /**

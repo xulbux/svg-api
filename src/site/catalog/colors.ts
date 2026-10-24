@@ -1,5 +1,5 @@
 /**
- * Colors documentation catalog – Primary and secondary OKLCH theme color swatch cards for `/docs/colors`.
+ * Colors documentation catalog – Primary and secondary theme color swatch cards for `/docs/colors`.
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';
@@ -8,7 +8,7 @@ import type { ShowcaseCardConfig, ShowcaseItem } from '@/types';
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Build the primary (`variant=1`) and secondary (`variant=2`) OKLCH color swatch cards for `/docs/colors`.
+ * Build the primary (`variant=1`) and secondary (`variant=2`) theme color swatch cards for `/docs/colors`.
  * @returns Showcase card configurations for the color palette page.
  */
 export function buildColorSwatchCards(): ShowcaseCardConfig[] {
@@ -28,12 +28,12 @@ export function buildColorSwatchCards(): ShowcaseCardConfig[] {
   return [
     {
       items: primaryItems,
-      subtitle: `All ${colorCount} color tokens rendered with variant=1 (3D brand gradient right cap).`,
+      subtitle: `All ${colorCount} theme colors in variant=1 (gradient fill).`,
       title: 'Primary Gradient Swatches (?variant=1)',
     },
     {
       items: secondaryItems,
-      subtitle: `All ${colorCount} color tokens rendered with variant=2 (tinted dark surface + border).`,
+      subtitle: `All ${colorCount} theme colors in variant=2 (tinted dark surface).`,
       title: 'Secondary Tinted Swatches (?variant=2)',
     },
   ];

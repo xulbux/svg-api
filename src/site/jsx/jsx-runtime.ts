@@ -5,7 +5,7 @@
  * async promises, or client hydration payloads.
  */
 
-import { escapeXml } from '@/svg/shared';
+import { escapeXml, getOwnValue } from '@/svg/shared';
 import type { HtmlFragment, JsxChild } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -141,39 +141,37 @@ function serializeChildren(child: JsxChild): string {
   return '';
 }
 
+/** Serialize a single non-null, non-`children` attribute pair (`''` when omitted). */
+function serializeSingleAttribute(rawName: string, rawValue: unknown): string {
+  if (rawName.startsWith('rawAttrs')) {
+    const rawAttrs = String(rawValue).trim();
+    return rawAttrs ? ` ${rawAttrs}` : '';
+  }
+  const name = getOwnValue(ATTRIBUTE_ALIASES, rawName) ?? rawName;
+  if (name === 'popover') {
+    if (rawValue === true || rawValue === '') {
+      return ' popover';
+    }
+    return rawValue === false ? '' : ` popover="${escapeXml(String(rawValue))}"`;
+  }
+  if (typeof rawValue === 'boolean') {
+    if (name.startsWith('aria-') || name === 'draggable' || name === 'spellcheck') {
+      return ` ${name}="${String(rawValue)}"`;
+    }
+    return rawValue && (BOOLEAN_ATTRIBUTES.has(name) || name.startsWith('data-')) ? ` ${name}` : '';
+  }
+  if (rawValue === '' && BOOLEAN_ATTRIBUTES.has(name)) {
+    return ` ${name}`;
+  }
+  return ` ${name}="${escapeXml(String(rawValue))}"`;
+}
+
 /** Serialize the attributes of an intrinsic HTML or SVG element. */
 function serializeAttributes(props: Readonly<Record<string, unknown>>): string {
   let attrsHtml = '';
   for (const [rawName, rawValue] of Object.entries(props)) {
-    if (rawName === 'children' || rawValue === undefined || rawValue === null) {
-      // Skip children and unset attributes.
-    } else if (rawName.startsWith('rawAttrs')) {
-      const rawAttrs = String(rawValue).trim();
-      if (rawAttrs) {
-        attrsHtml += ` ${rawAttrs}`;
-      }
-    } else {
-      const name = ATTRIBUTE_ALIASES[rawName] ?? rawName;
-      if (name === 'popover') {
-        if (rawValue === true || rawValue === '') {
-          attrsHtml += ' popover';
-        } else if (rawValue !== false) {
-          attrsHtml += ` popover="${escapeXml(String(rawValue))}"`;
-        }
-      } else if (
-        BOOLEAN_ATTRIBUTES.has(name) ||
-        (name.startsWith('data-') && typeof rawValue === 'boolean')
-      ) {
-        if (rawValue === true) {
-          attrsHtml += ` ${name}`;
-        }
-      } else if (typeof rawValue === 'boolean') {
-        if (name.startsWith('aria-') || name === 'spellcheck') {
-          attrsHtml += ` ${name}="${String(rawValue)}"`;
-        }
-      } else {
-        attrsHtml += ` ${name}="${escapeXml(String(rawValue))}"`;
-      }
+    if (rawName !== 'children' && rawValue !== undefined && rawValue !== null) {
+      attrsHtml += serializeSingleAttribute(rawName, rawValue);
     }
   }
   return attrsHtml;

@@ -127,6 +127,8 @@ export interface BuilderServiceOption {
   metricAliases?: Readonly<Record<string, string>>;
   /** Canonical metrics with their default labels and upstream page templates. */
   metrics: readonly BuilderServiceMetric[];
+  /** Minimum number of `/`-separated target segments when greater than `1`. */
+  minTargetSegments?: number;
   /** Placeholder of the owner segment (e.g., `'library (default)'`). */
   ownerHint?: string;
   /** Whether the route accepts, requires, or rejects an explicit owner segment. */

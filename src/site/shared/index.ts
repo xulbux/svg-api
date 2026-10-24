@@ -12,13 +12,18 @@ export {
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
+  decodeRouteSegments,
   decodeSegment,
   encodeSegment,
   findField,
   findOption,
   findService,
+  getOwnValue,
   HINT_ICON_REST_RX,
+  LIST_SEPARATOR_RX,
   readState,
+  TRUTHY_FLAG_LIST,
+  TRUTHY_FLAG_TOKENS,
 } from '@/site/shared/encoding';
 export {
   composeAnim,
@@ -44,6 +49,7 @@ export {
   collectStackTileTokens,
   composeCategorizedStack,
   normalizeStackGroups,
+  STACK_PER_LINE_RANGE,
   stripStackTileColor,
 } from '@/site/shared/stackDsl';
 export {

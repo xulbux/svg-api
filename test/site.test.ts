@@ -85,7 +85,7 @@ const SIDEBAR_TOGGLE_RX =
 
 /** Matches class names that were removed from the markup because no stylesheet or script uses them. */
 const DEAD_CLASS_RX =
-  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text)[\s"]/;
+  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text|stack-chip-label|feature-icon)[\s"]/;
 
 /** Matches every `var(--c-…)` custom property reference. */
 const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
@@ -476,6 +476,25 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 
+  it('renders highlight cards right below the hero, hides their detail text on narrow screens, and keeps live endpoint previews above the bottom CTA row', () => {
+    const html = renderHomeHtml();
+    const heroIndex = html.indexOf('<section class="hero">');
+    const highlightsIndex = html.indexOf('<section class="feature-grid" aria-label="Highlights">');
+    const endpointsIndex = html.indexOf('<section class="doc-section" id="endpoints">');
+    const pagerIndex = html.indexOf('<div class="pager-row is-end">');
+    expect(heroIndex).toBeGreaterThan(-1);
+    expect(highlightsIndex).toBeGreaterThan(heroIndex);
+    expect(endpointsIndex).toBeGreaterThan(highlightsIndex);
+    expect(pagerIndex).toBeGreaterThan(endpointsIndex);
+    expect(
+      html.split('<h2 class="feature-title"><svg class="ui-icon"').length - 1
+    ).toBeGreaterThanOrEqual(4);
+    expect(html).not.toContain('feature-icon');
+    expect(getSiteStylesheet()).toMatch(
+      /@media \(max-width: 640px\) \{[\s\S]*?\.feature-desc \{\s*display: none;\s*\}/
+    );
+  });
+
   it('renders exactly three header tabs and marks the active one with aria-current', () => {
     const expectedActive: Readonly<Record<string, string>> = {
       '/': '/',
@@ -728,20 +747,23 @@ describe('documentation drift guards', () => {
     );
   });
 
-  it('computes every headline count instead of hard-coding it', () => {
+  it('computes every headline count instead of hard-coding it and keeps internal jargon out of user-facing copy', () => {
     const homeHtml = renderHomeHtml();
     const iconCounts = getIconSetCounts();
     expect(iconCounts.lucide).toBeGreaterThan(1000);
     expect(iconCounts.brand).toBeGreaterThan(1000);
-    expect(homeHtml).toContain(`share ${THEME_COLOR_NAMES.length} Tailwind v4 OKLCH color tokens`);
-    expect(homeHtml).toContain(`${formatCountLowerBound(iconCounts.lucide)} Lucide stroke icons`);
+    expect(homeHtml).toContain(`${THEME_COLOR_NAMES.length} Theme Colors`);
+    expect(homeHtml).toContain(`${formatCountLowerBound(iconCounts.lucide)} UI icons`);
     expect(homeHtml).toContain(
-      `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Vector Icons`
+      `${formatCountLowerBound(iconCounts.lucide + iconCounts.brand)} Icons`
     );
+    expect(homeHtml).toContain(`${Object.keys(SERVICES_CONFIG).length} Live Services`);
     expect(homeHtml).toContain('Six Unified Endpoints');
     expect(homeHtml.split('<span class="route-method">GET</span>').length - 1).toBe(6);
+    expect(homeHtml).not.toContain('OKLCH');
+    expect(homeHtml).not.toContain('Simple Icons');
     expect(renderDocsHtml('icons')).toContain(
-      `${formatCountLowerBound(iconCounts.brand)} Simple Icons`
+      `${formatCountLowerBound(iconCounts.brand)} brand &amp; technology logos`
     );
     expect(formatCountLowerBound(1890)).toBe('1,800+');
   });
@@ -1061,5 +1083,25 @@ describe('site stylesheet', () => {
     // Smooth curves (`S`, `T`) and packed arc flags (`a5 5 0 015 5`) flatten without dropping segments:
     const flattened = flattenSvgPath('M0 0 C2 0 4 2 6 2 S10 0 12 0 Q14 2 16 0 T20 0 a5 5 0 015 5');
     expect(flattened[0]?.points.length).toBeGreaterThan(20);
+  });
+
+  it('preserves string values on HTML boolean-capable attributes, guards prototype attribute names, scopes legacy color overrides under @supports not, and uses concise BreadcrumbList item names (regressions: boolean attribute dropped string value, :root:has overrode light-dark())', () => {
+    expect(jsx('div', { hidden: 'until-found' }).rawHtml).toBe('<div hidden="until-found"></div>');
+    expect(jsx('div', { hidden: true }).rawHtml).toBe('<div hidden></div>');
+    expect(jsx('div', { hidden: '' }).rawHtml).toBe('<div hidden></div>');
+    expect(jsx('div', { hidden: false }).rawHtml).toBe('<div></div>');
+    expect(jsx('div', { draggable: true }).rawHtml).toBe('<div draggable="true"></div>');
+    expect(jsx('div', { constructor: 'safe' }).rawHtml).toBe('<div constructor="safe"></div>');
+
+    const css = getSiteStylesheet();
+    expect(css).toContain('@supports not (color: light-dark(white, black)) {');
+    const beforeSupportsIndex = css.indexOf('@supports (color: light-dark(white, black))');
+    expect(beforeSupportsIndex).toBeGreaterThan(0);
+    expect(css.slice(0, beforeSupportsIndex)).not.toContain('--c-text-3:');
+
+    const badgesDocsHtml = renderDocsHtml('badges');
+    expect(badgesDocsHtml).toContain('"name":"Static Badges","position":3');
+    const badgeBuilderHtml = renderBuilderHtml('badge');
+    expect(badgeBuilderHtml).toContain('"name":"Badge Builder","position":2');
   });
 });

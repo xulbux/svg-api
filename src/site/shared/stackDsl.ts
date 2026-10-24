@@ -2,16 +2,13 @@
  * Stack DSL parser & band composer – Parses `/stack` tile tokens and packs categorized icon selections into balanced multi-band DSL strings.
  */
 
-import { LINE_BREAK_RX } from '@/site/shared/encoding';
-import { LIST_SEPARATOR_RX } from '@/site/shared/fields';
+import { LINE_BREAK_RX, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
+import type { NumericRange } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Maximum number of columns packed onto a single horizontal `/stack` band when auto-grouping by category. */
-const MAX_STACK_BAND_COLUMNS = 8;
-
-/** Maximum per-group column count accepted by `?perline=` when composing `/stack` bands. */
-const MAX_PER_LINE_COLUMNS = 20;
+/** Tiles-per-row bounds when not specified per group. */
+export const STACK_PER_LINE_RANGE: NumericRange = { default: 8, max: 20, min: 1 };
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -26,10 +23,21 @@ const WHITESPACE_RX = /\s+/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Collect non-empty icon tokens from a category group. */
+function collectNonEmptyTokens(group: readonly string[]): string[] {
+  const tokens: string[] = [];
+  for (const token of group) {
+    if (token) {
+      tokens.push(token);
+    }
+  }
+  return tokens;
+}
+
 /** Format a candidate horizontal `/stack` band of category groups within `maxBandCols`, or `undefined` when it overflows. */
 function formatStackBand(
   bandGroups: readonly (readonly string[])[],
-  maxBandCols = MAX_STACK_BAND_COLUMNS
+  maxBandCols = STACK_PER_LINE_RANGE.default
 ): string | undefined {
   let bandRows = 1;
   let totalCount = 0;
@@ -68,14 +76,18 @@ function formatStackBand(
 
 /** Parse a `?perline=` input into a positional array of clamped column counts, dropping trailing holes. */
 function parsePerLineValues(rawPerLine: string): (number | undefined)[] {
+  const trimmed = rawPerLine.trim();
+  if (!trimmed) {
+    return [];
+  }
   const values: (number | undefined)[] = [];
-  for (const part of rawPerLine.trim().split(LIST_SEPARATOR_RX)) {
+  for (const part of trimmed.split(LIST_SEPARATOR_RX)) {
     const cleaned = part.trim();
     const parsed = cleaned ? Number(cleaned) : Number.NaN;
     const rounded = Math.round(parsed);
     values.push(
-      Number.isFinite(parsed) && parsed >= 1
-        ? Math.min(MAX_PER_LINE_COLUMNS, Math.max(1, rounded))
+      Number.isFinite(parsed) && parsed >= STACK_PER_LINE_RANGE.min
+        ? Math.min(STACK_PER_LINE_RANGE.max, Math.max(STACK_PER_LINE_RANGE.min, rounded))
         : undefined
     );
   }
@@ -90,7 +102,7 @@ function composeStackWithExplicitPerLine(
   categoryGroups: readonly (readonly string[])[],
   perLineValues: readonly (number | undefined)[]
 ): string {
-  const defaultPerLine = perLineValues[0] ?? MAX_STACK_BAND_COLUMNS;
+  const defaultPerLine = perLineValues[0] ?? STACK_PER_LINE_RANGE.default;
   const explicitBands: string[] = [];
   let bandTokens: string[] = [];
   let bandCols = 0;
@@ -98,7 +110,7 @@ function composeStackWithExplicitPerLine(
   let groupIndex = 0;
 
   for (const group of categoryGroups) {
-    const tokens = group.filter(Boolean);
+    const tokens = collectNonEmptyTokens(group);
     if (tokens.length > 0) {
       const groupPerLine =
         perLineValues[Math.min(groupIndex, perLineValues.length - 1)] ?? defaultPerLine;
@@ -111,7 +123,7 @@ function composeStackWithExplicitPerLine(
       const nextMaxRows = Math.max(bandMaxRows, groupRows);
       if (
         bandTokens.length > 0 &&
-        (bandCols + groupCols > MAX_STACK_BAND_COLUMNS ||
+        (bandCols + groupCols > STACK_PER_LINE_RANGE.default ||
           (nextMaxRows > 1 && bandTokens.length >= 2))
       ) {
         explicitBands.push(bandTokens.join('|'));
@@ -217,12 +229,12 @@ export function composeCategorizedStack(
     return composeStackWithExplicitPerLine(categoryGroups, perLineValues);
   }
 
-  const maxBandCols = perLineValues[0] ?? MAX_STACK_BAND_COLUMNS;
+  const maxBandCols = perLineValues[0] ?? STACK_PER_LINE_RANGE.default;
   const bandStrings: string[] = [];
   let currentBand: string[][] = [];
 
   for (const group of categoryGroups) {
-    const tokens = group.filter(Boolean);
+    const tokens = collectNonEmptyTokens(group);
     if (tokens.length > 0) {
       if (
         currentBand.length > 0 &&

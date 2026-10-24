@@ -2,7 +2,10 @@
  * Icon picker search & display helpers – Pure search ranking, trigger display state, cursor slug insertion, and `<template>` SVG glyph instantiation.
  */
 
-import { resolveIconSelectDisplay as resolvePureIconSelectDisplay } from '@/site/shared';
+import {
+  getOwnValue,
+  resolveIconSelectDisplay as resolvePureIconSelectDisplay,
+} from '@/site/shared';
 import type {
   IconCatalogFilterResult,
   IconMatch,
@@ -65,7 +68,7 @@ function computeSetMatches(
     } else if (hasAllQueryTokens(slug, queryTokens) || setAliasHits.has(slug)) {
       substringMatches.push({ set, slug });
     } else if (set === 'lucide') {
-      const tags = index.lucideTags[slug];
+      const tags = getOwnValue(index.lucideTags, slug);
       if (tags && hasAllQueryTokens(`${slug} ${tags}`, queryTokens)) {
         tagMatches.push({ set, slug });
       }

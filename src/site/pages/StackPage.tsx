@@ -6,7 +6,6 @@ import { ACTIVE_STACK_MOTION_TOKENS } from '@/routes/params';
 import {
   buildStackParamRows,
   buildStackVariantCards,
-  countStackExampleIcons,
   STACK_ANIMATION_CARDS,
 } from '@/site/catalog/stack';
 import { ParamTable } from '@/site/components/ParamTable';
@@ -25,7 +24,7 @@ export function StackSection(): HtmlFragment {
   return (
     <section class="doc-section" id="stack">
       <SectionHeader
-        description={`Combine multiple technology groups into one SVG using \`icon@color\` for per-tile colors, \`:N\` for columns, \`|\` for side-by-side groups, and \`;\` for row bands. Every variant example below renders the same ${countStackExampleIcons()}-icon profile.`}
+        description="Arrange technology icons into grouped grids using `:N` columns, `|` side-by-side groups, `;` row bands, and `@color` per-tile overrides."
         routes={[
           '/stack/:groups',
           '/stack?groups=:groups',

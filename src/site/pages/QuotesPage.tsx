@@ -2,7 +2,7 @@
  * Quotes documentation page – Renders the Styled README Quote Cards (`/docs/quotes`) section (`<QuotesSection />`).
  */
 
-import { QUOTE_LAYOUT_TOKENS, VARIANT_TOKENS } from '@/routes/params';
+import { QUOTE_LAYOUT_TOKENS } from '@/routes/params';
 import {
   buildQuoteParamRows,
   HORIZONTAL_QUOTE_CARDS,
@@ -12,7 +12,6 @@ import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
 import type { HtmlFragment } from '@/site/jsx';
-import { QUOTE_SIZE_MAP } from '@/svg/quote';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -25,7 +24,7 @@ export function QuotesSection(): HtmlFragment {
   return (
     <section class="doc-section" id="quotes">
       <SectionHeader
-        description={`Auto-wrapping quote cards in ${layoutCodes} layouts across ${Object.keys(QUOTE_SIZE_MAP).length} text sizes and ${VARIANT_TOKENS.length} surface tiers.`}
+        description={`Auto-wrapping quote cards in ${layoutCodes} layouts with customizable width, text size, and accent color.`}
         routes={['/quote/:author/:text', '/quote/:text', '/quote?text=:text&author=:author']}
         title="Styled README Quote Cards"
       />

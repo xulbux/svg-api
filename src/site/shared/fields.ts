@@ -2,7 +2,7 @@
  * Composite builder parameter codecs – Composes and splits multi-part query DSL values (`?icon=`, `?hint=`, `?anim=`, `?special=`, and `?size=`).
  */
 
-import { findOption, HINT_ICON_REST_RX } from '@/site/shared/encoding';
+import { findOption, HINT_ICON_REST_RX, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
 import type {
   AnimSplitParts,
   BuilderOption,
@@ -11,11 +11,6 @@ import type {
   SizeSplitParts,
   SpecialSplitParts,
 } from '@/types';
-
-// ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches comma or whitespace separators in list-style payloads. */
-export const LIST_SEPARATOR_RX = /[,\s]+/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -39,6 +34,8 @@ function resolveAnimOptionToken(
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { LIST_SEPARATOR_RX } from '@/site/shared/encoding';
 
 /**
  * Compose an `?icon=` value from its left and right slugs (`none,right` or the `,right` preset shorthand).

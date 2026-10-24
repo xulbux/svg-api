@@ -43,6 +43,14 @@ interface TextOutline extends InkMetrics {
   pathData: string;
 }
 
+/** Composite OpenType path and ink metrics built per character with cross-font glyph fallback. */
+interface FallbackPathLayout {
+  /** Combined OpenType path at the `(0, 0)` baseline. */
+  combinedPath: Path;
+  /** Measured ink bounding box metrics. */
+  metrics: InkMetrics;
+}
+
 /** Lazily parsed proportional and monospace `Font` singletons. */
 interface FontSingletons {
   /** Proportional bold italic font instance. */
@@ -296,15 +304,15 @@ function hasMissingGlyphInFont(font: Font, text: string): boolean {
   return false;
 }
 
-/** Build a composite `TextOutline` per character with cross-font glyph fallback and `.notdef` suppression. */
-function buildFallbackTextOutline(
+/** Lay out a composite path per character with cross-font glyph fallback and `.notdef` suppression, without serializing path commands. */
+function layoutFallbackPath(
   text: string,
   primaryFont: Font,
   fontSize: number,
   isBold: boolean,
   isItalic: boolean,
   fontFamily: TypingFont
-): TextOutline {
+): FallbackPathLayout {
   const combinedPath = primaryFont.getPath('', 0, 0, fontSize);
   const resolvedList: ResolvedFontGlyph[] = [];
   for (const char of text) {
@@ -326,12 +334,29 @@ function buildFallbackTextOutline(
   const bbox = combinedPath.getBoundingBox();
   const rawWidth = isEmpty ? cursorX : Math.max(0, bbox.x2 - bbox.x1);
   return {
-    isEmpty,
-    pathData: serializePathCommands(combinedPath.commands),
-    width: roundCoord(rawWidth),
-    x1: bbox.x1,
-    x2: bbox.x2,
+    combinedPath,
+    metrics: { isEmpty, width: roundCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 },
   };
+}
+
+/** Build a composite `TextOutline` per character with cross-font glyph fallback and `.notdef` suppression. */
+function buildFallbackTextOutline(
+  text: string,
+  primaryFont: Font,
+  fontSize: number,
+  isBold: boolean,
+  isItalic: boolean,
+  fontFamily: TypingFont
+): TextOutline {
+  const { combinedPath, metrics } = layoutFallbackPath(
+    text,
+    primaryFont,
+    fontSize,
+    isBold,
+    isItalic,
+    fontFamily
+  );
+  return { ...metrics, pathData: serializePathCommands(combinedPath.commands) };
 }
 
 /** Lay out `text` at the `(0, 0)` baseline and serialize its outline (uncached). */
@@ -419,7 +444,7 @@ export function measureTextWidthUncached(
   }
   const font = resolveGeistFont(isBold, isItalic);
   if (hasMissingGlyphInFont(font, text)) {
-    return buildFallbackTextOutline(text, font, fontSize, isBold, isItalic, 'sans').width;
+    return layoutFallbackPath(text, font, fontSize, isBold, isItalic, 'sans').metrics.width;
   }
   return computeInkMetrics(font.getPath(text, 0, 0, fontSize, PATH_OPTIONS), font, text, fontSize)
     .width;

@@ -1228,9 +1228,51 @@ describe('unexpected errors', () => {
     }
   });
 
-  it('strips URL fragments when reading raw pathnames (regression: #fragment leaked into trailing route segment)', async () => {
+  it('strips URL fragments when reading raw pathnames and redirect query strings (regressions: #fragment leaked into trailing route segment, fragment query leaked into redirect)', async () => {
     const response = await app.request('https://svg.xul.is/badge/status/ok#readme', {}, TEST_ENV);
     expect(response.status).toBe(200);
     expect(extractAriaLabel(await response.text())).toBe('status: ok');
+
+    const [docsSlashRes, previewHashRes, builderHashRes] = await Promise.all([
+      app.request('https://svg.xul.is/docs/#section?leaked=1', {}, TEST_ENV),
+      app.request('https://svg.xul.is/preview#section?leaked=1', {}, TEST_ENV),
+      app.request('https://svg.xul.is/builder#section?leaked=1', {}, TEST_ENV),
+    ]);
+    expect(docsSlashRes.status).toBe(301);
+    expect(docsSlashRes.headers.get('Location')).toBe('/docs');
+    expect(previewHashRes.status).toBe(301);
+    expect(previewHashRes.headers.get('Location')).toBe('/docs');
+    expect(builderHashRes.status).toBe(301);
+    expect(builderHashRes.headers.get('Location')).toBe('/builder/badge');
+  });
+
+  it('canonicalizes /btn and /type alias prefixes in Tier-2 edge cache keys and rejects leading-zero icon page names (regressions: alias route prefixes split Tier-2 edge cache, leading-zero icon page names duplicated cache entries)', async () => {
+    const buttonKey = resolveSvgRequest(
+      new URL('/button/Deploy?color=emerald', SITE_ORIGIN)
+    )?.cacheKey;
+    const btnAliasKey = resolveSvgRequest(
+      new URL('/btn/Deploy?color=emerald', SITE_ORIGIN)
+    )?.cacheKey;
+    expect(btnAliasKey).toBe(`${SITE_ORIGIN}/button/Deploy?color=emerald`);
+    expect(btnAliasKey).toBe(buttonKey);
+
+    const typingKey = resolveSvgRequest(new URL('/typing/Hello?color=sky', SITE_ORIGIN))?.cacheKey;
+    const typeAliasKey = resolveSvgRequest(new URL('/type/Hello?color=sky', SITE_ORIGIN))?.cacheKey;
+    expect(typeAliasKey).toBe(`${SITE_ORIGIN}/typing/Hello?color=sky`);
+    expect(typeAliasKey).toBe(typingKey);
+
+    const stub = installEdgeCacheStub();
+    const firstBtnRes = await app.request('/btn/Ship?color=emerald', {}, TEST_ENV);
+    const firstBtnSvg = await firstBtnRes.text();
+    const secondButtonRes = await app.request('/button/Ship?color=emerald', {}, TEST_ENV);
+    expect(await secondButtonRes.text()).toBe(firstBtnSvg);
+    expect(stub.storedKeys).toEqual(['http://localhost/button/Ship?color=emerald']);
+
+    const [canonicalPageRes, leadingZeroPageRes] = await Promise.all([
+      app.request('/assets/icons-lucide-0.json', {}, TEST_ENV),
+      app.request('/assets/icons-lucide-00.json', {}, TEST_ENV),
+    ]);
+    expect(canonicalPageRes.status).toBe(200);
+    expect(leadingZeroPageRes.status).toBe(404);
   });
 });
