@@ -94,6 +94,7 @@
   --duration-slow: 0.25s;
 
   /* Stacking Order */
+  --z-sticky: 10;
   --z-header: 20;
   --z-popover: 30;
   --z-skip-link: 50;
@@ -284,7 +285,7 @@ input[type='search']::-webkit-search-decoration {
 .alias-list,
 .anatomy,
 .builder-form,
-.builder-panel-inner {
+.builder-panel {
   border: 1px solid var(--c-divider);
   border-radius: var(--radius-lg);
   background: var(--c-bg-soft);

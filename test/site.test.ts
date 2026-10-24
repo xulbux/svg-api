@@ -85,7 +85,7 @@ const SIDEBAR_TOGGLE_RX =
 
 /** Matches class names that were removed from the markup because no stylesheet or script uses them. */
 const DEAD_CLASS_RX =
-  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text|stack-chip-label|feature-icon)[\s"]/;
+  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text|stack-chip-label|feature-icon|builder-panel-inner)[\s"]/;
 
 /** Matches every `var(--c-…)` custom property reference. */
 const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
@@ -1038,6 +1038,31 @@ describe('site stylesheet', () => {
     expect(css).toMatch(
       /@media \(forced-colors: active\) \{\s*\.swatch-dot,\s*\.select-swatch,\s*\.anatomy-swatch,\s*\.bg-swatch \{\s*forced-color-adjust: none;\s*\}\s*\}/
     );
+  });
+
+  it('pins a compact focus-free live preview above the form on single-column builder viewports while keeping snippets below', () => {
+    const css = getSiteStylesheet();
+    expect(css).toMatch(
+      /@media \(max-width: 1200px\) \{[\s\S]*?\.builder-grid \{[\s\S]*?grid-template-areas:\s*'preview'\s*'form'\s*'output';/
+    );
+    expect(css).toMatch(
+      /\.builder-preview-dock \{[^}]*position: sticky;\s*inset-block-start: var\(--header-height\);[^}]*container-name: builder-preview;\s*container-type: scroll-state;/
+    );
+    expect(css).toContain('@container builder-preview scroll-state(stuck: top) {');
+    expect(css).toContain('max-block-size: min(22dvh, 148px);');
+
+    for (const page of BUILDER_PAGES) {
+      const html = renderBuilderHtml(page.kind);
+      const dockMatch =
+        /<div class="builder-preview-dock">(?<dock>[\s\S]*?)<\/div>\s*<div class="builder-output">/.exec(
+          html
+        );
+      const dockHtml = requireDefined(dockMatch?.groups?.dock, `${page.kind} preview dock`);
+      expect(dockHtml, page.kind).toContain('id="builder-preview"');
+      expect(dockHtml, page.kind).toContain('id="builder-status"');
+      // Keep the visually reordered preview dock free of focusable elements so Tab order stays top-to-bottom:
+      expect(dockHtml, page.kind).not.toMatch(/<(?:a|button|input|select|textarea)\b|tabindex=/);
+    }
   });
 
   it('protects asterisks inside inline code spans, serializes string popover attributes, marks variant=2 as the /docs/typing default, and rasterizes <circle> inside <g> (regressions: code-span asterisks became <strong>, string popover coerced to bare popover, /docs/typing variant=1 marked default, missing sparkles <circle> in og.png)', () => {

@@ -7,16 +7,10 @@
   gap: 24px;
 }
 
-@media (max-width: 1200px) {
-  .builder-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* Form & Panel Surfaces */
 
 .builder-form,
-.builder-panel-inner {
+.builder-panel {
   padding: clamp(16px, 2.2vw, 22px);
 }
 
@@ -555,20 +549,16 @@
 .builder-panel {
   position: sticky;
   inset-block-start: calc(var(--header-height) + 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   max-block-size: calc(100dvh - var(--header-height) - 40px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
 }
 
-@media (max-width: 1200px) {
-  .builder-panel {
-    position: static;
-    max-block-size: none;
-    overflow-y: visible;
-  }
-}
-
-.builder-panel-inner {
+.builder-preview-card {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -580,6 +570,7 @@
 }
 
 .builder-preview {
+  display: block;
   max-inline-size: 100%;
   block-size: auto;
   transition: opacity var(--duration-fast) ease;
@@ -607,6 +598,95 @@
 
 .builder-status.is-warning {
   color: var(--c-danger);
+}
+
+/* Single-column layout; pin a compact live preview under the header and keep snippets below the form: */
+
+@media (max-width: 1200px) {
+  :root:has(.builder) {
+    scroll-padding-block-start: calc(var(--header-height) + 140px);
+  }
+
+  .builder .section-header {
+    margin-block-end: 12px;
+  }
+
+  .builder-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'preview'
+      'form'
+      'output';
+    gap: 16px;
+    overflow-anchor: none;
+  }
+
+  .builder-form {
+    grid-area: form;
+  }
+
+  .builder-panel {
+    display: contents;
+  }
+
+  .builder-preview-dock {
+    position: sticky;
+    inset-block-start: var(--header-height);
+    z-index: var(--z-sticky);
+    grid-area: preview;
+    min-inline-size: 0;
+    container-name: builder-preview;
+    container-type: scroll-state;
+    padding-block: 8px 4px;
+    background: var(--c-bg);
+  }
+
+  .builder-preview-dock::before {
+    content: '';
+    position: absolute;
+    inset-block-end: 100%;
+    inset-inline: 0;
+    block-size: 10px;
+    background: var(--c-bg);
+    pointer-events: none;
+  }
+
+  .builder-preview-card {
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--c-divider);
+    border-radius: var(--radius-lg);
+    background: var(--c-bg-soft);
+    transition:
+      border-color var(--duration-base) ease,
+      box-shadow var(--duration-base) ease;
+  }
+
+  @container builder-preview scroll-state(stuck: top) {
+    .builder-preview-card {
+      border-color: var(--c-border-strong);
+      box-shadow: var(--c-shadow-popover);
+    }
+  }
+
+  .builder-stage {
+    min-block-size: 60px;
+    padding: 14px;
+  }
+
+  .builder-preview {
+    inline-size: auto;
+    max-block-size: min(22dvh, 148px);
+  }
+
+  .builder-output {
+    grid-area: output;
+    min-inline-size: 0;
+    padding: clamp(16px, 2.2vw, 22px);
+    border: 1px solid var(--c-divider);
+    border-radius: var(--radius-lg);
+    background: var(--c-bg-soft);
+  }
 }
 
 /* Segmented Tabs (snippet formats and icon sets): */
