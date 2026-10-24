@@ -26,16 +26,20 @@ interface OpenVsxExtensionPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** Extracted top-level keys of the Open VSX extension metadata payload. */
+const OPEN_VSX_FIELDS: readonly (keyof OpenVsxExtensionPayload)[] = [
+  'averageRating',
+  'downloadCount',
+  'license',
+  'version',
+];
+
 /** Open VSX extension metadata endpoint with extension page redirect. */
 const OPEN_VSX_ENDPOINT = createEndpoint({
   api: 'https://open-vsx.org/api/{owner}/{target}',
+  extractKeys: OPEN_VSX_FIELDS,
   page: 'https://open-vsx.org/extension/{owner}/{target}',
-  project: pickFields<OpenVsxExtensionPayload>([
-    'averageRating',
-    'downloadCount',
-    'license',
-    'version',
-  ]),
+  project: pickFields<OpenVsxExtensionPayload>(OPEN_VSX_FIELDS),
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------

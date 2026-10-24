@@ -78,7 +78,7 @@ export const ISOLUX_SYNTAX = {
   string: { dark: '#909FFF', light: '#4F48EC' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
-/** Website brand indigo (Tailwind `indigo-300` to `indigo-600`; Brand mark, favicon, OpenGraph card accents, and links). */
+/** Website brand indigo (`indigo-300` to `indigo-600`). */
 export const BRAND_INDIGO = {
   300: '#A5B4FC',
   400: '#818CF8',

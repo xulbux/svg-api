@@ -2,7 +2,13 @@
  * DUB service preset – Live upstream metrics and redirect transformations.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  PACKAGE_ROUTE,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   SCORE,
@@ -54,8 +60,7 @@ function projectDubInfo(data: unknown): DubInfoProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const info = isJsonObject(data.info) ? data.info : undefined;
-  return { license: readText(info?.license), version: readText(data.version) };
+  return { license: readText(asJsonObject(data.info)?.license), version: readText(data.version) };
 }
 
 /** Project a DUB `/stats` response into its download windows and score. */
@@ -63,7 +68,7 @@ function projectDubStats(data: unknown): DubStatsProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = isJsonObject(data.downloads) ? data.downloads : undefined;
+  const downloads = asJsonObject(data.downloads);
   return {
     daily: readFiniteNumber(downloads?.daily),
     monthly: readFiniteNumber(downloads?.monthly),

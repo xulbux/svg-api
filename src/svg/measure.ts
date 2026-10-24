@@ -67,6 +67,8 @@ interface FontSingletons {
 
 /** Resolved OpenType `Font`, `Glyph`, and effective font family for a single character. */
 interface ResolvedFontGlyph {
+  /** Unicode character code point string. */
+  char: string;
   /** Effective font family after `.notdef` fallback. */
   font: Font;
   /** Effective font family key. */
@@ -194,15 +196,29 @@ function resolveFontGlyph(
   const primaryFont = resolveFontFamily(fontFamily, isBold, isItalic);
   const primaryGlyph = primaryFont.charToGlyph(char);
   if (primaryGlyph.index !== 0) {
-    return { font: primaryFont, fontKey: fontFamily, glyph: primaryGlyph };
+    return { char, font: primaryFont, fontKey: fontFamily, glyph: primaryGlyph };
   }
   const fallbackFamily: TypingFont = fontFamily === 'mono' ? 'sans' : 'mono';
   const fallbackFont = resolveFontFamily(fallbackFamily, isBold, isItalic);
   const fallbackGlyph = fallbackFont.charToGlyph(char);
   if (fallbackGlyph.index !== 0) {
-    return { font: fallbackFont, fontKey: fallbackFamily, glyph: fallbackGlyph };
+    return { char, font: fallbackFont, fontKey: fallbackFamily, glyph: fallbackGlyph };
   }
-  return { font: primaryFont, fontKey: fontFamily, glyph: primaryGlyph };
+  return { char, font: primaryFont, fontKey: fontFamily, glyph: primaryGlyph };
+}
+
+/** Resolve every Unicode character of `text` to its OpenType `Glyph` and fallback font family. */
+function resolveFontGlyphs(
+  text: string,
+  fontFamily: TypingFont,
+  isBold: boolean,
+  isItalic = false
+): ResolvedFontGlyph[] {
+  const resolvedList: ResolvedFontGlyph[] = [];
+  for (const char of text) {
+    resolvedList.push(resolveFontGlyph(char, fontFamily, isBold, isItalic));
+  }
+  return resolvedList;
 }
 
 /** Serialize an array of OpenType `PathCommand` objects into a compact, NaN-free SVG `d` string. */
@@ -314,10 +330,7 @@ function layoutFallbackPath(
   fontFamily: TypingFont
 ): FallbackPathLayout {
   const combinedPath = primaryFont.getPath('', 0, 0, fontSize);
-  const resolvedList: ResolvedFontGlyph[] = [];
-  for (const char of text) {
-    resolvedList.push(resolveFontGlyph(char, fontFamily, isBold, isItalic));
-  }
+  const resolvedList = resolveFontGlyphs(text, fontFamily, isBold, isItalic);
 
   let cursorX = 0;
   for (const [i, resolved] of resolvedList.entries()) {
@@ -539,24 +552,18 @@ export function layoutTextGlyphs(
   isBold: boolean,
   fontFamily: TypingFont
 ): GlyphLineLayout {
-  const chars = [...text];
-  if (chars.length === 0) {
+  if (text.length === 0) {
     return { glyphs: [], totalAdvance: 0 };
   }
-  const resolvedList: ResolvedFontGlyph[] = [];
-  for (const char of chars) {
-    resolvedList.push(resolveFontGlyph(char, fontFamily, isBold));
-  }
-
+  const resolvedList = resolveFontGlyphs(text, fontFamily, isBold);
   const glyphs: PositionedCharGlyph[] = [];
   let cursorX = 0;
 
   for (const [i, resolved] of resolvedList.entries()) {
-    const char = chars[i] ?? '';
     const clampedAdvance = computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
     glyphs.push({
       advance: roundCoord(clampedAdvance),
-      char,
+      char: resolved.char,
       glyphX: roundCoord(cursorX),
       pathData: getGlyphPathData(resolved, fontSize, isBold),
     });

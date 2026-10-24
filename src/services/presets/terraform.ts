@@ -2,7 +2,7 @@
  * Terraform Registry service presets – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   SERIES_DELTA_SPECIALS,
@@ -13,6 +13,7 @@ import {
   readFiniteNumber,
   readText,
 } from '@/services/metrics';
+import { MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { MetricPresentation, ServiceDefinition } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -33,7 +34,7 @@ interface TerraformResourceProjection {
   month?: number;
   /** Version (`data.attributes.version`, or the included latest module version). */
   version?: string;
-  /** Per-version download counts across the most recent 12 provider releases. */
+  /** Per-version download counts across the most recent provider releases. */
   versionDownloads?: number[];
   /** Last-year downloads (`data.attributes.year` on module download summaries). */
   year?: number;
@@ -43,6 +44,9 @@ interface TerraformResourceProjection {
 
 /** Number of path segments of a module address (`:namespace/:name/:provider`). */
 const MODULE_ADDRESS_SEGMENTS = 3;
+
+/** Maximum number of recent provider release download entries kept in the projection. */
+const MAX_PROVIDER_RELEASES = 12;
 
 /** Shared presentation of the Terraform version badges. */
 const TERRAFORM_VERSION: MetricPresentation = {
@@ -55,9 +59,7 @@ const TERRAFORM_VERSION: MetricPresentation = {
 
 /** Read the `attributes` object of a JSON:API resource. */
 function readAttributes(resource: unknown): Record<string, unknown> | undefined {
-  return isJsonObject(resource) && isJsonObject(resource.attributes)
-    ? resource.attributes
-    : undefined;
+  return asJsonObject(asJsonObject(resource)?.attributes);
 }
 
 /** Read the first `version` attribute of the JSON:API `included` resources (`?include=latest-version`). */
@@ -65,9 +67,9 @@ function readIncludedVersion(included: unknown): unknown {
   return Array.isArray(included) ? readAttributes(included[0])?.version : undefined;
 }
 
-/** Read the last 12 per-version download counts from JSON:API `included` version resources (`?include=provider-versions`). */
+/** Read the most recent per-version download counts from JSON:API `included` version resources (`?include=provider-versions`). */
 function readIncludedVersionDownloads(included: unknown): number[] | undefined {
-  if (!Array.isArray(included) || included.length < 2) {
+  if (!Array.isArray(included) || included.length < MIN_SERIES_POINTS) {
     return undefined;
   }
   const entries: TerraformVersionEntry[] = [];
@@ -78,25 +80,32 @@ function readIncludedVersionDownloads(included: unknown): number[] | undefined {
       entries.push({ downloads, publishedAt: readText(attributes?.['published-at']) ?? '' });
     }
   }
-  if (entries.length < 2) {
+  if (entries.length < MIN_SERIES_POINTS) {
     return undefined;
   }
-  entries.sort((first, second) =>
-    first.publishedAt && second.publishedAt
-      ? first.publishedAt.localeCompare(second.publishedAt)
-      : 0
-  );
+  entries.sort((first, second) => {
+    if (first.publishedAt < second.publishedAt) {
+      return -1;
+    }
+    return first.publishedAt > second.publishedAt ? 1 : 0;
+  });
   const recentDownloads: number[] = [];
-  for (const entry of entries.slice(-12)) {
-    recentDownloads.push(entry.downloads);
+  for (let i = Math.max(0, entries.length - MAX_PROVIDER_RELEASES); i < entries.length; i += 1) {
+    const entry = entries[i];
+    if (entry) {
+      recentDownloads.push(entry.downloads);
+    }
   }
   return recentDownloads;
 }
 
 /** Project a Terraform Registry JSON:API document into its downloads, summary windows, and version attributes. */
 function projectTerraformResource(data: unknown): TerraformResourceProjection | undefined {
-  const attributes = isJsonObject(data) ? readAttributes(data.data) : undefined;
-  if (!isJsonObject(data) || !attributes) {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const attributes = readAttributes(data.data);
+  if (!attributes) {
     return undefined;
   }
   const version = attributes.version ?? readIncludedVersion(data.included);

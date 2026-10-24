@@ -2,24 +2,34 @@
  * Hackage service preset – Live upstream metrics and redirect transformations.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createVersionMetric } from '@/services/metrics';
+import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial Hackage preferred versions payload (`hackage.haskell.org/package/:pkg/preferred`). */
-interface HackagePreferredPayload {
-  /** Non-deprecated versions, newest first. */
-  'normal-version': string[];
+/** Projected Hackage preferred versions metadata (`hackage.haskell.org/package/:pkg/preferred`). */
+interface HackagePreferredProjection {
+  /** Newest non-deprecated package version. */
+  latestVersion?: string;
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project a Hackage preferred versions payload to its newest non-deprecated version. */
+function projectHackagePreferred(data: unknown): HackagePreferredProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const versions = data['normal-version'];
+  return { latestVersion: Array.isArray(versions) ? readText(versions[0]) : undefined };
+}
 
 /** Hackage preferred versions endpoint (JSON via `Accept`) with package page redirect. */
 const HACKAGE_ENDPOINT = createEndpoint({
   api: 'https://hackage.haskell.org/package/{target}/preferred',
+  extractKeys: ['normal-version'],
   page: 'https://hackage.haskell.org/package/{target}',
-  project: pickFields<HackagePreferredPayload>(['normal-version']),
+  project: projectHackagePreferred,
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -31,10 +41,7 @@ export const HACKAGE_SERVICE = defineService({
     v: createVersionMetric(
       HACKAGE_ENDPOINT,
       { defaultColor: 'violet', defaultIcon: 'haskell', defaultLabel: 'Hackage' },
-      (preferred) => {
-        const versions = preferred['normal-version'];
-        return Array.isArray(versions) ? versions[0] : undefined;
-      }
+      (preferred) => preferred.latestVersion
     ),
   },
   route: PACKAGE_ROUTE,

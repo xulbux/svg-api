@@ -7,6 +7,7 @@
 import {
   CACHE_TTL,
   OWNER_REPO_ROUTE,
+  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -50,7 +51,7 @@ function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefi
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const scorecard = isJsonObject(data.scorecard) ? data.scorecard : undefined;
+  const scorecard = asJsonObject(data.scorecard);
   const checks = readScorecardCheckScores(scorecard?.checks);
   return {
     ...(checks ? { checks } : {}),

@@ -6,9 +6,9 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   defineService,
-  isJsonObject,
   pickFields,
   readFirstObjectEntry,
 } from '@/services/endpoint';
@@ -76,13 +76,12 @@ const TIMEZONE_SUFFIX_RX = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Projects the `_source` fields of a release search hit. */
+/** Project the `_source` fields of a release search hit. */
 const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
 
 /** Project the first MetaCPAN search hit's `_source` fields (`undefined` when no hits match). */
 function projectCpanRelease(data: unknown): Partial<CpanRelease> | undefined {
-  const hits = isJsonObject(data) && isJsonObject(data.hits) ? data.hits.hits : undefined;
-  const firstHit = readFirstObjectEntry(hits);
+  const firstHit = readFirstObjectEntry(asJsonObject(asJsonObject(data)?.hits)?.hits);
   return projectReleaseFields(firstHit?.[SEARCH_HIT_SOURCE_KEY]);
 }
 

@@ -9,10 +9,13 @@ import {
 } from '@/site/client/site/clipboard';
 import { initCodeDrawers, updateScrollButtons } from '@/site/client/site/drawers';
 import { computePopoverPlacement } from '@/site/client/site/popover';
-import type { ActivePopoverState } from '@/site/client/site/popover';
 import { initSidebarDrawer } from '@/site/client/site/sidebar';
 import { initThemeAndMotion } from '@/site/client/site/theme';
-import type { PopoverPlacementOptions, SiteClientConfig } from '@/site/client/site/types';
+import type {
+  ActivePopoverState,
+  PopoverPlacementOptions,
+  SiteClientConfig,
+} from '@/site/client/site/types';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -30,9 +33,14 @@ function initSiteClient(): void {
     return;
   }
 
-  const siteConfig = JSON.parse(
-    document.getElementById('site-config')?.textContent ?? '{}'
-  ) as SiteClientConfig;
+  let siteConfig = {} as SiteClientConfig;
+  try {
+    siteConfig = JSON.parse(
+      document.getElementById('site-config')?.textContent ?? '{}'
+    ) as SiteClientConfig;
+  } catch {
+    // Malformed inline JSON falls back to safe empty defaults.
+  }
   const rootElement = document.documentElement;
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
   const drawerQuery = globalThis.matchMedia(siteConfig.drawerMediaQuery);
@@ -94,6 +102,9 @@ function initSiteClient(): void {
     if (!isPopoverOpen(popover)) {
       return;
     }
+    if (activePopover?.popover === popover) {
+      activePopover = undefined;
+    }
     if (hasPopoverApi) {
       popover.hidePopover();
       return;
@@ -127,6 +138,8 @@ function initSiteClient(): void {
     popover.style.left = `${placement.left}px`;
     if (placement.minWidth !== undefined) {
       popover.style.minWidth = `${placement.minWidth}px`;
+    } else {
+      popover.style.removeProperty('min-width');
     }
   }
 
@@ -156,7 +169,11 @@ function initSiteClient(): void {
     (event) => {
       const popover = event.target;
       if (popover instanceof HTMLElement && popover.hasAttribute('popover')) {
-        syncPopoverExpanded(popover, (event as ToggleEvent).newState === 'open');
+        const isOpen = (event as ToggleEvent).newState === 'open';
+        if (!isOpen && activePopover?.popover === popover) {
+          activePopover = undefined;
+        }
+        syncPopoverExpanded(popover, isOpen);
       }
     },
     true
@@ -170,6 +187,9 @@ function initSiteClient(): void {
       trigger.setAttribute('aria-expanded', 'false');
     }
     document.addEventListener('click', (event) => {
+      if (event.defaultPrevented) {
+        return;
+      }
       const { target } = event;
       const trigger = target instanceof Element ? target.closest('[popovertarget]') : undefined;
       const action = trigger?.getAttribute('popovertargetaction');

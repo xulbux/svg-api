@@ -41,26 +41,16 @@ function joinTokens(tokens: readonly HighlightToken[]): string {
   return text;
 }
 
-// -------------------------------------- PUBLIC API -------------------------------------
-
-/**
- * Percent-encode the characters that would end or break a Markdown link destination (space, `(`, `)`, `<`, `>`).
- * @param text   Raw URL or URL token text.
- * @returns Destination-safe string.
- */
-export function encodeMarkdownDestination(text: string): string {
+/** Percent-encode the characters that would end or break a Markdown link destination (space, `(`, `)`, `<`, `>`). */
+function encodeMarkdownDestination(text: string): string {
   return text.replace(
     MARKDOWN_DESTINATION_RX,
     (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
   );
 }
 
-/**
- * Split a URL into highlight tokens (origin + endpoint, path segments, `?key=` / `&key=`, values).
- * @param url   Raw (unescaped) URL.
- * @returns Highlight tokens covering the entire URL.
- */
-export function tokenizeUrl(url: string): HighlightToken[] {
+/** Split a URL into highlight tokens (origin + endpoint, path segments, `?key=` / `&key=`, values). */
+function tokenizeUrl(url: string): HighlightToken[] {
   const queryIndex = url.indexOf('?');
   const base = queryIndex === -1 ? url : url.slice(0, queryIndex);
   const schemeEnd = base.indexOf('://');
@@ -76,10 +66,8 @@ export function tokenizeUrl(url: string): HighlightToken[] {
   if (queryIndex === -1) {
     return tokens;
   }
-  for (const [i, pair] of url
-    .slice(queryIndex + 1)
-    .split('&')
-    .entries()) {
+  const queryPairs = url.slice(queryIndex + 1).split('&');
+  for (const [i, pair] of queryPairs.entries()) {
     const prefix = i === 0 ? '?' : '&';
     const equalsIndex = pair.indexOf('=');
     if (equalsIndex === -1) {
@@ -94,6 +82,8 @@ export function tokenizeUrl(url: string): HighlightToken[] {
   }
   return tokens;
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Build the highlight tokens of a (linked) Markdown image snippet (alt text escapes `[`, `]`, `\`;

@@ -4,6 +4,7 @@
 
 import {
   ACTIVE_STACK_MOTION_TOKENS,
+  ANIM_SHEEN_TOKEN,
   STACK_MOTION_ALIASES,
   STACK_MOTION_TOKENS,
 } from '@/routes/params';
@@ -36,7 +37,7 @@ import type {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Showcase definitions for the tech stack tile variants. */
-export const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
+const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Brand gradient tiles with white icons.',
     id: '1',
@@ -82,42 +83,47 @@ function buildStackVariantItems(variant: BadgeVariant): ShowcaseItem[] {
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Showcase cards demonstrating staggered per-tile animations on `/docs/stack`. */
-export const STACK_ANIMATION_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: 'Tech Stack Wave',
-        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=wave',
-      },
-    ],
-    subtitle: `Left-to-right staggered bounce across tiles (aliases: ${formatStackMotionAliases('wave')}).`,
-    title: 'anim=wave · Staggered Wave',
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: 'Tech Stack Sheen Float',
-        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?variant=1&anim=sheen,float',
-      },
-    ],
-    subtitle: `Gentle phase-shifted bobbing with a diagonal sheen (aliases: ${formatStackMotionAliases('float')}).`,
-    title: 'anim=sheen,float · Ambient Float',
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: 'Tech Stack Pulse',
-        path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=pulse',
-      },
-    ],
-    subtitle: `Staggered border glow and subtle icon scale (aliases: ${formatStackMotionAliases('pulse')}).`,
-    title: 'anim=pulse · Breathing Glow',
-  },
-];
+/**
+ * Build the showcase cards demonstrating staggered per-tile animations on `/docs/stack`.
+ * @returns Showcase card configurations for the stack tile animations.
+ */
+export function buildStackAnimationCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: 'Tech Stack Wave',
+          path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=wave',
+        },
+      ],
+      subtitle: `Left-to-right staggered bounce across tiles (aliases: ${formatStackMotionAliases('wave')}).`,
+      title: 'anim=wave · Staggered Wave',
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: 'Tech Stack Sheen Float',
+          path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?variant=1&anim=sheen,float',
+        },
+      ],
+      subtitle: `Gentle phase-shifted bobbing with a diagonal sheen (aliases: ${formatStackMotionAliases('float')}).`,
+      title: 'anim=sheen,float · Ambient Float',
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: 'Tech Stack Pulse',
+          path: '/stack/rust,go,ts,py,docker,cloudflare,vite,linux:8?anim=pulse',
+        },
+      ],
+      subtitle: `Staggered border glow and subtle icon scale (aliases: ${formatStackMotionAliases('pulse')}).`,
+      title: 'anim=pulse · Breathing Glow',
+    },
+  ];
+}
 
 /**
  * Build the variant showcase cards for `/docs/stack`.
@@ -170,9 +176,9 @@ export function buildStackParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: '~static',
-      description: `Diagonal sheen sweep, staggered per-tile motion (${formatConjunctionList(motionSummaries, 'or')}), sheen combined with any motion (sheen,<motion>), or none.`,
+      description: `Diagonal sheen sweep, staggered per-tile motion (${formatConjunctionList(motionSummaries, 'or')}), sheen combined with any motion (${ANIM_SHEEN_TOKEN},<motion>), or none.`,
       name: '?anim=',
-      values: `sheen | ${STACK_MOTION_TOKENS.join(' | ')} | sheen,<motion>`,
+      values: `${ANIM_SHEEN_TOKEN} | ${STACK_MOTION_TOKENS.join(' | ')} | ${ANIM_SHEEN_TOKEN},<motion>`,
     },
   ];
 }

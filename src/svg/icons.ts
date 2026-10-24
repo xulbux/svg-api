@@ -781,12 +781,11 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
 
 /**
  * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
- * Exported from the `PUBLIC API` section; Declared here because the internal icon lookups measure with it.
  * @param svgStr         Inner SVG markup of the icon body.
  * @param isStroke       Whether the icon is stroked (pads the bounds by half the default stroke width).
  * @param coordScale     Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
  * @param coordOffsetX   Horizontal offset in `24x24` units applied to the scaled coordinates (defaults to `0`).
- * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`2`–`22` when the body has no measurable geometry).
+ * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`DEFAULT_ICON_X_BOUNDS` when the body has no measurable geometry).
  */
 function computeIconXBounds(
   svgStr: string,
@@ -923,10 +922,7 @@ function getSimpleIconBody(slug: string): IconBody | undefined {
   };
 }
 
-/**
- * Read a brand/tech icon body with preferred-set deduplication:
- * `DEVICON_PREFERRED_SLUG_LIST` check Devicon Plain first, otherwise Simple Icons -> Devicon Plain -> File Icons.
- */
+/** Read a brand or technology icon body across bundled icon sets, prioritizing `DEVICON_PREFERRED_SLUG_LIST` slugs. */
 function getBrandIconBody(slug: string): IconBody | undefined {
   deviconPreferredSlugsCache ??= new Set(DEVICON_PREFERRED_SLUG_LIST);
   if (deviconPreferredSlugsCache.has(slug)) {

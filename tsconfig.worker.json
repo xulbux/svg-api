@@ -1,6 +1,9 @@
 {
   "extends": "./tsconfig.json",
-  "compilerOptions": { "types": ["@cloudflare/workers-types"] },
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"], "@bundles/*": ["./dist/client/*"] },
+    "types": ["@cloudflare/workers-types"]
+  },
   "exclude": ["node_modules", "dist", ".wrangler", "src/site/client"],
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

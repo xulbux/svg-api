@@ -79,9 +79,13 @@ function parseXmlAttrs(attrSource: string): Record<string, string> {
   return attrs;
 }
 
-/** Parse a `#RRGGBB` hex color into `[red, green, blue]` floats in `[0, 255]`. */
+/** Parse a `#RGB` or `#RRGGBB` hex color into `[red, green, blue]` floats in `[0, 255]`. */
 function parseHexColor(hexColor: string): RgbTuple {
-  const cleaned = hexColor.replace('#', '').trim();
+  const raw = hexColor.replace('#', '').trim();
+  const cleaned =
+    raw.length === 3
+      ? `${raw.charAt(0)}${raw.charAt(0)}${raw.charAt(1)}${raw.charAt(1)}${raw.charAt(2)}${raw.charAt(2)}`
+      : raw;
   const red = Number.parseInt(cleaned.slice(0, 2), 16) || 0;
   const green = Number.parseInt(cleaned.slice(2, 4), 16) || 0;
   const blue = Number.parseInt(cleaned.slice(4, 6), 16) || 0;

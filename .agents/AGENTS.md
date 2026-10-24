@@ -10,7 +10,7 @@ This project uses **pnpm** as its package manager. Always use `pnpm` (e.g., `pnp
 
 Everything must be meticulously and strictly type-hinted. Do not ever use `any` unless it is fundamentally impossible to type otherwise; Use `unknown` and narrow it instead. All code must be fully statically analyzable.
 
--   **Browser Scripts:** Website client modules live in `src/site/client/**/*.ts`, are type-checked by `tsconfig.client.json` (part of `pnpm run type-check`), and are bundled by `pnpm run build:client` (`scripts/buildClient.ts`) into gitignored `dist/client/*.client.js`; They follow the same rules as Worker TypeScript modules.
+-   **Browser Scripts:** Website client and shared modules live in `src/site/client/**/*.ts` and `src/site/shared/**/*.ts`, are type-checked by `tsconfig.client.json` (part of `pnpm run type-check`), and are bundled by `pnpm run build:client` (`scripts/buildClient.ts`) into gitignored `dist/client/*.client.js`; They follow the same rules as Worker TypeScript modules.
 -   **No `@ts-ignore` Comments:** `@ts-ignore` comments are forbidden. You must instead use `@ts-expect-error` with a descriptive reason comment (e.g., `// @ts-expect-error: Upstream response shape is untyped`). The ONLY exception is when `@ts-expect-error` itself fails because the error only occurs conditionally, and rewriting the code to bypass the error would decrease performance or reduce readability.
 
 ## 3. Performance & Lightweight Design
@@ -34,7 +34,7 @@ This service runs on Cloudflare Workers at the edge with a zero-cold-start targe
 After making any code changes, you must validate them by running the full suite of type checks, linters, formatters, tests, and Wrangler dry-run verification:
 
 ```bash
-pnpm run type-check; pnpm run lint; pnpm run lint:md; pnpm run fmt; pnpm run test; pnpm exec wrangler deploy --dry-run
+pnpm run build:client && pnpm run type-check && pnpm run lint && pnpm run lint:md && pnpm run fmt && pnpm run test && pnpm exec wrangler deploy --dry-run
 ```
 
 Fix all problems and warnings until they are completely resolved (zero errors, zero warnings, and zero lint issues). Use the `test` skill for testing guidelines and commands, and the `build` skill for local development server previewing, Wrangler verification, and deployment.

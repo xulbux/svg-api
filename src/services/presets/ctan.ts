@@ -2,7 +2,13 @@
  * CTAN service preset – Live upstream metrics and redirect transformations.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  PACKAGE_ROUTE,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   createLicenseMetric,
   createVersionMetric,
@@ -45,10 +51,9 @@ function projectCtanPackage(data: unknown): CtanPackageProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const version = isJsonObject(data.version) ? data.version : undefined;
   return {
     license: formatCtanLicense(readLicenseName(data.license)),
-    version: readText(version?.number),
+    version: readText(asJsonObject(data.version)?.number),
   };
 }
 

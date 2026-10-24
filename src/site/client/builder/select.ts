@@ -10,7 +10,7 @@ import type { BuilderOption } from '@/types';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Cached elements of a custom dropdown (`[data-select]`). */
-export interface SelectParts {
+interface SelectParts {
   /** Empty-state notice element outside `role="listbox"` (`[data-select-empty]`). */
   empty: HTMLElement | null;
   /** Options container (`.select-options`). */
@@ -29,6 +29,14 @@ export interface SelectParts {
 
 /** Cached dropdown part lookups keyed by `[data-select]` wrapper element. */
 const SELECT_PARTS_CACHE = new WeakMap<Element, SelectParts>();
+
+/** Directional focus step offsets for open dropdown navigation keys. */
+const SELECT_KEY_OFFSETS: Readonly<Record<string, number>> = {
+  ArrowDown: 1,
+  ArrowUp: -1,
+  End: Infinity,
+  Home: -Infinity,
+};
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -123,9 +131,15 @@ function moveOptionFocus(wrapper: Element, offset: number): void {
   }
 }
 
-/** Focus the first rendered option whose label starts with a typed character (typeahead). */
+/** Focus the next rendered option after the active option whose label starts with `key` (cycling typeahead). */
 function focusTypeaheadOption(wrapper: Element, key: string): void {
-  for (const item of wrapper.querySelectorAll('.select-option')) {
+  const items = [...wrapper.querySelectorAll('.select-option')];
+  if (items.length === 0) {
+    return;
+  }
+  const current = items.indexOf(document.activeElement ?? wrapper);
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[(current + 1 + i) % items.length];
     if (
       item instanceof HTMLElement &&
       (item.textContent ?? '').trim().toLowerCase().startsWith(key)
@@ -179,6 +193,35 @@ function chooseSelectOption(wrapper: Element, value: string, site: SvgSite | und
   trigger?.focus();
 }
 
+/** Check whether a key pressed on an option should return focus to the dropdown search input. */
+function isSearchReturnKey(event: KeyboardEvent, wrapper: Element): boolean {
+  if (event.key === 'Backspace') {
+    return true;
+  }
+  return (
+    event.key === 'ArrowUp' &&
+    wrapper.querySelector('.select-option') === (document.activeElement ?? event.target)
+  );
+}
+
+/** Resolve the option element activated when `Enter` or `Space` is pressed inside an open dropdown. */
+function resolveSelectConfirmTarget(
+  wrapper: Element,
+  target: EventTarget | null,
+  isSearch: boolean
+): Element | EventTarget | null {
+  if (!isSearch || !(target instanceof HTMLInputElement)) {
+    return target;
+  }
+  if (target.value.trim().length === 0) {
+    const selected = wrapper.querySelector('.select-option[aria-selected="true"]');
+    if (selected) {
+      return selected;
+    }
+  }
+  return wrapper.querySelector('.select-option');
+}
+
 /** Handle keys inside an open custom dropdown (arrows, `Home`/`End`, `Enter`/`Space`, and typeahead). */
 function handleSelectKeydown(
   event: KeyboardEvent,
@@ -188,27 +231,21 @@ function handleSelectKeydown(
   if (event.isComposing) {
     return;
   }
+  const { search } = getSelectParts(wrapper);
   const { target } = event;
-  const offsets: Readonly<Record<string, number>> = {
-    ArrowDown: 1,
-    ArrowUp: -1,
-    End: Infinity,
-    Home: -Infinity,
-  };
-  const offset = getOwnValue(offsets, event.key);
+  const offset = getOwnValue(SELECT_KEY_OFFSETS, event.key);
   const isSearch = target instanceof HTMLInputElement;
+  if (!isSearch && search && isSearchReturnKey(event, wrapper)) {
+    event.preventDefault();
+    search.focus();
+    return;
+  }
   if (offset !== undefined && !(isSearch && (event.key === 'Home' || event.key === 'End'))) {
     event.preventDefault();
     moveOptionFocus(wrapper, offset);
   } else if (event.key === 'Enter' || (event.key === ' ' && !isSearch)) {
     event.preventDefault();
-    const hasSearchQuery = isSearch && target.value.trim().length > 0;
-    const item = isSearch
-      ? ((hasSearchQuery
-          ? undefined
-          : wrapper.querySelector('.select-option[aria-selected="true"]')) ??
-        wrapper.querySelector('.select-option'))
-      : target;
+    const item = resolveSelectConfirmTarget(wrapper, target, isSearch);
     if (item instanceof HTMLElement && item.dataset.value !== undefined) {
       chooseSelectOption(wrapper, item.dataset.value, site);
     }

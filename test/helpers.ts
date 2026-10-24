@@ -61,6 +61,28 @@ export function requireDefined<T>(value: T | undefined, description: string): T 
 }
 
 /**
+ * Count non-overlapping occurrences of `needle` inside `haystack`.
+ * @param haystack   Source string to scan.
+ * @param needle     Non-empty substring to count.
+ * @returns Number of non-overlapping matches (`0` when `needle` is empty).
+ */
+export function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) {
+    return 0;
+  }
+  let count = 0;
+  let offset = 0;
+  while (true) {
+    const matchIndex = haystack.indexOf(needle, offset);
+    if (matchIndex === -1) {
+      return count;
+    }
+    count += 1;
+    offset = matchIndex + needle.length;
+  }
+}
+
+/**
  * Create an in-memory edge cache stub keyed by request URL; Install it with
  * `vi.stubGlobal('caches', { default: stub.cache })` and undo it with `vi.unstubAllGlobals()`.
  * @returns Edge cache stub with its backing store and call logs.
@@ -114,9 +136,24 @@ export function evaluateClientCore<T>(bundleSource: string, exportName: string):
 }
 
 /**
+ * Evaluate a bundled browser client script against an explicit map of injected globals.
+ * @param bundleSource   Bundled JavaScript source text.
+ * @param globals        Injected global identifiers and values passed into the sandboxed wrapper.
+ */
+export function evaluateClientDom(
+  bundleSource: string,
+  globals: Readonly<Record<string, unknown>>
+): void {
+  const paramNames = Object.keys(globals);
+  const paramValues = paramNames.map((name) => globals[name]);
+  // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- Executes the shipped browser bundle against a minimal DOM sandbox.
+  new Function(...paramNames, bundleSource)(...paramValues);
+}
+
+/**
  * Read and concatenate the TypeScript source modules of a browser client (`src/site/client/<kind>/*.ts`),
  * so structural source guards stay independent of `esbuild` minification while runtime tests execute the shipped bundle.
- * @param clientKind   Client bundle directory (`'builder'` or `'site'`).
+ * @param clientKind   Client bundle directory name.
  * @returns Concatenated TypeScript module source text.
  */
 export function readClientModuleSources(clientKind: 'builder' | 'site'): string {

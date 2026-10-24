@@ -27,9 +27,9 @@ export interface IconBody {
 
 /** Resolved SVG icon markup, horizontal visual bounds in `24x24` space, and source type. */
 export interface ResolvedIcon extends IconBody {
-  /** Rightmost visible horizontal coordinate (`0`–`24`) for exact optical spacing. */
+  /** Rightmost visible horizontal coordinate in `24x24` icon space for optical spacing. */
   maxX: number;
-  /** Leftmost visible horizontal coordinate (`0`–`24`) for exact optical spacing. */
+  /** Leftmost visible horizontal coordinate in `24x24` icon space for optical spacing. */
   minX: number;
 }
 

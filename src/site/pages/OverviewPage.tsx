@@ -12,7 +12,7 @@ import {
   SHARED_PARAM_COLUMNS,
   URL_ANATOMY_PARTS,
 } from '@/site/catalog/overview';
-import { ENDPOINT_ROUTES } from '@/site/catalog/shared';
+import { getEndpointRoutes } from '@/site/catalog/shared';
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
@@ -30,7 +30,7 @@ export function OverviewSection(): HtmlFragment {
     <section class="doc-section" id="overview">
       <SectionHeader
         description="Every element is a plain `GET` URL returning an SVG; Public and 100% free with no signup, API keys, or rate limits. Build URLs visually in the **Builder**, or compose them directly below."
-        routes={ENDPOINT_ROUTES}
+        routes={getEndpointRoutes()}
         title="Getting Started"
       />
       <SectionSubhead iconSlug="link" text="URL Anatomy" />

@@ -30,7 +30,7 @@ import type {
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Options for initializing the builder icon picker controller. */
-export interface IconPickerOptions {
+interface IconPickerOptions {
   /** Builder `<form>` element. */
   form: HTMLFormElement;
   /** `<template id="icon-glyph-templates">` element holding per-set `<svg>` shells. */
@@ -54,7 +54,7 @@ export interface IconPickerOptions {
 }
 
 /** Public controller interface returned by `createIconPickerController`. */
-export interface IconPickerController {
+interface IconPickerController {
   /** Bind the icon picker popover events when `#icon-picker` and `#icon-picker-grid` exist. */
   bind: () => void;
   /** Create an inline glyph `<svg>` for an icon body from the page's glyph templates. */

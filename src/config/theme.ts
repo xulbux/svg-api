@@ -1,5 +1,5 @@
 /**
- * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers (non-Tailwind colors come from `src/config/palette.ts`).
+ * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers.
  */
 
 import { ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
@@ -227,7 +227,7 @@ function toByte(channel: number): number {
   return Math.round(Math.min(1, Math.max(0, channel)) * 255);
 }
 
-/** Convert a `0`–`1` channel value into a 2-digit upper-case hex byte (matching `src/config/palette.ts`). */
+/** Convert a `0`–`1` channel value into a 2-digit upper-case hex byte. */
 function toHexByte(channel: number): string {
   return toByte(channel).toString(16).padStart(2, '0').toUpperCase();
 }
@@ -378,7 +378,7 @@ function createLazyPaletteMap<T>(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/** Base neutral dark carbon surface tokens (Isolux Pro Dark grays from `src/config/palette.ts`). */
+/** Base neutral dark carbon surface tokens. */
 export const BASE_DARK: BaseDarkPalette = {
   bgBottom: ISOLUX_GRAY[900],
   bgTop: ISOLUX_GRAY[800],

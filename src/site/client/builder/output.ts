@@ -17,6 +17,7 @@ import {
 import type { SvgSite } from '@/site/client/site/types';
 import type {
   BuilderBuildResult,
+  BuilderField,
   BuilderSchema,
   BuilderState,
   HighlightToken,
@@ -26,7 +27,7 @@ import type {
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Options for initializing the builder preview and snippet output controller. */
-export interface BuilderOutputOptions {
+interface BuilderOutputOptions {
   /** Custom alt-text `<input>` element. */
   altInput: HTMLInputElement | null;
   /** `#builder-code code` output element. */
@@ -60,7 +61,7 @@ export interface BuilderOutputOptions {
 }
 
 /** Public controller interface returned by `createBuilderOutputController`. */
-export interface BuilderOutputController {
+interface BuilderOutputController {
   /** Clear any active cross-builder prefill notice. */
   clearCrossBuilderNotice: () => void;
   /** Copy the shareable builder URL to the clipboard. */
@@ -87,6 +88,29 @@ export interface BuilderOutputController {
 
 /** Debounce delay in milliseconds before reloading the live SVG preview and updating `history.replaceState`. */
 const PREVIEW_DEBOUNCE_MS = 180;
+
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Synchronize `.is-missing` and `aria-invalid` across a field wrapper and its interactive inputs. */
+function syncFieldMissingState(
+  fieldElement: Element,
+  field: BuilderField,
+  isMissing: boolean
+): void {
+  fieldElement.classList.toggle('is-missing', isMissing);
+  const controls = fieldElement.querySelectorAll('.builder-input:not(.select-trigger)');
+  for (let i = 0; i < controls.length; i += 1) {
+    const control = controls[i];
+    if (control) {
+      const isControlMissing = isMissing && (field.control !== 'typingLines' || i === 0);
+      if (isControlMissing) {
+        control.setAttribute('aria-invalid', 'true');
+      } else if (!control.closest('.is-invalid')) {
+        control.removeAttribute('aria-invalid');
+      }
+    }
+  }
+}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -170,16 +194,7 @@ export function createBuilderOutputController(
       const isMissing = isRequired && !readState(state, field.id);
       const fieldElement = fieldElements.get(field.id);
       if (fieldElement) {
-        fieldElement.classList.toggle('is-missing', isMissing);
-        for (const control of fieldElement.querySelectorAll(
-          '.builder-input:not(.select-trigger)'
-        )) {
-          if (isMissing) {
-            control.setAttribute('aria-invalid', 'true');
-          } else if (!control.closest('.is-invalid')) {
-            control.removeAttribute('aria-invalid');
-          }
-        }
+        syncFieldMissingState(fieldElement, field, isMissing);
       }
     }
     if (openLink) {

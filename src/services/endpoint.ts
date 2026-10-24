@@ -189,8 +189,7 @@ export function asJsonObject(value: unknown): Record<string, unknown> | undefine
  * @returns First object element, or `undefined`.
  */
 export function readFirstObjectEntry(entries: unknown): Record<string, unknown> | undefined {
-  const first: unknown = Array.isArray(entries) ? entries[0] : undefined;
-  return isJsonObject(first) ? first : undefined;
+  return Array.isArray(entries) ? asJsonObject(entries[0]) : undefined;
 }
 
 /**
@@ -260,7 +259,7 @@ export function projectFirstEntry<E extends object>(
   return function projectFirst(data: unknown): Partial<E> | undefined {
     let entries: unknown = data;
     if (listKey !== undefined) {
-      entries = isJsonObject(data) ? data[listKey] : undefined;
+      entries = asJsonObject(data)?.[listKey];
     }
     const entry = readFirstObjectEntry(entries);
     if (!entry) {

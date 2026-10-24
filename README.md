@@ -34,7 +34,7 @@ Use a **Fine-Grained PAT** scoped to **Public Repositories (read-only)** with ze
 
 1.  Create `src/services/presets/<service>.ts` with `defineService()` + `createEndpoint()` (`src/services/endpoint.ts`) and metric factories (`src/services/metrics.ts`). Always set a `project` projection (e.g., `pickFields`) and `ttl` from `CACHE_TTL`.
 2.  Register in `SERVICES_CONFIG` (`src/config/services.ts`); routing, validation, global metric aliases, `/docs/services`, and `/builder/service` pick it up automatically.
-3.  Add a preview card to `SERVICE_PRESET_CARDS` (`src/site/catalog/services.ts`) and transform tests in `test/services.test.ts`.
+3.  Add a preview card to `buildServicePresetCards()` (`src/site/catalog/services.ts`) and transform tests in `test/services.test.ts`.
 
 ### `createEndpoint()` URL Placeholders
 

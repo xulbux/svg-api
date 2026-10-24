@@ -68,5 +68,5 @@ export default defineConfig({
       '@scripts': path.resolve(import.meta.dirname, 'scripts'),
     },
   },
-  test: { include: ['test/**/*.test.ts'], restoreMocks: true, root: '.' },
+  test: { include: ['test/**/*.test.ts'], restoreMocks: true, root: '.', unstubGlobals: true },
 });

@@ -34,7 +34,7 @@ import type {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Showcase definitions for the badge hierarchy variants. */
-export const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
+const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Gradient right cap for primary status and metrics.',
     id: '1',

@@ -1,5 +1,5 @@
 /**
- * HTTP status error pages – Branded `noindex` HTML error pages (`<NotFoundPage />` and `<ServerErrorPage />`) for unmatched site paths and unexpected server errors.
+ * HTTP status error pages – Branded `noindex` HTML error pages for unmatched site paths and unexpected server errors.
  */
 
 import { SITE_HOST } from '@/config/site';
@@ -60,11 +60,11 @@ function StatusPage(props: StatusPageProps): HtmlFragment {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render the branded `404 Page Not Found` HTML page as a JSX component.
- * @returns Complete `<PageLayout />` JSX document fragment marked `noindex`.
+ * Render (once per isolate) the branded `404 Page Not Found` HTML document.
+ * @returns Complete HTML document string.
  */
-export function NotFoundPage(): HtmlFragment {
-  return (
+export function renderNotFoundHtml(): string {
+  notFoundHtmlCache ??= renderHtml(
     <StatusPage
       code={404}
       description={`The requested page could not be found on ${SITE_HOST}.`}
@@ -72,29 +72,6 @@ export function NotFoundPage(): HtmlFragment {
       message="The page you requested doesn't exist or may have been moved."
     />
   );
-}
-
-/**
- * Render the branded `500 Internal Server Error` HTML page as a JSX component.
- * @returns Complete `<PageLayout />` JSX document fragment marked `noindex`.
- */
-export function ServerErrorPage(): HtmlFragment {
-  return (
-    <StatusPage
-      code={500}
-      description={`An unexpected server error occurred on ${SITE_HOST}.`}
-      heading="Internal Server Error"
-      message="Something went wrong while loading this page. Please try again in a moment."
-    />
-  );
-}
-
-/**
- * Render (once per isolate) the branded `404 Page Not Found` HTML document.
- * @returns Complete HTML document string.
- */
-export function renderNotFoundHtml(): string {
-  notFoundHtmlCache ??= renderHtml(<NotFoundPage />);
   return notFoundHtmlCache;
 }
 
@@ -103,6 +80,13 @@ export function renderNotFoundHtml(): string {
  * @returns Complete HTML document string.
  */
 export function renderServerErrorHtml(): string {
-  serverErrorHtmlCache ??= renderHtml(<ServerErrorPage />);
+  serverErrorHtmlCache ??= renderHtml(
+    <StatusPage
+      code={500}
+      description={`An unexpected server error occurred on ${SITE_HOST}.`}
+      heading="Internal Server Error"
+      message="Something went wrong while loading this page. Please try again in a moment."
+    />
+  );
   return serverErrorHtmlCache;
 }

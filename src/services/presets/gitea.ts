@@ -76,6 +76,7 @@ function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefin
   });
   const releaseEndpoint = createEndpoint({
     api: `https://${host}/api/v1/repos/{owner}/{target}/releases/latest`,
+    extractKeys: ['tag_name'],
     page: `https://${host}/{owner}/{target}/releases`,
     project: pickFields<GiteaReleasePayload>(['tag_name']),
   });

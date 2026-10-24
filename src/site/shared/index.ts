@@ -21,12 +21,12 @@ export {
   findService,
   getOwnValue,
   HINT_ICON_REST_RX,
+  isTruthyFlagToken,
   LIST_SEPARATOR_RX,
   MAX_TYPING_LINE_LENGTH,
   MAX_TYPING_LINES,
   readState,
   TRUTHY_FLAG_LIST,
-  TRUTHY_FLAG_TOKENS,
 } from '@/site/shared/encoding';
 export {
   composeAnim,
@@ -44,8 +44,6 @@ export {
   buildMarkdownSnippetTokens,
   buildSnippets,
   buildSnippetTokens,
-  encodeMarkdownDestination,
-  tokenizeUrl,
 } from '@/site/shared/snippets';
 export {
   collectStackSlugs,

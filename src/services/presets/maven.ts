@@ -3,9 +3,9 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   defineService,
-  isJsonObject,
   readFirstObjectEntry,
 } from '@/services/endpoint';
 import { createVersionMetric, readText } from '@/services/metrics';
@@ -27,8 +27,7 @@ const MAVEN_COORD_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d._-]{0,127}$/;
 
 /** Project a Maven Central Solr search response to the first artifact's `latestVersion` (empty `docs` is not found). */
 function projectMavenArtifact(data: unknown): MavenArtifactProjection | undefined {
-  const response = isJsonObject(data) ? data.response : undefined;
-  const firstDoc = readFirstObjectEntry(isJsonObject(response) ? response.docs : undefined);
+  const firstDoc = readFirstObjectEntry(asJsonObject(asJsonObject(data)?.response)?.docs);
   return firstDoc ? { version: readText(firstDoc.latestVersion) } : undefined;
 }
 

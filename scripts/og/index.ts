@@ -30,7 +30,7 @@ const TEXT_ASSET_RX = /\.(?:css|client\.js)$/;
 
 /** Bundle and evaluate `renderOgImageSvg()` from `src/site/seo.ts` via `esbuild` with externalized packages. */
 async function evaluateLiveOgSvg(): Promise<LiveOgModule> {
-  const tempBundlePath = path.resolve(REPO_ROOT, '.wrangler', 'og-eval.cjs');
+  const tempBundlePath = path.resolve(REPO_ROOT, '.wrangler', `og-eval-${process.pid}.cjs`);
   await mkdir(path.dirname(tempBundlePath), { recursive: true });
   await build({
     bundle: true,

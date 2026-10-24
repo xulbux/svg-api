@@ -1,5 +1,5 @@
 /**
- * Builder page – Renders the `/builder/:kind` URL builder pages (`<BuilderPage />` and `renderBuilderHtml`).
+ * Builder page – Renders the `/builder/:kind` URL builder pages.
  */
 
 import { SITE_HOST } from '@/config/site';
@@ -25,7 +25,7 @@ import type { BuilderKind } from '@/types';
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Props for the `<BuilderPage />` component. */
-export interface BuilderPageProps {
+interface BuilderPageProps {
   /** Builder element kind. */
   readonly kind: BuilderKind;
 }
@@ -35,14 +35,10 @@ export interface BuilderPageProps {
 /** Memoized builder pages keyed by element kind. */
 const BUILDER_HTML_CACHE = new Map<BuilderKind, string>();
 
-// -------------------------------------- PUBLIC API -------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Render the URL builder page of an element kind as a JSX component.
- * @param props   Builder page props (`kind`).
- * @returns Complete builder page JSX document fragment.
- */
-export function BuilderPage(props: BuilderPageProps): HtmlFragment {
+/** Render the URL builder page of an element kind as a JSX component. */
+function BuilderPage(props: BuilderPageProps): HtmlFragment {
   const { kind } = props;
   const meta = getBuilderPageMeta(kind);
   const schema = getBuilderSchema(kind);
@@ -91,6 +87,8 @@ export function BuilderPage(props: BuilderPageProps): HtmlFragment {
     </PageLayout>
   );
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render (once per isolate) the URL builder page of an element kind.

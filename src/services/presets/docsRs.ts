@@ -2,46 +2,56 @@
  * docs.rs service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
 import {
   FAILING_STATUS,
   PASSING_STATUS,
   UNKNOWN_STATUS,
   createVersionMetric,
+  readText,
 } from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial docs.rs crate status payload (`docs.rs/crate/:crate/latest/status.json`). */
-interface DocsRsStatusPayload {
-  /** Whether the latest crate documentation build succeeded. */
-  doc_status: boolean;
+/** Projected docs.rs crate status metadata (`docs.rs/crate/:crate/latest/status.json`). */
+interface DocsRsStatusProjection {
+  /** Whether the latest crate documentation build succeeded (`undefined` while queued or missing). */
+  hasDocs?: boolean;
   /** Latest crate version processed by docs.rs. */
-  version: string;
+  version?: string;
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project a docs.rs status payload to its boolean build flag and latest crate version. */
+function projectDocsRsStatus(data: unknown): DocsRsStatusProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  return {
+    hasDocs: typeof data.doc_status === 'boolean' ? data.doc_status : undefined,
+    version: readText(data.version),
+  };
+}
+
+/** Transform a docs.rs status projection into `passing`, `failing`, or `unknown`. */
+function transformDocsRsStatus(payload: DocsRsStatusProjection): Partial<MetricResult> {
+  if (payload.hasDocs === true) {
+    return PASSING_STATUS;
+  }
+  if (payload.hasDocs === false) {
+    return FAILING_STATUS;
+  }
+  return UNKNOWN_STATUS;
+}
 
 /** docs.rs crate status endpoint with crate documentation page redirect. */
 const DOCSRS_ENDPOINT = createEndpoint({
   api: 'https://docs.rs/crate/{target}/latest/status.json',
   page: 'https://docs.rs/{target}',
-  project: pickFields<DocsRsStatusPayload>(['doc_status', 'version']),
+  project: projectDocsRsStatus,
 });
-
-// -------------------------------------- INTERNALS --------------------------------------
-
-/** Transform a docs.rs status payload into `passing`, `failing`, or `unknown`. */
-function transformDocsRsStatus(payload: Partial<DocsRsStatusPayload>): Partial<MetricResult> {
-  if (payload.doc_status === true) {
-    return PASSING_STATUS;
-  }
-  if (payload.doc_status === false) {
-    return FAILING_STATUS;
-  }
-  return UNKNOWN_STATUS;
-}
 
 // -------------------------------------- PUBLIC API -------------------------------------
 

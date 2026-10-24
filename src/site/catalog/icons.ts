@@ -3,7 +3,7 @@
  */
 
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
-import { ACTIVE_ICON_MOTION_TOKENS, ICON_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_ICON_MOTION_TOKENS, ANIM_SHEEN_TOKEN, ICON_MOTION_TOKENS } from '@/routes/params';
 import { buildColorParamRow, formatRange } from '@/site/catalog/shared';
 import { FALLBACK_ICON_SLUG } from '@/svg/icons';
 import { ICON_SIZE_RANGE, ICON_STROKE_RANGE } from '@/svg/renderer';
@@ -84,10 +84,9 @@ export function buildIconParamRows(): ParamTableRow[] {
     },
     {
       defaultVal: 'default',
-      description:
-        'Diagonal sheen, an icon motion (auto picks per icon), or sheen,<motion>; Per-icon pairs apply their first motion.',
+      description: `Diagonal sheen, an icon motion (auto picks per icon), or ${ANIM_SHEEN_TOKEN},<motion>; Per-icon pairs apply their first motion.`,
       name: '?anim=',
-      values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')} | sheen,<motion>`,
+      values: `${ANIM_SHEEN_TOKEN} | ${ICON_MOTION_TOKENS.join(' | ')} | ${ANIM_SHEEN_TOKEN},<motion>`,
     },
   ];
 }

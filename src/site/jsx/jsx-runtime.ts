@@ -76,16 +76,34 @@ const VOID_ELEMENT_TAGS: readonly string[] = [
 
 /** HTML boolean attributes serialized as bare attribute names when enabled and omitted when disabled. */
 const BOOLEAN_ATTRIBUTES: readonly string[] = [
+  'allowfullscreen',
+  'async',
+  'autofocus',
+  'autoplay',
   'checked',
+  'controls',
+  'default',
   'defer',
   'disabled',
+  'formnovalidate',
   'hidden',
   'inert',
+  'ismap',
+  'itemscope',
+  'loop',
+  'multiple',
+  'muted',
+  'nomodule',
   'novalidate',
   'open',
+  'playsinline',
   'readonly',
   'required',
+  'reversed',
   'selected',
+  'shadowrootclonable',
+  'shadowrootdelegatesfocus',
+  'shadowrootserializable',
 ];
 
 /** React-style prop names mapped to their canonical HTML attribute names. */
@@ -173,7 +191,12 @@ function serializeSingleAttribute(rawName: string, rawValue: unknown): string {
     return rawValue === false ? '' : ` popover="${escapeXml(String(rawValue))}"`;
   }
   if (typeof rawValue === 'boolean') {
-    if (name.startsWith('aria-') || name === 'draggable' || name === 'spellcheck') {
+    if (
+      name.startsWith('aria-') ||
+      name === 'contenteditable' ||
+      name === 'draggable' ||
+      name === 'spellcheck'
+    ) {
       return ` ${name}="${String(rawValue)}"`;
     }
     return rawValue && (isBooleanAttribute(name) || name.startsWith('data-')) ? ` ${name}` : '';

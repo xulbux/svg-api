@@ -8,6 +8,7 @@ import {
   TYPING_LAYOUT_TOKENS,
   VARIANT_TOKENS,
 } from '@/routes/params';
+import { listRouteAliases } from '@/site/catalog/shared';
 import {
   buildTypingParamRows,
   TYPING_BEHAVIOR_CARDS,
@@ -24,18 +25,22 @@ import { DEFAULT_TYPING_ERASE } from '@/svg/typing';
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render the Typing Animations (`/typing/*` and `/type/*`) documentation section as a JSX component.
+ * Render the Typing Animations (`/docs/typing`) documentation section as a JSX component.
  * @returns Rendered `<section class="doc-section" id="typing">` JSX fragment.
  */
 export function TypingSection(): HtmlFragment {
   const alternateEraseTokens = TYPING_ERASE_TOKENS.filter(
     (token) => token !== DEFAULT_TYPING_ERASE
   ).join('|');
+  const routes = ['/typing/:lines', '/typing/:prefix/:lines'];
+  for (const alias of listRouteAliases('typing')) {
+    routes.push(`/${alias}/:lines`);
+  }
   return (
     <section class="doc-section" id="typing">
       <SectionHeader
         description={`Natural typing animations across ${TYPING_LAYOUT_TOKENS.length} container layouts (${formatBacktickList(TYPING_LAYOUT_TOKENS)}) with customizable cursors, erase transitions, and fonts.`}
-        routes={['/typing/:lines', '/typing/:prefix/:lines', '/type/:lines']}
+        routes={routes}
         title="Realistic SVG Typing Animations"
       />
       <ParamTable

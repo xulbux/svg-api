@@ -645,7 +645,7 @@ export const TYPING_DURATION_RANGE: NumericRange = { default: 2200, max: 10_000,
 export const TYPING_PAUSE_RANGE: NumericRange = { default: 1200, max: 6000, min: 200 };
 
 /** Maximum raw lines string length in UTF-16 code units before truncation (fits `MAX_TYPING_LINES` full lines plus `;` separators). */
-export const MAX_TYPING_TEXT_LENGTH = MAX_TYPING_LINES * (MAX_TYPING_LINE_LENGTH + 1);
+const MAX_TYPING_TEXT_LENGTH = MAX_TYPING_LINES * (MAX_TYPING_LINE_LENGTH + 1);
 
 /** Maximum character length of the optional static prefix. */
 export const MAX_TYPING_PREFIX_LENGTH = 48;

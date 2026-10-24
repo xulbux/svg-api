@@ -16,6 +16,16 @@ export type {
   SiteClientCore,
 } from '@/types';
 
+/** Currently open fallback-positioned popover tracked for scroll and resize repositioning. */
+export interface ActivePopoverState {
+  /** Trigger or anchor element. */
+  anchor: Element;
+  /** Placement options used when opening the popover. */
+  options: PopoverPlacementOptions;
+  /** Open popover element. */
+  popover: HTMLElement;
+}
+
 /** Popover and clipboard helpers exposed by the site script for page scripts (`svgSite`). */
 export interface SiteClientHelpers {
   /** Close a popover element (native Popover API or the `.is-open` fallback). */

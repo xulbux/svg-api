@@ -5,7 +5,7 @@
  * count of every game instead of an error, so they are rejected before any fetch.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { asJsonObject, createEndpoint, defineService } from '@/services/endpoint';
 import { createCommunityMetric, readFiniteNumber } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -25,10 +25,10 @@ const STEAM_PLAYERS_TTL = 300;
 const STEAM_PLAYERS_ENDPOINT = createEndpoint<SteamPlayersPayload>({
   api: 'https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid={target}',
   page: 'https://store.steampowered.com/app/{target}/',
-  project: (data) =>
-    isJsonObject(data) && isJsonObject(data.response)
-      ? { playerCount: readFiniteNumber(data.response.player_count) }
-      : undefined,
+  project: (data) => {
+    const response = asJsonObject(asJsonObject(data)?.response);
+    return response ? { playerCount: readFiniteNumber(response.player_count) } : undefined;
+  },
   ttl: STEAM_PLAYERS_TTL,
 });
 

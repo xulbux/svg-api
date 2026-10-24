@@ -1,3 +1,5 @@
+/* Action Buttons */
+
 .btn-primary,
 .btn-secondary {
   display: inline-flex;
@@ -147,7 +149,7 @@ button.btn-secondary {
   min-inline-size: 0;
 }
 
-/* Hover/Focus Deep-Link Anchors */
+/* Deep-Link Anchors */
 
 .anchor-link {
   display: inline-flex;
@@ -697,7 +699,6 @@ details.code-drawer[open] .drawer-chevron {
 }
 
 .param-table thead th {
-  border-block-end: 1px solid var(--c-border);
   font-size: 0.73rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -780,7 +781,6 @@ details.code-drawer[open] .drawer-chevron {
 
 @container (width < 600px) {
   .param-table,
-  .param-table thead,
   .param-table tbody,
   .param-table tr,
   .param-table th,

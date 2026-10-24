@@ -3,6 +3,7 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
@@ -119,11 +120,10 @@ function projectHuggingFaceSpace(data: unknown): HuggingFaceSpaceProjection | un
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const runtime = isJsonObject(data.runtime) ? data.runtime : undefined;
   return {
     likes: readFiniteNumber(data.likes),
     sdk: readText(data.sdk),
-    stage: readText(runtime?.stage),
+    stage: readText(asJsonObject(data.runtime)?.stage),
   };
 }
 

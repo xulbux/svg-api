@@ -24,7 +24,7 @@ import type {
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Options for initializing the `/builder/stack` category picker controller. */
-export interface StackCatalogOptions {
+interface StackCatalogOptions {
   /** Create an inline glyph `<svg>` for an icon body. */
   createGlyph: (set: IconPickerSetId, innerSvg: string) => SVGSVGElement;
   /** Builder `<form>` element. */
@@ -357,7 +357,7 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     stackCategorySearch?.addEventListener('input', filterStackCatalog);
     stackGroupToggle?.addEventListener('change', applyStackCatalogSelection);
 
-    const modeTabList = form.querySelector('.stack-mode-tabs');
+    const modeTabList = form.querySelector('[role="tablist"]');
     modeTabList?.addEventListener('click', (event) => {
       const tab =
         event.target instanceof Element ? event.target.closest('.stack-mode-tab') : undefined;

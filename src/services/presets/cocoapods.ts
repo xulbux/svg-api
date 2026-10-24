@@ -5,26 +5,40 @@
  * follows transparently.
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
+import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  createLicenseMetric,
+  createVersionMetric,
+  readLicenseName,
+  readText,
+} from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial podspec JSON payload (`trunk.cocoapods.org/api/v1/pods/:pod/specs/latest`). */
-interface CocoaPodsSpecPayload {
-  /** SPDX license identifier or license object (`{ type, file }`). */
-  license: unknown;
+/** Projected podspec metadata (`trunk.cocoapods.org/api/v1/pods/:pod/specs/latest`). */
+interface CocoaPodsSpecProjection {
+  /** SPDX license identifier or license type name (without inline license file text). */
+  license?: string;
   /** Latest published pod version. */
-  version: string;
+  version?: string;
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project a podspec payload to its license name and latest version. */
+function projectCocoaPodsSpec(data: unknown): CocoaPodsSpecProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  return { license: readLicenseName(data.license), version: readText(data.version) };
+}
 
 /** CocoaPods Trunk latest podspec endpoint with cocoapods.org pod page redirect. */
 const COCOAPODS_ENDPOINT = createEndpoint({
   api: 'https://trunk.cocoapods.org/api/v1/pods/{target}/specs/latest',
+  extractKeys: ['license', 'version'],
   page: 'https://cocoapods.org/pods/{target}',
-  project: pickFields<CocoaPodsSpecPayload>(['license', 'version']),
+  project: projectCocoaPodsSpec,
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------

@@ -9,18 +9,6 @@ import type {
   PopoverSize,
 } from '@/site/client/site/types';
 
-// ---------------------------------------- TYPES ----------------------------------------
-
-/** Currently open fallback-positioned popover tracked for scroll repositioning. */
-export interface ActivePopoverState {
-  /** Trigger or anchor element. */
-  anchor: Element;
-  /** Placement options used when opening the popover. */
-  options: PopoverPlacementOptions;
-  /** Open popover element. */
-  popover: HTMLElement;
-}
-
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Minimum distance in pixels between a fallback-positioned popover and the viewport edges. */

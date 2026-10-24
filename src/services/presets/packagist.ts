@@ -2,7 +2,7 @@
  * Packagist service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   buildWindowDeltaSpecials,
@@ -58,7 +58,7 @@ function projectPackagistStats(data: unknown): PackagistStatsProjection | undefi
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = isJsonObject(data.downloads) ? data.downloads : undefined;
+  const downloads = asJsonObject(data.downloads);
   return {
     daily: readFiniteNumber(downloads?.daily),
     monthly: readFiniteNumber(downloads?.monthly),

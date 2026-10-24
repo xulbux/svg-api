@@ -10,8 +10,14 @@ import {
   isJsonObject,
 } from '@/services/endpoint';
 import { capitalizeWord } from '@/site/shared/encoding';
-import { MAX_BARS_POINTS, MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
-import { getOwnValue } from '@/svg/shared';
+import {
+  MAX_BARS_POINTS,
+  MAX_SPARKLINE_POINTS,
+  MAX_STEPS_COUNT,
+  MAX_STRIP_TICKS,
+  MIN_SERIES_POINTS,
+} from '@/svg/renderer';
+import { getOwnValue, sliceAtCodePoint } from '@/svg/shared';
 import type {
   BadgeSpecialKind,
   BadgeSpecialMap,
@@ -44,8 +50,8 @@ interface DownloadPeriodSpec {
 interface CoveragePayload {
   /** Optional signed coverage percentage change from the previous build. */
   delta?: number;
-  /** Raw coverage percentage (`0`–`100`), possibly missing. */
-  percent: unknown;
+  /** Parsed coverage percentage (`0`–`100`) when valid. */
+  percent: number | undefined;
 }
 
 /** Options of a coverage service preset (`createCoverageService`). */
@@ -139,6 +145,9 @@ export const SCORECARD_THRESHOLDS: readonly ScoreColorThreshold[] = [
 /** Maximum rendered license string length before truncation with `..` (fits `MIT OR Apache-2.0`). */
 const MAX_LICENSE_LENGTH = 24;
 
+/** Maximum nested array recursion depth when reading upstream license structures. */
+const MAX_LICENSE_DEPTH = 2;
+
 /** Currency symbols prefixed to formatted amounts; Other ISO 4217 codes are appended instead. */
 const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = { EUR: '€', GBP: '£', USD: '$' };
 
@@ -177,8 +186,11 @@ const COMMUNITY_KINDS: Readonly<Record<CommunityMetricKind, ThemeColorName>> = {
 /** Star rating vote keys in ascending order (`1★` through `5★`). */
 const STAR_KEYS = ['1', '2', '3', '4', '5'] as const;
 
-/** Automatic inline widget kinds supported by score and coverage metrics. */
+/** Automatic inline widget kinds supported by score, rating, and coverage metrics. */
 const SCORE_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
+
+/** Automatic inline widget kinds supported by coverage metrics with build-over-build delta. */
+const COVERAGE_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps', 'delta'];
 
 /** Automatic inline widget kinds supported by OpenSSF Scorecard metrics with check breakdowns. */
 const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
@@ -189,9 +201,6 @@ const SCORECARD_CHECK_SPECIALS: readonly BadgeSpecialKind[] = [
   'bars',
   'sparkline',
 ];
-
-/** Automatic inline widget kinds supported by star rating metrics. */
-const RATING_SPECIALS: readonly BadgeSpecialKind[] = ['ring', 'bar', 'steps'];
 
 /** Automatic inline widget kinds supported by star rating metrics with a vote distribution. */
 const RATING_HISTOGRAM_SPECIALS: readonly BadgeSpecialKind[] = [
@@ -213,7 +222,7 @@ const COVERAGE: MetricPresentation = {
 
 /** Default presentation for average star rating metrics (`rating`). */
 const RATING: MetricPresentation = {
-  autoSpecials: RATING_SPECIALS,
+  autoSpecials: SCORE_SPECIALS,
   defaultColor: 'amber',
   defaultIcon: 'star',
   defaultLabel: 'Rating',
@@ -321,6 +330,29 @@ function readText(raw: unknown): string | undefined {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : undefined;
 }
 
+/** Read a license name from an SPDX string, nested array, or `{ type }` / `{ id }` / `{ name }` object up to `MAX_LICENSE_DEPTH`. */
+function readLicenseNameAtDepth(rawLicense: unknown, depth: number): string | undefined {
+  if (typeof rawLicense === 'string') {
+    return readText(rawLicense);
+  }
+  if (Array.isArray(rawLicense)) {
+    if (depth >= MAX_LICENSE_DEPTH) {
+      return undefined;
+    }
+    for (const item of rawLicense) {
+      const parsed = readLicenseNameAtDepth(item, depth + 1);
+      if (parsed !== undefined) {
+        return parsed;
+      }
+    }
+    return undefined;
+  }
+  if (!isJsonObject(rawLicense)) {
+    return undefined;
+  }
+  return readText(rawLicense.type) ?? readText(rawLicense.id) ?? readText(rawLicense.name);
+}
+
 /** Build score badge properties (value plus ring gauge and bar/steps alternatives, optionally threshold-colored). */
 function buildScoreResult(
   rawAchieved: unknown,
@@ -341,7 +373,11 @@ function buildScoreResult(
     specials: {
       bar: { type: 'bar', value: percent },
       ring,
-      steps: { done: Math.round(percent / 10), total: 10, type: 'steps' },
+      steps: {
+        done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
+        total: MAX_STEPS_COUNT,
+        type: 'steps',
+      },
     },
     value: format(achieved, maximum),
   };
@@ -630,7 +666,7 @@ export function formatLicense(rawLicense: string | null | undefined): string {
     return 'unknown';
   }
   return trimmed.length > MAX_LICENSE_LENGTH
-    ? `${trimmed.slice(0, MAX_LICENSE_LENGTH - 2)}..`
+    ? `${sliceAtCodePoint(trimmed, MAX_LICENSE_LENGTH - 2)}..`
     : trimmed;
 }
 
@@ -640,35 +676,21 @@ export function formatLicense(rawLicense: string | null | undefined): string {
  * @returns License name, or `undefined` when missing.
  */
 export function readLicenseName(rawLicense: unknown): string | undefined {
-  if (typeof rawLicense === 'string') {
-    return readText(rawLicense);
-  }
-  if (Array.isArray(rawLicense)) {
-    for (const item of rawLicense) {
-      const parsed = readLicenseName(item);
-      if (parsed !== undefined) {
-        return parsed;
-      }
-    }
-    return undefined;
-  }
-  if (!isJsonObject(rawLicense)) {
-    return undefined;
-  }
-  return readText(rawLicense.type) ?? readText(rawLicense.id) ?? readText(rawLicense.name);
+  return readLicenseNameAtDepth(rawLicense, 0);
 }
 
 /**
  * Convert a lowercase SPDX license key into its canonical casing (e.g., `'apache-2.0'` -> `'Apache-2.0'`).
  * @param key   Lowercase SPDX license key (e.g., GitLab `license.key`).
- * @returns Canonically cased license id, or `undefined` when `key` is missing.
+ * @returns Canonically cased license id, or `undefined` when `key` is missing or non-string.
  */
-export function formatSpdxKey(key: string | null | undefined): string | undefined {
-  if (!key) {
+export function formatSpdxKey(key: unknown): string | undefined {
+  const trimmed = readText(key)?.trim();
+  if (!trimmed) {
     return undefined;
   }
   let formatted = '';
-  for (const part of key.split('-')) {
+  for (const part of trimmed.split('-')) {
     formatted += formatted.length > 0 ? `-${formatSpdxPart(part)}` : formatSpdxPart(part);
   }
   return formatted;
@@ -677,8 +699,8 @@ export function formatSpdxKey(key: string | null | undefined): string | undefine
 /**
  * Sum the finite numeric entries in `values` across `[start, end)`.
  * @param values   Numeric series.
- * @param start    Inclusive start index (defaults to `0`).
- * @param end      Exclusive end index (defaults to `values.length`).
+ * @param start    Inclusive start index.
+ * @param end      Exclusive end index.
  * @returns Sum of finite entries in the slice.
  */
 export function sumSeries(
@@ -703,8 +725,8 @@ export function sumSeries(
  * When `values.length < maxWindow * 2`, `width` falls back to `Math.floor(values.length / 2)` so odd-length
  * series drop the oldest unpaired element instead of comparing unequal window widths.
  * @param values      Chronological numeric series.
- * @param maxWindow   Maximum window width in elements (defaults to `Math.floor(values.length / 2)`).
- * @param minWindow   Minimum required window width in elements (defaults to `1`).
+ * @param maxWindow   Maximum window width in elements.
+ * @param minWindow   Minimum required window width in elements.
  * @returns `[currentSum, previousSum]`, or `[undefined, undefined]` when fewer than `minWindow` elements per window exist.
  */
 export function compareTrailingWindows(
@@ -721,7 +743,9 @@ export function compareTrailingWindows(
 }
 
 /**
- * Aggregate a numeric series into at most `bucketCount` contiguous summed buckets.
+ * Aggregate a numeric series into at most `bucketCount` contiguous per-entry average buckets.
+ * Averaging each bucket (`sum / width`) prevents uneven slice widths (`values.length % count !== 0`)
+ * from creating sawtooth spikes while preserving exact values when `values.length <= bucketCount`.
  * @param values        Source numeric series in chronological order.
  * @param bucketCount   Target number of buckets.
  * @returns Bucketed series (empty when `values` is empty or `bucketCount <= 0`).
@@ -735,7 +759,8 @@ export function bucketSeries(values: readonly number[], bucketCount: number): nu
   for (let i = 0; i < count; i += 1) {
     const start = Math.floor((i * values.length) / count);
     const end = Math.floor(((i + 1) * values.length) / count);
-    buckets.push(sumSeries(values, start, end));
+    const span = Math.max(1, end - start);
+    buckets.push(Math.round((sumSeries(values, start, end) / span) * 100) / 100);
   }
   return buckets;
 }
@@ -825,6 +850,7 @@ export function buildWindowDeltaSpecials(
   const priorDays = longerDays - shorterDays;
   if (
     recent === undefined ||
+    recent < 0 ||
     cumulative === undefined ||
     shorterDays <= 0 ||
     priorDays <= 0 ||
@@ -859,7 +885,11 @@ export function buildRatioSpecials(
     ? {
         bar: { type: 'bar', value: percent },
         ring: { type: 'ring', value: percent },
-        steps: { done: Math.round(percent / 10), total: 10, type: 'steps' },
+        steps: {
+          done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
+          total: MAX_STEPS_COUNT,
+          type: 'steps',
+        },
       }
     : { bar: { type: 'bar', value: percent }, ring: { type: 'ring', value: percent } };
 }
@@ -872,14 +902,14 @@ export function buildRatioSpecials(
 export function buildSeriesSpecials(options: SeriesSpecialsOptions): BadgeSpecialMap | undefined {
   const specials: BadgeSpecialMap = {};
   const sparklineSource = options.sparklineValues ?? options.barsValues;
-  if (sparklineSource && sparklineSource.length >= 2) {
+  if (sparklineSource && sparklineSource.length >= MIN_SERIES_POINTS) {
     specials.sparkline = {
       type: 'sparkline',
       values: sparklineSource.slice(-MAX_SPARKLINE_POINTS),
     };
   }
   const barsSource = options.barsValues ?? options.sparklineValues;
-  if (barsSource && barsSource.length >= 2) {
+  if (barsSource && barsSource.length >= MIN_SERIES_POINTS) {
     specials.bars = { type: 'bars', values: barsSource.slice(-MAX_BARS_POINTS) };
   }
   const delta = formatDeltaPercent(options.current, options.previous);
@@ -891,8 +921,8 @@ export function buildSeriesSpecials(options: SeriesSpecialsOptions): BadgeSpecia
 
 /**
  * Build `sparkline`, `bars`, and period-over-period `delta` widgets from the trailing entries of a chronological series.
- * @param series   Chronological numeric series (at least 2 points for widgets and trailing delta).
- * @returns Candidate widget map, or `undefined` when `series` has fewer than 2 points.
+ * @param series   Chronological numeric series.
+ * @returns Candidate widget map, or `undefined` when `series` has fewer than `MIN_SERIES_POINTS` points.
  */
 export function buildTrailingSeriesSpecials(
   series: readonly number[] | undefined
@@ -900,7 +930,7 @@ export function buildTrailingSeriesSpecials(
   return buildSeriesSpecials({
     barsValues: series,
     current: series?.at(-1),
-    previous: series && series.length >= 2 ? series.at(-2) : undefined,
+    previous: series && series.length >= MIN_SERIES_POINTS ? series.at(-2) : undefined,
     sparklineValues: series,
   });
 }
@@ -932,7 +962,7 @@ export function createCountMetric<P>(
  * @param endpoint        Upstream endpoint.
  * @param period          Canonical download metric key (e.g., `'dw'` -> `/wk`, `'dt'` -> all-time).
  * @param readCount       Reads the raw download count from the projected payload.
- * @param overrides       Optional presentation overrides (e.g., `{ defaultLabel: 'installs' }`).
+ * @param overrides       Optional presentation overrides (e.g., `{ defaultLabel: 'Installs' }`).
  * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
  * @returns Metric rendering (e.g., `'1.1M/wk'`).
  */
@@ -946,13 +976,7 @@ export function createDownloadsMetric<P>(
   const spec = DOWNLOAD_PERIODS[period];
   return createCountMetric(
     endpoint,
-    {
-      autoSpecials: overrides?.autoSpecials,
-      defaultColor: overrides?.defaultColor ?? spec.color,
-      defaultIcon: overrides?.defaultIcon ?? 'download',
-      defaultLabel: overrides?.defaultLabel ?? 'Downloads',
-      defaultSpecial: overrides?.defaultSpecial,
-    },
+    { defaultColor: spec.color, defaultIcon: 'download', defaultLabel: 'Downloads', ...overrides },
     readCount,
     spec.suffix,
     buildSpecials
@@ -1061,7 +1085,7 @@ export function createLicenseMetric<P>(
  * @param endpoint       Upstream endpoint.
  * @param presentation   Default color, icon, and label.
  * @param readValue      Reads the raw string from the projected payload.
- * @param fallback       Fallback value when the string is missing or blank (defaults to `'n/a'`).
+ * @param fallback       Fallback value when the string is missing or blank.
  * @returns Metric rendering the trimmed text, or `fallback` when missing.
  */
 export function createTextMetric<P>(
@@ -1124,7 +1148,7 @@ export function createRatingMetric<P>(
       steps: { done: Math.min(5, Math.max(0, Math.round(scaled))), total: 5, type: 'steps' },
     };
     const histogram = readHistogram?.(payload);
-    if (histogram && histogram.length >= 2 && sumSeries(histogram) > 0) {
+    if (histogram && histogram.length >= MIN_SERIES_POINTS && sumSeries(histogram) > 0) {
       specials.bars = { type: 'bars', values: histogram.slice(0, MAX_BARS_POINTS) };
       specials.sparkline = { type: 'sparkline', values: histogram.slice(0, MAX_SPARKLINE_POINTS) };
     }
@@ -1137,7 +1161,7 @@ export function createRatingMetric<P>(
  * @param endpoint       Upstream endpoint.
  * @param presentation   Default color, icon, and label.
  * @param readScore      Reads `[achieved, maximum]` points from the projected payload.
- * @param format         Formats the achieved and maximum points into the badge value (defaults to `formatScoreOutOf`).
+ * @param format         Formats the achieved and maximum points into the badge value.
  * @param thresholds     Optional descending percentage thresholds that override the default color.
  * @returns Metric rendering the formatted score plus ring, or `'n/a'` when missing.
  */
@@ -1193,7 +1217,7 @@ export function createPercentScoreMetric<P>(
  * Create a test coverage metric (`coverage`) with a ring gauge, colored by `COVERAGE_THRESHOLDS`.
  * @param endpoint      Upstream endpoint.
  * @param icon          Default icon slug (e.g., `'codecov'`).
- * @param readPercent   Reads the raw coverage percentage (`0`–`100`) from the projected payload.
+ * @param readPercent   Reads the raw coverage percentage from the projected payload.
  * @param readDelta     Optional reader for signed coverage percentage-point change (adds `delta` widget).
  * @returns Metric rendering (e.g., `'96.4%'`) plus ring, or `'n/a'` when missing.
  */
@@ -1214,7 +1238,7 @@ export function createCoverageMetric<P>(
   }
   return {
     ...base,
-    autoSpecials: [...SCORE_SPECIALS, 'delta'],
+    autoSpecials: COVERAGE_DELTA_SPECIALS,
     transform: (rawPayload, params) => {
       const result = base.transform(rawPayload, params);
       const deltaText = formatPointDelta(readDelta(rawPayload as P));
@@ -1232,7 +1256,7 @@ export function createCoverageMetric<P>(
 /**
  * Extract valid check scores from an OpenSSF Scorecard `checks` array.
  * @param rawChecks   Upstream `checks` array (`[{ score: number }, …]`).
- * @returns Array of valid check scores (`0` to `MAX_SCORECARD_SCORE`), or `undefined` when fewer than 2 checks are present.
+ * @returns Array of valid check scores (`0` to `MAX_SCORECARD_SCORE`), or `undefined` when fewer than `MIN_SERIES_POINTS` checks are present.
  */
 export function readScorecardCheckScores(rawChecks: unknown): number[] | undefined {
   if (!Array.isArray(rawChecks)) {
@@ -1247,7 +1271,7 @@ export function readScorecardCheckScores(rawChecks: unknown): number[] | undefin
       }
     }
   }
-  return scores.length >= 2 ? scores : undefined;
+  return scores.length >= MIN_SERIES_POINTS ? scores : undefined;
 }
 
 /**
@@ -1278,7 +1302,7 @@ export function createScorecardMetric<P>(
       SCORECARD_THRESHOLDS
     );
     const checks = readChecks?.(payload);
-    if (!base.specials || !checks || checks.length < 2) {
+    if (!base.specials || !checks || checks.length < MIN_SERIES_POINTS) {
       return base;
     }
     const states: StripTickState[] = [];
@@ -1292,8 +1316,10 @@ export function createScorecardMetric<P>(
         passedChecks += 1;
       }
     }
-    const stepTotal = Math.min(10, checks.length);
-    const stepDone = Math.round((passedChecks / checks.length) * stepTotal);
+    const stepTotal = Math.min(MAX_STEPS_COUNT, checks.length);
+    const rawStepDone = Math.round((passedChecks / checks.length) * stepTotal);
+    const stepDone =
+      passedChecks < checks.length ? Math.min(stepTotal - 1, rawStepDone) : stepTotal;
     return {
       ...base,
       specials: {
@@ -1324,12 +1350,11 @@ export function createCoverageService<P extends object>(
         return undefined;
       }
       const typed = data as Partial<P>;
+      const percent = toFiniteNumber(options.readPercent(typed) as RawCount);
       const delta = options.readDelta
         ? toFiniteNumber(options.readDelta(typed) as RawCount)
         : undefined;
-      return delta === undefined
-        ? { percent: options.readPercent(typed) }
-        : { delta, percent: options.readPercent(typed) };
+      return delta === undefined ? { percent } : { delta, percent };
     },
   });
   const coverageMetric = createCoverageMetric(

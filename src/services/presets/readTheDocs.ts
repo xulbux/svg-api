@@ -3,6 +3,7 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
@@ -16,6 +17,7 @@ import {
   buildRatioSpecials,
   readFiniteNumber,
 } from '@/services/metrics';
+import { MAX_STRIP_TICKS, MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { BadgeSpecialKind, BadgeSpecialMap, MetricResult, StripTickState } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -28,8 +30,6 @@ interface ReadTheDocsBuildState {
 
 /** Projected build entry of a Read the Docs builds payload (`readthedocs.org/api/v3/projects/:project/versions/latest/builds/`). */
 interface ReadTheDocsBuild {
-  /** Build duration in seconds. */
-  duration?: number;
   /** Whether the finished build succeeded. */
   isSuccess?: boolean;
   /** Build state. */
@@ -102,46 +102,49 @@ function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
   return isInProgressState(code) ? '5' : '3';
 }
 
-/** Project Read the Docs builds (`?limit=10`) to the newest build plus chronological history. */
+/** Project Read the Docs builds to the newest build plus chronological history in a single pass. */
 function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefined {
-  const results = isJsonObject(data) ? data.results : undefined;
+  const results = asJsonObject(data)?.results;
   if (!readFirstObjectEntry(results)) {
     return undefined;
   }
-  const recent: ReadTheDocsBuild[] = [];
-  for (const item of (results as unknown[]).slice(0, 10)) {
-    if (isJsonObject(item)) {
-      const state = isJsonObject(item.state)
-        ? { code: typeof item.state.code === 'string' ? item.state.code : undefined }
-        : undefined;
-      recent.push({
-        duration: readFiniteNumber(item.duration),
-        isSuccess: typeof item.success === 'boolean' ? item.success : undefined,
-        state,
-      });
-    }
-  }
-  const latest = recent[0] ?? {};
-  const chronological = recent.toReversed();
+  const items = results as unknown[];
+  const bound = Math.min(items.length, MAX_STRIP_TICKS);
   const states: StripTickState[] = [];
   const durations: number[] = [];
+  let latest: ReadTheDocsBuild = {};
   let passedCount = 0;
-  for (const entry of chronological) {
-    const tick = toBuildTickState(entry);
-    states.push(tick);
-    if (tick === '9') {
-      passedCount += 1;
-    }
-    if (typeof entry.duration === 'number' && entry.duration >= 0) {
-      durations.push(entry.duration);
+
+  for (let i = bound - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (isJsonObject(item)) {
+      const rawState = asJsonObject(item.state);
+      const entry: ReadTheDocsBuild = {
+        isSuccess: typeof item.success === 'boolean' ? item.success : undefined,
+        state: rawState
+          ? { code: typeof rawState.code === 'string' ? rawState.code : undefined }
+          : undefined,
+      };
+      if (i === 0) {
+        latest = entry;
+      }
+      const tick = toBuildTickState(entry);
+      states.push(tick);
+      if (tick === '9') {
+        passedCount += 1;
+      }
+      const duration = readFiniteNumber(item.duration);
+      if (duration !== undefined && duration >= 0) {
+        durations.push(duration);
+      }
     }
   }
   return {
-    durations: durations.length >= 2 ? durations : undefined,
+    durations: durations.length >= MIN_SERIES_POINTS ? durations : undefined,
     latest,
     passedCount,
     states,
-    totalCount: chronological.length,
+    totalCount: states.length,
   };
 }
 

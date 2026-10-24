@@ -190,7 +190,7 @@ export interface SpecialKindDetail {
   summary: string;
 }
 
-/** Builder target of a documented SVG path (used by preview edit links). */
+/** Builder target of a documented SVG path. */
 export interface BuilderTarget {
   /** Root-relative builder URL with the prefilled path (e.g., `'/builder/badge?path=…'`). */
   href: string;
@@ -326,6 +326,18 @@ export interface IconCatalogFilterResult {
   matches: IconMatch[];
 }
 
+/** DOM mount element references accepted by `createTypingLinesController`. */
+export interface TypingLinesMountOptions<TButton = unknown, TElement = unknown, TInput = unknown> {
+  /** `#typing-line-add` button element. */
+  addButton: TButton | null;
+  /** `#typing-lines-editor` wrapper element. */
+  editorElement: TElement | null;
+  /** Hidden `#field-lines` input element storing the `;`-separated lines string. */
+  hiddenInput: TInput | null;
+  /** `#typing-lines-list` row container element. */
+  listElement: TElement | null;
+}
+
 /** Public controller interface returned by `createTypingLinesController`. */
 export interface TypingLinesController {
   /** Bind add, remove, keyboard navigation, pointer reorder, and multi-line paste listeners. */
@@ -393,7 +405,9 @@ export interface BuilderClientCore {
   /** Create an icon slug resolver from the icon picker index. */
   createIconResolver: (index: IconPickerIndex, maxSlugLength: number) => IconResolver;
   /** Create the interactive line-by-line list controller for `/builder/typing`. */
-  createTypingLinesController: (options: Record<string, unknown>) => TypingLinesController;
+  createTypingLinesController: <TButton = unknown, TElement = unknown, TInput = unknown>(
+    options: TypingLinesMountOptions<TButton, TElement, TInput>
+  ) => TypingLinesController;
   /** Decode a URL path segment (`+` to space, percent-encoding to UTF-8). */
   decodeSegment: (raw: string) => string;
   /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */

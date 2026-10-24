@@ -58,7 +58,12 @@ import type {
   IconPickerSetId,
   ServiceRequest,
 } from '@/types';
-import { evaluateClientCore, readClientModuleSources } from './helpers';
+import {
+  evaluateClientCore,
+  evaluateClientDom,
+  readClientModuleSources,
+  requireDefined,
+} from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -184,6 +189,8 @@ interface TypingLinesDomHarness {
     activeElement: FakeDomNode | undefined;
     createDocumentFragment: () => FakeDomFragment;
   };
+  /** Install an atomic `moveBefore` hook on `listElement` and return a call-count reader. */
+  enableAtomicMoveBefore: () => () => number;
   /** Count of fallback (`before` / `append`) relocations of already-mounted rows. */
   getFallbackMoveCount: () => number;
   /** Hidden `#field-lines` input element. */
@@ -216,7 +223,6 @@ const SMIL_ANIMATION_RX = /<animate/;
 // -------------------------------------- INTERNALS --------------------------------------
 
 const core = evaluateClientCore<BuilderClientCore>(builderScript, 'svgBuilderCore');
-const builderClientSource = readClientModuleSources('builder');
 
 /** Collect the decoded `?path=` of every preview link on a page. */
 function collectPreviewPaths(html: string): string[] {
@@ -272,7 +278,7 @@ function renderPrefillRoundTrip(
 }
 
 /** Match the subset of selectors queried by `createTypingLinesController`. */
-function matchesTypingSelector(node: FakeDomNode, selector: string): boolean {
+function isMatchingTypingSelector(node: FakeDomNode, selector: string): boolean {
   if (selector === '[data-typing-line-row]') {
     return Object.hasOwn(node.dataset, 'typingLineRow');
   }
@@ -315,6 +321,40 @@ function FakeHTMLButtonElement(): undefined {
   return undefined;
 }
 FakeHTMLButtonElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Prototype constructor for simulated `HTMLFormElement` instances. */
+function FakeHTMLFormElement(): undefined {
+  return undefined;
+}
+FakeHTMLFormElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Prototype constructor for simulated `HTMLSelectElement` instances. */
+function FakeHTMLSelectElement(): undefined {
+  return undefined;
+}
+FakeHTMLSelectElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Build a minimal attribute-tracking input stub for `syncOutputAvailability` tests. */
+function createLineInputStub(): {
+  closest: () => undefined;
+  readonly invalidAttr: string | undefined;
+  removeAttribute: (name: string) => void;
+  setAttribute: (name: string, val: string) => void;
+} {
+  const attrs = new Map<string, string>();
+  return {
+    closest: () => undefined,
+    get invalidAttr() {
+      return attrs.get('aria-invalid');
+    },
+    removeAttribute(name: string) {
+      attrs.delete(name);
+    },
+    setAttribute(name: string, val: string) {
+      attrs.set(name, val);
+    },
+  };
+}
 
 /** Build and mount a minimal W3C-pointer-capture-compliant DOM harness for `createTypingLinesController`. */
 function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness {
@@ -515,7 +555,7 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
     node.closest = (selector) => {
       let cursor: FakeDomNode | undefined = node;
       while (cursor) {
-        if (matchesTypingSelector(cursor, selector)) {
+        if (isMatchingTypingSelector(cursor, selector)) {
           return cursor;
         }
         cursor = cursor.parentElement;
@@ -526,7 +566,7 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
       const matches: FakeDomNode[] = [];
       function walk(parent: FakeDomNode): void {
         for (const child of parent.children) {
-          if (matchesTypingSelector(child, selector)) {
+          if (isMatchingTypingSelector(child, selector)) {
             matches.push(child);
           }
           walk(child);
@@ -652,6 +692,14 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
 
   return {
     documentStub,
+    enableAtomicMoveBefore() {
+      let moveBeforeCallCount = 0;
+      listElement.moveBefore = (movedNode, referenceNode) => {
+        moveBeforeCallCount += 1;
+        relocateChild(listElement, movedNode, referenceNode, true);
+      };
+      return () => moveBeforeCallCount;
+    },
     getFallbackMoveCount: () => fallbackMoveCount,
     hiddenInput,
     listElement,
@@ -1989,6 +2037,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(serviceHtml).toContain('data-color-auto="true" hidden');
     expect(serviceHtml).toContain('id="special-help-trigger"');
     expect(serviceHtml).toContain('id="special-syntax-help" popover role="dialog"');
+    const builderClientSource = readClientModuleSources('builder');
     expect(builderClientSource).toContain("querySelector('.builder-label-text')");
     expect(builderClientSource).toContain('resolveSpecialHint(');
     expect(builderClientSource).not.toContain('labelElement.textContent');
@@ -2031,6 +2080,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toContain(
       '<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span>'
     );
+    const builderClientSource = readClientModuleSources('builder');
     expect(builderClientSource).toContain("openLink.removeAttribute('href')");
     expect(builderClientSource).toContain('openLink.tabIndex = 0');
     expect(builderClientSource).toContain('openLink.tabIndex = -1');
@@ -2040,6 +2090,7 @@ describe('builder pages & "Open in Builder" links', () => {
   });
 
   it('updates the preview alt text, disconnects picker observers, closes menus on focus loss, and measures fallback popovers (regressions)', () => {
+    const builderClientSource = readClientModuleSources('builder');
     expect(builderClientSource).toContain('previewImage.alt = alt');
     const disconnectIndex = builderClientSource.indexOf('tileObserver?.disconnect()');
     expect(disconnectIndex).toBeGreaterThan(-1);
@@ -2053,6 +2104,7 @@ describe('builder pages & "Open in Builder" links', () => {
 
   it('renders the icon picker glyph templates and separate Lucide and Brands tabs without an All tab', () => {
     const html = renderBuilderHtml('stack');
+    const builderClientSource = readClientModuleSources('builder');
     expect(html).toContain(
       '<svg data-set="lucide" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>'
     );
@@ -2073,6 +2125,7 @@ describe('builder pages & "Open in Builder" links', () => {
 
   it('renders verified developer categories, group-by-category toggle, and DSL syntax popover on /builder/stack', () => {
     const html = renderBuilderHtml('stack');
+    const builderClientSource = readClientModuleSources('builder');
     expect(html).toContain('id="stack-tab-categories"');
     expect(html).toContain('id="stack-tab-raw"');
     expect(html).toContain('id="stack-group-by-category" checked');
@@ -2129,6 +2182,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(core.splitHint('icon:command K')).toEqual({ icon: 'command', text: 'K' });
     expect(core.splitHint('icon:corner-down-left')).toEqual({ icon: 'corner-down-left', text: '' });
     expect(core.splitHint('utf8')).toEqual({ icon: '', text: 'utf8' });
+    const builderClientSource = readClientModuleSources('builder');
     expect(builderClientSource).toContain('createTypingLinesController(');
     expect(builderClientSource).toContain('typingLinesController.syncFromValue(value)');
     expect(builderClientSource).toContain('typingLinesController.readValue()');
@@ -2212,24 +2266,7 @@ describe('builder pages & "Open in Builder" links', () => {
 
       // [2] Atomic `moveBefore` path when supported by the browser; relocates across 4 slots without fallback detaches:
       harness.resetFallbackMoveCount();
-      let moveBeforeCallCount = 0;
-      harness.listElement.moveBefore = (movedNode, referenceNode) => {
-        moveBeforeCallCount += 1;
-        const oldIndex = harness.listElement.children.indexOf(movedNode);
-        if (oldIndex !== -1) {
-          harness.listElement.children.splice(oldIndex, 1);
-        }
-        if (!referenceNode) {
-          harness.listElement.children.push(movedNode);
-        } else {
-          const refIndex = harness.listElement.children.indexOf(referenceNode);
-          harness.listElement.children.splice(
-            refIndex === -1 ? harness.listElement.children.length : refIndex,
-            0,
-            movedNode
-          );
-        }
-      };
+      const getMoveBeforeCallCount = harness.enableAtomicMoveBefore();
 
       eighthHandle.dispatchEvent({
         bubbles: true,
@@ -2260,7 +2297,7 @@ describe('builder pages & "Open in Builder" links', () => {
         type: 'pointerup',
       });
 
-      expect(moveBeforeCallCount).toBe(4);
+      expect(getMoveBeforeCallCount()).toBe(4);
       expect(harness.getFallbackMoveCount()).toBe(0);
       expect(harness.readInputs().at(5)).toBe('Some Line 8');
     } finally {
@@ -2520,5 +2557,287 @@ describe('builder pages & "Open in Builder" links', () => {
       mode: 'raw',
     });
     expect(clientSource).toContain('syncModeForPrefill');
+  });
+
+  it('cycles custom dropdown typeahead across matching options, returns focus to search on ArrowUp/Backspace, and marks only row 0 aria-invalid on empty typingLines (regressions: non-cycling select typeahead, trapped listbox focus, all optional typing rows marked aria-invalid)', () => {
+    interface SandboxItem {
+      append: (...nodes: SandboxItem[]) => void;
+      children: SandboxItem[];
+      className: string;
+      dataset: Record<string, string>;
+      focus: () => void;
+      id: string;
+      scrollIntoView: () => void;
+      setAttribute: () => void;
+      style: { setProperty: () => void };
+      tabIndex: number;
+      textContent: string;
+    }
+
+    const activeTracker = {
+      activeElement: undefined as unknown,
+      createDocumentFragment() {
+        const items: SandboxItem[] = [];
+        return {
+          append(...nodes: SandboxItem[]) {
+            items.push(...nodes);
+          },
+          get childElementCount() {
+            return items.length;
+          },
+          items,
+        };
+      },
+      createElement() {
+        const created = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+          append(...nodes: SandboxItem[]) {
+            for (const child of nodes) {
+              created.children.push(child);
+              created.textContent += child.textContent;
+            }
+          },
+          children: [] as SandboxItem[],
+          className: '',
+          dataset: {} as Record<string, string>,
+          focus() {
+            activeTracker.activeElement = created;
+          },
+          id: '',
+          scrollIntoView: noopDomAction,
+          setAttribute: noopDomAction,
+          style: { setProperty: noopDomAction },
+          tabIndex: 0,
+          textContent: '',
+        });
+        return created;
+      },
+    };
+
+    const menuListeners = new Map<string, ((event: unknown) => void)[]>();
+    const searchInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      focus() {
+        activeTracker.activeElement = searchInput;
+      },
+      value: '',
+    });
+
+    let renderedOptions: SandboxItem[] = [];
+    const listBox = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      hidden: false,
+      querySelectorAll: () => renderedOptions,
+      replaceChildren(fragment: { items: SandboxItem[] }) {
+        renderedOptions = fragment.items;
+      },
+    });
+
+    const menuElement = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = menuListeners.get(type) ?? [];
+        list.push(listener);
+        menuListeners.set(type, list);
+      },
+    });
+
+    const selectOptions = [
+      { dataset: {}, index: 0, text: 'Indigo', value: 'indigo' },
+      { dataset: {}, index: 1, text: 'Sky', value: 'sky' },
+      { dataset: {}, index: 2, text: 'Slate', value: 'slate' },
+    ];
+    const selectElement = Object.assign(Object.create(FakeHTMLSelectElement.prototype) as object, {
+      dispatchEvent: () => true,
+      id: 'field-color',
+      options: selectOptions,
+      selectedOptions: [selectOptions[0]],
+      value: 'indigo',
+    });
+
+    const triggerElement = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      querySelector: () => undefined,
+    });
+
+    const selectWrapper = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      querySelector(selector: string) {
+        if (selector === '.select-options') {
+          return listBox;
+        }
+        if (selector === '.select-menu') {
+          return menuElement;
+        }
+        if (selector === '.select-search-input') {
+          return searchInput;
+        }
+        if (selector === 'select') {
+          return selectElement;
+        }
+        if (selector === '.select-trigger') {
+          return triggerElement;
+        }
+        if (selector === '.select-option') {
+          return renderedOptions[0];
+        }
+        return undefined;
+      },
+      querySelectorAll(selector: string) {
+        return selector === '.select-option' ? renderedOptions : [];
+      },
+    });
+
+    const row0 = createLineInputStub();
+    const row1 = createLineInputStub();
+    const row2 = createLineInputStub();
+    let linesFieldElement:
+      | {
+          classList: { toggle: () => void };
+          closest: (selector: string) => unknown;
+          getAttribute: (name: string) => string | undefined;
+          querySelector: (selector: string) => unknown;
+          querySelectorAll: (selector: string) => unknown[];
+        }
+      | undefined = undefined;
+    const hiddenLinesInput = Object.assign(
+      Object.create(FakeHTMLInputElement.prototype) as object,
+      {
+        closest: () => linesFieldElement,
+        getAttribute: (name: string) => (name === 'data-field' ? 'lines' : undefined),
+        id: 'field-lines',
+        value: '',
+      }
+    );
+    linesFieldElement = Object.assign(Object.create(FakeElement.prototype) as object, {
+      classList: { toggle: noopDomAction },
+      closest: (selector: string) => (selector === '[data-field]' ? linesFieldElement : undefined),
+      getAttribute: (name: string) => (name === 'data-field' ? 'lines' : undefined),
+      querySelector: (selector: string) =>
+        selector === 'input, textarea, select' ? hiddenLinesInput : undefined,
+      querySelectorAll: (selector: string) =>
+        selector === '.builder-input:not(.select-trigger)' ? [row0, row1, row2] : [],
+    });
+
+    const formListeners = new Map<string, ((event: unknown) => void)[]>();
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = formListeners.get(type) ?? [];
+        list.push(listener);
+        formListeners.set(type, list);
+      },
+      querySelector(selector: string) {
+        return selector === '[data-field="lines"]' ? linesFieldElement : undefined;
+      },
+      querySelectorAll(selector: string) {
+        return selector === '[data-select]' ? [selectWrapper] : [];
+      },
+    });
+
+    const schemaJson = JSON.stringify({
+      ...getBuilderSchema('typing'),
+      initialState: { lines: '' },
+    });
+
+    const fakeDocument = {
+      get activeElement() {
+        return activeTracker.activeElement;
+      },
+      createDocumentFragment: activeTracker.createDocumentFragment,
+      createElement: activeTracker.createElement,
+      getElementById(id: string) {
+        if (id === 'builder-schema') {
+          return { textContent: schemaJson };
+        }
+        if (id === 'builder-form') {
+          return formStub;
+        }
+        if (id === 'field-lines') {
+          return hiddenLinesInput;
+        }
+        return undefined;
+      },
+      querySelector: () => undefined,
+      querySelectorAll: () => [],
+    };
+
+    const fakeGlobal = {
+      clearTimeout: noopDomAction,
+      fetch: () => Promise.resolve(new Response('{}')),
+      location: { href: 'https://svg.xul.is/builder/typing' },
+      matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+      setTimeout: () => 0,
+      svgSite: {
+        closePopover: noopDomAction,
+        copyText: noopDomAction,
+        isPopoverOpen: () => false,
+        openPopover: noopDomAction,
+        placePopover: noopDomAction,
+      },
+    };
+
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      document: fakeDocument,
+      globalThis: fakeGlobal,
+      history: { replaceState: noopDomAction, state: undefined },
+    });
+
+    // [1] Initial state has `lines: ''` (missing); only row 0 of `typingLines` receives `aria-invalid="true"`:
+    expect(row0.invalidAttr).toBe('true');
+    expect(row1.invalidAttr).toBeUndefined();
+    expect(row2.invalidAttr).toBeUndefined();
+
+    // Entering a line clears `aria-invalid` on row 0:
+    hiddenLinesInput.value = 'Hello world';
+    for (const inputListener of formListeners.get('input') ?? []) {
+      inputListener({ target: hiddenLinesInput, type: 'input' });
+    }
+    expect(row0.invalidAttr).toBeUndefined();
+    expect(row1.invalidAttr).toBeUndefined();
+    expect(row2.invalidAttr).toBeUndefined();
+
+    // [2] `bindSelects` cycling typeahead & `ArrowUp` / `Backspace` search return:
+    for (const toggleListener of menuListeners.get('toggle') ?? []) {
+      toggleListener({ newState: 'open' });
+    }
+    expect(renderedOptions).toHaveLength(3);
+    expect(activeTracker.activeElement).toBe(searchInput);
+
+    function dispatchMenuKey(key: string, target: unknown): void {
+      for (const keyListener of menuListeners.get('keydown') ?? []) {
+        keyListener({
+          ctrlKey: false,
+          isComposing: false,
+          key,
+          metaKey: false,
+          preventDefault: noopDomAction,
+          target,
+        });
+      }
+    }
+
+    const opt0 = requireDefined(renderedOptions[0], 'option 0');
+    const opt1 = requireDefined(renderedOptions[1], 'option 1');
+    const opt2 = requireDefined(renderedOptions[2], 'option 2');
+
+    dispatchMenuKey('ArrowDown', searchInput);
+    expect(activeTracker.activeElement).toBe(opt0);
+    dispatchMenuKey('s', opt0);
+    expect(activeTracker.activeElement).toBe(opt1);
+    dispatchMenuKey('s', opt1);
+    expect(activeTracker.activeElement).toBe(opt2);
+    dispatchMenuKey('s', opt2);
+    expect(activeTracker.activeElement).toBe(opt1);
+
+    dispatchMenuKey('Backspace', opt1);
+    expect(activeTracker.activeElement).toBe(searchInput);
+
+    dispatchMenuKey('ArrowDown', searchInput);
+    expect(activeTracker.activeElement).toBe(opt0);
+    dispatchMenuKey('ArrowUp', opt0);
+    expect(activeTracker.activeElement).toBe(searchInput);
   });
 });

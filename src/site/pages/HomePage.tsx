@@ -7,8 +7,8 @@ import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ENCODED_CHAOS_QUOTE,
-  ENDPOINT_ROUTES,
   formatCountLowerBound,
+  getEndpointRoutes,
   getIconSetCounts,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog/shared';
@@ -164,15 +164,11 @@ function buildHomeFeatures(): FeatureCardItem[] {
   ];
 }
 
-// -------------------------------------- PUBLIC API -------------------------------------
-
-/**
- * Render the homepage as a JSX component.
- * @returns Complete homepage JSX document fragment.
- */
-export function HomePage(): HtmlFragment {
+/** Render the homepage as a JSX component. */
+function HomePage(): HtmlFragment {
   const docsPath = buildDocsPath('overview');
   const builderPath = buildBuilderPath(DEFAULT_BUILDER_KIND);
+  const endpointRoutes = getEndpointRoutes();
   const featureCards: HtmlFragment[] = [];
   for (const feature of buildHomeFeatures()) {
     featureCards.push(
@@ -222,8 +218,8 @@ export function HomePage(): HtmlFragment {
         <SectionHeader
           description="Click any preview to customize it in the **Builder**, or expand **View Markdown** to copy its snippet."
           headingLevel={2}
-          routes={ENDPOINT_ROUTES}
-          title={`${formatCountWord(ENDPOINT_ROUTES.length)} Unified Endpoints`}
+          routes={endpointRoutes}
+          title={`${formatCountWord(endpointRoutes.length)} Unified Endpoints`}
         />
         <CardGrid cards={HOME_OVERVIEW_CARDS} />
       </section>
@@ -241,6 +237,8 @@ export function HomePage(): HtmlFragment {
     </PageLayout>
   );
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render (once per isolate) the homepage introducing the API, showcasing live examples, and linking to documentation.

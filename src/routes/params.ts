@@ -3,7 +3,7 @@
  */
 
 import { isThemeColorName } from '@/config/theme';
-import { LIST_SEPARATOR_RX, TRUTHY_FLAG_TOKENS } from '@/site/shared/encoding';
+import { isTruthyFlagToken, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
 import { DEFAULT_QUOTE_LAYOUT } from '@/svg/quote';
 import {
   MAX_BARS_POINTS,
@@ -665,7 +665,7 @@ export function resolveQuoteLayout(
   const candidate = normalizeQueryToken(layoutParam) || normalizeQueryToken(typeParam);
   const isVertical = candidate
     ? VERTICAL_LAYOUT_TOKENS.includes(candidate)
-    : TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam));
+    : isTruthyFlagToken(normalizeQueryToken(centerParam));
   return isVertical ? 'vertical' : DEFAULT_QUOTE_LAYOUT;
 }
 
@@ -753,7 +753,7 @@ export function resolveTypingAlign(
   if (mappedAlign) {
     return mappedAlign;
   }
-  if (TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam))) {
+  if (isTruthyFlagToken(normalizeQueryToken(centerParam))) {
     return 'center';
   }
   return undefined;
@@ -765,5 +765,5 @@ export function resolveTypingAlign(
  * @returns `true` when `raw` is a truthy flag token.
  */
 export function isTruthyFlagParam(raw: string | null | undefined): boolean {
-  return TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(raw));
+  return isTruthyFlagToken(normalizeQueryToken(raw));
 }

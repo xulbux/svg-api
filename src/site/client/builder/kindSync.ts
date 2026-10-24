@@ -1,5 +1,5 @@
 /**
- * Kind-specific builder form sync – Updates dependent fields, placeholders, and defaults for `/builder/service`, `/builder/quote`, and `/builder/typing`.
+ * Kind-specific builder form sync – Updates dependent fields, placeholders, and defaults for builder kinds with interdependent controls.
  */
 
 import {
@@ -16,7 +16,7 @@ import type { BuilderField, BuilderOption, BuilderSchema, BuilderState } from '@
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Options for initializing the kind-specific form field synchronizer. */
-export interface KindSyncOptions {
+interface KindSyncOptions {
   /** Field wrapper elements keyed by field ID. */
   fieldElements: ReadonlyMap<string, Element>;
   /** Schema field definitions keyed by field ID. */
@@ -32,7 +32,7 @@ export interface KindSyncOptions {
 }
 
 /** Public controller interface returned by `createKindSyncController`. */
-export interface KindSyncController {
+interface KindSyncController {
   /** Sync size defaults after a layout change on `/builder/quote`. */
   syncQuoteFields: () => void;
   /** Sync dependent service/metric controls after `service` or `metric` changes. */

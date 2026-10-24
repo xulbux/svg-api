@@ -4,9 +4,9 @@
 
 import { ACTIVE_STACK_MOTION_TOKENS } from '@/routes/params';
 import {
+  buildStackAnimationCards,
   buildStackParamRows,
   buildStackVariantCards,
-  STACK_ANIMATION_CARDS,
 } from '@/site/catalog/stack';
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
@@ -42,7 +42,7 @@ export function StackSection(): HtmlFragment {
         iconSlug="sparkles"
         text={`Tile Micro-Animations (\`?anim=${activeMotions}\`)`}
       />
-      <CardGrid cards={STACK_ANIMATION_CARDS} isThreeColumn={true} />
+      <CardGrid cards={buildStackAnimationCards()} isThreeColumn={true} />
     </section>
   );
 }

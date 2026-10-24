@@ -11,6 +11,7 @@
 import {
   CACHE_TTL,
   OWNER_REPO_ROUTE,
+  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
@@ -37,6 +38,7 @@ import {
   readFiniteNumber,
   sumSeries,
 } from '@/services/metrics';
+import { MIN_SERIES_POINTS } from '@/svg/renderer';
 import type {
   CachedPayloadReader,
   Env,
@@ -106,6 +108,9 @@ interface GraphQlBatchItem {
 /** Number of trailing weeks summarized by the `activity` metric. */
 const ACTIVITY_WEEKS = 8;
 
+/** Fallback zero-filled weekly activity series when fewer than `MIN_SERIES_POINTS` weeks exist. */
+const ZERO_ACTIVITY_WEEKS: readonly number[] = Array.from({ length: ACTIVITY_WEEKS }, () => 0);
+
 /** GitHub GraphQL v4 endpoint URL. */
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
 
@@ -166,6 +171,7 @@ const REPO_ENDPOINT = createEndpoint({
 /** GitHub latest release endpoint. */
 const RELEASE_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/repos/{owner}/{target}/releases/latest',
+  extractKeys: ['tag_name'],
   page: 'https://github.com/{owner}/{target}/releases',
   project: pickFields<GitHubReleasePayload>(['tag_name']),
 });
@@ -173,6 +179,7 @@ const RELEASE_ENDPOINT = createEndpoint({
 /** GitHub commit participation endpoint. */
 const PARTICIPATION_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/repos/{owner}/{target}/stats/participation',
+  extractKeys: ['all'],
   page: 'https://github.com/{owner}/{target}/graphs/commit-activity',
   project: pickFields<GitHubParticipationPayload>(['all']),
   ttl: CACHE_TTL.slow,
@@ -229,7 +236,7 @@ function buildAliasEnvelope(parsed: unknown, alias: string): Record<string, unkn
       }
     }
   }
-  const dataNode = isJsonObject(parsed.data) ? parsed.data : undefined;
+  const dataNode = asJsonObject(parsed.data);
   if (dataNode && Object.hasOwn(dataNode, alias)) {
     return itemErrors.length > 0
       ? { data: { repository: dataNode[alias] }, errors: itemErrors }
@@ -240,7 +247,7 @@ function buildAliasEnvelope(parsed: unknown, alias: string): Record<string, unkn
   };
 }
 
-/** Execute a multi-repository GraphQL batch (`2`..`MAX_GRAPHQL_BATCH_SIZE` items) and demultiplex each alias response. */
+/** Execute a multi-repository GraphQL batch (`2`–`MAX_GRAPHQL_BATCH_SIZE` items) and demultiplex each alias response. */
 async function executeMultiRepoBatch(
   batch: readonly GraphQlBatchItem[],
   headers: Readonly<Record<string, string>>
@@ -308,7 +315,7 @@ function ignoreUnhandledBatchError(): void {
   // Every queued item is resolved or rejected inside `executeMultiRepoBatch`.
 }
 
-/** Flush one queued microtask batch (`1` repo directly, or `2`..`MAX_GRAPHQL_BATCH_SIZE` repos in a single 1-point query). */
+/** Flush one queued microtask batch (`1` repo directly, or `2`–`MAX_GRAPHQL_BATCH_SIZE` repos in a single 1-point query). */
 function flushGraphQlBatch(
   authKey: string,
   batch: GraphQlBatchItem[],
@@ -405,13 +412,12 @@ function projectGitHubCounts(data: unknown): GitHubCountsProjection | undefined 
     return undefined;
   }
   if (Object.hasOwn(data, 'data')) {
-    const root = isJsonObject(data.data) ? data.data : undefined;
-    const repo = root && isJsonObject(root.repository) ? root.repository : undefined;
+    const repo = asJsonObject(asJsonObject(data.data)?.repository);
     if (!repo) {
       return undefined;
     }
-    const issuesNode = isJsonObject(repo.issues) ? repo.issues : undefined;
-    const prsNode = isJsonObject(repo.pullRequests) ? repo.pullRequests : undefined;
+    const issuesNode = asJsonObject(repo.issues);
+    const prsNode = asJsonObject(repo.pullRequests);
     return {
       issues: readFiniteNumber(issuesNode?.totalCount),
       prs: readFiniteNumber(prsNode?.totalCount),
@@ -452,8 +458,7 @@ function transformGitHubActivity(
           parsedWeeks.length - ACTIVITY_WEEKS
         )
       : undefined;
-  const values =
-    recentWeeks.length >= 2 ? recentWeeks : Array.from({ length: ACTIVITY_WEEKS }, () => 0);
+  const values = recentWeeks.length >= MIN_SERIES_POINTS ? recentWeeks : ZERO_ACTIVITY_WEEKS;
   const sparkline = { type: 'sparkline' as const, values };
   const specials = buildSeriesSpecials({
     barsValues: values,

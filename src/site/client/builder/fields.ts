@@ -1,5 +1,5 @@
 /**
- * Builder field controls – Reads, writes, and normalizes scalar and composite DOM form controls (`anim`, `color`, `hint`, `icon`, `iconPair`, `size`, `special`, `stackGroups`, and `typingLines`).
+ * Builder field controls – Reads, writes, and normalizes scalar and composite DOM form controls.
  */
 
 import {
@@ -29,10 +29,10 @@ import type {
 // ---------------------------------------- TYPES ----------------------------------------
 
 /** Single native form control of a builder field. */
-export type FieldControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+type FieldControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
 /** Options for initializing the builder field DOM reader/writer controller. */
-export interface BuilderFieldsOptions {
+interface BuilderFieldsOptions {
   /** Field wrapper elements keyed by field ID. */
   fieldElements: ReadonlyMap<string, Element>;
   /** Returns the active builder state object. */

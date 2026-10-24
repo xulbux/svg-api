@@ -7,6 +7,7 @@
 
 import {
   CACHE_TTL,
+  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -25,6 +26,7 @@ import {
   readText,
   sumSeries,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -38,23 +40,21 @@ interface CratesIoProjection {
   license?: string;
   /** Minimum supported Rust version (`rust_version`) of the default version. */
   msrv?: string;
-  /** Downloads in the last 90 days. */
-  recentDownloads?: number;
   /** Compressed `.crate` tarball size in bytes (`crate_size`) of the default version. */
   size?: number;
 }
 
 /** Projected crates.io 90-day daily downloads (`crates.io/api/v1/crates/:crate/downloads`). */
 interface CratesDownloadsProjection {
-  /** 12-bar 90-day download histogram. */
+  /** Bucketed 90-day download histogram. */
   bars?: number[];
-  /** Downloads in the most recent 30-day window (or second half of the series). */
+  /** Downloads in the most recent trailing comparison window. */
   currWindow?: number;
-  /** Downloads in the preceding 30-day window (or first half of the series). */
+  /** Downloads in the preceding trailing comparison window. */
   prevWindow?: number;
   /** Total 90-day downloads summed across all versions. */
   recentDownloads?: number;
-  /** 15-point 90-day download series. */
+  /** Bucketed 90-day download sparkline series. */
   sparkline?: number[];
 }
 
@@ -80,14 +80,12 @@ function projectCratesDownloads(data: unknown): CratesDownloadsProjection | unde
   }
   const byDate = new Map<string, number>();
   addDailyEntries(data.version_downloads, byDate);
-  const meta = isJsonObject(data.meta) ? data.meta : undefined;
-  addDailyEntries(meta?.extra_downloads, byDate);
+  addDailyEntries(asJsonObject(data.meta)?.extra_downloads, byDate);
   if (byDate.size === 0) {
     if (Array.isArray(data.version_downloads)) {
       return { recentDownloads: 0 };
     }
-    const crate = isJsonObject(data.crate) ? data.crate : undefined;
-    return { recentDownloads: readFiniteNumber(crate?.recent_downloads) };
+    return { recentDownloads: readFiniteNumber(asJsonObject(data.crate)?.recent_downloads) };
   }
   const daily: number[] = [];
   for (const dateKey of [...byDate.keys()].toSorted()) {
@@ -96,11 +94,11 @@ function projectCratesDownloads(data: unknown): CratesDownloadsProjection | unde
   const totalDays = daily.length;
   const [currWindow, prevWindow] = compareTrailingWindows(daily, 30);
   return {
-    bars: totalDays >= 2 ? bucketSeries(daily, 12) : undefined,
+    bars: totalDays >= MIN_SERIES_POINTS ? bucketSeries(daily, MAX_BARS_POINTS) : undefined,
     currWindow,
     prevWindow,
     recentDownloads: sumSeries(daily),
-    sparkline: totalDays >= 2 ? bucketSeries(daily, 15) : undefined,
+    sparkline: totalDays >= MIN_SERIES_POINTS ? bucketSeries(daily, 15) : undefined,
   };
 }
 
@@ -125,7 +123,7 @@ function projectCratesPayload(data: unknown): CratesIoProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const crate = isJsonObject(data.crate) ? data.crate : undefined;
+  const crate = asJsonObject(data.crate);
   const defaultVersion =
     readText(crate?.default_version) ??
     readText(crate?.max_stable_version) ??
@@ -137,7 +135,6 @@ function projectCratesPayload(data: unknown): CratesIoProjection | undefined {
     downloads: readFiniteNumber(crate?.downloads),
     license: readText(matchedVersion?.license),
     msrv: readText(matchedVersion?.rust_version),
-    recentDownloads: readFiniteNumber(crate?.recent_downloads),
     size: readFiniteNumber(matchedVersion?.crate_size),
   };
 }

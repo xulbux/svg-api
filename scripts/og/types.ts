@@ -28,7 +28,7 @@ export interface GradientStop {
 }
 
 /** Parsed `<linearGradient>` definition in normalized object-bounding-box coordinates. */
-export interface LinearGradientDef {
+interface LinearGradientDef {
   /** Discriminator tag. */
   kind: 'linear';
   /** Ordered gradient color stops. */
@@ -44,7 +44,7 @@ export interface LinearGradientDef {
 }
 
 /** Parsed `<radialGradient>` definition in normalized object-bounding-box coordinates. */
-export interface RadialGradientDef {
+interface RadialGradientDef {
   /** Center X fraction in `[0, 1]`. */
   cx: number;
   /** Center Y fraction in `[0, 1]`. */

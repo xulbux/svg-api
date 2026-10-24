@@ -6,7 +6,13 @@
  * `exclude_fields`, `~300 KB`) and project only the needed fields.
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
+import {
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  pickFields,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   SCORE,
   createDownloadsMetric,
@@ -36,9 +42,10 @@ interface PuppetReleaseProjection {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Puppet Forge module endpoint (only the download and feedback counters are cached). */
+/** Puppet Forge module endpoint (only the download and feedback counters are extracted and cached). */
 const MODULE_ENDPOINT = createEndpoint({
   api: 'https://forgeapi.puppet.com/v3/modules/{owner}-{target}',
+  extractKeys: ['downloads', 'feedback_score'],
   page: 'https://forge.puppet.com/modules/{owner}/{target}',
   project: pickFields<PuppetModulePayload>(['downloads', 'feedback_score']),
 });
@@ -47,12 +54,11 @@ const MODULE_ENDPOINT = createEndpoint({
 
 /** Project the first entry of a Puppet Forge releases response to its version and license. */
 function projectPuppetRelease(data: unknown): PuppetReleaseProjection | undefined {
-  const results = isJsonObject(data) ? data.results : undefined;
-  const firstEntry: unknown = Array.isArray(results) ? results[0] : undefined;
-  if (!isJsonObject(firstEntry)) {
+  const firstEntry = readFirstObjectEntry(asJsonObject(data)?.results);
+  if (!firstEntry) {
     return undefined;
   }
-  const metadata = isJsonObject(firstEntry.metadata) ? firstEntry.metadata : undefined;
+  const metadata = asJsonObject(firstEntry.metadata);
   return { license: readText(metadata?.license), version: readText(firstEntry.version) };
 }
 

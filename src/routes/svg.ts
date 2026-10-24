@@ -28,10 +28,14 @@ import {
 } from '@/routes/params';
 import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
 import { decodeRouteSegments } from '@/site/shared/encoding';
-import { renderQuote } from '@/svg/quote';
+import { DEFAULT_QUOTE_VARIANT as QUOTE_DEFAULT_VARIANT, renderQuote } from '@/svg/quote';
 import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
-import { parseStackGroups, renderStack } from '@/svg/stack';
+import {
+  DEFAULT_STACK_VARIANT as STACK_DEFAULT_VARIANT,
+  parseStackGroups,
+  renderStack,
+} from '@/svg/stack';
 import { DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT, renderTyping } from '@/svg/typing';
 import type {
   BadgeSpecialElement,
@@ -87,10 +91,10 @@ export const DEFAULT_BADGE_VARIANT: BadgeVariant = '1';
 export const DEFAULT_BUTTON_VARIANT: BadgeVariant = '1';
 
 /** Default visual hierarchy variant for quote cards. */
-export const DEFAULT_QUOTE_VARIANT: BadgeVariant = '2';
+export const DEFAULT_QUOTE_VARIANT: BadgeVariant = QUOTE_DEFAULT_VARIANT;
 
 /** Default visual hierarchy variant for tech stack grids. */
-export const DEFAULT_STACK_VARIANT: BadgeVariant = '2';
+export const DEFAULT_STACK_VARIANT: BadgeVariant = STACK_DEFAULT_VARIANT;
 
 /** Default visual hierarchy variant for animated typing banners. */
 export const DEFAULT_TYPING_VARIANT: BadgeVariant = TYPING_DEFAULT_VARIANT;

@@ -3,7 +3,7 @@
  */
 
 import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared';
-import type { TypingLinesController } from '@/types';
+import type { TypingLinesController, TypingLinesMountOptions } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -14,16 +14,11 @@ interface AtomicMoveParent {
 }
 
 /** Options for initializing the `/builder/typing` interactive line list controller. */
-export interface TypingLinesControllerOptions {
-  /** `#typing-line-add` button element. */
-  addButton: HTMLButtonElement | null;
-  /** `#typing-lines-editor` wrapper element. */
-  editorElement: HTMLElement | null;
-  /** Hidden `#field-lines` input element storing the `;`-separated lines string. */
-  hiddenInput: HTMLInputElement | null;
-  /** `#typing-lines-list` row container element. */
-  listElement: HTMLElement | null;
-}
+export type TypingLinesControllerOptions = TypingLinesMountOptions<
+  HTMLButtonElement,
+  HTMLElement,
+  HTMLInputElement
+>;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 

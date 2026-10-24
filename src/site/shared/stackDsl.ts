@@ -232,23 +232,27 @@ export function composeCategorizedStack(
   const maxBandCols = perLineValues[0] ?? STACK_PER_LINE_RANGE.default;
   const bandStrings: string[] = [];
   let currentBand: string[][] = [];
+  let currentBandString = '';
 
   for (const group of categoryGroups) {
     const tokens = collectNonEmptyTokens(group);
     if (tokens.length > 0) {
-      if (
-        currentBand.length > 0 &&
-        formatStackBand([...currentBand, tokens], maxBandCols) === undefined
-      ) {
-        bandStrings.push(formatStackBand(currentBand, maxBandCols) ?? '');
-        currentBand = [tokens];
+      currentBand.push(tokens);
+      const candidateBand = formatStackBand(currentBand, maxBandCols);
+      if (candidateBand !== undefined) {
+        currentBandString = candidateBand;
       } else {
-        currentBand.push(tokens);
+        currentBand.pop();
+        if (currentBandString) {
+          bandStrings.push(currentBandString);
+        }
+        currentBand = [tokens];
+        currentBandString = formatStackBand(currentBand, maxBandCols) ?? '';
       }
     }
   }
-  if (currentBand.length > 0) {
-    bandStrings.push(formatStackBand(currentBand, maxBandCols) ?? '');
+  if (currentBandString) {
+    bandStrings.push(currentBandString);
   }
   return bandStrings.join(';');
 }

@@ -151,6 +151,14 @@ interface RenderedStackTile {
   markup: string;
 }
 
+/** Accumulated tile markup and sheen clip-path `<rect>` fragments across all measured stack bands. */
+interface RenderedStackBands {
+  /** Sheen `<clipPath>` `<rect>` elements for non-fallback tiles (`''` when sheen is inactive). */
+  clipRects: string;
+  /** Rendered `<g>` tile elements across all bands and groups. */
+  tilesMarkup: string;
+}
+
 /** Icon list and optional `:N` column suffix of a single group token. */
 interface GroupTokenParts {
   /** Comma/whitespace-separated icon list part. */
@@ -180,6 +188,9 @@ export const STACK_GROUP_GAP_RANGE: NumericRange = { default: 26, max: 64, min: 
 
 /** Ratio of the default inter-group gap to the intra-group gap. */
 export const GROUP_GAP_RATIO = 3.25;
+
+/** Default visual hierarchy variant for tech stack grids. */
+export const DEFAULT_STACK_VARIANT: BadgeVariant = '2';
 
 /** Maximum total icons rendered across an entire stack SVG. */
 const MAX_STACK_ICONS = 128;
@@ -516,6 +527,63 @@ function renderSingleStackTile(
   };
 }
 
+/** Render every measured band's tile groups and optional sheen clip-path rectangles. */
+function renderStackBands(
+  bands: readonly MeasuredStackBand[],
+  totalWidth: number,
+  groupGap: number,
+  hasSheen: boolean,
+  tileContext: StackTileContext
+): RenderedStackBands {
+  const { radius, stepPitch, tileMotion, tileSize } = tileContext;
+  let tilesMarkup = '';
+  let clipRects = '';
+  let bandOriginY = 0;
+
+  for (const band of bands) {
+    let groupOriginX = roundTenths((totalWidth - band.width) / 2);
+
+    for (const group of band.groups) {
+      const groupOriginY = bandOriginY + roundTenths((band.height - group.height) / 2);
+
+      for (const [i, tile] of group.tiles.entries()) {
+        const rowIndex = Math.floor(i / group.perLine);
+        const columnIndex = i % group.perLine;
+        const rowCount = Math.min(group.perLine, group.tiles.length - rowIndex * group.perLine);
+        const rowOffsetX =
+          group.rows > 1 ? roundTenths(((group.cols - rowCount) * stepPitch) / 2) : 0;
+
+        const tileX = roundTenths(groupOriginX + rowOffsetX + columnIndex * stepPitch);
+        const tileY = roundTenths(groupOriginY + rowIndex * stepPitch);
+        const diagonalStep = (tileX + tileY) / stepPitch;
+        const translateAnimation = buildTileTranslateAnimation(tileMotion, diagonalStep);
+
+        const renderedTile = renderSingleStackTile(
+          tile,
+          tileX,
+          tileY,
+          translateAnimation,
+          diagonalStep,
+          tileContext
+        );
+        tilesMarkup += renderedTile.markup;
+
+        if (hasSheen && !renderedTile.isFallback) {
+          clipRects += translateAnimation
+            ? `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}">${translateAnimation}</rect>`
+            : `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
+        }
+      }
+
+      groupOriginX = roundTenths(groupOriginX + group.width + groupGap);
+    }
+
+    bandOriginY = roundTenths(bandOriginY + band.height + groupGap);
+  }
+
+  return { clipRects, tilesMarkup };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 export { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
@@ -593,7 +661,7 @@ export function renderStack(options: StackRenderOptions): string {
     Math.round(gap * GROUP_GAP_RATIO)
   );
   const defaultPerLine = clampInt(options.perLine, STACK_PER_LINE_RANGE);
-  const variant: BadgeVariant = options.variant ?? '2';
+  const variant: BadgeVariant = options.variant ?? DEFAULT_STACK_VARIANT;
   const animMode: StackAnimationMode = options.anim ?? 'default';
   const tileMotion = resolveStackTileMotion(animMode);
   const hasSheen = isSheenMode(animMode);
@@ -611,9 +679,12 @@ export function renderStack(options: StackRenderOptions): string {
 
   let totalWidth = 0;
   let totalHeight = 0;
-  for (const [i, band] of bands.entries()) {
-    totalWidth = Math.max(totalWidth, band.width);
-    totalHeight += band.height + (i > 0 ? groupGap : 0);
+  for (let i = 0; i < bands.length; i += 1) {
+    const band = bands[i];
+    if (band) {
+      totalWidth = Math.max(totalWidth, band.width);
+      totalHeight += band.height + (i > 0 ? groupGap : 0);
+    }
   }
 
   const radius = Math.max(5, Math.round(tileSize * 0.24));
@@ -635,51 +706,13 @@ export function renderStack(options: StackRenderOptions): string {
     variant,
   };
 
-  let tilesMarkup = '';
-  let clipRects = '';
-  let bandOriginY = 0;
-
-  for (const band of bands) {
-    const bandOffsetX = roundTenths((totalWidth - band.width) / 2);
-    let groupOriginX = bandOffsetX;
-
-    for (const group of band.groups) {
-      const groupOriginY = bandOriginY + roundTenths((band.height - group.height) / 2);
-
-      for (const [i, tile] of group.tiles.entries()) {
-        const rowIndex = Math.floor(i / group.perLine);
-        const columnIndex = i % group.perLine;
-        const rowCount = Math.min(group.perLine, group.tiles.length - rowIndex * group.perLine);
-        const rowOffsetX =
-          group.rows > 1 ? roundTenths(((group.cols - rowCount) * stepPitch) / 2) : 0;
-
-        const tileX = roundTenths(groupOriginX + rowOffsetX + columnIndex * stepPitch);
-        const tileY = roundTenths(groupOriginY + rowIndex * stepPitch);
-        const diagonalStep = (tileX + tileY) / stepPitch;
-        const translateAnimation = buildTileTranslateAnimation(tileMotion, diagonalStep);
-
-        const renderedTile = renderSingleStackTile(
-          tile,
-          tileX,
-          tileY,
-          translateAnimation,
-          diagonalStep,
-          tileContext
-        );
-        tilesMarkup += renderedTile.markup;
-
-        if (hasSheen && !renderedTile.isFallback) {
-          clipRects += translateAnimation
-            ? `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}">${translateAnimation}</rect>`
-            : `<rect x="${tileX}" y="${tileY}" width="${tileSize}" height="${tileSize}" rx="${radius}" />`;
-        }
-      }
-
-      groupOriginX = roundTenths(groupOriginX + group.width + groupGap);
-    }
-
-    bandOriginY = roundTenths(bandOriginY + band.height + groupGap);
-  }
+  const { clipRects, tilesMarkup } = renderStackBands(
+    bands,
+    totalWidth,
+    groupGap,
+    hasSheen,
+    tileContext
+  );
 
   let padY = 0;
   if (tileMotion === 'wave') {

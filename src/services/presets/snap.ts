@@ -5,7 +5,7 @@
  * read from the stable channel of the snap's default track, preferring `PREFERRED_SNAP_ARCHITECTURE`.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import { createLicenseMetric, createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -41,8 +41,11 @@ const PREFERRED_SNAP_ARCHITECTURE = 'amd64';
 
 /** Read the version of a channel map entry released to the stable channel of `track` (malformed entries are skipped). */
 function readStableRelease(entry: unknown, track: string): StableSnapRelease | undefined {
-  const channel = isJsonObject(entry) ? entry.channel : undefined;
-  if (!isJsonObject(entry) || !isJsonObject(channel) || typeof entry.version !== 'string') {
+  if (!isJsonObject(entry) || typeof entry.version !== 'string') {
+    return undefined;
+  }
+  const channel = asJsonObject(entry.channel);
+  if (!channel) {
     return undefined;
   }
   return channel.track === track && channel.risk === 'stable'
@@ -72,9 +75,8 @@ function projectSnapInfo(data: unknown): SnapInfoProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const snap = isJsonObject(data.snap) ? data.snap : undefined;
   return {
-    license: readText(snap?.license),
+    license: readText(asJsonObject(data.snap)?.license),
     version: readStableSnapVersion(data['channel-map'], data['default-track']),
   };
 }

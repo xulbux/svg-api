@@ -5,7 +5,6 @@
 // -------------------------------------- PUBLIC API -------------------------------------
 
 export {
-  BADGE_VARIANT_DESCRIPTORS,
   buildBadgeParamRows,
   buildBadgeUseCaseCards,
   buildBadgeVariantCards,
@@ -14,7 +13,6 @@ export {
   buildButtonParamRows,
   buildButtonVariantCards,
   BUTTON_USE_CASE_CARDS,
-  BUTTON_VARIANT_DESCRIPTORS,
 } from '@/site/catalog/buttons';
 export { buildColorSwatchCards } from '@/site/catalog/colors';
 export { buildIconParamRows, ICON_CARDS } from '@/site/catalog/icons';
@@ -35,23 +33,23 @@ export {
 } from '@/site/catalog/quotes';
 export {
   buildServiceParamRows,
+  buildServicePresetCards,
   buildServiceRoutePattern,
   formatServiceMetrics,
-  SERVICE_PRESET_CARDS,
   SERVICE_ROUTE_PATTERN,
 } from '@/site/catalog/services';
 export {
   ENCODED_CHAOS_QUOTE,
-  ENDPOINT_ROUTES,
   formatCountLowerBound,
+  getEndpointRoutes,
   getIconSetCounts,
+  listRouteAliases,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog/shared';
 export {
+  buildStackAnimationCards,
   buildStackParamRows,
   buildStackVariantCards,
-  STACK_ANIMATION_CARDS,
-  STACK_VARIANT_DESCRIPTORS,
 } from '@/site/catalog/stack';
 export {
   buildTypingParamRows,

@@ -142,6 +142,7 @@ type JsonScanPhase =
   | 'mismatch'
   | 'next-key'
   | 'root'
+  | 'root-non-object'
   | 'value-container'
   | 'value-primitive'
   | 'value-start'
@@ -296,6 +297,9 @@ const STATIC_MERGED_HEADERS = new WeakMap<ServiceDefinition, Readonly<Record<str
 
 /** Memoized merged request headers for services with dynamic `service.buildHeaders`. */
 const DYNAMIC_MERGED_HEADERS = new WeakMap<ServiceDefinition, MergedHeadersEntry>();
+
+/** Memoized `ReadonlySet` instances for static endpoint `extractKeys` arrays. */
+const EXTRACT_KEY_SETS = new WeakMap<readonly string[], ReadonlySet<string>>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -629,11 +633,11 @@ function scanKeyString(chunk: string, startIndex: number, scanner: JsonStreamSca
       scanner.isEscaped = true;
       scanner.hasKeyEscape = true;
     } else if (char === '"') {
-      scanner.keyBuffer += chunk.slice(startIndex, i);
-      if (scanner.keyBuffer.length > MAX_JSON_KEY_LENGTH) {
+      if (scanner.keyBuffer.length + (i - startIndex) > MAX_JSON_KEY_LENGTH) {
         scanner.phase = 'mismatch';
         return i + 1;
       }
+      scanner.keyBuffer += chunk.slice(startIndex, i);
       try {
         const keyName = scanner.hasKeyEscape
           ? (JSON.parse(`"${scanner.keyBuffer}"`) as string)
@@ -647,10 +651,11 @@ function scanKeyString(chunk: string, startIndex: number, scanner: JsonStreamSca
       return i + 1;
     }
   }
-  scanner.keyBuffer += chunk.slice(startIndex);
-  if (scanner.keyBuffer.length > MAX_JSON_KEY_LENGTH) {
+  if (scanner.keyBuffer.length + (chunk.length - startIndex) > MAX_JSON_KEY_LENGTH) {
     scanner.phase = 'mismatch';
+    return chunk.length;
   }
+  scanner.keyBuffer += chunk.slice(startIndex);
   return chunk.length;
 }
 
@@ -743,11 +748,32 @@ function startValueScan(char: string, index: number, scanner: JsonStreamScanner)
   return index;
 }
 
+/** Check whether `char` can start a valid non-object root JSON value (`null`, `true`, `false`, array, string, or number). */
+function isJsonNonObjectStart(char: string): boolean {
+  return (
+    char === '[' ||
+    char === '"' ||
+    char === 't' ||
+    char === 'f' ||
+    char === 'n' ||
+    char === '-' ||
+    (char >= '0' && char <= '9')
+  );
+}
+
 /** Advance a structural phase at `char`. */
 function advanceStructuralPhase(char: string, index: number, scanner: JsonStreamScanner): number {
   switch (scanner.phase) {
     case 'root': {
-      scanner.phase = char === '{' ? 'first-key-or-end' : 'mismatch';
+      if (char === '{') {
+        scanner.phase = 'first-key-or-end';
+        return index + 1;
+      }
+      if (isJsonNonObjectStart(char)) {
+        scanner.phase = 'root-non-object';
+        return index;
+      }
+      scanner.phase = 'mismatch';
       return index + 1;
     }
     case 'first-key-or-end': {
@@ -799,6 +825,14 @@ function advanceJsonScanner(chunk: string, scanner: JsonStreamScanner): void {
   let index = 0;
   while (index < chunk.length && scanner.phase !== 'done' && scanner.phase !== 'mismatch') {
     switch (scanner.phase) {
+      case 'root-non-object': {
+        if (scanner.valueBuffer.length + (chunk.length - index) > MAX_JSON_KEY_LENGTH) {
+          scanner.phase = 'mismatch';
+          return;
+        }
+        scanner.valueBuffer += chunk.slice(index);
+        return;
+      }
       case 'key': {
         index = scanKeyString(chunk, index, scanner);
         break;
@@ -826,6 +860,17 @@ function advanceJsonScanner(chunk: string, scanner: JsonStreamScanner): void {
   }
 }
 
+/** Resolve or memoize the `ReadonlySet` of wanted top-level keys for `extractKeys`. */
+function getExtractKeySet(extractKeys: readonly string[]): ReadonlySet<string> {
+  const cached = EXTRACT_KEY_SETS.get(extractKeys);
+  if (cached) {
+    return cached;
+  }
+  const created = new Set<string>(extractKeys);
+  EXTRACT_KEY_SETS.set(extractKeys, created);
+  return created;
+}
+
 /** Create a fresh streaming JSON key extractor for `extractKeys`. */
 function createJsonStreamScanner(extractKeys: readonly string[]): JsonStreamScanner {
   return {
@@ -840,7 +885,7 @@ function createJsonStreamScanner(extractKeys: readonly string[]): JsonStreamScan
     keyBuffer: '',
     matchedKey: undefined,
     phase: 'root',
-    targetKeys: new Set<string>(extractKeys),
+    targetKeys: getExtractKeySet(extractKeys),
     valueBuffer: '',
   };
 }
@@ -891,9 +936,17 @@ async function readExtractedResponseBody(
   if (scanner.isTooLarge) {
     return { status: TOO_LARGE_STATUS };
   }
-  return scanner.phase === 'done'
-    ? { data: scanner.extracted, status }
-    : { status: INVALID_DATA_STATUS };
+  if (scanner.phase === 'done') {
+    return { data: scanner.extracted, status };
+  }
+  if (scanner.phase === 'root-non-object') {
+    try {
+      return { data: JSON.parse(scanner.valueBuffer) as unknown, status };
+    } catch {
+      return { status: INVALID_DATA_STATUS };
+    }
+  }
+  return { status: INVALID_DATA_STATUS };
 }
 
 /**
@@ -1074,8 +1127,16 @@ function classifyGraphQlErrorStatus(parsed: unknown): number | undefined {
   if (!isJsonObject(parsed.data)) {
     return hasNotFound ? 404 : 502;
   }
-  const dataValues = Object.values(parsed.data);
-  if (dataValues.length > 0 && dataValues.every((value) => value === null)) {
+  let hasDataKeys = false;
+  for (const key in parsed.data) {
+    if (Object.hasOwn(parsed.data, key)) {
+      hasDataKeys = true;
+      if (parsed.data[key] !== null) {
+        return undefined;
+      }
+    }
+  }
+  if (hasDataKeys) {
     return hasNotFound ? 404 : 502;
   }
   return undefined;

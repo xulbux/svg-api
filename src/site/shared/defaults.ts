@@ -22,6 +22,7 @@ import type {
   BuilderField,
   BuilderOption,
   BuilderSchema,
+  BuilderServiceMetric,
   BuilderState,
 } from '@/types';
 
@@ -37,44 +38,55 @@ function resolveServiceMetricSelection(
   return { metric, service };
 }
 
+/** Resolve a metric-dependent field default (`undefined` when `metric` is unset or `fieldId` is unrelated). */
+function resolveMetricFieldDefault(
+  metric: BuilderServiceMetric | undefined,
+  fieldId: string
+): string | undefined {
+  if (!metric) {
+    return undefined;
+  }
+  switch (fieldId) {
+    case 'color': {
+      return metric.hasDynamicColor ? '' : metric.defaultColor;
+    }
+    case 'dot': {
+      return metric.hasDynamicDot ? '' : 'none';
+    }
+    case 'label': {
+      return metric.defaultLabel;
+    }
+    case 'metric': {
+      return metric.value;
+    }
+    case 'special': {
+      return metric.defaultSpecial ?? 'none';
+    }
+    default: {
+      return undefined;
+    }
+  }
+}
+
 /** Resolve metric-dependent defaults on `/builder/service` (`undefined` when `field` uses its static default). */
 function resolveServiceFieldDefault(
   schema: BuilderSchema,
   state: BuilderState,
   field: BuilderField
 ): string | undefined {
-  switch (field.id) {
-    case 'service': {
-      return resolveServiceMetricSelection(schema, state).service?.key ?? '';
-    }
-    case 'color': {
-      const { metric } = resolveServiceMetricSelection(schema, state);
-      if (!metric) {
-        return undefined;
-      }
-      return metric.hasDynamicColor ? '' : metric.defaultColor;
-    }
-    case 'dot': {
-      const { metric } = resolveServiceMetricSelection(schema, state);
-      if (!metric) {
-        return undefined;
-      }
-      return metric.hasDynamicDot ? '' : 'none';
-    }
-    case 'label': {
-      return resolveServiceMetricSelection(schema, state).metric?.defaultLabel;
-    }
-    case 'metric': {
-      return resolveServiceMetricSelection(schema, state).metric?.value;
-    }
-    case 'special': {
-      const { metric } = resolveServiceMetricSelection(schema, state);
-      return metric ? (metric.defaultSpecial ?? 'none') : undefined;
-    }
-    default: {
-      return undefined;
-    }
+  if (field.id === 'service') {
+    return resolveServiceMetricSelection(schema, state).service?.key ?? '';
   }
+  if (
+    field.id === 'color' ||
+    field.id === 'dot' ||
+    field.id === 'label' ||
+    field.id === 'metric' ||
+    field.id === 'special'
+  ) {
+    return resolveMetricFieldDefault(resolveServiceMetricSelection(schema, state).metric, field.id);
+  }
+  return undefined;
 }
 
 /** Resolve layout-dependent defaults on `/builder/quote` and `/builder/typing`. */

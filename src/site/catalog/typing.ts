@@ -253,8 +253,8 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: formatRange(TYPING_WIDTH_RANGE),
     },
     {
-      defaultVal: `${DEFAULT_TYPING_ALIGN} (framed) / center (none)`,
-      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align ${DEFAULT_TYPING_ALIGN}); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
+      defaultVal: `${DEFAULT_TYPING_ALIGN} (framed, or none with prefix/icon) / center (none)`,
+      description: `Horizontal text alignment on window, prompt, and none layouts (browser and ide always align ${DEFAULT_TYPING_ALIGN}; none defaults to ${DEFAULT_TYPING_ALIGN} when a prefix or leading icon is present); ?center=${TRUTHY_FLAG_LIST[0]} (or ${TRUTHY_FLAG_LIST.slice(1).join(' / ')}) is a shorthand for ?align=center.`,
       name: '?align= / ?center=',
       values: TYPING_ALIGN_TOKENS.join(' | '),
     },

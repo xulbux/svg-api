@@ -27,7 +27,7 @@ import type {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Showcase definitions for the CTA button hierarchy variants. */
-export const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
+const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Gradient surface with an upper-edge highlight.',
     id: '1',

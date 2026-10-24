@@ -3,6 +3,7 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -16,6 +17,7 @@ import {
   readFiniteNumber,
   readText,
 } from '@/services/metrics';
+import { MIN_SERIES_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -25,9 +27,14 @@ interface NuGetSearchProjection {
   totalDownloads?: number;
   /** Latest stable version. */
   version?: string;
-  /** Per-version download counts across the most recent 12 releases. */
+  /** Per-version download counts across the most recent releases. */
   versionDownloads?: number[];
 }
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Maximum number of recent NuGet version download entries kept in the projection. */
+const MAX_NUGET_RELEASES = 12;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -38,13 +45,15 @@ const NUGET_PACKAGE_ID_RX = /^(?=.{1,100}$)\w+(?:[.-]\w+)*$/;
 
 /** Project the first NuGet search entry to its version, total downloads, and recent per-version series. */
 function projectNuGetEntry(data: unknown): NuGetSearchProjection | undefined {
-  const entry = readFirstObjectEntry(isJsonObject(data) ? data.data : undefined);
+  const entry = readFirstObjectEntry(asJsonObject(data)?.data);
   if (!entry) {
     return undefined;
   }
   const versionDownloads: number[] = [];
   if (Array.isArray(entry.versions)) {
-    for (const item of entry.versions.slice(-12)) {
+    const startIndex = Math.max(0, entry.versions.length - MAX_NUGET_RELEASES);
+    for (let i = startIndex; i < entry.versions.length; i += 1) {
+      const item: unknown = entry.versions[i];
       if (isJsonObject(item)) {
         const count = readFiniteNumber(item.downloads);
         if (count !== undefined) {
@@ -56,7 +65,7 @@ function projectNuGetEntry(data: unknown): NuGetSearchProjection | undefined {
   return {
     totalDownloads: readFiniteNumber(entry.totalDownloads),
     version: readText(entry.version),
-    versionDownloads: versionDownloads.length >= 2 ? versionDownloads : undefined,
+    versionDownloads: versionDownloads.length >= MIN_SERIES_POINTS ? versionDownloads : undefined,
   };
 }
 

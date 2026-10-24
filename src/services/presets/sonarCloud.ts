@@ -6,6 +6,7 @@
  */
 
 import {
+  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
@@ -122,11 +123,15 @@ const RATING_PRESENTATION: MetricPresentation = {
   hasDynamicColor: true,
 };
 
+/** Lazily initialized lookup set for `SONAR_MEASURE_KEYS`. */
+let sonarMeasureKeySetCache: ReadonlySet<string> | undefined = undefined;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Check whether a measure key is one of the requested keys (guards against prototype keys). */
 function isSonarMeasureKey(key: string): key is SonarMeasureKey {
-  return (SONAR_MEASURE_KEYS as readonly string[]).includes(key);
+  sonarMeasureKeySetCache ??= new Set<string>(SONAR_MEASURE_KEYS);
+  return sonarMeasureKeySetCache.has(key);
 }
 
 /** Read the value string of a SonarCloud measure (`measure.value` or `measure.period.value`). */
@@ -134,8 +139,9 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
   if (typeof measure.value === 'string') {
     return measure.value;
   }
-  if (isJsonObject(measure.period) && typeof measure.period.value === 'string') {
-    return measure.period.value;
+  const period = asJsonObject(measure.period);
+  if (typeof period?.value === 'string') {
+    return period.value;
   }
   const firstPeriod = readFirstObjectEntry(measure.periods);
   return typeof firstPeriod?.value === 'string' ? firstPeriod.value : undefined;
@@ -143,12 +149,8 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
 
 /** Project a SonarCloud measures response into a `metric -> value` map of the requested measures. */
 function projectSonarMeasures(data: unknown): SonarMeasures | undefined {
-  const component = isJsonObject(data) ? data.component : undefined;
-  if (
-    !isJsonObject(component) ||
-    !Array.isArray(component.measures) ||
-    component.measures.length === 0
-  ) {
+  const component = asJsonObject(asJsonObject(data)?.component);
+  if (!component || !Array.isArray(component.measures) || component.measures.length === 0) {
     return undefined;
   }
   const measures: SonarMeasures = {};
@@ -264,7 +266,7 @@ function createIssueCountMetric(
           value:
             newCount === 0 ? '0' : `${newCount > 0 ? '+' : ''}${formatCompactNumber(newCount)}`,
         };
-        const ratio = buildRatioSpecials(newCount, count && count > 0 ? count : undefined);
+        const ratio = buildRatioSpecials(newCount, count);
         if (ratio) {
           specials.bar = ratio.bar;
           specials.ring = ratio.ring;

@@ -2,7 +2,13 @@
  * Hex.pm service preset – Live upstream metrics and redirect transformations.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  PACKAGE_ROUTE,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   buildWindowDeltaSpecials,
@@ -37,8 +43,8 @@ function projectHexPackage(data: unknown): HexPackageProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = isJsonObject(data.downloads) ? data.downloads : undefined;
-  const meta = isJsonObject(data.meta) ? data.meta : undefined;
+  const downloads = asJsonObject(data.downloads);
+  const meta = asJsonObject(data.meta);
   return {
     all: readFiniteNumber(downloads?.all),
     license: readLicenseName(meta?.licenses),
@@ -51,6 +57,7 @@ function projectHexPackage(data: unknown): HexPackageProjection | undefined {
 /** Hex.pm package endpoint with package page redirect. */
 const HEX_ENDPOINT = createEndpoint({
   api: 'https://hex.pm/api/packages/{target}',
+  extractKeys: ['downloads', 'latest_stable_version', 'latest_version', 'meta'],
   page: 'https://hex.pm/packages/{target}',
   project: projectHexPackage,
 });

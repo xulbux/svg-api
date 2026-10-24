@@ -48,14 +48,17 @@ export function initCodeDrawers(
   }
 
   /** Keeps the scroll buttons of open code drawers in sync with their width. */
-  const codeResizeObserver = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      updateScrollButtons(entry.target.closest('.code-drawer-body'));
-    }
-  });
+  const codeResizeObserver =
+    typeof ResizeObserver === 'undefined'
+      ? undefined
+      : new ResizeObserver((entries) => {
+          for (const entry of entries) {
+            updateScrollButtons(entry.target.closest('.code-drawer-body'));
+          }
+        });
 
   for (const openPre of document.querySelectorAll('details.code-drawer[open] .code-pre')) {
-    codeResizeObserver.observe(openPre);
+    codeResizeObserver?.observe(openPre);
     updateScrollButtons(openPre.closest('.code-drawer-body'));
   }
 
@@ -71,12 +74,12 @@ export function initCodeDrawers(
         return;
       }
       if (drawer.open) {
-        codeResizeObserver.observe(codePre);
+        codeResizeObserver?.observe(codePre);
         globalThis.requestAnimationFrame(() =>
           updateScrollButtons(codePre.closest('.code-drawer-body'))
         );
       } else {
-        codeResizeObserver.unobserve(codePre);
+        codeResizeObserver?.unobserve(codePre);
       }
     },
     true

@@ -6,7 +6,13 @@
  * (`gtk%2B3`), because a literal `+` in a path segment decodes to a space.
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   INSTALLS_LABEL,
@@ -59,13 +65,16 @@ function sumInstalls(
   install: Record<string, unknown> | undefined,
   period: HomebrewAnalyticsPeriod
 ): number | undefined {
-  const counts = install ? install[period] : undefined;
-  if (!isJsonObject(counts)) {
+  const counts = asJsonObject(install?.[period]);
+  if (!counts) {
     return undefined;
   }
   let total = 0;
-  for (const count of Object.values(counts)) {
-    total += typeof count === 'number' && Number.isFinite(count) ? count : 0;
+  for (const key in counts) {
+    if (Object.hasOwn(counts, key)) {
+      const count = counts[key];
+      total += typeof count === 'number' && Number.isFinite(count) ? count : 0;
+    }
   }
   return total;
 }
@@ -75,9 +84,8 @@ function projectHomebrewPayload(data: unknown): HomebrewProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const analytics = isJsonObject(data.analytics) ? data.analytics : undefined;
-  const install = isJsonObject(analytics?.install) ? analytics.install : undefined;
-  const versions = isJsonObject(data.versions) ? data.versions : undefined;
+  const install = asJsonObject(asJsonObject(data.analytics)?.install);
+  const versions = asJsonObject(data.versions);
   return {
     dl: sumInstalls(install, '30d'),
     dq: sumInstalls(install, '90d'),

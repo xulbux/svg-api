@@ -4,7 +4,13 @@
  * Statistics cover every version of the record; Concept record ids redirect to the latest version.
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   RATIO_SPECIALS,
   buildRatioSpecials,
@@ -48,8 +54,8 @@ function projectZenodoRecord(data: unknown): ZenodoRecordProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const metadata = isJsonObject(data.metadata) ? data.metadata : undefined;
-  const stats = isJsonObject(data.stats) ? data.stats : undefined;
+  const metadata = asJsonObject(data.metadata);
+  const stats = asJsonObject(data.stats);
   return {
     doi: readText(data.doi),
     downloads: readFiniteNumber(stats?.downloads),
@@ -63,6 +69,7 @@ function projectZenodoRecord(data: unknown): ZenodoRecordProjection | undefined 
 /** Zenodo record endpoint (statistics refresh daily) with record page redirect. */
 const ZENODO_ENDPOINT = createEndpoint({
   api: 'https://zenodo.org/api/records/{target}',
+  extractKeys: ['doi', 'metadata', 'stats'],
   page: 'https://zenodo.org/records/{target}',
   project: projectZenodoRecord,
   ttl: CACHE_TTL.daily,

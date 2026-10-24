@@ -12,7 +12,7 @@ import type { ParamTableRow } from '@/types';
 
 /** Props for the `<ParamTable />` component. */
 interface ParamTableProps {
-  /** Column header labels (defaults to `Parameter`, `Values`, `Default`, `Description`). */
+  /** Optional custom column header labels (`DEFAULT_PARAM_TABLE_COLUMNS` when omitted). */
   readonly columns?: ParamTableRow | undefined;
   /** Accessible table caption and scroll region label (e.g., `'Badge query parameters'`). */
   readonly label: string;
@@ -149,7 +149,7 @@ export function ParamTable(props: ParamTableProps): HtmlFragment {
  * Render a responsive, keyboard-scrollable parameter reference table that transforms into labeled cards on narrow containers.
  * @param rows      Array of parameter rows to display.
  * @param label     Accessible table caption and scroll region label (e.g., `'Badge query parameters'`).
- * @param columns   Column header labels (defaults to `Parameter`, `Values`, `Default`, `Description`).
+ * @param columns   Optional custom column header labels (`DEFAULT_PARAM_TABLE_COLUMNS` when omitted).
  * @returns HTML string for the responsive table wrapper.
  */
 export function renderParamTable(

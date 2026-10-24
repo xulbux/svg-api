@@ -14,9 +14,9 @@ import {
   findOption,
   findService,
   getOwnValue,
+  isTruthyFlagToken,
   normalizeTypingLinesInput,
   readState,
-  TRUTHY_FLAG_TOKENS,
 } from '@/site/shared/encoding';
 import { normalizeStackGroups } from '@/site/shared/stackDsl';
 import type {
@@ -175,7 +175,7 @@ function readSegmentFallback(schema: BuilderSchema, query: URLSearchParams, id: 
 
 /** Check whether `?center=` carries a truthy boolean flag token. */
 function hasTruthyCenterFlag(query: URLSearchParams): boolean {
-  return TRUTHY_FLAG_TOKENS.has((query.get('center') ?? '').trim().toLowerCase());
+  return isTruthyFlagToken((query.get('center') ?? '').trim().toLowerCase());
 }
 
 /** Populate an optional leading segment (`author` or `prefix`) and primary body segment (`text` or `lines`). */

@@ -93,6 +93,7 @@ const ISSUES_ENDPOINT = createEndpoint({
 /** GitLab latest release endpoint. */
 const RELEASE_ENDPOINT = createEndpoint({
   api: 'https://gitlab.com/api/v4/projects/{id}/releases/permalink/latest',
+  extractKeys: ['tag_name'],
   page: 'https://gitlab.com/{owner}/{target}/-/releases',
   project: pickFields<GitLabReleasePayload>(['tag_name']),
 });

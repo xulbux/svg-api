@@ -25,6 +25,7 @@ const OFFICIAL_NAMESPACE = 'library';
 /** Docker Hub repository endpoint with official (`/_/`) or namespaced (`/r/`) page redirect. */
 const DOCKER_HUB_ENDPOINT = createEndpoint({
   api: 'https://hub.docker.com/v2/repositories/{owner}/{target}/',
+  extractKeys: ['last_updated', 'pull_count', 'star_count'],
   page: ({ owner, target }) =>
     owner === OFFICIAL_NAMESPACE
       ? `https://hub.docker.com/_/${encodeURIComponent(target)}`

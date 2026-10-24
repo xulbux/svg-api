@@ -20,6 +20,17 @@ import {
   writeLruCache,
 } from '@/svg/shared';
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches the horizontal `translate(x y)` offset of a rendered text `<path>`. */
+const PATH_TRANSLATE_X_RX = /translate\((?<offsetX>[\d.-]+) /;
+
+/** Matches the leftmost ink coordinate (`L<x> -3`) of an origin-anchored em dash outline. */
+const EM_DASH_INK_START_RX = /L(?<inkStartX>[\d.-]+) -3/;
+
+/** Matches the `d="…"` attribute of a rendered `<path>` element. */
+const PATH_DATA_ATTR_RX = / d="(?<pathData>[^"]+)"/;
+
 // ----------------------------------------- MAIN ----------------------------------------
 
 describe('measureTextWidth & renderTextPathMarkup', () => {
@@ -82,8 +93,8 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       isItalic: true,
     });
     // The em dash's leftmost ink point (origin path `L<x1> -3`) plus the translate offset lands on `x = 34`:
-    const translateX = Number(/translate\((?<x>[\d.-]+) /.exec(leftItalicPath)?.groups?.x);
-    const inkStartX = Number(/L(?<x>[\d.-]+) -3/.exec(leftItalicPath)?.groups?.x);
+    const translateX = Number(PATH_TRANSLATE_X_RX.exec(leftItalicPath)?.groups?.offsetX);
+    const inkStartX = Number(EM_DASH_INK_START_RX.exec(leftItalicPath)?.groups?.inkStartX);
     expect(translateX + inkStartX).toBeCloseTo(34, 1);
     expect(leftItalicPath).toContain('fill="#818CF8" />');
     expect(leftItalicPath).not.toContain('NaN');
@@ -93,8 +104,8 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
     const style = { baselineY: 15, fill: '#FFFFFF', fontSize: 11 };
     const firstPath = renderTextPathMarkup('reuse', { ...style, anchorX: 10 });
     const secondPath = renderTextPathMarkup('reuse', { ...style, anchorX: 60 });
-    const firstPathData = / d="(?<d>[^"]+)"/.exec(firstPath)?.groups?.d;
-    const secondPathData = / d="(?<d>[^"]+)"/.exec(secondPath)?.groups?.d;
+    const firstPathData = PATH_DATA_ATTR_RX.exec(firstPath)?.groups?.pathData;
+    const secondPathData = PATH_DATA_ATTR_RX.exec(secondPath)?.groups?.pathData;
     expect(firstPathData).toBeDefined();
     expect(firstPathData).toBe(secondPathData);
     expect(firstPath).not.toBe(secondPath);

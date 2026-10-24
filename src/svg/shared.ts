@@ -685,19 +685,6 @@ export function sliceAtCodePoint(text: string, end: number): string {
 }
 
 /**
- * Cap `text` at `maxLength` UTF-16 code units, replacing the overflow with a trailing ellipsis (`…`).
- * @param text        Raw text.
- * @param maxLength   Maximum length in UTF-16 code units, including the ellipsis.
- * @returns `text` unchanged when it fits, otherwise its truncated prefix plus `…`.
- */
-export function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return `${sliceAtCodePoint(text, maxLength - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
-}
-
-/**
  * Prepare user-supplied text for outline rendering: Replace runs of control and invisible format
  * characters (e.g., `\n`, `\t`, `U+200B`) with one space, then cap it at `maxLength` with an ellipsis.
  * @param text        Raw text.
@@ -705,7 +692,10 @@ export function truncateText(text: string, maxLength: number): string {
  * @returns Renderable display text.
  */
 export function prepareDisplayText(text: string, maxLength: number): string {
-  return truncateText(text.replace(INVISIBLE_CHARS_RX, ' '), maxLength);
+  const cleaned = text.replace(INVISIBLE_CHARS_RX, ' ');
+  return cleaned.length <= maxLength
+    ? cleaned
+    : `${sliceAtCodePoint(cleaned, maxLength - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
 }
 
 /**

@@ -16,8 +16,8 @@ import {
 } from '@/routes/params';
 import { SVG_ROUTES } from '@/routes/svg';
 import { buildServiceRoutePattern, formatServiceMetrics } from '@/site/catalog/services';
-import { ENDPOINT_ROUTES } from '@/site/catalog/shared';
-import { formatBacktickList, formatVariantTierSummary } from '@/site/glossary';
+import { getEndpointRoutes } from '@/site/catalog/shared';
+import { formatBacktickTokens, formatVariantTierSummary } from '@/site/glossary';
 import {
   BUILDER_PAGES,
   buildBuilderPath,
@@ -279,17 +279,17 @@ export function renderLlmsTxt(): string {
       '## Endpoints',
       '',
       `- Base origin: \`${SITE_ORIGIN}\``,
-      `- Families: ${formatBacktickList(ENDPOINT_ROUTES, ', ')}${aliasRoutes.length > 0 ? ` (aliases: ${aliasRoutes.join(', ')})` : ''}`,
+      `- Families: ${formatBacktickTokens(getEndpointRoutes(), ', ')}${aliasRoutes.length > 0 ? ` (aliases: ${aliasRoutes.join(', ')})` : ''}`,
       '',
       '## Shared Query Parameters',
       '',
-      `- \`?variant=\`: ${formatBacktickList(VARIANT_TOKENS, ' | ')} (${formatVariantTierSummary()})`,
-      `- \`?color=\`: ${formatBacktickList(THEME_COLOR_NAMES, ' | ')}`,
-      `- \`?size=\`: ${formatBacktickList(SIZE_TOKENS, ' | ')} (or custom pixel number where supported)`,
+      `- \`?variant=\`: ${formatBacktickTokens(VARIANT_TOKENS)} (${formatVariantTierSummary()})`,
+      `- \`?color=\`: ${formatBacktickTokens(THEME_COLOR_NAMES)}`,
+      `- \`?size=\`: ${formatBacktickTokens(SIZE_TOKENS)} (or custom pixel number where supported)`,
       `- \`?icon=\`: \`<slug>\` | \`none\` | \`<left>,<right>\` | \`none,<right>\` | \`,<right>\` (${iconSetNames})`,
       '- `?dot=`: `none` | any theme color (pulsing status dot on badges)',
-      `- \`?special=\`: ${formatBacktickList(SPECIAL_ELEMENT_KINDS, ' | ')} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
-      `- \`?anim=\`: \`${ANIM_SHEEN_TOKEN}\` | ${formatBacktickList(iconMotions, ' | ')} (stacks also support ${formatBacktickList(stackOnlyMotions, ' | ')})`,
+      `- \`?special=\`: ${formatBacktickTokens(SPECIAL_ELEMENT_KINDS)} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
+      `- \`?anim=\`: \`${ANIM_SHEEN_TOKEN}\` | ${formatBacktickTokens(iconMotions)} (stacks also support ${formatBacktickTokens(stackOnlyMotions)})`,
       '',
       '## Documentation',
       '',

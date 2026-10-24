@@ -2,7 +2,13 @@
  * Flathub service preset – Live upstream metrics and redirect transformations.
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   INSTALLS_LABEL,
   SERIES_DELTA_SPECIALS,
@@ -16,6 +22,7 @@ import {
   readText,
   sumSeries,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -29,7 +36,7 @@ interface FlathubAppStreamProjection {
 
 /** Projected Flathub statistics payload (`flathub.org/api/v2/stats/:app`). */
 interface FlathubStatsProjection {
-  /** 10-bar 30-day install histogram. */
+  /** Bucketed 30-day install histogram. */
   bars30d?: number[];
   /** Installs in the last 7 days. */
   installs_last_7_days?: number;
@@ -41,9 +48,9 @@ interface FlathubStatsProjection {
   prev30d?: number;
   /** Installs in the preceding 7-day window. */
   prev7d?: number;
-  /** 15-point 30-day install series. */
+  /** Bucketed 30-day install sparkline series. */
   series30d?: number[];
-  /** 7-day daily install series. */
+  /** Trailing 7-day daily install series. */
   series7d?: number[];
 }
 
@@ -54,11 +61,9 @@ function projectAppStream(data: unknown): FlathubAppStreamProjection | undefined
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const releases = Array.isArray(data.releases) ? data.releases : [];
-  const newestRelease: unknown = releases[0];
   return {
     license: readText(data.project_license),
-    version: isJsonObject(newestRelease) ? readText(newestRelease.version) : undefined,
+    version: readText(readFirstObjectEntry(data.releases)?.version),
   };
 }
 
@@ -71,14 +76,15 @@ function projectFlathubStats(data: unknown): FlathubStatsProjection | undefined 
   const totalDays = daily.length;
   const recent30d = daily.slice(-30);
   return {
-    bars30d: recent30d.length >= 2 ? bucketSeries(recent30d, 10) : undefined,
+    bars30d:
+      recent30d.length >= MIN_SERIES_POINTS ? bucketSeries(recent30d, MAX_BARS_POINTS) : undefined,
     installs_last_7_days: readFiniteNumber(data.installs_last_7_days),
     installs_last_month: readFiniteNumber(data.installs_last_month),
     installs_total: readFiniteNumber(data.installs_total),
     prev7d: totalDays >= 14 ? sumSeries(daily, totalDays - 14, totalDays - 7) : undefined,
     prev30d: totalDays >= 60 ? sumSeries(daily, totalDays - 60, totalDays - 30) : undefined,
-    series7d: totalDays >= 2 ? daily.slice(-7) : undefined,
-    series30d: recent30d.length >= 2 ? bucketSeries(recent30d, 15) : undefined,
+    series7d: totalDays >= MIN_SERIES_POINTS ? daily.slice(-7) : undefined,
+    series30d: recent30d.length >= MIN_SERIES_POINTS ? bucketSeries(recent30d, 15) : undefined,
   };
 }
 

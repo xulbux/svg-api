@@ -14,7 +14,12 @@ import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
 import { resolveSvgRequest } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
 import { getSiteAsset, getSiteAssetUrl } from '@/site/assets';
-import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/site/catalog';
+import {
+  formatCountLowerBound,
+  getEndpointRoutes,
+  getIconSetCounts,
+  STACK_EXAMPLE_GROUPS,
+} from '@/site/catalog';
 import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
 import { jsx } from '@/site/jsx/jsx-runtime';
@@ -26,13 +31,31 @@ import {
   renderNotFoundHtml,
   renderServerErrorHtml,
 } from '@/site/pages';
+import { renderLlmsTxt } from '@/site/seo';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
 import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
-import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
+import {
+  ICON_SIZE_RANGE,
+  ICON_STROKE_RANGE,
+  MAX_SPARKLINE_POINTS,
+  MAX_STRIP_TICKS,
+} from '@/svg/renderer';
 import { escapeXml } from '@/svg/shared';
-import { GROUP_GAP_RATIO } from '@/svg/stack';
-import type { SiteClientCore } from '@/types';
-import { evaluateClientCore, readClientModuleSources, requireDefined } from './helpers';
+import { GROUP_GAP_RATIO, STACK_GROUP_GAP_RANGE } from '@/svg/stack';
+import {
+  TYPING_DURATION_RANGE,
+  TYPING_FONT_SIZE_RANGE,
+  TYPING_PAUSE_RANGE,
+  TYPING_WIDTH_RANGE,
+} from '@/svg/typing';
+import type { PopoverPlacementOptions, SiteClientCore } from '@/types';
+import {
+  countOccurrences,
+  evaluateClientCore,
+  evaluateClientDom,
+  readClientModuleSources,
+  requireDefined,
+} from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -110,8 +133,14 @@ const INLINE_SVG_ROUTE_CODE_RX =
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Render the homepage, every documentation page, and every builder page. */
+/** Memoized rendered site pages across tests in this suite. */
+let renderedPagesCache: RenderedPage[] | undefined = undefined;
+
+/** Render the homepage, every documentation page, and every builder page (memoized). */
 function renderAllPages(): RenderedPage[] {
+  if (renderedPagesCache) {
+    return renderedPagesCache;
+  }
   const pages: RenderedPage[] = [{ html: renderHomeHtml(), path: '/' }];
   for (const page of DOCS_PAGES) {
     pages.push({ html: renderDocsHtml(page.slug), path: buildDocsPath(page.slug) });
@@ -119,6 +148,7 @@ function renderAllPages(): RenderedPage[] {
   for (const page of BUILDER_PAGES) {
     pages.push({ html: renderBuilderHtml(page.kind), path: buildBuilderPath(page.kind) });
   }
+  renderedPagesCache = pages;
   return pages;
 }
 
@@ -198,6 +228,23 @@ function createFakeSwitchButton(): {
 function createFakeResizeObserver(): { observe: () => void; unobserve: () => void } {
   return { observe: () => undefined, unobserve: () => undefined };
 }
+
+/** Prototype constructor for simulated `Node` instances. */
+function FakeNode(): undefined {
+  return undefined;
+}
+
+/** Prototype constructor for simulated `Element` instances. */
+function FakeElement(): undefined {
+  return undefined;
+}
+FakeElement.prototype = Object.create(FakeNode.prototype);
+
+/** Prototype constructor for simulated `HTMLElement` instances. */
+function FakeHtmlElement(): undefined {
+  return undefined;
+}
+FakeHtmlElement.prototype = Object.create(FakeElement.prototype);
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -298,10 +345,10 @@ describe('documentation pages – accessibility', () => {
 
   it('makes every scrollable code block and parameter table keyboard-focusable with an accessible name', () => {
     const badgesHtml = renderDocsHtml('badges');
-    const codeBlockCount = badgesHtml.split('<pre class="code-pre"').length - 1;
+    const codeBlockCount = countOccurrences(badgesHtml, '<pre class="code-pre"');
     expect(codeBlockCount).toBeGreaterThan(0);
     expect(
-      badgesHtml.split('<pre class="code-pre" tabindex="0" role="region" aria-label="').length - 1
+      countOccurrences(badgesHtml, '<pre class="code-pre" tabindex="0" role="region" aria-label="')
     ).toBe(codeBlockCount);
     expect(badgesHtml).toContain(
       '<div class="table-wrapper" tabindex="0" role="region" aria-label="'
@@ -479,7 +526,7 @@ describe('documentation pages – head metadata & client script', () => {
         page.html.indexOf('<header class="site-header">'),
         page.html.indexOf('</header>')
       );
-      expect(headerHtml.split('id="preview-bg-toggle"').length - 1, page.path).toBe(1);
+      expect(countOccurrences(headerHtml, 'id="preview-bg-toggle"'), page.path).toBe(1);
       expect(headerHtml, page.path).toContain(
         'class="bg-toggle" id="preview-bg-toggle" role="switch" aria-checked="false"'
       );
@@ -538,7 +585,7 @@ describe('documentation pages – navigation & static assets', () => {
     expect(endpointsIndex).toBeGreaterThan(highlightsIndex);
     expect(pagerIndex).toBeGreaterThan(endpointsIndex);
     expect(
-      html.split('<h2 class="feature-title"><svg class="ui-icon"').length - 1
+      countOccurrences(html, '<h2 class="feature-title"><svg class="ui-icon"')
     ).toBeGreaterThanOrEqual(4);
     expect(html).not.toContain('feature-icon');
     expect(getSiteStylesheet()).toMatch(
@@ -815,7 +862,9 @@ describe('documentation drift guards', () => {
     );
     expect(homeHtml).toContain(`${Object.keys(SERVICES_CONFIG).length} Live Services`);
     expect(homeHtml).toContain('Six Unified Endpoints');
-    expect(homeHtml.split('<span class="route-method">GET</span>').length - 1).toBe(6);
+    expect(countOccurrences(homeHtml, '<span class="route-method">GET</span>')).toBe(
+      getEndpointRoutes().length
+    );
     expect(homeHtml).not.toContain('OKLCH');
     expect(homeHtml).not.toContain('Simple Icons');
     expect(renderDocsHtml('icons')).toContain(
@@ -931,12 +980,12 @@ describe('website client scripts & markup regressions', () => {
 
   it('emits repeated UI icons once per page as sprite symbols referenced with <use>', () => {
     for (const page of renderAllPages()) {
-      expect(page.html.split('<svg class="ui-sprite"').length - 1, page.path).toBe(1);
-      expect(page.html.split('<symbol id="ui-copy"').length - 1, page.path).toBe(1);
+      expect(countOccurrences(page.html, '<svg class="ui-sprite"'), page.path).toBe(1);
+      expect(countOccurrences(page.html, '<symbol id="ui-copy"'), page.path).toBe(1);
     }
     const badgesHtml = renderDocsHtml('badges');
-    expect(badgesHtml.split('<use href="#ui-copy"></use>').length - 1).toBeGreaterThan(5);
-    expect(badgesHtml.split('<use href="#ui-chevron-right"></use>').length - 1).toBeGreaterThan(5);
+    expect(countOccurrences(badgesHtml, '<use href="#ui-copy"></use>')).toBeGreaterThan(5);
+    expect(countOccurrences(badgesHtml, '<use href="#ui-chevron-right"></use>')).toBeGreaterThan(5);
   });
 
   it('drops unstyled class names from the markup and uses the shared popover and grid classes', () => {
@@ -967,6 +1016,71 @@ describe('website client scripts & markup regressions', () => {
     expect(stackHtml).toContain('then ?groups=, ?icons=, and ?i= (empty values fall through)');
     expect(renderDocsHtml('overview')).toContain('Unknown query parameters are ignored per route');
   });
+
+  it('renders the homepage and every documentation page containing variants, service registries, and syntax-highlighted Markdown snippets', () => {
+    const homeHtml = renderHomeHtml();
+    const docsBySlug = new Map(DOCS_PAGES.map((page) => [page.slug, renderDocsHtml(page.slug)]));
+
+    for (const html of [homeHtml, ...docsBySlug.values()]) {
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).not.toContain('<span>');
+      expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
+      expect(html).toContain('Missing a service, icon, or SVG element?');
+    }
+
+    expect(docsBySlug.get('badges')).toContain(
+      '<code class="card-title-code">variant=1</code><span class="card-title-text">Primary Badge</span><span class="card-title-pill">Default</span>'
+    );
+    expect(docsBySlug.get('buttons')).toContain(
+      '<code class="card-title-code">variant=3</code><span class="card-title-text">Tertiary Button</span>'
+    );
+    expect(docsBySlug.get('services')).toContain(
+      '<span class="card-title-text">PyPI &amp; ClickPy</span><code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
+    );
+    expect(docsBySlug.get('services')).toContain(
+      '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
+    );
+    expect(docsBySlug.get('services')).toContain(
+      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
+    );
+    expect(docsBySlug.get('services')).toContain(
+      '<span class="card-title-text">Crates.io, docs.rs &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docsrs/*</code><code class="card-title-meta">/badge/docker/*</code>'
+    );
+    expect(docsBySlug.get('icons')).toContain(
+      '<span class="route-method">GET</span>/icon/:icon</code>'
+    );
+    expect(docsBySlug.get('stack')).toContain(
+      '<span class="route-method">GET</span>/stack/:groups</code>'
+    );
+    expect(docsBySlug.get('typing')).toContain(
+      '<span class="route-method">GET</span>/typing/:lines</code>'
+    );
+    expect(docsBySlug.get('quotes')).toContain(
+      '<span class="route-method">GET</span>/quote/:author/:text</code>'
+    );
+    expect(docsBySlug.get('colors')).toContain(`${THEME_COLOR_NAMES.length} Theme Colors`);
+  });
+
+  it('documents the exact numeric ranges enforced by the renderers', () => {
+    const iconsHtml = renderDocsHtml('icons');
+    expect(iconsHtml).toContain(
+      `${ICON_SIZE_RANGE.min}<span class="param-sep"> to </span>${ICON_SIZE_RANGE.max}`
+    );
+    expect(iconsHtml).toContain(`${ICON_STROKE_RANGE.default}</code>`);
+    const stackHtml = renderDocsHtml('stack');
+    expect(stackHtml).toContain(
+      `${STACK_GROUP_GAP_RANGE.min}<span class="param-sep"> to </span>${STACK_GROUP_GAP_RANGE.max}`
+    );
+    const typingHtml = renderDocsHtml('typing');
+    for (const range of [
+      TYPING_FONT_SIZE_RANGE,
+      TYPING_DURATION_RANGE,
+      TYPING_PAUSE_RANGE,
+      TYPING_WIDTH_RANGE,
+    ]) {
+      expect(typingHtml).toContain(`${range.min}<span class="param-sep"> to </span>${range.max}`);
+    }
+  });
 });
 
 /*********************************** Site stylesheet ************************************/
@@ -995,7 +1109,7 @@ describe('site stylesheet', () => {
 
   it('hides [hidden] elements with exactly one global rule', () => {
     const css = getSiteStylesheet();
-    expect(css.split('[hidden]').length - 1).toBe(1);
+    expect(countOccurrences(css, '[hidden]')).toBe(1);
     expect(css).toMatch(/\[hidden\] \{\s*display: none !important;\s*\}/);
   });
 
@@ -1035,7 +1149,7 @@ describe('site stylesheet', () => {
     expect(css).toMatch(
       /\.icon-input\.is-invalid \.icon-select-trigger,\s*\.builder-field:is\(\.is-invalid, \.is-missing\) :is\(\.builder-input, \.stack-catalog-wrap\) \{\s*border-color: var\(--c-danger\);/
     );
-    expect(css.split('var(--c-hl-path)').length - 1).toBe(1);
+    expect(countOccurrences(css, 'var(--c-hl-path)')).toBe(1);
     expect(css).toMatch(/\.hl-path \{\s*color: var\(--c-hl-path\);/);
   });
 
@@ -1051,7 +1165,9 @@ describe('site stylesheet', () => {
   });
 
   it('merges every reduced-motion override into a single media block', () => {
-    expect(getSiteStylesheet().split('@media (prefers-reduced-motion: reduce)').length - 1).toBe(1);
+    expect(countOccurrences(getSiteStylesheet(), '@media (prefers-reduced-motion: reduce)')).toBe(
+      1
+    );
   });
 
   it('keeps preview hover effects and color swatch focus rings working across touchscreen laptops (regressions: @media (hover: hover), pointer-events: none, invisible swatch focus)', () => {
@@ -1289,15 +1405,13 @@ describe('site stylesheet', () => {
       matchMedia: () => fakeMediaQuery,
     };
 
-    // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- Executes the shipped site client bundle against a minimal DOM sandbox.
-    new Function(
-      'globalThis',
-      'document',
-      'localStorage',
-      'HTMLElement',
-      'ResizeObserver',
-      siteScript
-    )(fakeGlobal, fakeDocument, throwingStorage, { prototype: {} }, createFakeResizeObserver);
+    evaluateClientDom(siteScript, {
+      HTMLElement: { prototype: {} },
+      ResizeObserver: createFakeResizeObserver,
+      document: fakeDocument,
+      globalThis: fakeGlobal,
+      localStorage: throwingStorage,
+    });
 
     expect(themeToggle.getChecked()).toBe('false');
     themeToggle.click();
@@ -1317,5 +1431,241 @@ describe('site stylesheet', () => {
     previewBgToggle.click();
     expect(rootAttributes.has('data-preview-bg')).toBe(false);
     expect(previewBgToggle.getChecked()).toBe('false');
+  });
+
+  it('formats /llms.txt token lists, /docs/quotes layout prose, /docs/typing ?align= defaults, HTML5 boolean attributes, and OG #RGB/scale(<path>) primitives cleanly (regressions: formatBacktickList separator misuse, inaccurate ?align= default, incomplete JSX boolean table, OG #RGB shorthand and scaled <path>)', () => {
+    const llmsTxt = renderLlmsTxt();
+    expect(llmsTxt).not.toContain(', ,');
+    expect(llmsTxt).not.toContain(',  |');
+    expect(llmsTxt).toContain('`1` | `2` | `3`');
+    expect(llmsTxt).toContain(
+      '`/badge/*`, `/button/*`, `/icon/*`, `/quote/*`, `/stack/*`, `/typing/*`'
+    );
+    expect(llmsTxt).toContain(
+      '`sparkline` | `bars` | `bar` | `steps` | `ring` | `strip` | `delta`'
+    );
+
+    const quotesHtml = renderDocsHtml('quotes');
+    expect(quotesHtml).toContain('<code>horizontal</code> or <code>vertical</code>');
+    expect(quotesHtml).not.toContain('  or  ');
+
+    const typingHtml = renderDocsHtml('typing');
+    expect(typingHtml.replace(HTML_TAG_RX, '')).toContain(
+      'left (framed, or none with prefix/icon) / center (none)'
+    );
+
+    for (const booleanAttr of [
+      'async',
+      'controls',
+      'loop',
+      'multiple',
+      'playsinline',
+      'reversed',
+    ]) {
+      expect(jsx('video', { [booleanAttr]: true }).rawHtml).toBe(`<video ${booleanAttr}></video>`);
+      expect(jsx('video', { [booleanAttr]: false }).rawHtml).toBe('<video></video>');
+    }
+    expect(jsx('div', { contenteditable: true }).rawHtml).toBe(
+      '<div contenteditable="true"></div>'
+    );
+    expect(jsx('div', { contenteditable: 'plaintext-only' }).rawHtml).toBe(
+      '<div contenteditable="plaintext-only"></div>'
+    );
+
+    expect(evaluatePaint('#f80', new Map(), 0, 0)).toEqual([255, 136, 0, 1]);
+
+    const unscaledPathPng = rasterizeOgSvgToPng(
+      '<svg width="24" height="24"><rect width="24" height="24" fill="#000000" /><path d="M1 1 H5 V5 H1 Z" fill="#FFFFFF" /></svg>',
+      24,
+      24,
+      '00'
+    );
+    const scaledPathPng = rasterizeOgSvgToPng(
+      '<svg width="24" height="24"><rect width="24" height="24" fill="#000000" /><path transform="scale(4)" d="M1 1 H5 V5 H1 Z" fill="#FFFFFF" /></svg>',
+      24,
+      24,
+      '00'
+    );
+    expect(scaledPathPng.equals(unscaledPathPng)).toBe(false);
+  });
+
+  it('honors event.defaultPrevented on fallback popovers, clears stale min-width on non-width-matched popovers, and sanitizes backward .code-pre copies without hijacking cross-element selections (regressions: icon picker switcher dismissed fallback popover, stale min-width persisted across popovers, backward code selection missed NBSP sanitizer)', () => {
+    const documentListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>();
+
+    const openClasses = new Set<string>(['is-open']);
+    const removedStyles: string[] = [];
+    const fakePopover = Object.assign(Object.create(FakeHtmlElement.prototype) as object, {
+      classList: {
+        add: (token: string) => openClasses.add(token),
+        contains: (token: string) => openClasses.has(token),
+        remove: (token: string) => openClasses.delete(token),
+      },
+      contains: () => false,
+      dispatchEvent: () => true,
+      getBoundingClientRect: () => ({ height: 120, width: 200 }),
+      hasAttribute: (name: string) => name === 'popover',
+      id: 'icon-picker',
+      style: {
+        left: '',
+        minWidth: '',
+        removeProperty(prop: string) {
+          if (prop === 'min-width') {
+            this.minWidth = '';
+            removedStyles.push(prop);
+          }
+        },
+        top: '',
+      },
+    });
+
+    const fakeAnchor = Object.assign(Object.create(FakeElement.prototype) as object, {
+      getBoundingClientRect: () => ({ bottom: 60, left: 40, right: 180, top: 28, width: 140 }),
+      hasAttribute: () => false,
+      setAttribute: () => undefined,
+    });
+
+    const codePreElement: { closest: (selector: string) => unknown } = Object.assign(
+      Object.create(FakeElement.prototype) as object,
+      { closest: (selector: string) => (selector === '.code-pre' ? codePreElement : undefined) }
+    );
+    const outsideElement = Object.assign(Object.create(FakeElement.prototype) as object, {
+      closest: () => undefined,
+    });
+    const backwardCodeTextNode = Object.assign(Object.create(FakeNode.prototype) as object, {
+      parentElement: codePreElement,
+    });
+
+    let activeSelection: Record<string, unknown> | undefined = undefined;
+    const fakeGlobal: {
+      addEventListener: () => void;
+      getSelection: () => Record<string, unknown> | undefined;
+      innerHeight: number;
+      matchMedia: () => { addEventListener: () => void; matches: boolean };
+      svgSite?: {
+        placePopover: (
+          popover: unknown,
+          anchor: unknown,
+          options?: PopoverPlacementOptions
+        ) => void;
+      };
+    } = {
+      addEventListener: () => undefined,
+      getSelection: () => activeSelection,
+      innerHeight: 800,
+      matchMedia: () => ({ addEventListener: () => undefined, matches: false }),
+    };
+
+    const fakeDocument = {
+      addEventListener(type: string, listener: (event: Record<string, unknown>) => void) {
+        const list = documentListeners.get(type) ?? [];
+        list.push(listener);
+        documentListeners.set(type, list);
+      },
+      documentElement: {
+        clientWidth: 1280,
+        getAttribute: () => undefined,
+        hasAttribute: () => false,
+        removeAttribute: () => undefined,
+        setAttribute: () => undefined,
+      },
+      getElementById: (id: string) =>
+        id === 'site-config'
+          ? {
+              textContent: JSON.stringify({
+                drawerMediaQuery: '(max-width: 960px)',
+                previewBgStorageKey: 'preview-bg',
+                previewBgValues: ['auto', 'inverse'],
+                schemeStorageKey: 'color-scheme',
+                themeColors: { dark: '#101010', light: '#FFFFFF' },
+              }),
+            }
+          : undefined,
+      querySelector: () => undefined,
+      querySelectorAll: (selector: string) => (selector === '[popover]' ? [fakePopover] : []),
+    };
+
+    evaluateClientDom(siteScript, {
+      Element: FakeElement,
+      HTMLElement: FakeHtmlElement,
+      Node: FakeNode,
+      document: fakeDocument,
+      globalThis: fakeGlobal,
+      localStorage: {
+        getItem: () => undefined,
+        removeItem: () => undefined,
+        setItem: () => undefined,
+      },
+    });
+
+    const svgSite = requireDefined(fakeGlobal.svgSite, 'svgSite helpers');
+    svgSite.placePopover(fakePopover, fakeAnchor, { isWidthMatched: true });
+    expect(fakePopover.style.minWidth).toBe('140px');
+    svgSite.placePopover(fakePopover, fakeAnchor, {});
+    expect(fakePopover.style.minWidth).toBe('');
+    expect(removedStyles).toContain('min-width');
+
+    // [1] `event.defaultPrevented = true` on a click (e.g., switching icon picker triggers) must NOT dismiss fallback popovers:
+    const clickListeners = documentListeners.get('click') ?? [];
+    for (const listener of clickListeners) {
+      listener({ defaultPrevented: true, target: outsideElement });
+    }
+    expect(openClasses.has('is-open')).toBe(true);
+
+    // Non-prevented outside clicks still close fallback popovers:
+    for (const listener of clickListeners) {
+      listener({ defaultPrevented: false, target: outsideElement });
+    }
+    expect(openClasses.has('is-open')).toBe(false);
+
+    // [2] Backward selection inside `.code-pre` (resolved via `getRangeAt(0).commonAncestorContainer`) strips NBSP:
+    const copyListeners = documentListeners.get('copy') ?? [];
+    let copiedText: string | undefined = undefined;
+    let isCopyPrevented = false;
+    activeSelection = {
+      anchorNode: outsideElement,
+      getRangeAt: () => ({ commonAncestorContainer: backwardCodeTextNode }),
+      isCollapsed: false,
+      rangeCount: 1,
+      toString: () => '![Badge]\u00A0(url)',
+    };
+    for (const listener of copyListeners) {
+      listener({
+        clipboardData: {
+          setData(_mime: string, text: string) {
+            copiedText = text;
+          },
+        },
+        preventDefault() {
+          isCopyPrevented = true;
+        },
+      });
+    }
+    expect(isCopyPrevented).toBe(true);
+    expect(copiedText).toBe('![Badge] (url)');
+
+    // Cross-element selection (`commonAncestorContainer` outside `.code-pre`) is left untouched even if `anchorNode` is inside `.code-pre`:
+    copiedText = undefined;
+    isCopyPrevented = false;
+    activeSelection = {
+      anchorNode: backwardCodeTextNode,
+      getRangeAt: () => ({ commonAncestorContainer: outsideElement }),
+      isCollapsed: false,
+      rangeCount: 1,
+      toString: () => 'Code\u00A0and\u00A0prose',
+    };
+    for (const listener of copyListeners) {
+      listener({
+        clipboardData: {
+          setData(_mime: string, text: string) {
+            copiedText = text;
+          },
+        },
+        preventDefault() {
+          isCopyPrevented = true;
+        },
+      });
+    }
+    expect(isCopyPrevented).toBe(false);
+    expect(copiedText).toBeUndefined();
   });
 });

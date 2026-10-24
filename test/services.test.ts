@@ -24,10 +24,12 @@ import {
   resolveServiceRedirectUrl,
 } from '@/services/fetcher';
 import {
+  bucketSeries,
   buildPackageVersion,
   buildTrailingSeriesSpecials,
   compareTrailingWindows,
   createRatingMetric,
+  createScorecardMetric,
   createScoreMetric,
   createVersionMetric,
   formatBytes,
@@ -41,10 +43,12 @@ import {
   formatSpdxKey,
   formatVersion,
   readDateKeyedSeries,
+  readScorecardCheckScores,
   readStarHistogram,
   toFiniteNumber,
 } from '@/services/metrics';
 import { resolveIcon } from '@/svg/icons';
+import { MAX_BARS_POINTS } from '@/svg/renderer';
 import type {
   Env,
   ResolvedServiceMetric,
@@ -191,6 +195,19 @@ async function resolvePathMetric(
   return resolveServiceMetric(parseServiceRequest(path), env);
 }
 
+/** Resolve `count` sequential `/badge/npm/<prefix>-<i>/v` metrics in FIFO cache order. */
+async function resolveSequentialNpmMetrics(
+  prefix: string,
+  count: number,
+  index = 0
+): Promise<void> {
+  if (index >= count) {
+    return;
+  }
+  await resolvePathMetric(`/badge/npm/${prefix}-${index}/v`);
+  return resolveSequentialNpmMetrics(prefix, count, index + 1);
+}
+
 /** Resolve a service badge path and summarize it as `label: value`. */
 async function describeMetric(path: string, env: Env = TEST_ENV): Promise<string> {
   const { result } = await resolvePathMetric(path, env);
@@ -228,20 +245,39 @@ function buildMetricApiUrl(service: string, metric: string, owner: string, targe
 // ----------------------------------------- MAIN ----------------------------------------
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   resetUpstreamCaches();
 });
 
 describe('service registry integrity', () => {
-  it('resolves every metric default icon and every effective metric alias target', () => {
+  it('resolves every metric default icon, redirect URL, and effective metric alias target across SERVICES_CONFIG', () => {
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
+      const owner = service.route.owner ? 'example' : undefined;
+      const sampleSegment =
+        service.route.target.pattern && !service.route.target.pattern.test('example')
+          ? '12345'
+          : 'example';
+      const target = Array.from(
+        { length: service.route.target.minSegments ?? 1 },
+        () => sampleSegment
+      ).join('/');
       for (const [metricKey, metric] of Object.entries(service.metrics)) {
         expect(resolveIcon(metric.defaultIcon), `${key}/${metricKey} icon`).toBeDefined();
+        const redirectUrl = resolveServiceRedirectUrl({
+          metric: metricKey,
+          owner,
+          service: key,
+          target,
+        });
+        expect(redirectUrl, `${key}/${metricKey} redirect`).toMatch(/^https:\/\//);
+        expect(redirectUrl, `${key}/${metricKey} unexpanded placeholder`).not.toMatch(/[{}]/);
       }
-      for (const [alias, target] of listServiceMetricAliases(service)) {
-        expect(Object.hasOwn(service.metrics, target), `${key} alias ${alias}`).toBe(true);
+      for (const [alias, canonical] of listServiceMetricAliases(service)) {
+        expect(Object.hasOwn(service.metrics, canonical), `${key} alias ${alias}`).toBe(true);
         expect(Object.hasOwn(service.metrics, alias), `${key} alias ${alias} shadowed`).toBe(false);
+        expect(
+          resolveServiceRedirectUrl({ metric: alias, owner, service: key, target }),
+          `${key} alias ${alias} redirect`
+        ).toBe(resolveServiceRedirectUrl({ metric: canonical, owner, service: key, target }));
       }
     }
   });
@@ -372,7 +408,7 @@ describe('endpoint helpers', () => {
   });
 });
 
-describe('existing service presets', () => {
+describe('core forge & registry presets (GitHub, PyPI, npm, Open VSX, crates.io, Docker Hub)', () => {
   it('resolves GitHub repository metrics for any owner via REST when GITHUB_TOKEN is unset', async () => {
     const requestedUrls = mockUpstream({
       '/repos/honojs/hono': {
@@ -765,7 +801,7 @@ describe('existing service presets', () => {
   });
 });
 
-describe('new service presets', () => {
+describe('forge, registry & CDN presets (AUR, Codeberg, GitLab, Hex.pm, pub.dev, RubyGems, NuGet, Packagist, JSR, jsDelivr)', () => {
   it('resolves AUR package metrics, flags out-of-date packages, and reports missing packages', async () => {
     mockUpstream({
       'arg[]=missing': { resultcount: 0, results: [] },
@@ -1176,6 +1212,26 @@ describe('streaming JSON key extractor', () => {
   it('reports non-object info values as not found', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{"info":"oops"}'));
     expect(await describeMetric('/badge/pypi/odd/v')).toBe('PyPI: not found');
+  });
+
+  it('rejects single-chunk oversized JSON keys before slicing and distinguishes non-object root JSON (404) from malformed bodies (502) (regressions: unbounded scanKeyString slice, root-non-object extractKeys conflated with parse error)', async () => {
+    const oversizedKeyPayload = `{"${'k'.repeat(2048)}":1,"info":{"version":"1.0.0"}}`;
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(oversizedKeyPayload))
+      .mockResolvedValueOnce(new Response('null'))
+      .mockResolvedValueOnce(new Response('<html>bad gateway</html>'));
+
+    const oversizedRes = await resolvePathMetric('/badge/pypi/oversized-key/v');
+    expect(oversizedRes.status).toBe(502);
+    expect(oversizedRes.result.value).toBe('api error');
+
+    const rootNullRes = await resolvePathMetric('/badge/pypi/root-null/v');
+    expect(rootNullRes.status).toBe(404);
+    expect(rootNullRes.result.value).toBe('not found');
+
+    const malformedRes = await resolvePathMetric('/badge/pypi/malformed-html/v');
+    expect(malformedRes.status).toBe(502);
+    expect(malformedRes.result.value).toBe('api error');
   });
 });
 
@@ -1635,6 +1691,37 @@ describe('upstream caching & redirects', () => {
     await describeMetric('/badge/gh/honojs/hono/stars', AUTHENTICATED_GH_ENV);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
+
+  it('evicts least-recently-used MEMORY_CACHE entries by entry count (> 256) and by total payload byte weight (> 4 MB)', async () => {
+    let fetchCount = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      fetchCount += 1;
+      const url = resolveFetchUrl(input);
+      const isHeavy = url.includes('heavy-');
+      const version = isHeavy ? `1.0.0-${'x'.repeat(600_000)}` : `1.0.${fetchCount}`;
+      return Promise.resolve(Response.json({ version }));
+    });
+
+    // [1] Entry-count bound (`MAX_MEMORY_CACHE_ENTRIES = 256`); inserting 257 distinct packages sequentially evicts `pkg-0`:
+    await resolveSequentialNpmMetrics('pkg', 257);
+    expect(fetchCount).toBe(257);
+
+    // Recent entry `pkg-256` stays cached in memory (no extra fetch), whereas evicted `pkg-0` refetches:
+    await resolvePathMetric('/badge/npm/pkg-256/v');
+    expect(fetchCount).toBe(257);
+    await resolvePathMetric('/badge/npm/pkg-0/v');
+    expect(fetchCount).toBe(258);
+
+    // [2] Byte-weight bound (`MAX_MEMORY_CACHE_WEIGHT = 4_000_000`); eight ~600 KB projections (~4.8 MB) evict `heavy-0`:
+    resetUpstreamCaches();
+    fetchCount = 0;
+    await resolveSequentialNpmMetrics('heavy', 8);
+    expect(fetchCount).toBe(8);
+    await resolvePathMetric('/badge/npm/heavy-7/v');
+    expect(fetchCount).toBe(8);
+    await resolvePathMetric('/badge/npm/heavy-0/v');
+    expect(fetchCount).toBe(9);
+  });
 });
 
 describe('metric formatting helpers', () => {
@@ -1656,13 +1743,54 @@ describe('metric formatting helpers', () => {
     expect(formatCompactNumber(18.663753)).toBe('18.66');
   });
 
-  it('formats relative dates from ISO timestamps', () => {
+  it('formats relative dates from ISO timestamps including multi-year ages and invalid inputs', () => {
     const referenceTime = Date.parse('2026-10-17T12:00:00Z');
     expect(formatRelativeDate('2026-10-17T08:00:00Z', referenceTime)).toBe('today');
     expect(formatRelativeDate('2026-10-16T08:00:00Z', referenceTime)).toBe('yesterday');
     expect(formatRelativeDate('2026-10-13T08:00:00Z', referenceTime)).toBe('4d ago');
     expect(formatRelativeDate('2026-09-25T08:00:00Z', referenceTime)).toBe('3w ago');
     expect(formatRelativeDate('2026-06-10T08:00:00Z', referenceTime)).toBe('4mo ago');
+    expect(formatRelativeDate('2024-09-01T08:00:00Z', referenceTime)).toBe('2y ago');
+    expect(formatRelativeDate(undefined, referenceTime)).toBe('n/a');
+    expect(formatRelativeDate('not-a-date', referenceTime)).toBe('n/a');
+  });
+
+  it('guards non-string SPDX keys, buckets uneven series by mean without sawtooth inflation, and clamps partial Scorecard pass steps below total (regressions: formatSpdxKey crash, bucketSeries uneven sum sawtooth, 17/18 Scorecard checks rounded to 10/10)', () => {
+    expect(formatSpdxKey(42)).toBeUndefined();
+    expect(formatSpdxKey(undefined)).toBeUndefined();
+
+    // A constant series `[10, 10, ..., 10]` of length 15 bucketed into 10 buckets (uneven 1- vs 2-item spans) must stay flat `[10, ..., 10]`:
+    const flat15 = Array.from({ length: 15 }, () => 10);
+    expect(bucketSeries(flat15, 10)).toEqual(Array.from({ length: 10 }, () => 10));
+
+    // Partial pass (`17` passing out of `18` checks) clamps `done` to `9/10` instead of `10/10`:
+    const endpoint = createEndpoint({
+      api: 'https://example.test/{target}',
+      page: 'https://example.test/{target}',
+      project: (raw) =>
+        typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : undefined,
+      ttl: CACHE_TTL.default,
+    });
+    const scorecardMetric = createScorecardMetric(
+      endpoint,
+      (data) => data.score,
+      (data) => readScorecardCheckScores(data.checks)
+    );
+    const checks = Array.from({ length: 18 }, (_unused, index) => ({
+      score: index === 0 ? 5 : 10,
+    }));
+    const partialResult = scorecardMetric.transform(
+      { checks, score: 9.2 },
+      { owner: '', target: 'pkg' }
+    );
+    expect(partialResult?.specials?.steps).toEqual({ done: 9, total: 10, type: 'steps' });
+
+    const perfectChecks = Array.from({ length: 18 }, () => ({ score: 10 }));
+    const perfectResult = scorecardMetric.transform(
+      { checks: perfectChecks, score: 10 },
+      { owner: '', target: 'pkg' }
+    );
+    expect(perfectResult?.specials?.steps).toEqual({ done: 10, total: 10, type: 'steps' });
   });
 
   it('prefixes numeric versions with v exactly once and reports missing values', () => {
@@ -1748,7 +1876,7 @@ describe('metric formatting helpers', () => {
   });
 });
 
-describe('shared service refactors', () => {
+describe('shared forge builders & global metric aliases', () => {
   it('resolves the Codeberg prs metric from open_pr_counter and accepts the global pulls alias', async () => {
     mockUpstream({
       'codeberg.org/api/v1/repos/forgejo/forgejo': { open_pr_counter: 312, stars_count: 5671 },
@@ -1850,7 +1978,7 @@ describe('segment validation & query encoding', () => {
   });
 });
 
-describe('added service presets', () => {
+describe('developer, AI, quality & app presets (Homebrew, Hugging Face, docs.rs, Modrinth, AMO, Flathub, CRAN, Scorecard, Coverage, Discord, Bundlephobia, Go, WordPress)', () => {
   it('resolves Homebrew formula and cask metrics, summing option variants', async () => {
     mockUpstream({
       'formulae.brew.sh/api/cask/firefox.json': {
@@ -3186,7 +3314,9 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(resolvePathRedirect('/badge/debian/curl/v')).toBe('https://tracker.debian.org/pkg/curl');
     expect(requestedUrls).toContain('https://api.anaconda.org/package/conda-forge/numpy');
   });
+});
 
+describe('inline widget & preset regressions', () => {
   it('derives automatic inline widgets from single-request upstream series, histograms, checks, and ratios', async () => {
     mockUpstream({
       'api.securityscorecards.dev/projects/github.com/ossf/scorecard': {
@@ -3362,5 +3492,104 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(await describeMetric('/badge/cpan/-Foo/v')).toBe('cpan: invalid name');
     expect(await describeMetric('/badge/bluesky/::/followers')).toBe('bluesky: invalid name');
     expect(fetchSpy).toHaveBeenCalledTimes(priorCalls);
+  });
+
+  it('preserves full 30-day npm dl sums on young packages, aligns npm dy delta windows, buckets crates/jsDelivr/PyPI bars to MAX_BARS_POINTS, prefers deeper PyPI license classifiers, and sorts empty-date Terraform versions deterministically (regressions: npm <60d half-sum, npm dy mismatched delta window, truncated 10-bar histograms, PyPI parent license classifier, non-transitive Terraform sort)', async () => {
+    const youngDownloads = Array.from({ length: 20 }, (_unused, index) => ({
+      day: `2026-10-${String(index + 1).padStart(2, '0')}`,
+      downloads: index < 10 ? 50 : 150,
+    }));
+    const fullYearDownloads = Array.from({ length: 365 }, (_unused, index) => ({
+      day: `2026-01-${String((index % 28) + 1).padStart(2, '0')}`,
+      downloads: index < 335 ? 10 : 20,
+    }));
+    const cratesNinetyDays = Array.from({ length: 90 }, (_unused, index) => ({
+      date: `2026-${String(Math.floor(index / 30) + 7).padStart(2, '0')}-${String((index % 30) + 1).padStart(2, '0')}`,
+      downloads: (index + 1) * 10,
+    }));
+    const jsDelivrDates: Record<string, number> = {};
+    for (let i = 0; i < 30; i += 1) {
+      jsDelivrDates[`2026-09-${String(i + 1).padStart(2, '0')}`] = (i + 1) * 5;
+    }
+
+    mockUpstream({
+      'api.npmjs.org/downloads/range/last-year/full-pkg': { downloads: fullYearDownloads },
+      'api.npmjs.org/downloads/range/last-year/young-pkg': { downloads: youngDownloads },
+      'clickpy.clickhouse.com/dashboard/rich': {
+        data: [
+          {
+            data: [100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380],
+            id: 'downloads_over_time',
+          },
+          { data: { total: 45_000_000 }, id: 'summary' },
+        ],
+      },
+      'crates.io/api/v1/crates/tokio/downloads': {
+        meta: { extra_downloads: cratesNinetyDays },
+        version_downloads: [],
+      },
+      'data.jsdelivr.com/v1/stats/packages/npm/preact?period=month': {
+        hits: { dates: jsDelivrDates, total: 2325 },
+      },
+      'pypi.org/pypi/classifier-pkg/json': {
+        info: {
+          classifiers: ['License :: OSI Approved :: MIT License', 'License :: OSI Approved'],
+          version: '1.0.0',
+        },
+      },
+      'registry.terraform.io/v2/providers/hashicorp/random?include=provider-versions': {
+        data: { attributes: { downloads: 1200 } },
+        included: [
+          { attributes: { downloads: 100, 'published-at': '' } },
+          { attributes: { downloads: 700, 'published-at': '2026-05-01T00:00:00Z' } },
+          { attributes: { downloads: 400, 'published-at': '2026-04-01T00:00:00Z' } },
+          { attributes: { downloads: 200, 'published-at': '' } },
+        ],
+      },
+    });
+
+    // Young npm package with 20 days of data sums all 20 days (`2k/mo`) instead of `sumWindow` slicing half, and aligns `dl`/`dy` deltas (`1500` vs `500` = `+200%`):
+    const youngDl = await resolvePathMetric('/badge/npm/young-pkg/dl');
+    const youngDy = await resolvePathMetric('/badge/npm/young-pkg/dy');
+    expect(youngDl.result.value).toBe('2k/mo');
+    expect(youngDl.result.specials?.delta).toEqual({ type: 'delta', value: '+200%' });
+    expect(youngDy.result.specials?.delta).toEqual({ type: 'delta', value: '+200%' });
+
+    // Full-year npm `dy` emits 10 bucketed bars and compares trailing 30-day windows cleanly:
+    const fullDy = await resolvePathMetric('/badge/npm/full-pkg/dy');
+    expect(fullDy.result.specials?.bars).toMatchObject({ type: 'bars' });
+    if (fullDy.result.specials?.bars?.type === 'bars') {
+      expect(fullDy.result.specials.bars.values).toHaveLength(MAX_BARS_POINTS);
+    }
+    expect(fullDy.result.specials?.delta).toEqual({ type: 'delta', value: '+100%' });
+
+    // `crates` `dq`, `jsDelivr` `hits`, and `pypi` `dt` bucket full series down to `MAX_BARS_POINTS` instead of truncating the first 10 points:
+    const cratesDq = await resolvePathMetric('/badge/crates/tokio/dq');
+    if (cratesDq.result.specials?.bars?.type === 'bars') {
+      expect(cratesDq.result.specials.bars.values).toHaveLength(MAX_BARS_POINTS);
+      expect(cratesDq.result.specials.bars.values.at(-1)).toBeGreaterThan(800);
+    }
+
+    const jsDelivrHits = await resolvePathMetric('/badge/jsdelivr/preact/hits');
+    if (jsDelivrHits.result.specials?.bars?.type === 'bars') {
+      expect(jsDelivrHits.result.specials.bars.values).toHaveLength(MAX_BARS_POINTS);
+      expect(jsDelivrHits.result.specials.bars.values.at(-1)).toBeGreaterThan(130);
+    }
+
+    const pypiDt = await resolvePathMetric('/badge/pypi/rich/dt');
+    if (pypiDt.result.specials?.bars?.type === 'bars') {
+      expect(pypiDt.result.specials.bars.values).toHaveLength(MAX_BARS_POINTS);
+    }
+
+    // `pypi` prefers deeper `License :: OSI Approved :: MIT License` over trailing generic `License :: OSI Approved`:
+    expect(await describeMetric('/badge/pypi/classifier-pkg/license')).toBe('License: MIT License');
+
+    // `tf-provider` sorts undated included versions before dated ones deterministically (`[100, 200, 400, 700]`):
+    const tfProviderDt = await resolvePathMetric('/badge/tf-provider/hashicorp/random/dt');
+    expect(tfProviderDt.result.value).toBe('1.2k');
+    expect(tfProviderDt.result.specials?.sparkline).toEqual({
+      type: 'sparkline',
+      values: [100, 200, 400, 700],
+    });
   });
 });

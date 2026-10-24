@@ -24,7 +24,7 @@ export function QuotesSection(): HtmlFragment {
   return (
     <section class="doc-section" id="quotes">
       <SectionHeader
-        description={`Auto-wrapping quote cards in ${formatBacktickList(QUOTE_LAYOUT_TOKENS, ' or ')} layouts with customizable width, text size, and accent color.`}
+        description={`Auto-wrapping quote cards in ${formatBacktickList(QUOTE_LAYOUT_TOKENS, 'or')} layouts with customizable width, text size, and accent color.`}
         routes={['/quote/:author/:text', '/quote/:text', '/quote?text=:text&author=:author']}
         title="Styled README Quote Cards"
       />

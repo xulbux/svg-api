@@ -211,12 +211,12 @@ export interface ServiceOwnerSegment {
 /** Target path segment(s) of a service preset route. */
 export interface ServiceTargetSegment {
   /**
-   * Maximum number of `/`-separated path segments the target may span (defaults to `1`); Each one
-   * is validated individually (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`). Values
-   * above `1` combined with an owner require `isRequired: true`, so the owner stays unambiguous.
+   * Maximum number of `/`-separated path segments the target may span; Each segment is validated
+   * individually (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`). Multi-segment targets
+   * combined with an owner require `isRequired: true`, so the owner stays unambiguous.
    */
   maxSegments?: number;
-  /** Minimum number of `/`-separated path segments the target must span (defaults to `1`). */
+  /** Minimum number of `/`-separated path segments the target must span. */
   minSegments?: number;
   /**
    * Stricter pattern every target segment must also match on top of the shared safe segment rule

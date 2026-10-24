@@ -8,6 +8,7 @@ import {
   buildButtonVariantCards,
   BUTTON_USE_CASE_CARDS,
 } from '@/site/catalog/buttons';
+import { listRouteAliases } from '@/site/catalog/shared';
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
@@ -21,11 +22,18 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="buttons">` JSX fragment.
  */
 export function ButtonsSection(): HtmlFragment {
+  const prefixes = ['button', ...listRouteAliases('button')];
+  const routes: string[] = [];
+  for (const suffix of [':label', ':label/:value']) {
+    for (const prefix of prefixes) {
+      routes.push(`/${prefix}/${suffix}`);
+    }
+  }
   return (
     <section class="doc-section" id="buttons">
       <SectionHeader
         description={`Action buttons with size presets (${formatBacktickList(SIZE_TOKENS)}), leading and trailing icons, animations, and split compartments.`}
-        routes={['/button/:label', '/btn/:label', '/button/:label/:value', '/btn/:label/:value']}
+        routes={routes}
         title="Interactive CTA Buttons"
       />
       <ParamTable rows={buildButtonParamRows()} label="Button query parameters" />

@@ -306,10 +306,11 @@ function paintFilledPath(
   pathData: string,
   fillColor: RgbaTuple,
   offsetX = 0,
-  offsetY = 0
+  offsetY = 0,
+  scale = 1
 ): void {
   const { edges, maxX, maxY, minX, minY } = collectFilledPathEdges(
-    flattenSvgPath(pathData, offsetX, offsetY)
+    flattenSvgPath(pathData, offsetX, offsetY, scale)
   );
   if (edges.length === 0) {
     return;
@@ -486,6 +487,40 @@ function paintStrokedGroup(
   }
 }
 
+/** Paint a self-closing `<path>` element with optional `translate(...)` and `scale(...)` transforms. */
+function paintPathElement(
+  canvas: Float32Array,
+  width: number,
+  height: number,
+  attrs: Readonly<Record<string, string>>,
+  gradients: ReadonlyMap<string, GradientDef>
+): void {
+  if (!attrs.d) {
+    return;
+  }
+  const fillColor = evaluatePaint(attrs.fill ?? '#FFFFFF', gradients, 0, 0);
+  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+  if (!fillColor || fillOpacity <= 0) {
+    return;
+  }
+  const transform = attrs.transform ?? '';
+  const translateMatch = TRANSLATE_RX.exec(transform);
+  const scaleMatch = SCALE_RX.exec(transform);
+  const offsetX = Number.parseFloat(translateMatch?.groups?.tx ?? '0');
+  const offsetY = Number.parseFloat(translateMatch?.groups?.ty ?? '0');
+  const scale = Number.parseFloat(scaleMatch?.groups?.scale ?? '1');
+  paintFilledPath(
+    canvas,
+    width,
+    height,
+    attrs.d,
+    [fillColor[0], fillColor[1], fillColor[2], fillColor[3] * fillOpacity],
+    offsetX,
+    offsetY,
+    scale
+  );
+}
+
 /** Paint a single matched SVG body primitive (`<g>`, `<rect>`, or `<path>`) onto `canvas`. */
 function paintBodyPrimitive(
   canvas: Float32Array,
@@ -509,23 +544,8 @@ function paintBodyPrimitive(
   const attrs = parseXmlAttrs(selfTag);
   if (selfTag.startsWith('<rect')) {
     paintRect(canvas, width, height, attrs, gradients);
-  } else if (selfTag.startsWith('<path') && attrs.d) {
-    const fillColor = evaluatePaint(attrs.fill ?? '#FFFFFF', gradients, 0, 0);
-    const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
-    if (fillColor && fillOpacity > 0) {
-      const translateMatch = TRANSLATE_RX.exec(attrs.transform ?? '');
-      const offsetX = Number.parseFloat(translateMatch?.groups?.tx ?? '0');
-      const offsetY = Number.parseFloat(translateMatch?.groups?.ty ?? '0');
-      paintFilledPath(
-        canvas,
-        width,
-        height,
-        attrs.d,
-        [fillColor[0], fillColor[1], fillColor[2], fillColor[3] * fillOpacity],
-        offsetX,
-        offsetY
-      );
-    }
+  } else if (selfTag.startsWith('<path')) {
+    paintPathElement(canvas, width, height, attrs, gradients);
   }
 }
 

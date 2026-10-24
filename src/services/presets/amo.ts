@@ -2,7 +2,7 @@
  * Firefox Add-ons service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
 import {
   createCountMetric,
   createDownloadsMetric,
@@ -36,9 +36,9 @@ function projectAmoAddon(data: unknown): AmoAddonProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const currentVersion = isJsonObject(data.current_version) ? data.current_version : undefined;
-  const license = isJsonObject(currentVersion?.license) ? currentVersion.license : undefined;
-  const ratings = isJsonObject(data.ratings) ? data.ratings : undefined;
+  const currentVersion = asJsonObject(data.current_version);
+  const license = asJsonObject(currentVersion?.license);
+  const ratings = asJsonObject(data.ratings);
   return {
     dailyUsers: readFiniteNumber(data.average_daily_users),
     license: readText(license?.slug) || (license?.is_custom === true ? 'custom' : undefined),

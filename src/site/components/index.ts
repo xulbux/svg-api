@@ -12,7 +12,7 @@ export { HeaderNav } from '@/site/components/HeaderNav';
 export { IconPickerPopover } from '@/site/components/IconPickerPopover';
 export { getHeadScriptBody, PageLayout, renderFaviconSvg } from '@/site/components/PageLayout';
 export { AliasList, ParamTable, renderParamTable } from '@/site/components/ParamTable';
-export { RoutePills, SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
+export { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 export { CardGrid, ShowcaseCard, splitTrailingParenthetical } from '@/site/components/ShowcaseCard';
 export { Sidebar } from '@/site/components/Sidebar';
 export {

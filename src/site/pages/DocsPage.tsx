@@ -48,23 +48,10 @@ const PAGE_SECTIONS: Readonly<Record<DocsPageSlug, () => HtmlFragment>> = {
 /** Memoized documentation pages keyed by slug. */
 const DOCS_HTML_CACHE = new Map<DocsPageSlug, string>();
 
-// -------------------------------------- PUBLIC API -------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Check whether a raw slug is a valid documentation section (`/docs/:section`; The overview lives at `/docs`).
- * @param slug   Raw, lowercased `/docs/:section` slug.
- * @returns `true` when `slug` is a known `DocsSectionSlug`.
- */
-export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
-  return slug !== 'overview' && Object.hasOwn(PAGE_SECTIONS, slug);
-}
-
-/**
- * Render a documentation page (`<PageLayout />` wrapping the section and `<DocsPager />`) as a JSX component.
- * @param props   Documentation page props (`slug`).
- * @returns Complete `<PageLayout />` JSX fragment.
- */
-export function DocsPage(props: DocsPageProps): HtmlFragment {
+/** Render a documentation page (`<PageLayout />` wrapping the section and `<DocsPager />`) as a JSX component. */
+function DocsPage(props: DocsPageProps): HtmlFragment {
   const slug = props.slug ?? 'overview';
   const meta = getDocsPageMeta(slug);
   const canonicalPath = buildDocsPath(slug);
@@ -82,6 +69,17 @@ export function DocsPage(props: DocsPageProps): HtmlFragment {
       <DocsPager slug={slug} />
     </PageLayout>
   );
+}
+
+// -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Check whether a raw slug is a valid documentation section (`/docs/:section`; The overview lives at `/docs`).
+ * @param slug   Raw, lowercased `/docs/:section` slug.
+ * @returns `true` when `slug` is a known `DocsSectionSlug`.
+ */
+export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
+  return slug !== 'overview' && Object.hasOwn(PAGE_SECTIONS, slug);
 }
 
 /**

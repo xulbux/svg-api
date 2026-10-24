@@ -23,6 +23,7 @@ import {
   readText,
   sumSeries,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -38,9 +39,9 @@ interface NpmLatestProjection {
 
 /** Projected npm Downloads API payload (`api.npmjs.org/downloads/range/last-year/:pkg`). */
 interface NpmDownloadsProjection {
-  /** 12-month download series (30-day buckets). */
+  /** Bucketed annual download histogram. */
   bars12m?: number[];
-  /** 10-bar 30-day download histogram. */
+  /** Bucketed 30-day download histogram. */
   bars30d?: number[];
   /** Current window sum for the `dl` delta comparison. */
   currDl?: number;
@@ -52,11 +53,13 @@ interface NpmDownloadsProjection {
   dy?: number;
   /** Prior window sum for the `dl` delta comparison. */
   prevDl?: number;
-  /** Downloads in the prior 7-day window (days -14 to -8). */
+  /** Downloads in the prior 7-day window. */
   prevDw?: number;
-  /** 15-point 30-day download series (2-day buckets). */
+  /** Bucketed annual download sparkline series. */
+  series12m?: number[];
+  /** Bucketed 30-day download sparkline series. */
   series30d?: number[];
-  /** 7-day daily download series. */
+  /** Trailing 7-day daily download series. */
   series7d?: number[];
 }
 
@@ -147,20 +150,20 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
   if (daily.length === 0) {
     return undefined;
   }
-  const totalDays = daily.length;
   const recent30d = daily.slice(-30);
   const [currDl, prevDl] = compareTrailingWindows(daily, 30, 2);
   const [dw, prevDw] = compareTrailingWindows(daily, 7, 7);
   return {
-    bars12m: bucketSeries(daily, 12),
-    bars30d: bucketSeries(recent30d, 10),
+    bars12m: bucketSeries(daily, MAX_BARS_POINTS),
+    bars30d: bucketSeries(recent30d, MAX_BARS_POINTS),
     currDl,
-    dl: currDl ?? sumSeries(daily, totalDays - 30),
-    dw: dw ?? sumSeries(daily, totalDays - 7),
+    dl: sumSeries(recent30d),
+    dw: dw ?? sumSeries(daily, daily.length - 7),
     dy: sumSeries(daily),
     prevDl,
     prevDw,
     series7d: daily.slice(-7),
+    series12m: bucketSeries(daily, 12),
     series30d: bucketSeries(recent30d, 15),
   };
 }
@@ -226,9 +229,9 @@ export const NPM_SERVICE = defineService({
       (stats) =>
         buildSeriesSpecials({
           barsValues: stats.bars12m,
-          current: stats.dl,
+          current: stats.currDl,
           previous: stats.prevDl,
-          sparklineValues: stats.bars12m,
+          sparklineValues: stats.series12m,
         })
     ),
     license: createLicenseMetric(NPM_LATEST_ENDPOINT, (latest) => latest.license),

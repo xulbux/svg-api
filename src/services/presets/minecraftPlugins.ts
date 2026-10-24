@@ -2,7 +2,13 @@
  * Minecraft plugin service presets – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
+import {
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  pickFields,
+} from '@/services/endpoint';
 import {
   STARS,
   createCommunityMetric,
@@ -76,8 +82,8 @@ const RESOURCE_ID_RX = /^\d{1,10}$/;
 
 /** Read the Hangar license name, falling back to its type (`GPL`, `MIT`, …). */
 function readHangarLicense(settings: unknown): string | undefined {
-  const license = isJsonObject(settings) ? settings.license : undefined;
-  if (!isJsonObject(license)) {
+  const license = asJsonObject(asJsonObject(settings)?.license);
+  if (!license) {
     return undefined;
   }
   return readText(license.name) ?? readText(license.type);
@@ -88,7 +94,7 @@ function projectHangarProject(data: unknown): HangarProjectProjection | undefine
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const stats = isJsonObject(data.stats) ? data.stats : undefined;
+  const stats = asJsonObject(data.stats);
   return {
     downloads: readFiniteNumber(stats?.downloads),
     license: readHangarLicense(data.settings),

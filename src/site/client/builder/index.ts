@@ -15,6 +15,7 @@ import { createKindSyncController } from '@/site/client/builder/kindSync';
 import { createBuilderOutputController } from '@/site/client/builder/output';
 import { bindSelects, syncSelects } from '@/site/client/builder/select';
 import { createStackCatalogController } from '@/site/client/builder/stackCatalog';
+import type { StackCatalogController } from '@/site/client/builder/stackCatalog';
 import { createTypingLinesController } from '@/site/client/builder/typingLines';
 import type { BuilderField, BuilderSchema, BuilderState } from '@/types';
 
@@ -29,7 +30,16 @@ function initBuilderDom(): void {
     return;
   }
   const form = formElement;
-  const schema = JSON.parse(schemaElement.textContent ?? '{}') as BuilderSchema;
+  let parsedSchema: BuilderSchema | undefined = undefined;
+  try {
+    parsedSchema = JSON.parse(schemaElement.textContent ?? '{}') as BuilderSchema;
+  } catch {
+    return;
+  }
+  if (!parsedSchema || !Array.isArray(parsedSchema.fields)) {
+    return;
+  }
+  const schema = parsedSchema;
   const hasPresetIcon = schema.fields.some((field) => field.hasPresetValue === true);
   const previewImage = document.getElementById('builder-preview') as HTMLImageElement | null;
   const previewPlaceholder = document.getElementById('builder-placeholder');
@@ -65,8 +75,7 @@ function initBuilderDom(): void {
     return state;
   }
 
-  let stackCatalogController: ReturnType<typeof createStackCatalogController> | undefined =
-    undefined;
+  let stackCatalogController: StackCatalogController | undefined = undefined;
 
   const typingLinesController = createTypingLinesController({
     addButton: document.getElementById('typing-line-add') as HTMLButtonElement | null,

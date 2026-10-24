@@ -94,7 +94,8 @@
 
 .builder-input:focus-visible {
   border-color: var(--c-focus);
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
   box-shadow: 0 0 0 3px var(--c-hover);
 }
 
@@ -314,7 +315,8 @@
   font: inherit;
   color: var(--c-text-1);
   background: transparent;
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
 }
 
 .select-search {
@@ -356,7 +358,10 @@
 .select-option:focus-visible {
   color: var(--c-text-1);
   background: var(--c-hover);
-  outline: none;
+}
+
+.select-option:focus-visible {
+  outline-offset: -2px;
 }
 
 .select-option[aria-selected='true'] {
@@ -764,7 +769,7 @@
 
 .icon-picker-tab input:focus-visible + span {
   outline: 2px solid var(--c-focus);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 /* Wrap long URLs instead of scrolling (the builder shows a single snippet): */
@@ -1223,7 +1228,8 @@
 .typing-line-handle:focus-visible {
   border-color: var(--c-focus);
   color: var(--c-text-1);
-  outline: none;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
   box-shadow: 0 0 0 3px var(--c-hover);
 }
 

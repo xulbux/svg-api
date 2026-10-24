@@ -8,10 +8,10 @@
 
 import {
   CACHE_TTL,
+  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
-  isJsonObject,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -23,6 +23,7 @@ import {
   readText,
   toFiniteNumber,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { MetricResult, RawCount, ServiceRouteParams } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -87,17 +88,20 @@ function normalizePyPiName(pkg: string): string {
   return pkg.replace(PEP503_SEPARATOR_RX, '-').toLowerCase();
 }
 
-/** Read the most specific level of the last `License ::` trove classifier (`MIT License`). */
+/** Read the most specific `License ::` trove classifier level (`MIT License`). */
 function readLicenseClassifier(classifiers: unknown): string | undefined {
   if (!Array.isArray(classifiers)) {
     return undefined;
   }
   let license: string | undefined = undefined;
+  let bestDepth = 0;
   for (const classifier of classifiers) {
     if (typeof classifier === 'string' && classifier.startsWith(LICENSE_CLASSIFIER_PREFIX)) {
-      license = classifier.slice(
-        classifier.lastIndexOf(CLASSIFIER_SEPARATOR) + CLASSIFIER_SEPARATOR.length
-      );
+      const parts = classifier.split(CLASSIFIER_SEPARATOR);
+      if (parts.length >= bestDepth) {
+        bestDepth = parts.length;
+        license = parts.at(-1);
+      }
     }
   }
   return license;
@@ -105,8 +109,8 @@ function readLicenseClassifier(classifiers: unknown): string | undefined {
 
 /** Project the PyPI `info` object into the badge fields (the README `description` is dropped). */
 function projectPyPiInfo(data: unknown): PyPiInfoProjection | undefined {
-  const info = isJsonObject(data) ? data.info : undefined;
-  if (!isJsonObject(info)) {
+  const info = asJsonObject(asJsonObject(data)?.info);
+  if (!info) {
     return undefined;
   }
   // Legacy `license` fields sometimes hold the full license text; only short names are usable:
@@ -139,7 +143,7 @@ function readClickPySeries(raw: unknown): number[] | undefined {
       values.push(parsed);
     }
   }
-  return values.length >= 2 ? values : undefined;
+  return values.length >= MIN_SERIES_POINTS ? values : undefined;
 }
 
 /** Build the read-only ClickPy SQL URL returning all-time, 30-day, prior 30-day, and bucketed downloads (`HAVING count() > 0` yields empty JSON for missing projects). */
@@ -165,10 +169,10 @@ const PYPI_ENDPOINT = createEndpoint({
 const CLICKPY_ENDPOINT = createEndpoint<Partial<ClickPyDownloadsPayload>>({
   api: buildClickPyApiUrl,
   page: buildClickPyPageUrl,
-  project: (data) =>
-    isJsonObject(data) && isJsonObject(data.row_1)
-      ? { row_1: data.row_1 as ClickPyDownloadsRow }
-      : undefined,
+  project: (data) => {
+    const row = asJsonObject(asJsonObject(data)?.row_1);
+    return row ? { row_1: row as ClickPyDownloadsRow } : undefined;
+  },
   ttl: CACHE_TTL.daily,
 });
 
@@ -191,7 +195,7 @@ export const PYPI_SERVICE = defineService({
         const row = stats.row_1;
         const bins30d = readClickPySeries(row?.bins_30d);
         return buildSeriesSpecials({
-          barsValues: bins30d ? bucketSeries(bins30d, 10) : undefined,
+          barsValues: bins30d ? bucketSeries(bins30d, MAX_BARS_POINTS) : undefined,
           current: row?.last_month,
           previous: row?.prev_month,
           sparklineValues: bins30d,
@@ -207,7 +211,7 @@ export const PYPI_SERVICE = defineService({
         const row = stats.row_1;
         const monthly12m = readClickPySeries(row?.monthly_12m);
         return buildSeriesSpecials({
-          barsValues: monthly12m,
+          barsValues: monthly12m ? bucketSeries(monthly12m, MAX_BARS_POINTS) : undefined,
           current: row?.last_month,
           previous: row?.prev_month,
           sparklineValues: monthly12m,

@@ -2,7 +2,13 @@
  * pub.dev service preset – Live upstream metrics and redirect transformations.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  PACKAGE_ROUTE,
+  asJsonObject,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+} from '@/services/endpoint';
 import {
   SCORE,
   SERIES_DELTA_SPECIALS,
@@ -15,6 +21,7 @@ import {
   readText,
   sumSeries,
 } from '@/services/metrics';
+import { MIN_SERIES_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -38,9 +45,14 @@ interface PubScoreProjection {
   prev4w?: number;
   /** Latest 4-week download total. */
   recent4w?: number;
-  /** Chronological 12-week download series. */
+  /** Chronological trailing weekly download series. */
   weeklySeries?: number[];
 }
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Maximum number of trailing weekly download buckets kept in the pub.dev projection. */
+const MAX_PUB_WEEKS = 12;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -49,8 +61,7 @@ function projectPubPackage(data: unknown): PubPackageProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const latest = isJsonObject(data.latest) ? data.latest : undefined;
-  return { version: readText(latest?.version) };
+  return { version: readText(asJsonObject(data.latest)?.version) };
 }
 
 /** Project a pub.dev `/metrics` (or flat `/score`) payload to its score counters and weekly series. */
@@ -58,11 +69,8 @@ function projectPubScore(data: unknown): PubScoreProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const score = isJsonObject(data.score) ? data.score : data;
-  const scorecard = isJsonObject(data.scorecard) ? data.scorecard : undefined;
-  const weeklyDownloads = isJsonObject(scorecard?.weeklyVersionDownloads)
-    ? scorecard.weeklyVersionDownloads
-    : undefined;
+  const score = asJsonObject(data.score) ?? data;
+  const weeklyDownloads = asJsonObject(asJsonObject(data.scorecard)?.weeklyVersionDownloads);
   const rawWeekly = Array.isArray(weeklyDownloads?.totalWeeklyDownloads)
     ? weeklyDownloads.totalWeeklyDownloads
     : undefined;
@@ -75,6 +83,16 @@ function projectPubScore(data: unknown): PubScoreProjection | undefined {
       }
     }
   }
+  let weeklySeries: number[] | undefined = undefined;
+  if (newestFirst.length >= MIN_SERIES_POINTS) {
+    weeklySeries = [];
+    for (let i = Math.min(newestFirst.length, MAX_PUB_WEEKS) - 1; i >= 0; i -= 1) {
+      const count = newestFirst[i];
+      if (count !== undefined) {
+        weeklySeries.push(count);
+      }
+    }
+  }
   return {
     downloadCount30Days: readFiniteNumber(score.downloadCount30Days),
     grantedPoints: readFiniteNumber(score.grantedPoints),
@@ -82,7 +100,7 @@ function projectPubScore(data: unknown): PubScoreProjection | undefined {
     maxPoints: readFiniteNumber(score.maxPoints),
     prev4w: newestFirst.length >= 8 ? sumSeries(newestFirst, 4, 8) : undefined,
     recent4w: newestFirst.length >= 4 ? sumSeries(newestFirst, 0, 4) : undefined,
-    weeklySeries: newestFirst.length >= 2 ? newestFirst.slice(0, 12).toReversed() : undefined,
+    weeklySeries,
   };
 }
 

@@ -5,6 +5,7 @@
 import {
   CACHE_TTL,
   NPM_PACKAGE_ROUTE,
+  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -18,6 +19,7 @@ import {
   readDateKeyedSeries,
   readFiniteNumber,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { MetricEndpoint, MetricPresentation, ServiceMetricConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -53,21 +55,21 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const hits = isJsonObject(data.hits) ? data.hits : data;
-  const prev = isJsonObject(hits?.prev) ? hits.prev : undefined;
-  const total = readFiniteNumber(hits?.total);
+  const hits = asJsonObject(data.hits) ?? data;
+  const prev = asJsonObject(hits.prev);
+  const total = readFiniteNumber(hits.total);
   const prevTotal = readFiniteNumber(prev?.total);
-  const daily = readDateKeyedSeries(hits?.dates);
+  const daily = readDateKeyedSeries(hits.dates);
   let currDelta = total !== undefined && prevTotal !== undefined ? total : undefined;
   let prevDelta = total !== undefined && prevTotal !== undefined ? prevTotal : undefined;
   if (currDelta === undefined) {
     [currDelta, prevDelta] = compareTrailingWindows(daily);
   }
   return {
-    bars: daily.length >= 2 ? bucketSeries(daily, 12) : undefined,
+    bars: daily.length >= MIN_SERIES_POINTS ? bucketSeries(daily, MAX_BARS_POINTS) : undefined,
     currDelta,
     prevDelta,
-    sparkline: daily.length >= 2 ? bucketSeries(daily, 15) : undefined,
+    sparkline: daily.length >= MIN_SERIES_POINTS ? bucketSeries(daily, 15) : undefined,
     total,
   };
 }

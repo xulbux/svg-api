@@ -800,7 +800,7 @@ function describeSpecialElement(special: BadgeSpecialElement, valueText: string)
  * Centers the `height - 2` stroke range vertically inside the `height` box (`startY + 1` to `startY + height - 1`).
  */
 function buildSparklinePoints(
-  values: number[],
+  values: readonly number[],
   startX: number,
   startY: number,
   width: number,
@@ -1168,7 +1168,7 @@ function renderBarWidget(
 }
 
 /** Render a mini vertical bar histogram (sanitized to at most `MAX_BARS_POINTS` finite values), bottom-aligned in its widget box. */
-function renderBarsWidgetMarkup(values: number[], context: SpecialElementContext): string {
+function renderBarsWidgetMarkup(values: readonly number[], context: SpecialElementContext): string {
   const { barGap, barWidth, maxHeight, minHeight } = SPECIAL_WIDGET_GEOMETRY.bars;
   const { maxValue, minValue, range } = computeSeriesBounds(values);
   const bottomY = (context.height + maxHeight) / 2;
@@ -1259,7 +1259,10 @@ function resolveStripTickColor(state: StripTickState, isOnPrimary: boolean): str
 }
 
 /** Render a segmented uptime/health history strip (sanitized to at most `MAX_STRIP_TICKS` valid ticks). */
-function renderStripWidgetMarkup(states: StripTickState[], context: SpecialElementContext): string {
+function renderStripWidgetMarkup(
+  states: readonly StripTickState[],
+  context: SpecialElementContext
+): string {
   const { tickGap, tickHeight, tickWidth } = SPECIAL_WIDGET_GEOMETRY.strip;
   const tickGeometry = `y="${(context.height - tickHeight) / 2}" width="${tickWidth}" height="${tickHeight}" rx="${tickWidth / 2}"`;
   const isAnimated = !isAnimationDisabled(context.animMode);
@@ -1340,7 +1343,7 @@ function renderSparklineGradientDef(isOnPrimary: boolean, color: ThemeColorName)
 
 /** Render an inline trend sparkline with a vertical area gradient fill (its gradient goes into the root `<defs>`). */
 function renderSparklineWidget(
-  values: number[],
+  values: readonly number[],
   context: SpecialElementContext
 ): SpecialElementMarkup {
   const { height: sparkHeight, strokeWidth } = SPECIAL_WIDGET_GEOMETRY.sparkline;

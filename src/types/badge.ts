@@ -41,7 +41,7 @@ export type StripTickState = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8'
 
 /** Inline horizontal capacity/progress bar special element. */
 export interface BarSpecialElement {
-  /** Optional override for whether the rightward shimmer wave is active (`true` by default unless `anim=none`). */
+  /** Optional override for whether the rightward shimmer wave is active. */
   hasPulse?: boolean;
   /** Special element discriminant (`'bar'`). */
   type: 'bar';
@@ -54,7 +54,7 @@ export interface BarsSpecialElement {
   /** Special element discriminant (`'bars'`). */
   type: 'bars';
   /** Numeric bar heights. */
-  values: number[];
+  values: readonly number[];
 }
 
 /** Inline trend delta arrow and readout special element. */
@@ -67,7 +67,7 @@ export interface DeltaSpecialElement {
 
 /** Compact circular ring gauge special element. */
 export interface RingSpecialElement {
-  /** Optional override to enable a subtle pulse on the circular ring gauge (`false` by default). */
+  /** Optional override to enable a subtle pulse on the circular ring gauge. */
   hasPulse?: boolean;
   /** Special element discriminant (`'ring'`). */
   type: 'ring';
@@ -80,7 +80,7 @@ export interface SparklineSpecialElement {
   /** Special element discriminant (`'sparkline'`). */
   type: 'sparkline';
   /** Numeric series points. */
-  values: number[];
+  values: readonly number[];
 }
 
 /** Segmented discrete progress steps special element (`steps:<done>/<total>`). */
@@ -96,7 +96,7 @@ export interface StepsSpecialElement {
 /** Segmented uptime/health history strip special element. */
 export interface StripSpecialElement {
   /** Ordered sequence of vertical status tick states. */
-  states: StripTickState[];
+  states: readonly StripTickState[];
   /** Special element discriminant (`'strip'`). */
   type: 'strip';
 }

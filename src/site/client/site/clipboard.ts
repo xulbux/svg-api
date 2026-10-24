@@ -124,9 +124,12 @@ export function bindCodeCopySanitizer(): void {
     if (!selection || selection.isCollapsed || !event.clipboardData) {
       return;
     }
-    const { anchorNode } = selection;
-    const anchorElement = anchorNode instanceof Element ? anchorNode : anchorNode?.parentElement;
-    if (anchorElement?.closest('.code-pre')) {
+    const container =
+      selection.rangeCount > 0
+        ? selection.getRangeAt(0).commonAncestorContainer
+        : selection.anchorNode;
+    const containerElement = container instanceof Element ? container : container?.parentElement;
+    if (containerElement?.closest('.code-pre')) {
       event.clipboardData.setData('text/plain', selection.toString().replace(NBSP_RX, ' '));
       event.preventDefault();
     }

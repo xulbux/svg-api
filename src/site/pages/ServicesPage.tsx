@@ -5,7 +5,7 @@
 import { SERVICES_CONFIG } from '@/config/services';
 import {
   buildServiceParamRows,
-  SERVICE_PRESET_CARDS,
+  buildServicePresetCards,
   SERVICE_ROUTE_PATTERN,
 } from '@/site/catalog/services';
 import { ParamTable } from '@/site/components/ParamTable';
@@ -29,7 +29,7 @@ export function ServicesSection(): HtmlFragment {
         title="Live Service Badges"
       />
       <SectionSubhead iconSlug="activity" text="Service Preset Examples" />
-      <CardGrid cards={SERVICE_PRESET_CARDS} />
+      <CardGrid cards={buildServicePresetCards()} />
       <SectionSubhead iconSlug="book-open" text="Service Route Reference" />
       <ParamTable rows={buildServiceParamRows()} label="Service preset routes and metrics" />
     </section>

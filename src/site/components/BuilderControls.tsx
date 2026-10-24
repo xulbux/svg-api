@@ -82,20 +82,6 @@ interface SyntaxHelpRow {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Controls that render a single labelable form control (`<label for>`), as opposed to a group of parts. */
-const SINGLE_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderControl>([
-  'number',
-  'text',
-  'textarea',
-]);
-
-/** Controls labeled directly (dropdown and icon triggers, the color radiogroup) instead of as a labeled group. */
-const SELF_LABELED_CONTROL_TYPES: ReadonlySet<BuilderControl> = new Set<BuilderControl>([
-  'color',
-  'icon',
-  'select',
-]);
-
 /** Sublabels for single-select `animScope` values. */
 const SINGLE_ANIM_LABELS: Readonly<Record<string, string>> = {
   single: 'Icon motion',
@@ -123,6 +109,16 @@ const STACK_SYNTAX_HELP_ROWS: readonly SyntaxHelpRow[] = [
 const SEARCHABLE_OPTION_COUNT = 12;
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether `control` renders a single labelable form control (`<label for>`). */
+function isSingleControlType(control: BuilderControl): boolean {
+  return control === 'number' || control === 'text' || control === 'textarea';
+}
+
+/** Check whether `control` labels its own interactive element directly instead of using a group wrapper. */
+function isSelfLabeledControlType(control: BuilderControl): boolean {
+  return control === 'color' || control === 'icon' || control === 'select';
+}
 
 /** Build the DOM ID of a field control or one of its parts (e.g., `'field-icon-left'`). */
 function buildFieldId(field: BuilderField, part?: string): string {
@@ -550,7 +546,7 @@ function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
         .
       </>
     ),
-    id: 'special-syntax-help',
+    id: `${field.id}-syntax-help`,
     rows,
     title: 'Data widget syntax',
   });
@@ -687,7 +683,7 @@ function renderStackGroupsControl(
   return (
     <>
       <div class="stack-toolbar">
-        <div class="builder-tabs stack-mode-tabs" role="tablist" aria-label="Stack input mode">
+        <div class="builder-tabs" role="tablist" aria-label="Stack input mode">
           <button
             type="button"
             class="stack-mode-tab is-active"
@@ -1091,7 +1087,7 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
   const { field, schema } = props;
   const controlId = buildFieldId(field);
   const hintId = field.description ? `${controlId}-hint` : undefined;
-  const isSingleControl = SINGLE_CONTROL_TYPES.has(field.control);
+  const isSingleControl = isSingleControlType(field.control);
   // Fields with a runtime requirement (service owners) get a hidden mark the builder script toggles:
   const requiredMark =
     field.isRequired || field.hasDynamicRequirement ? (
@@ -1115,8 +1111,8 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
       <span class="builder-label-group">
         {labelElement}
         {renderHelpButton(
-          'special-help-trigger',
-          'special-syntax-help',
+          `${field.id}-help-trigger`,
+          `${field.id}-syntax-help`,
           'Data widget syntax help',
           '',
           'start'
@@ -1126,7 +1122,7 @@ export function BuilderFieldView(props: BuilderFieldViewProps): HtmlFragment {
       labelElement
     );
   // Dropdowns and the color radiogroup label themselves; other composite controls are labeled groups:
-  const isGroup = !isSingleControl && !SELF_LABELED_CONTROL_TYPES.has(field.control);
+  const isGroup = !isSingleControl && !isSelfLabeledControlType(field.control);
 
   return (
     <div

@@ -1,9 +1,9 @@
 /**
- * Shared documentation catalog helpers – Shared constants, parameter row factories, variant card builders, and icon count helpers used across the documentation sections.
+ * Shared documentation catalog helpers – Shared constants, parameter row factories, variant card builders, and icon count helpers.
  */
 
-import { THEME_COLOR_NAMES } from '@/config/theme';
-import { ICON_MOTION_TOKENS } from '@/routes/params';
+import { DEFAULT_THEME_COLOR, THEME_COLOR_NAMES } from '@/config/theme';
+import { ANIM_SHEEN_TOKEN, ICON_MOTION_TOKENS } from '@/routes/params';
 import { SVG_ROUTES } from '@/routes/svg';
 import { formatVariantTierSummary, formatVariantValues } from '@/site/glossary';
 import { getIconPickerIndex } from '@/svg/icons';
@@ -14,25 +14,65 @@ import type {
   ParamTableRow,
   ShowcaseCardConfig,
   ShowcaseItem,
+  ThemeColorName,
   VariantDescriptor,
 } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Canonical non-alias endpoint families listed on the `/` homepage and `/docs` overview. */
-export const ENDPOINT_ROUTES: readonly string[] = SVG_ROUTES.filter(
-  (route) => route.aliasOf === undefined
-).map((route) => `/${route.prefix}/*`);
+/** Representative theme color tokens shown in `?color=` and `?dot=` parameter table rows. */
+const SAMPLE_THEME_COLORS: readonly ThemeColorName[] = [
+  DEFAULT_THEME_COLOR,
+  'cyan',
+  'emerald',
+  'rose',
+  'amber',
+];
 
-/** Multi-group tech stack DSL example shared by the `/` homepage and `/docs/stack` previews. */
+/** Multi-group tech stack DSL example shared across documentation previews. */
 export const STACK_EXAMPLE_GROUPS =
   'c,cpp,cs,rust,py,js,ts,java:4|vue,tailwind,unocss,threejs:2;docker,cloudflare|git,vite|figma,pr;linux,raspberrypi,markdown,latex,obsidian,n8n';
 
-/** URL-encoded sample quote text shared by the `/` homepage and `/docs/quotes` previews. */
+/** URL-encoded sample quote text shared across documentation previews. */
 export const ENCODED_CHAOS_QUOTE =
   'Who+says+programmers+are+boring%3F+I+bring+the+humor+to+the+office+while+my+code+brings+the+chaos!';
 
+/** Memoized canonical non-alias endpoint patterns (`undefined` until first requested). */
+let endpointRoutesCache: readonly string[] | undefined = undefined;
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * List (once per isolate) the canonical non-alias endpoint wildcard patterns (`'/<prefix>/*'`).
+ * @returns Canonical endpoint wildcard patterns in route table order.
+ */
+export function getEndpointRoutes(): readonly string[] {
+  if (endpointRoutesCache === undefined) {
+    const routes: string[] = [];
+    for (const route of SVG_ROUTES) {
+      if (route.aliasOf === undefined) {
+        routes.push(`/${route.prefix}/*`);
+      }
+    }
+    endpointRoutesCache = routes;
+  }
+  return endpointRoutesCache;
+}
+
+/**
+ * List all alias route prefixes targeting `canonicalPrefix` in `SVG_ROUTES`.
+ * @param canonicalPrefix   Canonical SVG route prefix (e.g., `'button'`).
+ * @returns Matching alias prefixes in route table order.
+ */
+export function listRouteAliases(canonicalPrefix: string): string[] {
+  const aliases: string[] = [];
+  for (const route of SVG_ROUTES) {
+    if (route.aliasOf === canonicalPrefix) {
+      aliases.push(route.prefix);
+    }
+  }
+  return aliases;
+}
 
 /**
  * Format a numeric range as a parameter table value (`'8 to 256'`).
@@ -44,11 +84,11 @@ export function formatRange(range: NumericRange): string {
 }
 
 /**
- * Format the `?color=` parameter row values.
+ * Format the `?color=` parameter row values from `SAMPLE_THEME_COLORS` and `THEME_COLOR_NAMES`.
  * @returns Formatted color values string.
  */
 export function formatColorValues(): string {
-  return `indigo | cyan | emerald | rose | amber | … (${THEME_COLOR_NAMES.length} colors)`;
+  return `${SAMPLE_THEME_COLORS.join(' | ')} | … (${THEME_COLOR_NAMES.length} colors)`;
 }
 
 /**
@@ -110,7 +150,7 @@ export function buildAnimParamRow(): ParamTableRow {
     description:
       'Surface sheen, one icon motion (auto picks a motion per icon; default keeps icons static), a per-icon <left>,<right> pair (e.g., shake,nudge or none,nudge), or sheen combined with either; none also stops widget and dot animations.',
     name: '?anim=',
-    values: `sheen | ${ICON_MOTION_TOKENS.join(' | ')} | <left>,<right> | sheen,<motion> | sheen,<left>,<right>`,
+    values: `${ANIM_SHEEN_TOKEN} | ${ICON_MOTION_TOKENS.join(' | ')} | <left>,<right> | ${ANIM_SHEEN_TOKEN},<motion> | ${ANIM_SHEEN_TOKEN},<left>,<right>`,
   };
 }
 
@@ -120,7 +160,12 @@ export function buildAnimParamRow(): ParamTableRow {
  * @returns Parameter table row.
  */
 export function buildSheenAnimParamRow(description: string): ParamTableRow {
-  return { defaultVal: '~static', description, name: '?anim=', values: 'sheen | none' };
+  return {
+    defaultVal: '~static',
+    description,
+    name: '?anim=',
+    values: `${ANIM_SHEEN_TOKEN} | none`,
+  };
 }
 
 /**

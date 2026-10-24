@@ -1,5 +1,5 @@
 /**
- * Builder client core – Pure URL, snippet, grid focus, async cache, and icon resolver helpers exposed on `globalThis.svgBuilderCore` for unit testing and shared by the builder DOM modules.
+ * Builder client core – Pure URL, snippet, grid focus, async cache, and icon resolver helpers shared across the builder modules.
  */
 
 import { filterIconCatalog } from '@/site/client/builder/iconSearch';
@@ -98,8 +98,8 @@ export function handleRovingTabKeydown(
     return;
   }
   let current = 0;
-  for (const [i, tab] of tabs.entries()) {
-    if (tab.getAttribute('aria-selected') === 'true') {
+  for (let i = 0; i < tabs.length; i += 1) {
+    if (tabs[i]?.getAttribute('aria-selected') === 'true') {
       current = i;
     }
   }
@@ -277,7 +277,7 @@ export const core: BuilderClientCore = {
   createAsyncCache,
   createIconResolver,
   createTypingLinesController(options) {
-    return createTypingLinesController(options as unknown as TypingLinesControllerOptions);
+    return createTypingLinesController(options as TypingLinesControllerOptions);
   },
   decodeSegment,
   encodeSegment,

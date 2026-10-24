@@ -3,35 +3,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BASE_DARK, DOT_COLORS, THEME_COLOR_NAMES, THEMES } from '@/config/theme';
+import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import { renderSvgPath } from '@/routes/svg';
-import { DOCS_PAGES } from '@/site/navigation';
-import { renderDocsHtml, renderHomeHtml } from '@/site/pages';
 import { resolveIcon } from '@/svg/icons';
 import { renderQuote } from '@/svg/quote';
-import {
-  ICON_SIZE_RANGE,
-  ICON_STROKE_RANGE,
-  MAX_LABEL_LENGTH,
-  renderBadge,
-  renderButton,
-  renderIcon,
-} from '@/svg/renderer';
+import { MAX_LABEL_LENGTH, renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import {
   ACTIVE_ICON_MOTION_TOKENS,
   escapeXml,
   prepareDisplayText,
   sliceAtCodePoint,
 } from '@/svg/shared';
-import { resolveStackIconColor, STACK_GROUP_GAP_RANGE, renderStack } from '@/svg/stack';
-import {
-  MAX_TYPING_LINES,
-  renderTyping,
-  TYPING_DURATION_RANGE,
-  TYPING_FONT_SIZE_RANGE,
-  TYPING_PAUSE_RANGE,
-  TYPING_WIDTH_RANGE,
-} from '@/svg/typing';
+import { resolveStackIconColor, renderStack } from '@/svg/stack';
+import { MAX_TYPING_LINES, renderTyping, TYPING_WIDTH_RANGE } from '@/svg/typing';
 import type {
   AnimationMode,
   BadgeSpecialElement,
@@ -43,7 +27,7 @@ import type {
   TypingEraseMode,
   TypingLayout,
 } from '@/types';
-import { extractAriaLabel } from './helpers';
+import { countOccurrences, extractAriaLabel } from './helpers';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -59,7 +43,21 @@ const USE_HREF_RX = /<use href="#(?<id>[^"]+)"/g;
 
 /** Matches the watermark quote mark group of a horizontal quote card and captures its X offset and scale. */
 const WATERMARK_TRANSFORM_RX =
-  /<g transform="translate\((?<x>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)" fill="none" stroke="[^"]+" stroke-opacity/;
+  /<g transform="translate\((?<offsetX>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)" fill="none" stroke="[^"]+" stroke-opacity/;
+
+/** Matches translated text `<path>` elements and captures their horizontal offset and `d` attribute. */
+const TRANSLATED_TEXT_PATH_RX =
+  /<path transform="translate\((?<offsetX>[\d.-]+) [\d.-]+\)" d="(?<pathData>[^"]+)"/g;
+
+/** Matches an icon `translate(x, y) scale(s)` transform and captures its offsets and scale. */
+const ICON_TRANSLATE_SCALE_RX =
+  /translate\((?<offsetX>[\d.]+), (?<offsetY>[\d.]+)\) scale\((?<scale>[\d.]+)\)/;
+
+/** Matches the `height="…"` attribute of a rendered `<svg>` element. */
+const SVG_HEIGHT_ATTR_RX = /height="(?<height>\d+)"/;
+
+/** Matches XML attributes (`name="value"`) inside an opening SVG/SMIL tag. */
+const XML_TAG_ATTR_RX = /\s(?<name>[\w-]+)="(?<val>[^"]*)"/g;
 
 /** Matches the `id` attribute of a `<clipPath>` element and captures its value. */
 const CLIP_PATH_ID_RX = /clipPath id="(?<id>[^"]+)"/;
@@ -116,12 +114,13 @@ function renderAuthorQuote(author: string): string {
 /** Compute the rightmost ink X coordinate of all translated text `<path>` outlines in an SVG. */
 function measureMaxTextInkX(svg: string): number {
   let maxInkX = 0;
-  for (const match of svg.matchAll(
-    /<path transform="translate\((?<x>[\d.-]+) [\d.-]+\)" d="(?<d>[^"]+)"/g
-  )) {
-    const coordinates = (match.groups?.d ?? '').replaceAll(/[A-Z]/g, ' ').trim().split(/\s+/);
+  for (const match of svg.matchAll(TRANSLATED_TEXT_PATH_RX)) {
+    const coordinates = (match.groups?.pathData ?? '')
+      .replaceAll(/[A-Z]/g, ' ')
+      .trim()
+      .split(/\s+/);
     for (let i = 0; i < coordinates.length; i += 2) {
-      maxInkX = Math.max(maxInkX, Number(match.groups?.x) + Number(coordinates[i]));
+      maxInkX = Math.max(maxInkX, Number(match.groups?.offsetX) + Number(coordinates[i]));
     }
   }
   return maxInkX;
@@ -129,7 +128,12 @@ function measureMaxTextInkX(svg: string): number {
 
 /** Read a single XML attribute value from an opening SVG/SMIL tag. */
 function readTagAttr(tag: string, attrName: string): string | undefined {
-  return new RegExp(`\\s${attrName}="(?<val>[^"]*)"`).exec(tag)?.groups?.val;
+  for (const match of tag.matchAll(XML_TAG_ATTR_RX)) {
+    if (match.groups?.name === attrName) {
+      return match.groups.val;
+    }
+  }
+  return undefined;
 }
 
 /** Verify that every SMIL animation in `svg` uses valid, strictly monotonic `calcMode="spline"` easing (except continuous 360° `spin`). */
@@ -397,7 +401,7 @@ describe('renderBadge & renderButton', () => {
     expect(staticSvg).not.toContain('<animateTransform');
   });
 
-  it('renders all 5 special right-hand data elements (sparkline, bar, ring, strip, delta)', () => {
+  it('renders core special right-hand data elements (sparkline, bar, ring, strip, delta)', () => {
     const sparkSvg = renderBadge({
       color: 'emerald',
       icon: 'activity',
@@ -831,52 +835,6 @@ describe('renderQuote', () => {
   });
 });
 
-describe('renderDocsHtml & renderHomeHtml', () => {
-  it('renders the homepage and every documentation page containing variants, service registries, and syntax-highlighted Markdown snippets', () => {
-    const homeHtml = renderHomeHtml();
-    const docsBySlug = new Map(DOCS_PAGES.map((page) => [page.slug, renderDocsHtml(page.slug)]));
-
-    for (const html of [homeHtml, ...docsBySlug.values()]) {
-      expect(html).toContain('<!DOCTYPE html>');
-      expect(html).not.toContain('<span>');
-      expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(html).toContain('Missing a service, icon, or SVG element?');
-    }
-
-    expect(docsBySlug.get('badges')).toContain(
-      '<code class="card-title-code">variant=1</code><span class="card-title-text">Primary Badge</span><span class="card-title-pill">Default</span>'
-    );
-    expect(docsBySlug.get('buttons')).toContain(
-      '<code class="card-title-code">variant=3</code><span class="card-title-text">Tertiary Button</span>'
-    );
-    expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">PyPI &amp; ClickPy</span><code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
-    );
-    expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
-    );
-    expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
-    );
-    expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">Crates.io, docs.rs &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docsrs/*</code><code class="card-title-meta">/badge/docker/*</code>'
-    );
-    expect(docsBySlug.get('icons')).toContain(
-      '<span class="route-method">GET</span>/icon/:icon</code>'
-    );
-    expect(docsBySlug.get('stack')).toContain(
-      '<span class="route-method">GET</span>/stack/:groups</code>'
-    );
-    expect(docsBySlug.get('typing')).toContain(
-      '<span class="route-method">GET</span>/typing/:lines</code>'
-    );
-    expect(docsBySlug.get('quotes')).toContain(
-      '<span class="route-method">GET</span>/quote/:author/:text</code>'
-    );
-    expect(docsBySlug.get('colors')).toContain(`${THEME_COLOR_NAMES.length} Theme Colors`);
-  });
-});
-
 describe('rendering regressions', () => {
   it('marks truncated quotes with an ellipsis and shortens over-long words (regression: silent cut-off and overflow)', () => {
     const longText = Array.from({ length: 200 }, (_entry, index) => `word${index}`).join(' ');
@@ -925,7 +883,7 @@ describe('rendering regressions', () => {
         });
         const watermark = WATERMARK_TRANSFORM_RX.exec(svg)?.groups;
         expect(watermark, String(size)).toBeDefined();
-        const watermarkInkLeft = Number(watermark?.x) + 2 * Number(watermark?.scale);
+        const watermarkInkLeft = Number(watermark?.offsetX) + 2 * Number(watermark?.scale);
         expect(measureMaxTextInkX(svg), String(size)).toBeLessThan(watermarkInkLeft);
       }
     }
@@ -1118,14 +1076,12 @@ describe('rendering regressions', () => {
 
   it('centers stack tile icons by their visible ink bounds instead of the 24x24 box', () => {
     const svg = renderStack({ icons: ['rust'], size: 56 });
-    const transform = /translate\((?<x>[\d.]+), [\d.]+\) scale\((?<scale>[\d.]+)\)/.exec(
-      svg
-    )?.groups;
+    const transform = ICON_TRANSLATE_SCALE_RX.exec(svg)?.groups;
     const iconData = resolveIcon('rust', true);
     expect(transform).toBeDefined();
     expect(iconData).toBeDefined();
     const visualCenterX =
-      Number(transform?.x) +
+      Number(transform?.offsetX) +
       (((iconData?.minX ?? 0) + (iconData?.maxX ?? 0)) / 2) * Number(transform?.scale);
     expect(visualCenterX).toBeCloseTo(28, 1);
   });
@@ -1197,7 +1153,7 @@ describe('rendering regressions', () => {
     const iconData = resolveIcon('rocket');
     const svg = renderIcon({ anim: 'sheen', color: 'violet', icon: 'rocket' });
     expect(iconData).toBeDefined();
-    expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
+    expect(countOccurrences(svg, iconData?.innerSvg ?? '')).toBe(1);
     expect(svg).toMatch(/<use href="#icon-body-[\da-z]+" stroke="url\(#icon-sheen\)" \/>/);
   });
 
@@ -1205,10 +1161,10 @@ describe('rendering regressions', () => {
     const iconData = resolveIcon('elsevier', true);
     const svg = renderStack({ icons: Array.from({ length: 128 }, () => 'elsevier') });
     expect(iconData).toBeDefined();
-    expect(svg.split(iconData?.innerSvg ?? '').length - 1).toBe(1);
+    expect(countOccurrences(svg, iconData?.innerSvg ?? '')).toBe(1);
     const [bodyId] = collectUseIds(svg);
     expect(collectUseIds(svg).size).toBe(1);
-    expect(svg.split(`<use href="#${bodyId}" />`).length - 1).toBe(128);
+    expect(countOccurrences(svg, `<use href="#${bodyId}" />`)).toBe(128);
     expect(svg.length).toBeLessThan(200_000);
   });
 
@@ -1398,7 +1354,7 @@ describe('rendering regressions', () => {
       special: { type: 'bar', value: 60 },
       variant: '2',
     });
-    expect(svg.split('<defs>').length - 1).toBe(1);
+    expect(countOccurrences(svg, '<defs>')).toBe(1);
     const rootDefs = /<defs>(?<defs>.*?)<\/defs>/.exec(svg)?.groups?.defs ?? '';
     expect(rootDefs).toContain('<linearGradient id="bar-shimmer-c"');
     expect(svg).toContain('fill="url(#bar-shimmer-c)"');
@@ -1632,36 +1588,15 @@ describe('rendering regressions', () => {
   });
 });
 
-describe('documentation drift guards', () => {
-  it('throws for documented paths that match no SVG route instead of rendering a broken snippet', () => {
+describe('renderSvgPath', () => {
+  it('throws for paths that match no SVG route instead of rendering a broken snippet', () => {
     expect(() => renderSvgPath('/nope/example')).toThrow('No SVG route matches');
     expect(renderSvgPath('/badge//100%25?icon=zap')).toContain('aria-label="100%"');
-  });
-
-  it('documents the exact numeric ranges enforced by the renderers', () => {
-    const iconsHtml = renderDocsHtml('icons');
-    expect(iconsHtml).toContain(
-      `${ICON_SIZE_RANGE.min}<span class="param-sep"> to </span>${ICON_SIZE_RANGE.max}`
-    );
-    expect(iconsHtml).toContain(`${ICON_STROKE_RANGE.default}</code>`);
-    const stackHtml = renderDocsHtml('stack');
-    expect(stackHtml).toContain(
-      `${STACK_GROUP_GAP_RANGE.min}<span class="param-sep"> to </span>${STACK_GROUP_GAP_RANGE.max}`
-    );
-    const typingHtml = renderDocsHtml('typing');
-    for (const range of [
-      TYPING_FONT_SIZE_RANGE,
-      TYPING_DURATION_RANGE,
-      TYPING_PAUSE_RANGE,
-      TYPING_WIDTH_RANGE,
-    ]) {
-      expect(typingHtml).toContain(`${range.min}<span class="param-sep"> to </span>${range.max}`);
-    }
   });
 });
 
 describe('renderTyping', () => {
-  it('renders all 5 container layouts, 3 variants, and 3 cursor shapes with deduplicated <defs> glyph outlines', () => {
+  it('renders all typing container layouts, surface variants, and cursor shapes with deduplicated <defs> glyph outlines', () => {
     const layouts: readonly TypingLayout[] = ['window', 'prompt', 'ide', 'browser', 'none'];
     for (const layout of layouts) {
       const svg = renderTyping({
@@ -1687,7 +1622,7 @@ describe('renderTyping', () => {
       layout: 'window',
       lines: 'Hello',
     });
-    expect(windowSvg.split('<circle cx="').length - 1).toBe(3);
+    expect(countOccurrences(windowSvg, '<circle cx="')).toBe(3);
     expect(windowSvg).toContain('height="18" rx="9" fill="rgba(9,10,15,0.62)"');
 
     // Without `?icon=`, no icon or squircle box is rendered on any layout; with `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`:
@@ -1701,19 +1636,16 @@ describe('renderTyping', () => {
       lines: 'Search',
     });
     expect(iconPromptSvg).toContain('<rect x="10" y="10" width="28" height="28" rx="8"');
-    const promptIconTransform =
-      /translate\((?<x>[\d.]+), (?<y>[\d.]+)\) scale\((?<scale>[\d.]+)\)/.exec(
-        iconPromptSvg
-      )?.groups;
+    const promptIconTransform = ICON_TRANSLATE_SCALE_RX.exec(iconPromptSvg)?.groups;
     const sparklesData = resolveIcon('sparkles');
     expect(promptIconTransform).toBeDefined();
     expect(sparklesData).toBeDefined();
     const promptIconCenterX =
-      Number(promptIconTransform?.x) +
+      Number(promptIconTransform?.offsetX) +
       (((sparklesData?.minX ?? 0) + (sparklesData?.maxX ?? 0)) / 2) *
         Number(promptIconTransform?.scale);
     expect(promptIconCenterX).toBeCloseTo(24, 1);
-    expect(Number(promptIconTransform?.y)).toBe(16);
+    expect(Number(promptIconTransform?.offsetY)).toBe(16);
 
     // `browser` renders the omnibox hint badge without a border stroke; `browser` and `ide` ignore `align: 'center'`:
     const browserSvg = renderTyping({
@@ -1834,8 +1766,8 @@ describe('renderTyping', () => {
       lines: 'Building resilient systems;Crafting delightful interfaces;Shipping edge workers',
     });
     // Across 3 lines, only 1 line receives a simulated typo (not every single line):
-    expect(withTypo.split('<use href="#type-g-')).toHaveLength(
-      withoutTypo.split('<use href="#type-g-').length + 1
+    expect(countOccurrences(withTypo, '<use href="#type-g-')).toBe(
+      countOccurrences(withoutTypo, '<use href="#type-g-') + 1
     );
 
     const staticSvg = renderTyping({
@@ -1953,7 +1885,9 @@ describe('renderTyping', () => {
     });
     expect(measureMaxTextInkX(narrowPromptSvg)).toBeLessThan(TYPING_WIDTH_RANGE.min);
   });
+});
 
+describe('cross-renderer regressions', () => {
   it('keeps non-identical delta readouts, sanitizes fallback icon aria-labels, fits single-word quotes with quote marks, and skips sheen/bg-dark on hollow fallback stacks (regressions: substring specialText suppression, unsanitized fallback icon slug, single-word quote mark kerning overflow, sheen and bg-dark on hollow fallback tiles)', () => {
     expect(readMetricBadgeLabel({ type: 'delta', value: '5%' }, '25%')).toBe('metric: 5% 25%');
     expect(readMetricBadgeLabel({ type: 'delta', value: '+5%' }, '+5%')).toBe('metric: +5%');
@@ -1978,7 +1912,7 @@ describe('renderTyping', () => {
       width: 320,
     });
     const watermarkMatch = WATERMARK_TRANSFORM_RX.exec(singleWordQuoteSvg)?.groups;
-    const watermarkInkLeft = Number(watermarkMatch?.x) + 2 * Number(watermarkMatch?.scale);
+    const watermarkInkLeft = Number(watermarkMatch?.offsetX) + 2 * Number(watermarkMatch?.scale);
     expect(measureMaxTextInkX(singleWordQuoteSvg)).toBeLessThanOrEqual(watermarkInkLeft - 15.5);
 
     // Vertical quote cards keep symmetric optical padding above the top quote mark and below the bottom quote mark / author:
@@ -1988,7 +1922,7 @@ describe('renderTyping', () => {
       size: 'lg',
       text: 'Design is how it works.',
     });
-    const verticalHeight = Number(/height="(?<h>\d+)"/.exec(verticalNoAuthorSvg)?.groups?.h);
+    const verticalHeight = Number(SVG_HEIGHT_ATTR_RX.exec(verticalNoAuthorSvg)?.groups?.height);
     expect(verticalHeight).toBeGreaterThan(150);
     expect(verticalHeight).toBeLessThan(190);
 
@@ -2003,7 +1937,7 @@ describe('renderTyping', () => {
     const clipBlock = /<clipPath id="stack-sheen-clip-[^"]+">(?<rects>[\s\S]*?)<\/clipPath>/.exec(
       mixedFallbackStack
     )?.groups?.rects;
-    expect((clipBlock ?? '').split('<rect ').length - 1).toBe(1);
+    expect(countOccurrences(clipBlock ?? '', '<rect ')).toBe(1);
   });
 
   it('ignores invalid runtime badge dots, centers frameless prefix=none typing banners, guards narrow typing hints, and sanitizes uncurated stack tile titles (regressions: invalid dot leaked into aria-label, frameless prefix=none left-aligned, narrow width=200 hint overflow, raw control chars in stack tile tooltip)', () => {

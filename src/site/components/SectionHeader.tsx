@@ -1,5 +1,5 @@
 /**
- * Section header components – Page and section headers (`<SectionHeader />`), route pattern pills (`<RoutePills />`), and icon-prefixed subheadings (`<SectionSubhead />`).
+ * Section header components – Page and section headers (`<SectionHeader />`) and icon-prefixed subheadings (`<SectionSubhead />`).
  */
 
 import {
@@ -41,14 +41,10 @@ interface SectionSubheadProps {
   readonly text: string;
 }
 
-// -------------------------------------- PUBLIC API -------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Render a list of route pattern pills (`GET /badge/…`) as a JSX component.
- * @param props   Route pills props (`patterns`).
- * @returns Rendered `<div class="route-pills">` fragment.
- */
-export function RoutePills(props: RoutePillsProps): HtmlFragment {
+/** Render a list of route pattern pills (`GET /badge/…`) as a JSX component. */
+function RoutePills(props: RoutePillsProps): HtmlFragment {
   const pills: HtmlFragment[] = [];
   for (const pattern of props.patterns) {
     pills.push(
@@ -60,6 +56,8 @@ export function RoutePills(props: RoutePillsProps): HtmlFragment {
   }
   return <div class="route-pills">{pills}</div>;
 }
+
+// -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Render a documentation section header (title, optional header action, lead paragraph, and route pills) as a JSX component.

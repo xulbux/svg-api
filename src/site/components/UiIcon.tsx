@@ -13,9 +13,9 @@ import { escapeXml } from '@/svg/shared';
 interface UiIconProps {
   /** Optional additional CSS class name(s) appended to `ui-icon`. */
   readonly extraClass?: string | undefined;
-  /** Width and height in pixels (defaults to `16`). */
+  /** Width and height in pixels. */
   readonly size?: number | undefined;
-  /** Icon slug (e.g., `'sparkles'`, `'copy'`, `'check'`, `'chevron-right'`, `'github'`). */
+  /** Registered UI or brand icon slug. */
   readonly slug: string;
 }
 
@@ -45,19 +45,19 @@ interface InlineMarkupProps {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** SVG paint attributes of Lucide stroke icons (UI icons and the builder's icon picker glyphs). */
+/** SVG paint attributes of Lucide stroke icons. */
 export const LUCIDE_STROKE_ATTRS =
   'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
 
-/** SVG paint attributes of filled brand icons (UI icons and the builder's icon picker glyphs). */
+/** SVG paint attributes of filled brand icons. */
 export const BRAND_FILL_ATTRS = 'fill="currentColor"';
 
 /** Shared SVG root attributes of every inline UI icon. */
 const UI_ICON_SVG_ATTRS =
   'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true"';
 
-/** UI icons repeated on most pages: Emitted once per page as `<symbol>` elements and referenced with `<use>`. */
-const UI_SPRITE_ICON_SLUGS: ReadonlySet<string> = new Set([
+/** UI icons repeated across pages: Emitted once per page as `<symbol>` elements and referenced with `<use>`. */
+const UI_SPRITE_ICON_SLUGS: readonly string[] = [
   'check',
   'chevron-down',
   'chevron-left',
@@ -67,10 +67,13 @@ const UI_SPRITE_ICON_SLUGS: ReadonlySet<string> = new Set([
   'layout-grid',
   'sparkles',
   'x',
-]);
+];
 
 /** Memoized inline UI icon HTML keyed by `slug|size|extraClass`. */
 const UI_ICON_HTML_CACHE = new Map<string, string>();
+
+/** Lazily populated lookup set for `UI_SPRITE_ICON_SLUGS`. */
+let uiSpriteIconSetCache: ReadonlySet<string> | undefined = undefined;
 
 /** Memoized UI icon sprite (`undefined` until first rendered). */
 let uiSpriteHtmlCache: string | undefined = undefined;
@@ -90,6 +93,12 @@ const INLINE_MARKUP_TOKEN_RX = /`(?<code>[^`]+)`|\*\*(?<strong>[^*]+)\*\*/g;
 const INLINE_MARKUP_CHARS_RX = /`|\*\*/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether `slug` is included in the per-page UI icon sprite. */
+function isUiSpriteIcon(slug: string): boolean {
+  uiSpriteIconSetCache ??= new Set(UI_SPRITE_ICON_SLUGS);
+  return uiSpriteIconSetCache.has(slug);
+}
 
 /**
  * Render (once per isolate) the hidden UI icon sprite: One `<symbol id="ui-<slug>">` per repeated UI icon,
@@ -131,7 +140,7 @@ function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
   const resolved = resolveIcon(slug);
   const classAttr = extraClass ? `ui-icon ${extraClass}` : 'ui-icon';
   const paintAttrs = resolved?.type === 'lucide' ? LUCIDE_STROKE_ATTRS : BRAND_FILL_ATTRS;
-  const bodyFragment = UI_SPRITE_ICON_SLUGS.has(slug) ? (
+  const bodyFragment = isUiSpriteIcon(slug) ? (
     <use href={`#ui-${slug}`}></use>
   ) : (
     raw(resolved?.innerSvg ?? '')

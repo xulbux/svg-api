@@ -105,6 +105,7 @@ const HTML_DOCUMENT_HEADERS: Readonly<Record<string, string>> = {
 const NOT_FOUND_HTML_HEADERS: Readonly<Record<string, string>> = {
   ...HTML_SECURITY_HEADERS,
   'Cache-Control': NOT_FOUND_CACHE_CONTROL,
+  'Content-Type': 'text/html; charset=utf-8',
 };
 
 /** Headers of the branded `500` HTML error page for failed site routes. */
@@ -206,9 +207,9 @@ function buildHtmlResponse(context: AppContext, pageId: string, render: () => st
 }
 
 /** Serve the memoized branded `404` HTML page with `noindex` metadata and security headers. */
-function buildNotFoundHtmlResponse(context: AppContext): Response {
+function buildNotFoundHtmlResponse(): Response {
   const page = getMemoizedDocument('404', renderNotFoundHtml);
-  return context.html(page.body, 404, NOT_FOUND_HTML_HEADERS);
+  return new Response(page.body, { headers: NOT_FOUND_HTML_HEADERS, status: 404 });
 }
 
 /** Serve a memoized plain-text or XML crawler discovery document. */
@@ -445,7 +446,7 @@ function handlePreviewRoute(context: AppContext): Response {
 function handleDocsSectionRoute(context: AppContext): Response {
   const section = (context.req.param('section') ?? '').trim().toLowerCase();
   if (!isDocsSectionSlug(section)) {
-    return buildNotFoundHtmlResponse(context);
+    return buildNotFoundHtmlResponse();
   }
   return buildHtmlResponse(context, `docs/${section}`, () => renderDocsHtml(section));
 }
@@ -462,7 +463,7 @@ function handleBuilderIndexRoute(context: AppContext): Response {
 function handleBuilderRoute(context: AppContext): Response {
   const kind = (context.req.param('kind') ?? '').trim().toLowerCase();
   if (!isBuilderKind(kind)) {
-    return buildNotFoundHtmlResponse(context);
+    return buildNotFoundHtmlResponse();
   }
   return buildHtmlResponse(context, `builder/${kind}`, () => renderBuilderHtml(kind));
 }
@@ -497,7 +498,7 @@ function handleNotFound(context: AppContext): Response {
   if (prefix === 'assets' || findSvgRoute(prefix)) {
     return new Response('404 Not Found', { headers: PLAIN_NOT_FOUND_HEADERS, status: 404 });
   }
-  return buildNotFoundHtmlResponse(context);
+  return buildNotFoundHtmlResponse();
 }
 
 /** Log an unexpected failure and answer SVG routes with an error badge, site pages with a branded `500` HTML page, and assets/crawler endpoints with a plain `500`. */

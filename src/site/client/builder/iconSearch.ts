@@ -49,7 +49,7 @@ function collectMatchingAliasTargets(
 
 /**
  * Compute the filtered icon picker matches for a single icon set and search query
- * (prefix slug matches first, then substring/alias matches, then Lucide tag matches).
+ * (prefix slug matches first, then substring/alias matches, then icon tag matches).
  */
 function computeSetMatches(
   index: IconPickerIndex,
@@ -84,7 +84,7 @@ function computeSetMatches(
  * Compute filtered icon matches across both sets for `rawQuery` (`counts` is `undefined` when `rawQuery` is empty).
  * @param index       Loaded icon picker index.
  * @param catalog     Renderable icon slugs per set.
- * @param activeSet   Currently selected picker tab (`'lucide'` or `'brands'`).
+ * @param activeSet   Currently selected icon set identifier.
  * @param rawQuery    Raw search input string.
  * @returns Active-tab matches and optional per-tab match counts.
  */
@@ -204,7 +204,7 @@ export function insertPickedSlugAtCursor(
 /**
  * Clone an `<svg>` glyph shell from `glyphTemplates` and populate its inner SVG body.
  * @param glyphTemplates   `<template id="icon-glyph-templates">` element.
- * @param set              Icon set identifier (`'lucide'` or `'brands'`).
+ * @param set              Icon set identifier.
  * @param innerSvg         Trusted server-provided SVG body fragment.
  * @returns Populated `<svg>` element.
  */

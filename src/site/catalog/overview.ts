@@ -4,7 +4,7 @@
 
 import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
-import { ACTIVE_STACK_MOTION_TOKENS, ICON_MOTION_TOKENS } from '@/routes/params';
+import { ACTIVE_STACK_MOTION_TOKENS, ANIM_SHEEN_TOKEN, ICON_MOTION_TOKENS } from '@/routes/params';
 import {
   SERVICE_ERROR_TTL_SECONDS,
   SERVICE_TTL_SECONDS,
@@ -172,7 +172,7 @@ export function buildSharedParamRows(): ParamTableRow[] {
       defaultVal: formatSupportingEndpoints('anim'),
       description: `Surface sheen and motions (icons support per-icon motions; stacks support ${formatConjunctionList(ACTIVE_STACK_MOTION_TOKENS)}); none stops all animations.`,
       name: '?anim=',
-      values: `sheen | ${[...ICON_MOTION_TOKENS, ...extraStackMotions].join(' | ')}`,
+      values: `${ANIM_SHEEN_TOKEN} | ${[...ICON_MOTION_TOKENS, ...extraStackMotions].join(' | ')}`,
     },
     {
       defaultVal: formatSupportingEndpoints(),

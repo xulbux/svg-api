@@ -1,5 +1,5 @@
 /**
- * Glossary – Shared wording of the docs catalog and the builder schema: Variant tiers, inline data widget kinds, and text helpers.
+ * Glossary – Shared documentation and builder vocabulary, variant tiers, inline data widget details, and list formatters.
  */
 
 import { SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';
@@ -16,14 +16,14 @@ import type { BadgeSpecialElement, BadgeVariant, SpecialKindDetail, VariantTier 
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Visual hierarchy tiers of the shared variants (builder labels and docs descriptions). */
+/** Visual hierarchy tiers of the shared variants. */
 export const VARIANT_TIERS: Readonly<Record<BadgeVariant, VariantTier>> = {
   1: { name: 'Primary', surface: 'gradient' },
   2: { name: 'Secondary', surface: 'tinted dark' },
   3: { name: 'Tertiary', surface: 'neutral dark' },
 };
 
-/** Display labels, payload examples, descriptions, and parser modifiers of the inline data widget kinds (builder and docs). */
+/** Display labels, payload examples, descriptions, and parser modifiers of the inline data widget kinds. */
 export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
@@ -87,16 +87,16 @@ export const SPECIAL_KIND_DETAILS: Readonly<
 export { capitalizeWord } from '@/site/shared/encoding';
 
 /**
- * Join every variant identifier as a parameter table value.
- * @returns Variant values in hierarchy order (e.g., `'1 | 2 | 3'`).
+ * Join every variant identifier as a pipe-separated parameter table value.
+ * @returns Pipe-separated variant values in hierarchy order.
  */
 export function formatVariantValues(): string {
   return VARIANT_TOKENS.join(' | ');
 }
 
 /**
- * Summarize every variant tier.
- * @returns Tier summary (e.g., `'1 = Primary gradient, 2 = Secondary tinted dark, 3 = Tertiary neutral dark'`).
+ * Summarize every variant tier as a comma-separated description.
+ * @returns Comma-separated tier summary.
  */
 export function formatVariantTierSummary(): string {
   const parts: string[] = [];
@@ -108,8 +108,8 @@ export function formatVariantTierSummary(): string {
 }
 
 /**
- * List a valid `?special=` example per widget kind and modifier as a parameter table value.
- * @returns Examples in parser order (e.g., `'sparkline:22,19,… | bar:92 | bar:92:static | …'`).
+ * List a valid `?special=` example per widget kind and modifier as a pipe-separated parameter table value.
+ * @returns Pipe-separated widget examples in parser order.
  */
 export function formatSpecialExamples(): string {
   const examples: string[] = [];
@@ -148,7 +148,10 @@ export function collectAliasesForTarget(
  * @param conjunction   Coordinating conjunction (`'and'` or `'or'`).
  * @returns Human-readable prose list.
  */
-export function formatConjunctionList(items: readonly string[], conjunction = 'and'): string {
+export function formatConjunctionList(
+  items: readonly string[],
+  conjunction: 'and' | 'or' = 'and'
+): string {
   if (items.length <= 1) {
     return items[0] ?? '';
   }
@@ -164,10 +167,27 @@ export function formatConjunctionList(items: readonly string[], conjunction = 'a
  * @param conjunction   Coordinating conjunction (`'and'` or `'or'`).
  * @returns Backtick-wrapped prose list.
  */
-export function formatBacktickList(items: readonly string[], conjunction = 'and'): string {
+export function formatBacktickList(
+  items: readonly string[],
+  conjunction: 'and' | 'or' = 'and'
+): string {
   const wrapped: string[] = [];
   for (const item of items) {
     wrapped.push(`\`${item}\``);
   }
   return formatConjunctionList(wrapped, conjunction);
+}
+
+/**
+ * Wrap each item in backticks and join with `separator`.
+ * @param items       Code tokens to wrap and join in display order.
+ * @param separator   Delimiter placed between backtick-wrapped tokens.
+ * @returns Delimited backtick-wrapped token list.
+ */
+export function formatBacktickTokens(items: readonly string[], separator = ' | '): string {
+  const wrapped: string[] = [];
+  for (const item of items) {
+    wrapped.push(`\`${item}\``);
+  }
+  return wrapped.join(separator);
 }

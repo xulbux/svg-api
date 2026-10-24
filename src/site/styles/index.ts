@@ -45,6 +45,9 @@ export const { 900: DARK_BG } = ISOLUX_GRAY;
 /** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand gradient (navbar brand mark and favicon). */
 export const { 400: BRAND_GRADIENT_START, 600: BRAND_GRADIENT_END } = BRAND_INDIGO;
 
+/** Viewport width in pixels at and below which the left sidebar collapses into a popover drawer. */
+export const DRAWER_BREAKPOINT_PX = 960;
+
 /** Preferred sans-serif font stack for UI text and headings. */
 const SANS_FONT_STACK =
   "'Geist', -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif";
@@ -187,25 +190,29 @@ function getThemeTokens(): readonly ThemeToken[] {
 }
 
 /** Render scheme-independent and non-color `--c-*` bindings for `scheme` (`hasShared` includes shared tokens). */
-function renderBaseTokenBindings(scheme: 'dark' | 'light', hasShared: boolean): string {
+function renderBaseTokenBindings(
+  scheme: 'dark' | 'light',
+  hasShared: boolean,
+  indent = '  '
+): string {
   let css = '';
   for (const token of getThemeTokens()) {
     if (
       (hasShared && token.light === token.dark) ||
       (!token.isColor && token.light !== token.dark)
     ) {
-      css += `  --c-${token.name}: ${token[scheme]};\n`;
+      css += `${indent}--c-${token.name}: ${token[scheme]};\n`;
     }
   }
   return css;
 }
 
 /** Render legacy scheme-dependent color `--c-*` bindings for browsers without `light-dark()`. */
-function renderLegacyColorTokenBindings(scheme: 'dark' | 'light'): string {
+function renderLegacyColorTokenBindings(scheme: 'dark' | 'light', indent = '    '): string {
   let css = '';
   for (const token of getThemeTokens()) {
     if (token.isColor && token.light !== token.dark) {
-      css += `  --c-${token.name}: ${token[scheme]};\n`;
+      css += `${indent}--c-${token.name}: ${token[scheme]};\n`;
     }
   }
   return css;
@@ -216,7 +223,7 @@ function renderLightDarkTokenBindings(): string {
   let css = '';
   for (const token of getThemeTokens()) {
     if (token.isColor && token.light !== token.dark) {
-      css += `  --c-${token.name}: light-dark(${token.light}, ${token.dark});\n`;
+      css += `    --c-${token.name}: light-dark(${token.light}, ${token.dark});\n`;
     }
   }
   return css;
@@ -241,7 +248,7 @@ ${renderBaseTokenBindings('light', true)}}
 
 @media (prefers-color-scheme: dark) {
   :root {
-${renderBaseTokenBindings('dark', false)}  }
+${renderBaseTokenBindings('dark', false, '    ')}  }
 }
 
 ${darkOverrideSelector} {
@@ -263,14 +270,14 @@ ${renderLegacyColorTokenBindings('light')}  }
 
   @media (prefers-color-scheme: dark) {
     :root {
-${renderLegacyColorTokenBindings('dark').replaceAll('  --c-', '    --c-')}    }
+${renderLegacyColorTokenBindings('dark', '      ')}    }
   }
 
   ${darkOverrideSelector} {
-${renderLegacyColorTokenBindings('dark').replaceAll('  --c-', '    --c-')}  }
+${renderLegacyColorTokenBindings('dark')}  }
 
   ${lightOverrideSelector} {
-${renderLegacyColorTokenBindings('light').replaceAll('  --c-', '    --c-')}  }
+${renderLegacyColorTokenBindings('light')}  }
 }
 `;
 }

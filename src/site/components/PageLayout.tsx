@@ -12,7 +12,13 @@ import { serializeInlineJson, UiSprite } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment, JsxChild } from '@/site/jsx';
 import { OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
-import { BRAND_GRADIENT_END, BRAND_GRADIENT_START, DARK_BG, LIGHT_BG } from '@/site/styles';
+import {
+  BRAND_GRADIENT_END,
+  BRAND_GRADIENT_START,
+  DARK_BG,
+  DRAWER_BREAKPOINT_PX,
+  LIGHT_BG,
+} from '@/site/styles';
 import { resolveIcon } from '@/svg/icons';
 import type { NavPageId, PageSidebar, SiteClientConfig } from '@/types';
 
@@ -48,8 +54,8 @@ const COLOR_SCHEME_STORAGE_KEY = 'color-scheme';
 /** `localStorage` key of the persisted preview stage background. */
 const PREVIEW_BG_STORAGE_KEY = 'preview-bg';
 
-/** Media query under which the sidebar becomes a popover drawer (keep in sync with the `960px` breakpoint in `layout.css`). */
-const DRAWER_MEDIA_QUERY = '(max-width: 960px)';
+/** Media query under which the sidebar collapses into a popover drawer. */
+const DRAWER_MEDIA_QUERY = `(max-width: ${DRAWER_BREAKPOINT_PX}px)`;
 
 /** Page background per color scheme (`theme-color` meta tags, also following the manual scheme override). */
 const THEME_COLORS: SiteClientConfig['themeColors'] = { dark: DARK_BG, light: LIGHT_BG };
@@ -111,8 +117,7 @@ function renderSiteConfig(): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Return (once per isolate) the exact JavaScript body inside the `<head>` color-scheme / preview-bg script
- * (also hashed by the site security test to guard the `Content-Security-Policy` `script-src` SHA-256 allowlist).
+ * Return (once per isolate) the exact JavaScript body inside the `<head>` color-scheme and preview-bg preference script.
  * @returns Inline JavaScript source without surrounding `<script>` tags.
  */
 export function getHeadScriptBody(): string {

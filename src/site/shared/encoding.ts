@@ -21,9 +21,6 @@ export const MAX_TYPING_LINE_LENGTH = 80;
 /** Truthy boolean query tokens accepted by boolean flag parameters in display order. */
 export const TRUTHY_FLAG_LIST = ['true', '1', 'yes'] as const;
 
-/** Truthy boolean query flag lookup set. */
-export const TRUTHY_FLAG_TOKENS: ReadonlySet<string> = new Set(TRUTHY_FLAG_LIST);
-
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches comma or whitespace separators in list-style payloads. */
@@ -211,6 +208,15 @@ export function findField(schema: BuilderSchema, id: string): BuilderField | und
  */
 export function readState(state: BuilderState, id: string): string {
   return (state[id] ?? '').trim();
+}
+
+/**
+ * Check whether a normalized lowercase query token is an accepted truthy boolean flag.
+ * @param token   Normalized lowercase query token.
+ * @returns `true` when `token` matches an entry in `TRUTHY_FLAG_LIST`.
+ */
+export function isTruthyFlagToken(token: string): boolean {
+  return (TRUTHY_FLAG_LIST as readonly string[]).includes(token);
 }
 
 /**

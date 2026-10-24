@@ -140,6 +140,9 @@ interface QuoteCardContext {
 /** Default quote card layout when layout parameters are omitted. */
 export const DEFAULT_QUOTE_LAYOUT: QuoteLayout = 'horizontal';
 
+/** Default visual hierarchy variant for quote cards. */
+export const DEFAULT_QUOTE_VARIANT: BadgeVariant = '2';
+
 /** Default typography size preset for horizontal quote cards. */
 export const DEFAULT_HORIZONTAL_QUOTE_SIZE: SizePreset = 'md';
 
@@ -580,7 +583,7 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
 export function renderQuote(options: QuoteRenderOptions): string {
   const { color } = options;
   const palette = THEMES[color];
-  const variant: BadgeVariant = options.variant ?? '2';
+  const variant: BadgeVariant = options.variant ?? DEFAULT_QUOTE_VARIANT;
   const layout: QuoteLayout = options.layout ?? DEFAULT_QUOTE_LAYOUT;
   const animMode: AnimationMode = options.anim ?? 'default';
   const metrics = resolveQuoteMetrics(options.size, layout);
