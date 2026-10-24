@@ -39,11 +39,6 @@ const PREFERRED_SNAP_ARCHITECTURE = 'amd64';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Build the required Snap Store request headers. */
-function buildSnapHeaders(): Readonly<Record<string, string>> {
-  return SNAP_HEADERS;
-}
-
 /** Read the version of a channel map entry released to the stable channel of `track` (malformed entries are skipped). */
 function readStableRelease(entry: unknown, track: string): StableSnapRelease | undefined {
   const channel = isJsonObject(entry) ? entry.channel : undefined;
@@ -95,11 +90,11 @@ const SNAP_ENDPOINT = createEndpoint({
 
 /** Snapcraft service preset (`snap`). */
 export const SNAP_SERVICE = defineService({
-  buildHeaders: buildSnapHeaders,
   docs: {
     description: 'Latest stable version (default track, amd64 preferred) and license.',
     title: 'Snapcraft',
   },
+  headers: SNAP_HEADERS,
   metrics: {
     license: createLicenseMetric(SNAP_ENDPOINT, (info) => info.license),
     v: createVersionMetric(

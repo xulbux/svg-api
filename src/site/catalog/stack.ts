@@ -9,6 +9,7 @@ import {
 } from '@/routes/params';
 import { DEFAULT_STACK_VARIANT } from '@/routes/svg';
 import {
+  appendDefaultLabel,
   buildColorParamRow,
   buildVariantCards,
   buildVariantParamRow,
@@ -39,17 +40,26 @@ export const STACK_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Brand gradient tiles with white icons.',
     id: '1',
-    title: 'variant=1 · Primary Brand Gradient Stack',
+    title: appendDefaultLabel(
+      'variant=1 · Primary Brand Gradient Stack',
+      DEFAULT_STACK_VARIANT === '1'
+    ),
   },
   {
     description: 'Tinted dark tiles with colored borders and brand-colored icons.',
     id: '2',
-    title: 'variant=2 · Secondary Tinted Dark Stack (Default)',
+    title: appendDefaultLabel(
+      'variant=2 · Secondary Tinted Dark Stack',
+      DEFAULT_STACK_VARIANT === '2'
+    ),
   },
   {
     description: 'Neutral dark tiles with subtle borders and brand-colored icons.',
     id: '3',
-    title: 'variant=3 · Tertiary Neutral Dark Stack',
+    title: appendDefaultLabel(
+      'variant=3 · Tertiary Neutral Dark Stack',
+      DEFAULT_STACK_VARIANT === '3'
+    ),
   },
 ];
 

@@ -5,7 +5,13 @@
  * digits, and inner hyphens (CPAN distribution names, e.g., `libwww-perl`) before any fetch.
  */
 
-import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
+import {
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  pickFields,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   createLicenseMetric,
   createRelativeDateMetric,
@@ -60,31 +66,32 @@ const CPAN_LICENSE_NAMES: Readonly<Record<string, string>> = {
 /** Key of the stored document of an Elasticsearch search hit. */
 const SEARCH_HIT_SOURCE_KEY = '_source';
 
-/** Projects the `_source` fields of a release search hit. */
-const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
-
-/** MetaCPAN latest release search (3 source fields of 1 hit; No hits is not found) with distribution page redirect. */
-const CPAN_ENDPOINT = createEndpoint({
-  api: 'https://fastapi.metacpan.org/v1/release/_search?q=distribution:{target}%20AND%20status:latest&_source=version,license,date&size=1',
-  page: 'https://metacpan.org/dist/{target}',
-  project: (data) => {
-    const hits = isJsonObject(data) && isJsonObject(data.hits) ? data.hits.hits : undefined;
-    const firstHit: unknown = Array.isArray(hits) ? hits[0] : undefined;
-    return projectReleaseFields(
-      isJsonObject(firstHit) ? firstHit[SEARCH_HIT_SOURCE_KEY] : undefined
-    );
-  },
-});
-
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a CPAN distribution name (ASCII letters, digits, and inner hyphens; Excludes Lucene boolean operators). */
-const CPAN_DIST_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d-]{0,127}$/;
+const CPAN_DIST_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d](?:[A-Za-z\d-]{0,126}[A-Za-z\d])?$/;
 
 /** Matches a trailing ISO 8601 timezone designator (`Z` or `±hh:mm`). */
 const TIMEZONE_SUFFIX_RX = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Projects the `_source` fields of a release search hit. */
+const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'version']);
+
+/** Project the first MetaCPAN search hit's `_source` fields (`undefined` when no hits match). */
+function projectCpanRelease(data: unknown): Partial<CpanRelease> | undefined {
+  const hits = isJsonObject(data) && isJsonObject(data.hits) ? data.hits.hits : undefined;
+  const firstHit = readFirstObjectEntry(hits);
+  return projectReleaseFields(firstHit?.[SEARCH_HIT_SOURCE_KEY]);
+}
+
+/** MetaCPAN latest release search with distribution page redirect. */
+const CPAN_ENDPOINT = createEndpoint({
+  api: 'https://fastapi.metacpan.org/v1/release/_search?q=distribution:{target}%20AND%20status:latest&_source=version,license,date&size=1',
+  page: 'https://metacpan.org/dist/{target}',
+  project: projectCpanRelease,
+});
 
 /** Read the display name of the first release license (`unknown` keys render as missing). */
 function readCpanLicense(release: Partial<CpanRelease>): string | undefined {

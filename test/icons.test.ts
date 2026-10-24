@@ -309,4 +309,29 @@ describe('computeIconXBounds', () => {
     const tallyOne = requireDefined(resolveIcon('tally-1'), 'tally-1 icon');
     expect(tallyOne.maxX - tallyOne.minX).toBeLessThan(3);
   });
+
+  it('ignores non-path d-suffixed attributes, zero-extent shapes, and truncated path commands (regressions: unanchored d= match, zero-radius shapes, truncated path NaN)', () => {
+    expect(computeIconXBounds('<path data-id="M0 0 H24" d="M6 4 H18" />', false)).toEqual({
+      maxX: 18,
+      minX: 6,
+    });
+    expect(
+      computeIconXBounds(
+        '<circle cx="1" cy="12" r="0" /><rect x="23" y="4" width="0" height="8" /><rect x="6" y="4" width="12" height="8" />',
+        false
+      )
+    ).toEqual({ maxX: 18, minX: 6 });
+
+    for (const truncatedPath of [
+      '<path d="M5 10 H15 L" />',
+      '<path d="M5 10 H15 C0 0" />',
+      '<path d="M5 10 H15 Q0" />',
+      '<path d="M5 10 H15 A5 5 0 0" />',
+    ]) {
+      const bounds = computeIconXBounds(truncatedPath, false);
+      expect(Number.isFinite(bounds.minX), truncatedPath).toBe(true);
+      expect(Number.isFinite(bounds.maxX), truncatedPath).toBe(true);
+      expect(bounds, truncatedPath).toEqual({ maxX: 15, minX: 5 });
+    }
+  });
 });

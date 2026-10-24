@@ -376,6 +376,19 @@ interface AriaLabelParts {
 /** Nudge vector shape (`[deltaX, deltaY]` in `24x24` icon units). */
 type NudgeVector = readonly [deltaX: number, deltaY: number];
 
+/** Status dot animation family selected by semantic dot color. */
+type DotAnimationKind = 'active' | 'critical' | 'incident' | 'standby' | 'warning';
+
+/** Minimum, maximum, and span of a finite numeric series. */
+interface SeriesBounds {
+  /** Largest value in the series. */
+  maxValue: number;
+  /** Smallest value in the series. */
+  minValue: number;
+  /** Span (`maxValue - minValue`). */
+  range: number;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Rendered size bounds in pixels for standalone SVG icons. */
@@ -423,6 +436,9 @@ const STEPS_TOTAL_RANGE: NumericRange = { default: 1, max: MAX_STEPS_COUNT, min:
  * and would turn every point into `NaN`).
  */
 const MAX_SPARKLINE_MAGNITUDE = 1e12;
+
+/** Default size preset for CTA buttons when `size` is omitted or unrecognized. */
+export const DEFAULT_BUTTON_SIZE: SizePreset = 'md';
 
 /** Named size scale presets for CTA buttons. */
 export const BUTTON_SIZE_PRESETS: Readonly<Record<SizePreset, VariantMetrics>> = {
@@ -507,57 +523,45 @@ const BAR_SHIMMER_SWEEP_TIMING: Readonly<SweepTiming> = {
   sweepEnd: 0.54,
 };
 
-/** Icons that automatically receive a smooth 360-degree continuous rotation in `'auto'` mode. */
-const AUTO_SPIN_ICONS: ReadonlySet<string> = new Set([
-  'cog',
-  'compass',
-  'disc',
-  'fan',
-  'loader',
-  'loader-circle',
-  'orbit',
-  'refresh-ccw',
-  'refresh-cw',
-  'rotate-ccw',
-  'rotate-cw',
-  'settings',
-]);
-
-/** Icons that automatically scale up briefly and shake back-and-forth while scaled up in `'auto'` mode. */
-const AUTO_SHAKE_ICONS: ReadonlySet<string> = new Set([
-  'alert-triangle',
-  'bell',
-  'bug',
-  'flame',
-  'party-popper',
-  'shield-alert',
-  'sparkles',
-  'star',
-  'triangle-alert',
-  'trophy',
-  'wand-sparkles',
-  'zap',
-]);
-
-/** Icons that automatically receive a double-beat heartbeat scale pulse in `'auto'` mode. */
-const AUTO_PULSE_ICONS: ReadonlySet<string> = new Set([
-  'activity',
-  'heart',
-  'heart-handshake',
-  'podcast',
-  'radio',
-  'wifi',
-]);
-
-/** Icons that automatically receive a smooth vertical levitation bob in `'auto'` mode. */
-const AUTO_FLOAT_ICONS: ReadonlySet<string> = new Set([
-  'box',
-  'cloud',
-  'feather',
-  'ghost',
-  'layers',
-  'package',
-]);
+/** Contextual non-directional motion presets keyed by canonical icon slug in `'auto'` mode. */
+const AUTO_ICON_MOTIONS: Readonly<Record<string, IconMotionMode>> = {
+  activity: 'pulse',
+  'alert-triangle': 'shake',
+  bell: 'shake',
+  box: 'float',
+  bug: 'shake',
+  cloud: 'float',
+  cog: 'spin',
+  compass: 'spin',
+  disc: 'spin',
+  fan: 'spin',
+  feather: 'float',
+  flame: 'shake',
+  ghost: 'float',
+  heart: 'pulse',
+  'heart-handshake': 'pulse',
+  layers: 'float',
+  loader: 'spin',
+  'loader-circle': 'spin',
+  orbit: 'spin',
+  package: 'float',
+  'party-popper': 'shake',
+  podcast: 'pulse',
+  radio: 'pulse',
+  'refresh-ccw': 'spin',
+  'refresh-cw': 'spin',
+  'rotate-ccw': 'spin',
+  'rotate-cw': 'spin',
+  settings: 'spin',
+  'shield-alert': 'shake',
+  sparkles: 'shake',
+  star: 'shake',
+  'triangle-alert': 'shake',
+  trophy: 'shake',
+  'wand-sparkles': 'shake',
+  wifi: 'pulse',
+  zap: 'shake',
+};
 
 /** Directional nudge vectors for action icons in `'auto'` mode. */
 const AUTO_NUDGE_VECTORS: Readonly<Record<string, NudgeVector>> = {
@@ -583,26 +587,23 @@ const AUTO_NUDGE_VECTORS: Readonly<Record<string, NudgeVector>> = {
 /** Rightward nudge vector for icons without a directional entry in `AUTO_NUDGE_VECTORS`. */
 const DEFAULT_NUDGE_VECTOR: NudgeVector = [2.2, 0];
 
-/** Critical dot color states that use an urgent fast outward radar beacon. */
-const CRITICAL_DOT_STATES: ReadonlySet<DotState> = new Set(['red', 'rose']);
-
-/** High-load / incident dot color states that use a fast double-pulse outward ripple + core pulse. */
-const INCIDENT_DOT_STATES: ReadonlySet<DotState> = new Set(['orange']);
-
-/** Warning dot color states that use a medium double-pulse outward radar ripple. */
-const WARNING_DOT_STATES: ReadonlySet<DotState> = new Set(['amber', 'yellow']);
-
-/** Active work / maintenance / deploying dot color states that use a smooth breathing core + soft halo. */
-const ACTIVE_WORK_DOT_STATES: ReadonlySet<DotState> = new Set(['blue', 'cyan', 'indigo', 'sky']);
-
-/** Standby / paused / idle dot color states that use a calm deep-sleep core breath without a radar ring. */
-const STANDBY_DOT_STATES: ReadonlySet<DotState> = new Set([
-  'gray',
-  'neutral',
-  'slate',
-  'stone',
-  'zinc',
-]);
+/** Semantic status dot animation families keyed by dot color (unlisted colors use the default calm wave). */
+const DOT_ANIMATION_KINDS: Readonly<Partial<Record<DotState, DotAnimationKind>>> = {
+  amber: 'warning',
+  blue: 'active',
+  cyan: 'active',
+  gray: 'standby',
+  indigo: 'active',
+  neutral: 'standby',
+  orange: 'incident',
+  red: 'critical',
+  rose: 'critical',
+  sky: 'active',
+  slate: 'standby',
+  stone: 'standby',
+  yellow: 'warning',
+  zinc: 'standby',
+};
 
 /** Symmetric 4-segment sine-wave SMIL timing shared by continuous `'breathe'` and `'float'` icon motions. */
 const SINE_WAVE_TIMING =
@@ -631,6 +632,26 @@ const UNICODE_MINUS_RX = /\u2212/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Compute the rounded pixel span of `n` repeated segments of `itemWidth` separated by `gap`. */
+function measureSegmentedSpan(n: number, itemWidth: number, gap: number): number {
+  return n <= 0 ? 0 : Math.ceil(n * itemWidth + (n - 1) * gap);
+}
+
+/** Compute the minimum, maximum, and span of a non-empty numeric series. */
+function computeSeriesBounds(values: readonly number[]): SeriesBounds {
+  let minValue = Number.POSITIVE_INFINITY;
+  let maxValue = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (value < minValue) {
+      minValue = value;
+    }
+    if (value > maxValue) {
+      maxValue = value;
+    }
+  }
+  return { maxValue, minValue, range: maxValue - minValue };
+}
+
 /** Measure the horizontal width in pixels required by the active (sanitized) special element. */
 function measureSpecialElementWidth(
   special: BadgeSpecialElement | undefined,
@@ -645,24 +666,23 @@ function measureSpecialElementWidth(
     }
     case 'bars': {
       const { barGap, barWidth } = SPECIAL_WIDGET_GEOMETRY.bars;
-      const barCount = special.values.length;
-      return barCount < 2 ? 0 : Math.ceil(barCount * barWidth + (barCount - 1) * barGap);
+      return special.values.length < 2
+        ? 0
+        : measureSegmentedSpan(special.values.length, barWidth, barGap);
     }
     case 'bar': {
       return SPECIAL_WIDGET_GEOMETRY.bar.width;
     }
     case 'steps': {
       const { pillGap, pillWidth } = SPECIAL_WIDGET_GEOMETRY.steps;
-      const totalCount = special.total;
-      return totalCount === 0 ? 0 : Math.ceil(totalCount * pillWidth + (totalCount - 1) * pillGap);
+      return measureSegmentedSpan(special.total, pillWidth, pillGap);
     }
     case 'ring': {
       return SPECIAL_WIDGET_GEOMETRY.ring.size;
     }
     case 'strip': {
       const { tickGap, tickWidth } = SPECIAL_WIDGET_GEOMETRY.strip;
-      const tickCount = special.states.length;
-      return tickCount === 0 ? 0 : Math.ceil(tickCount * tickWidth + (tickCount - 1) * tickGap);
+      return measureSegmentedSpan(special.states.length, tickWidth, tickGap);
     }
     case 'delta': {
       const { fontSizeReduction, textOffset } = SPECIAL_WIDGET_GEOMETRY.delta;
@@ -789,13 +809,7 @@ function buildSparklinePoints(
   if (values.length < 2) {
     return undefined;
   }
-  let minValue = Number.POSITIVE_INFINITY;
-  let maxValue = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    minValue = Math.min(minValue, value);
-    maxValue = Math.max(maxValue, value);
-  }
-  const range = maxValue - minValue;
+  const { minValue, range } = computeSeriesBounds(values);
   const strokeHeight = height - 2;
   const strokeTopY = startY + 1;
   let linePoints = '';
@@ -823,22 +837,10 @@ function resolveValueColor(variant: BadgeVariant, palette: ThemePalette): string
 
 /** Resolve the contextual motion preset for a canonical icon slug when `auto` is requested. */
 function resolveAutoIconMotion(iconKey: string): IconMotionMode | undefined {
-  if (AUTO_SPIN_ICONS.has(iconKey)) {
-    return 'spin';
-  }
-  if (AUTO_SHAKE_ICONS.has(iconKey)) {
-    return 'shake';
-  }
-  if (hasOwnKey(AUTO_NUDGE_VECTORS, iconKey)) {
-    return 'nudge';
-  }
-  if (AUTO_PULSE_ICONS.has(iconKey)) {
-    return 'pulse';
-  }
-  if (AUTO_FLOAT_ICONS.has(iconKey)) {
-    return 'float';
-  }
-  return undefined;
+  return (
+    getOwnValue(AUTO_ICON_MOTIONS, iconKey) ??
+    (hasOwnKey(AUTO_NUDGE_VECTORS, iconKey) ? 'nudge' : undefined)
+  );
 }
 
 /** Wrap inner icon SVG with SMIL animations that pivot around the `24x24` box center (scale pulses and shakes). */
@@ -1039,38 +1041,37 @@ function renderDotMarkup(
     return staticCore;
   }
 
-  // [1] Critical / offline state; urgent outward beacon and core pulse:
-  if (CRITICAL_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', `dur="1.15s" ${SMOOTH_BREATH_SPLINES}`))}`;
+  switch (DOT_ANIMATION_KINDS[dot]) {
+    // [1] Critical / offline state; urgent outward beacon and core pulse:
+    case 'critical': {
+      return `${renderDotRipple(position, dotHex, '2.6;7.2', '0.75;0', 'dur="1.15s" calcMode="spline" keyTimes="0;1" keySplines="0.22 1 0.36 1"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.55;1', `dur="1.15s" ${SMOOTH_BREATH_SPLINES}`))}`;
+    }
+    // [2] Incident / overloaded state; fast double-beat outward ripple and core pulse:
+    case 'incident': {
+      return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.441;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', `dur="1.45s" ${SMOOTH_BREATH_SPLINES}`))}`;
+    }
+    // [3] Degraded / warning state; double-beat outward radar ripple:
+    case 'warning': {
+      return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.451;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.8s"')}${staticCore}`;
+    }
+    // [4] Active work / deploying state; breathing core and soft outward halo:
+    case 'active': {
+      const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}${renderDotAnimate('opacity', '0.75;1;0.75', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}`;
+      return `${renderDotRipple(position, dotHex, '2.6;5.8', '0.5;0', 'dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1"')}${renderDotCore(position, dotHex, breathing)}`;
+    }
+    // [5] Standby / idle state; calm core breath without a radar ring:
+    case 'standby': {
+      return renderDotCore(
+        position,
+        dotHex,
+        renderDotAnimate('opacity', '0.9;0.32;0.9', `dur="3.4s" ${SMOOTH_BREATH_SPLINES}`)
+      );
+    }
+    // [6] Operational / default state; calm outward spline wave:
+    default: {
+      return `${renderDotRipple(position, dotHex, '2.6;6.8', '0.6;0', 'dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1"')}${staticCore}`;
+    }
   }
-
-  // [2] Incident / overloaded state; fast double-beat outward ripple and core pulse:
-  if (INCIDENT_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;6.6;2.6;7.0', '0.72;0;0.55;0', 'keyTimes="0;0.44;0.441;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.45s"')}${renderDotCore(position, dotHex, renderDotAnimate('opacity', '1;0.68;1', `dur="1.45s" ${SMOOTH_BREATH_SPLINES}`))}`;
-  }
-
-  // [3] Degraded / warning state; double-beat outward radar ripple:
-  if (WARNING_DOT_STATES.has(dot)) {
-    return `${renderDotRipple(position, dotHex, '2.6;6.4;2.6;6.8', '0.65;0;0.5;0', 'keyTimes="0;0.45;0.451;1" calcMode="spline" keySplines="0.22 1 0.36 1;0 0 1 1;0.22 1 0.36 1" dur="1.8s"')}${staticCore}`;
-  }
-
-  // [4] Active work / deploying state; breathing core and soft outward halo:
-  if (ACTIVE_WORK_DOT_STATES.has(dot)) {
-    const breathing = `${renderDotAnimate('r', '2.4;3.2;2.4', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}${renderDotAnimate('opacity', '0.75;1;0.75', `dur="2s" ${SMOOTH_BREATH_SPLINES}`)}`;
-    return `${renderDotRipple(position, dotHex, '2.6;5.8', '0.5;0', 'dur="2s" calcMode="spline" keyTimes="0;1" keySplines="0.25 1 0.5 1"')}${renderDotCore(position, dotHex, breathing)}`;
-  }
-
-  // [5] Standby / idle state; calm core breath without a radar ring:
-  if (STANDBY_DOT_STATES.has(dot)) {
-    return renderDotCore(
-      position,
-      dotHex,
-      renderDotAnimate('opacity', '0.9;0.32;0.9', `dur="3.4s" ${SMOOTH_BREATH_SPLINES}`)
-    );
-  }
-
-  // [6] Operational / default state; calm outward spline wave:
-  return `${renderDotRipple(position, dotHex, '2.6;6.8', '0.6;0', 'dur="2.3s" calcMode="spline" keyTimes="0;1" keySplines="0.16 1 0.3 1"')}${staticCore}`;
 }
 
 /** Render a smooth ease-in-out opacity pulse `<animate>` element for inline data widgets. */
@@ -1169,13 +1170,7 @@ function renderBarWidget(
 /** Render a mini vertical bar histogram (sanitized to at most `MAX_BARS_POINTS` finite values), bottom-aligned in its widget box. */
 function renderBarsWidgetMarkup(values: number[], context: SpecialElementContext): string {
   const { barGap, barWidth, maxHeight, minHeight } = SPECIAL_WIDGET_GEOMETRY.bars;
-  let minValue = Number.POSITIVE_INFINITY;
-  let maxValue = Number.NEGATIVE_INFINITY;
-  for (const value of values) {
-    minValue = Math.min(minValue, value);
-    maxValue = Math.max(maxValue, value);
-  }
-  const range = maxValue - minValue;
+  const { maxValue, minValue, range } = computeSeriesBounds(values);
   const bottomY = (context.height + maxHeight) / 2;
   const barRadius = barWidth / 2;
   const activeColor = resolveForegroundColor(context.isOnPrimary, context.palette.accentText);
@@ -1436,7 +1431,7 @@ function resolveButtonMetrics(sizeOption: SizePreset | number | undefined): Vari
       radius: Math.round(height * 0.3),
     };
   }
-  return BUTTON_SIZE_PRESETS.md;
+  return BUTTON_SIZE_PRESETS[DEFAULT_BUTTON_SIZE];
 }
 
 /** Pack non-zero item widths with `gap` between adjacent items and optical edge padding (`leftPad`, `rightPad`). */
@@ -1687,7 +1682,8 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const special = sanitizeSpecialElement(options.special);
   const icons = resolveIconPair(options.icon);
   const specialWidth = measureSpecialElementWidth(special, fontSize);
-  const hasDot = isRenderableDot(options.dot);
+  const validDot = isRenderableDot(options.dot) ? options.dot : undefined;
+  const hasDot = validDot !== undefined;
   const layout = computeCapsuleLayout({
     gap: 6,
     hasDot,
@@ -1716,7 +1712,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
   });
   const body = renderCapsuleBody({
     animMode,
-    dot: options.dot,
+    dot: validDot,
     icons,
     isLabelBold: false,
     isLeftOnPrimary: isOnPrimary && (!layout.isSplit || layout.isDotOnlyLeft),
@@ -1739,7 +1735,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
 
   return renderSvgDocument({
     ariaLabel: buildAriaLabel({
-      dot: options.dot,
+      dot: validDot,
       fallbackName: 'badge',
       icons,
       labelText,

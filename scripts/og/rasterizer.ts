@@ -533,7 +533,7 @@ function paintBodyPrimitive(
 
 /**
  * Rasterize `svgMarkup` (`width` x `height`) into a compressed PNG `Buffer`.
- * @param svgMarkup      SVG card markup returned by `renderOgImageSvg()`.
+ * @param svgMarkup      Source SVG card markup.
  * @param width          Card width in pixels.
  * @param height         Card height in pixels.
  * @param sourceDigest   Hex SHA-256 digest of `svgMarkup`.

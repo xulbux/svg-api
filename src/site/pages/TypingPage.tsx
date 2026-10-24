@@ -17,7 +17,9 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
+import { formatBacktickList } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
+import { DEFAULT_TYPING_ERASE } from '@/svg/typing';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -26,14 +28,13 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="typing">` JSX fragment.
  */
 export function TypingSection(): HtmlFragment {
-  const layoutCodes = TYPING_LAYOUT_TOKENS.map((token) => `\`${token}\``).join(', ');
-  const alternateEraseTokens = TYPING_ERASE_TOKENS.filter((token) => token !== 'backspace').join(
-    '|'
-  );
+  const alternateEraseTokens = TYPING_ERASE_TOKENS.filter(
+    (token) => token !== DEFAULT_TYPING_ERASE
+  ).join('|');
   return (
     <section class="doc-section" id="typing">
       <SectionHeader
-        description={`Natural typing animations across ${TYPING_LAYOUT_TOKENS.length} container layouts (${layoutCodes}) with customizable cursors, erase transitions, and fonts.`}
+        description={`Natural typing animations across ${TYPING_LAYOUT_TOKENS.length} container layouts (${formatBacktickList(TYPING_LAYOUT_TOKENS)}) with customizable cursors, erase transitions, and fonts.`}
         routes={['/typing/:lines', '/typing/:prefix/:lines', '/type/:lines']}
         title="Realistic SVG Typing Animations"
       />

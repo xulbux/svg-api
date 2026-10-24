@@ -2,7 +2,13 @@
  * Effective builder defaults & query normalization – Resolves context-dependent field defaults and omits redundant query parameters.
  */
 
-import { findField, findOption, findService, readState } from '@/site/shared/encoding';
+import {
+  findField,
+  findOption,
+  findService,
+  readState,
+  resolveOptionValue,
+} from '@/site/shared/encoding';
 import {
   composeAnim,
   composeHint,
@@ -37,21 +43,38 @@ function resolveServiceFieldDefault(
   state: BuilderState,
   field: BuilderField
 ): string | undefined {
-  const { metric, service } = resolveServiceMetricSelection(schema, state);
-  if (field.id === 'service') {
-    return service?.key ?? '';
+  switch (field.id) {
+    case 'service': {
+      return resolveServiceMetricSelection(schema, state).service?.key ?? '';
+    }
+    case 'color': {
+      const { metric } = resolveServiceMetricSelection(schema, state);
+      if (!metric) {
+        return undefined;
+      }
+      return metric.hasDynamicColor ? '' : metric.defaultColor;
+    }
+    case 'dot': {
+      const { metric } = resolveServiceMetricSelection(schema, state);
+      if (!metric) {
+        return undefined;
+      }
+      return metric.hasDynamicDot ? '' : 'none';
+    }
+    case 'label': {
+      return resolveServiceMetricSelection(schema, state).metric?.defaultLabel;
+    }
+    case 'metric': {
+      return resolveServiceMetricSelection(schema, state).metric?.value;
+    }
+    case 'special': {
+      const { metric } = resolveServiceMetricSelection(schema, state);
+      return metric ? (metric.defaultSpecial ?? 'none') : undefined;
+    }
+    default: {
+      return undefined;
+    }
   }
-  if (!metric) {
-    return undefined;
-  }
-  const metricDefaults: Readonly<Record<string, string>> = {
-    color: metric.hasDynamicColor ? '' : metric.defaultColor,
-    dot: metric.hasDynamicDot ? '' : 'none',
-    label: metric.defaultLabel,
-    metric: metric.value,
-    special: metric.defaultSpecial ?? 'none',
-  };
-  return Object.hasOwn(metricDefaults, field.id) ? metricDefaults[field.id] : undefined;
 }
 
 /** Resolve layout-dependent defaults on `/builder/quote` and `/builder/typing`. */
@@ -63,7 +86,8 @@ function resolveLayoutFieldDefault(
   const effectiveLayout =
     readState(state, 'layout').toLowerCase() || (findField(schema, 'layout')?.defaultValue ?? '');
   if (schema.kind === 'typing' && field.id === 'align') {
-    const hasPrefix = Boolean(readState(state, 'prefix'));
+    const rawPrefix = readState(state, 'prefix').toLowerCase();
+    const hasPrefix = Boolean(rawPrefix && rawPrefix !== 'none');
     const rawIcon = readState(state, 'icon').toLowerCase();
     const hasIcon = Boolean(rawIcon && rawIcon !== 'none');
     return effectiveLayout === 'none' && !hasPrefix && !hasIcon
@@ -137,6 +161,30 @@ function isValueEqualToEffectiveDefault(
     return value === effectiveDefault;
   }
   return lowerValue === lowerDefault;
+}
+
+/** Normalize typing-specific query edge cases (`anim` on `layout=none` and `title=none` on `layout=window`), or `undefined` when standard normalization applies. */
+function normalizeTypingQueryOverride(
+  state: BuilderState,
+  field: BuilderField,
+  rawValue: string,
+  effectiveDefault: string
+): string | undefined {
+  const effectiveLayout = readState(state, 'layout').toLowerCase() || 'window';
+  if (field.control === 'anim' && effectiveLayout === 'none') {
+    const anim = splitAnim(rawValue, field.options);
+    const framelessAnim = composeAnim(false, anim.left, '');
+    if (!framelessAnim) {
+      return '';
+    }
+    return isValueEqualToEffectiveDefault(field, framelessAnim, effectiveDefault)
+      ? ''
+      : framelessAnim;
+  }
+  if (field.id === 'title' && effectiveLayout === 'window' && rawValue.toLowerCase() === 'none') {
+    return '';
+  }
+  return undefined;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -239,15 +287,13 @@ export function normalizeQueryFieldValue(
   ) {
     return '';
   }
-  if (
-    schema.kind === 'typing' &&
-    field.id === 'title' &&
-    (readState(state, 'layout').toLowerCase() || 'window') === 'window' &&
-    lowerValue === 'none'
-  ) {
-    return '';
-  }
   const effectiveDefault = resolveEffectiveFieldDefault(schema, state, field);
+  if (schema.kind === 'typing') {
+    const typingOverride = normalizeTypingQueryOverride(state, field, rawValue, effectiveDefault);
+    if (typingOverride !== undefined) {
+      return typingOverride;
+    }
+  }
   return isValueEqualToEffectiveDefault(field, rawValue, effectiveDefault) ? '' : rawValue;
 }
 
@@ -278,11 +324,5 @@ export function normalizeOptionValue(field: BuilderField, raw: string): string {
   if (field.control !== 'select' && field.control !== 'color') {
     return raw;
   }
-  const clean = raw.trim().toLowerCase();
-  for (const option of field.options ?? []) {
-    if (option.value === clean || option.aliases?.includes(clean)) {
-      return option.value;
-    }
-  }
-  return '';
+  return resolveOptionValue(field.options, raw.trim().toLowerCase()) ?? '';
 }

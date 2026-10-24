@@ -8,6 +8,7 @@ import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SITE_HOST, SITE_ORIGIN } from '@/config
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ACTIVE_ICON_MOTION_TOKENS,
+  ANIM_SHEEN_TOKEN,
   SIZE_TOKENS,
   SPECIAL_ELEMENT_KINDS,
   STACK_MOTION_TOKENS,
@@ -16,7 +17,7 @@ import {
 import { SVG_ROUTES } from '@/routes/svg';
 import { buildServiceRoutePattern, formatServiceMetrics } from '@/site/catalog/services';
 import { ENDPOINT_ROUTES } from '@/site/catalog/shared';
-import { formatVariantTierSummary } from '@/site/glossary';
+import { formatBacktickList, formatVariantTierSummary } from '@/site/glossary';
 import {
   BUILDER_PAGES,
   buildBuilderPath,
@@ -54,6 +55,25 @@ let ogImageSvgCache: string | undefined = undefined;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Build `[name, path]` breadcrumb tuples for a root section page or one of its subpages. */
+function buildSectionBreadcrumbs(
+  canonicalPath: string,
+  sectionPath: string,
+  sectionLabel: string,
+  pageLabel: string
+): (readonly [string, string])[] {
+  return canonicalPath === sectionPath
+    ? [
+        ['Home', '/'],
+        [pageLabel, canonicalPath],
+      ]
+    : [
+        ['Home', '/'],
+        [sectionLabel, sectionPath],
+        [pageLabel, canonicalPath],
+      ];
+}
+
 /** Build a Schema.org `BreadcrumbList` node from ordered `[name, path]` pairs. */
 function buildBreadcrumbListJsonLd(
   items: readonly (readonly [name: string, path: string])[]
@@ -68,15 +88,6 @@ function buildBreadcrumbListJsonLd(
     });
   }
   return { '@type': 'BreadcrumbList', itemListElement };
-}
-
-/** Format string tokens as backticked Markdown items joined by `separator`. */
-function formatBacktickList(tokens: readonly string[], separator: string): string {
-  const formatted: string[] = [];
-  for (const token of tokens) {
-    formatted.push(`\`${token}\``);
-  }
-  return formatted.join(separator);
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -127,17 +138,7 @@ export function buildDocsJsonLd(
   canonicalPath: string,
   breadcrumbLabel = title
 ): Readonly<Record<string, unknown>> {
-  const breadcrumbs: (readonly [string, string])[] =
-    canonicalPath === '/docs'
-      ? [
-          ['Home', '/'],
-          [breadcrumbLabel, canonicalPath],
-        ]
-      : [
-          ['Home', '/'],
-          ['Docs', '/docs'],
-          [breadcrumbLabel, canonicalPath],
-        ];
+  const breadcrumbs = buildSectionBreadcrumbs(canonicalPath, '/docs', 'Docs', breadcrumbLabel);
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -170,18 +171,12 @@ export function buildBuilderJsonLd(
   canonicalPath: string,
   breadcrumbLabel = title
 ): Readonly<Record<string, unknown>> {
-  const defaultBuilderPath = buildBuilderPath(DEFAULT_BUILDER_KIND);
-  const breadcrumbs: (readonly [string, string])[] =
-    canonicalPath === defaultBuilderPath
-      ? [
-          ['Home', '/'],
-          [breadcrumbLabel, canonicalPath],
-        ]
-      : [
-          ['Home', '/'],
-          ['Builder', defaultBuilderPath],
-          [breadcrumbLabel, canonicalPath],
-        ];
+  const breadcrumbs = buildSectionBreadcrumbs(
+    canonicalPath,
+    buildBuilderPath(DEFAULT_BUILDER_KIND),
+    'Builder',
+    breadcrumbLabel
+  );
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -294,7 +289,7 @@ export function renderLlmsTxt(): string {
       `- \`?icon=\`: \`<slug>\` | \`none\` | \`<left>,<right>\` | \`none,<right>\` | \`,<right>\` (${iconSetNames})`,
       '- `?dot=`: `none` | any theme color (pulsing status dot on badges)',
       `- \`?special=\`: ${formatBacktickList(SPECIAL_ELEMENT_KINDS, ' | ')} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
-      `- \`?anim=\`: \`sheen\` | ${formatBacktickList(iconMotions, ' | ')} (stacks also support ${formatBacktickList(stackOnlyMotions, ' | ')})`,
+      `- \`?anim=\`: \`${ANIM_SHEEN_TOKEN}\` | ${formatBacktickList(iconMotions, ' | ')} (stacks also support ${formatBacktickList(stackOnlyMotions, ' | ')})`,
       '',
       '## Documentation',
       '',

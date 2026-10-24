@@ -5,6 +5,7 @@
 import { filterIconCatalog } from '@/site/client/builder/iconSearch';
 import { createTypingLinesController } from '@/site/client/builder/typingLines';
 import type { TypingLinesControllerOptions } from '@/site/client/builder/typingLines';
+import type { SvgSite } from '@/site/client/site/types';
 import {
   BRAND_SLUG_CLEAN_RX,
   buildAltText,
@@ -28,6 +29,7 @@ import {
   parsePath,
   resolveEffectiveFieldDefault,
   resolveIconSelectDisplay,
+  resolveStackPrefillMode,
   splitAnim,
   splitHint,
   splitIconPair,
@@ -43,6 +45,43 @@ import type {
 } from '@/types';
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Mark `selectedTab` as the active roving tab (`is-active`, `aria-selected`, `tabindex`) across `tabs`.
+ * @param tabs          All tab elements in the `tablist`.
+ * @param selectedTab   Newly selected tab element.
+ */
+export function activateRovingTab(tabs: Iterable<Element>, selectedTab: Element): void {
+  for (const tab of tabs) {
+    const isSelected = tab === selectedTab;
+    tab.classList.toggle('is-active', isSelected);
+    tab.setAttribute('aria-selected', String(isSelected));
+    tab.setAttribute('tabindex', isSelected ? '0' : '-1');
+  }
+}
+
+/**
+ * Close `popover` when keyboard focus moves outside both `popover` and an optional trigger/anchor boundary.
+ * @param popover               Popover element to close on external focus loss.
+ * @param site                  Shared site client utilities.
+ * @param getExternalBoundary   Optional accessor returning an external trigger or wrapper element.
+ */
+export function bindPopoverFocusDismiss(
+  popover: HTMLElement,
+  site: SvgSite | undefined,
+  getExternalBoundary?: () => Element | null | undefined
+): void {
+  popover.addEventListener('focusout', (event) => {
+    const boundary = getExternalBoundary?.();
+    if (
+      event.relatedTarget instanceof Node &&
+      !popover.contains(event.relatedTarget) &&
+      (!boundary || !boundary.contains(event.relatedTarget))
+    ) {
+      site?.closePopover(popover);
+    }
+  });
+}
 
 /**
  * Move roving focus across a horizontal ARIA `tablist` on `ArrowLeft`, `ArrowRight`, `Home`, and `End`.
@@ -114,6 +153,7 @@ export function computeGridFocusIndex(
 /**
  * Create a keyed promise cache that forgets rejected loads, so failed requests are retried on the next call.
  * @param load   Loader per key.
+ * @returns Memoized async loader function.
  */
 export function createAsyncCache<T>(
   load: (key: string) => Promise<T>
@@ -139,6 +179,7 @@ export function createAsyncCache<T>(
  * Create a slug resolver mirroring `resolveIcon` (aliases, Lucide-first or brand-first lookup, slug length limit).
  * @param index           Icon picker index.
  * @param maxSlugLength   Maximum slug length (`BuilderSchema.maxIconSlugLength`).
+ * @returns Icon slug resolver and page locator.
  */
 export function createIconResolver(index: IconPickerIndex, maxSlugLength: number): IconResolver {
   const lucideByKey = new Map<string, string>();
@@ -245,6 +286,7 @@ export const core: BuilderClientCore = {
   parsePath,
   resolveEffectiveFieldDefault,
   resolveIconSelectDisplay,
+  resolveStackPrefillMode,
   splitAnim,
   splitHint,
   splitIconPair,
@@ -280,6 +322,7 @@ export {
   readState,
   resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
+  resolveStackPrefillMode,
   splitAnim,
   splitHint,
   splitIconPair,

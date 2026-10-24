@@ -102,7 +102,7 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
     case 'quote': {
       const author = readState(state, 'author');
       const text = encodeSegment(readState(state, 'text'));
-      if (author) {
+      if (author && text) {
         return `/quote/${encodeSegment(author)}/${text}`;
       }
       return text ? `/quote/${text}` : '/quote';
@@ -117,7 +117,7 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
     case 'typing': {
       const prefix = readState(state, 'prefix');
       const lines = encodeSegment(normalizeTypingLinesInput(readState(state, 'lines')));
-      if (prefix) {
+      if (prefix && lines) {
         return `/typing/${encodeSegment(prefix)}/${lines}`;
       }
       return lines ? `/typing/${lines}` : '/typing';
@@ -131,6 +131,17 @@ function buildPathname(schema: BuilderSchema, state: BuilderState): string {
 /** Build the query string of every non-default query parameter field. */
 function buildQuery(schema: BuilderSchema, state: BuilderState): string {
   const pairs: string[] = [];
+  if (schema.kind === 'quote' && !readState(state, 'text')) {
+    const author = readState(state, 'author');
+    if (author) {
+      pairs.push(`author=${encodeSegment(author)}`);
+    }
+  } else if (schema.kind === 'typing' && !normalizeTypingLinesInput(readState(state, 'lines'))) {
+    const prefix = readState(state, 'prefix');
+    if (prefix) {
+      pairs.push(`prefix=${encodeSegment(prefix)}`);
+    }
+  }
   const typingLayout = schema.kind === 'typing' ? readState(state, 'layout') : '';
   for (const field of schema.fields) {
     const rawValue = (state[field.id] ?? '').trim();
@@ -146,11 +157,11 @@ function buildQuery(schema: BuilderSchema, state: BuilderState): string {
   return pairs.length > 0 ? `?${pairs.join('&')}` : '';
 }
 
-/** Read the first non-empty query parameter of a list of names (empty values fall through like in the Worker). */
+/** Read the first non-whitespace query parameter of a list of names (blank values fall through like in the Worker). */
 function readQueryParam(query: URLSearchParams, names: readonly string[]): string {
   for (const name of names) {
     const value = query.get(name);
-    if (value) {
+    if (value && value.trim()) {
       return value;
     }
   }
@@ -160,6 +171,28 @@ function readQueryParam(query: URLSearchParams, names: readonly string[]): strin
 /** Read the first non-empty query fallback (`aliases`) of a path segment field (e.g., `?groups=` for `/stack`). */
 function readSegmentFallback(schema: BuilderSchema, query: URLSearchParams, id: string): string {
   return readQueryParam(query, findField(schema, id)?.aliases ?? []);
+}
+
+/** Check whether `?center=` carries a truthy boolean flag token. */
+function hasTruthyCenterFlag(query: URLSearchParams): boolean {
+  return TRUTHY_FLAG_TOKENS.has((query.get('center') ?? '').trim().toLowerCase());
+}
+
+/** Populate an optional leading segment (`author` or `prefix`) and primary body segment (`text` or `lines`). */
+function parseOptionalLeadingPair(
+  state: BuilderState,
+  schema: BuilderSchema,
+  route: ParsedRoute,
+  leadingId: string,
+  primaryId: string
+): void {
+  const hasLeadingSegment = route.segments.length === 2;
+  state[leadingId] = hasLeadingSegment
+    ? (route.segments[0] ?? '')
+    : readSegmentFallback(schema, route.query, leadingId);
+  state[primaryId] =
+    (hasLeadingSegment ? route.segments[1] : route.segments[0]) ||
+    readSegmentFallback(schema, route.query, primaryId);
 }
 
 /** Canonicalize a requested service metric like the Worker (case-insensitive, metric aliases). */
@@ -182,90 +215,113 @@ function parseRoute(rawPath: string, origin: string): ParsedRoute | undefined {
   };
 }
 
-/** Path segment parsers per element kind; Each one fills `state` and reports whether the route belongs to the builder. */
-const PATH_PARSERS: Readonly<
-  Record<string, (state: BuilderState, route: ParsedRoute, schema: BuilderSchema) => boolean>
-> = {
-  badge(state, { prefix, segments }) {
-    Object.assign(state, { label: segments[0] ?? '', value: segments[1] ?? '' });
-    return prefix === 'badge' && segments.length <= 2;
-  },
-  button(state, { prefix, segments }) {
-    Object.assign(state, { label: segments[0] ?? '', value: segments[1] ?? '' });
-    return (prefix === 'button' || prefix === 'btn') && segments.length <= 2;
-  },
-  icon(state, { prefix, segments }) {
-    state.icon = segments[0] ?? '';
-    return prefix === 'icon' && segments.length === 1;
-  },
-  quote(state, { prefix, query, segments }, schema) {
-    const hasAuthorSegment = segments.length === 2;
-    state.author = hasAuthorSegment
-      ? (segments[0] ?? '')
-      : readSegmentFallback(schema, query, 'author');
-    state.text =
-      (hasAuthorSegment ? segments[1] : segments[0]) || readSegmentFallback(schema, query, 'text');
-    const layoutField = findField(schema, 'layout');
-    const layoutNames = layoutField?.param
-      ? [layoutField.param, ...(layoutField.aliases ?? [])]
-      : [];
-    const center = (query.get('center') ?? '').trim().toLowerCase();
-    if (!readQueryParam(query, layoutNames).trim() && TRUTHY_FLAG_TOKENS.has(center)) {
-      state.layout = 'vertical';
+/** Parse service badge path segments into `state` and report whether they match `service`'s route arity. */
+function parseServiceSegments(
+  state: BuilderState,
+  { prefix, segments }: ParsedRoute,
+  schema: BuilderSchema
+): boolean {
+  const service = findService(schema, (segments[0] ?? '').toLowerCase());
+  if (prefix !== 'badge' || !service || segments.length < 3) {
+    return false;
+  }
+  const middle = segments.slice(1, -1);
+  const metric = canonicalizeMetric(service, segments.at(-1) ?? '');
+  if (middle.includes('') || !findOption(service.metrics, metric)) {
+    return false;
+  }
+  state.service = service.key;
+  state.metric = metric;
+  const minTargetSegments = service.minTargetSegments ?? 1;
+  if (service.maxTargetSegments > 1) {
+    const hasOwnerSegment = service.ownerMode === 'required';
+    const targetSegments = hasOwnerSegment ? middle.slice(1) : middle;
+    state.owner = hasOwnerSegment ? (middle[0] ?? '') : '';
+    state.target = targetSegments.join('/');
+    return (
+      targetSegments.length >= minTargetSegments &&
+      targetSegments.length <= service.maxTargetSegments
+    );
+  }
+  if (middle.length === 2) {
+    state.owner = middle[0] ?? '';
+    state.target = middle[1] ?? '';
+    return service.ownerMode !== 'none';
+  }
+  state.target = middle[0] ?? '';
+  return middle.length === 1 && service.ownerMode !== 'required';
+}
+
+/** Populate quote path segments and `?center=` fallback, reporting whether `route` matches `/quote`. */
+function parseQuoteSegments(
+  state: BuilderState,
+  schema: BuilderSchema,
+  route: ParsedRoute
+): boolean {
+  parseOptionalLeadingPair(state, schema, route, 'author', 'text');
+  const layoutField = findField(schema, 'layout');
+  const rawLayout = layoutField?.param
+    ? readQueryParam(route.query, [layoutField.param, ...(layoutField.aliases ?? [])])
+    : '';
+  if (!rawLayout && hasTruthyCenterFlag(route.query)) {
+    state.layout = 'vertical';
+  }
+  return route.prefix === 'quote' && route.segments.length <= 2;
+}
+
+/** Populate typing path segments and `?center=` fallback, reporting whether `route` matches `/typing` or `/type`. */
+function parseTypingSegments(
+  state: BuilderState,
+  schema: BuilderSchema,
+  route: ParsedRoute
+): boolean {
+  parseOptionalLeadingPair(state, schema, route, 'prefix', 'lines');
+  if (!state.align && hasTruthyCenterFlag(route.query)) {
+    state.align = 'center';
+  }
+  return (route.prefix === 'typing' || route.prefix === 'type') && route.segments.length <= 2;
+}
+
+/** Populate path-derived `state` fields and report whether `route` belongs to `schema.kind`. */
+function parsePathSegments(
+  state: BuilderState,
+  route: ParsedRoute,
+  schema: BuilderSchema
+): boolean {
+  const { prefix, query, segments } = route;
+  switch (schema.kind) {
+    case 'badge': {
+      state.label = segments[0] ?? '';
+      state.value = segments[1] ?? '';
+      return prefix === 'badge' && segments.length <= 2;
     }
-    return prefix === 'quote' && segments.length <= 2;
-  },
-  service(state, { prefix, segments }, schema) {
-    const service = findService(schema, (segments[0] ?? '').toLowerCase());
-    if (prefix !== 'badge' || !service || segments.length < 3) {
+    case 'button': {
+      state.label = segments[0] ?? '';
+      state.value = segments[1] ?? '';
+      return (prefix === 'button' || prefix === 'btn') && segments.length <= 2;
+    }
+    case 'icon': {
+      state.icon = segments[0] ?? '';
+      return prefix === 'icon' && segments.length === 1;
+    }
+    case 'quote': {
+      return parseQuoteSegments(state, schema, route);
+    }
+    case 'service': {
+      return parseServiceSegments(state, route, schema);
+    }
+    case 'stack': {
+      state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
+      return prefix === 'stack' && segments.length <= 1;
+    }
+    case 'typing': {
+      return parseTypingSegments(state, schema, route);
+    }
+    default: {
       return false;
     }
-    const middle = segments.slice(1, -1);
-    const metric = canonicalizeMetric(service, segments.at(-1) ?? '');
-    if (middle.includes('') || !findOption(service.metrics, metric)) {
-      return false;
-    }
-    state.service = service.key;
-    state.metric = metric;
-    const minTargetSegments = service.minTargetSegments ?? 1;
-    if (service.maxTargetSegments > 1) {
-      const hasOwnerSegment = service.ownerMode === 'required';
-      const targetSegments = hasOwnerSegment ? middle.slice(1) : middle;
-      state.owner = hasOwnerSegment ? (middle[0] ?? '') : '';
-      state.target = targetSegments.join('/');
-      return (
-        targetSegments.length >= minTargetSegments &&
-        targetSegments.length <= service.maxTargetSegments
-      );
-    }
-    if (middle.length === 2) {
-      state.owner = middle[0] ?? '';
-      state.target = middle[1] ?? '';
-      return service.ownerMode !== 'none';
-    }
-    state.target = middle[0] ?? '';
-    return middle.length === 1 && service.ownerMode !== 'required';
-  },
-  stack(state, { prefix, query, segments }, schema) {
-    state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
-    return prefix === 'stack' && segments.length <= 1;
-  },
-  typing(state, { prefix, query, segments }, schema) {
-    const hasPrefixSegment = segments.length === 2;
-    state.prefix = hasPrefixSegment
-      ? (segments[0] ?? '')
-      : readSegmentFallback(schema, query, 'prefix');
-    state.lines =
-      (hasPrefixSegment ? segments[1] : segments[0]) || readSegmentFallback(schema, query, 'lines');
-    const alignField = findField(schema, 'align');
-    const alignNames = alignField?.param ? [alignField.param, ...(alignField.aliases ?? [])] : [];
-    const center = (query.get('center') ?? '').trim().toLowerCase();
-    if (!readQueryParam(query, alignNames).trim() && TRUTHY_FLAG_TOKENS.has(center)) {
-      state.align = 'center';
-    }
-    return (prefix === 'typing' || prefix === 'type') && segments.length <= 2;
-  },
-};
+  }
+}
 
 /** Join non-empty parts with a separator. */
 function joinNonEmpty(parts: readonly string[], separator: string): string {
@@ -311,6 +367,15 @@ function buildServiceRedirectUrl(schema: BuilderSchema, state: BuilderState): st
     }
   }
   return template.replaceAll('{owner}', owner).replaceAll('{target}', target);
+}
+
+/** Set a non-empty query parameter or delete it when empty. */
+function setOptionalSearchParam(params: URLSearchParams, name: string, value: string): void {
+  if (value) {
+    params.set(name, value);
+  } else {
+    params.delete(name);
+  }
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -359,15 +424,14 @@ export function buildPreviewPath(path: string, isReducedMotion: boolean): string
 }
 
 /**
- * Parse an existing SVG URL (path and query) into builder state ("Open in Builder" and shared links).
+ * Parse an existing SVG URL (path and query) into builder state (preview edit links and shared builder URLs).
  * @param schema    Builder schema.
  * @param rawPath   Root-relative path or absolute URL.
  * @returns State with every field set, or `undefined` when the path belongs to another builder.
  */
 export function parsePath(schema: BuilderSchema, rawPath: string): BuilderState | undefined {
   const route = parseRoute(rawPath, schema.origin);
-  const parsePathSegments = PATH_PARSERS[schema.kind];
-  if (!route || !parsePathSegments) {
+  if (!route) {
     return undefined;
   }
   const state: BuilderState = {};
@@ -456,12 +520,7 @@ export function buildDefaultLinkTarget(
 export function buildShareUrl(href: string, path: string, alt: string, link: string): string {
   const shareUrl = new URL(href);
   shareUrl.searchParams.set('path', path);
-  for (const [name, value] of Object.entries({ alt, link })) {
-    if (value) {
-      shareUrl.searchParams.set(name, value);
-    } else {
-      shareUrl.searchParams.delete(name);
-    }
-  }
+  setOptionalSearchParam(shareUrl.searchParams, 'alt', alt);
+  setOptionalSearchParam(shareUrl.searchParams, 'link', link);
   return shareUrl.href;
 }

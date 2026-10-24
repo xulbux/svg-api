@@ -8,7 +8,6 @@
 
 import {
   CACHE_TTL,
-  PACKAGE_ROUTE,
   createEndpoint,
   createMetric,
   defineService,
@@ -74,13 +73,15 @@ const WHITESPACE_RX = /\s+/g;
 /** Matches runs of PEP 503 name separators (`-`, `_`, `.`). */
 const PEP503_SEPARATOR_RX = /[-_.]+/g;
 
+/** Matches a PEP 508 PyPI project name (alphanumeric endpoints with inner `.`, `_`, or `-`; Safe for SQL string literals). */
+const PYPI_PROJECT_RX = /^[A-Za-z\d](?:[A-Za-z\d._-]{0,212}[A-Za-z\d])?$/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /**
  * Normalize a PyPI project name per PEP 503 (`My_Package.Name` -> `my-package-name`).
- * ClickPy stores download rows under the normalized name, and owner/target segments are
- * already validated to `[\w.@+-]` (no quotes or backslashes), so the result is safe to embed in
- * the SQL string literal.
+ * `PYPI_PROJECT_RX` restricts `:pkg` to ASCII letters, digits, `.`, `_`, and `-`, so the normalized
+ * name is safe to embed in the ClickPy SQL string literal.
  */
 function normalizePyPiName(pkg: string): string {
   return pkg.replace(PEP503_SEPARATOR_RX, '-').toLowerCase();
@@ -225,5 +226,5 @@ export const PYPI_SERVICE = defineService({
       (info) => info.version
     ),
   },
-  route: PACKAGE_ROUTE,
+  route: { target: { pattern: PYPI_PROJECT_RX, placeholder: ':pkg' } },
 });

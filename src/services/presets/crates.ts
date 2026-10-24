@@ -5,7 +5,13 @@
  * to `~3 KB` (only the default version and recent download counters).
  */
 
-import { CACHE_TTL, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  CACHE_TTL,
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
   bucketSeries,
@@ -77,6 +83,9 @@ function projectCratesDownloads(data: unknown): CratesDownloadsProjection | unde
   const meta = isJsonObject(data.meta) ? data.meta : undefined;
   addDailyEntries(meta?.extra_downloads, byDate);
   if (byDate.size === 0) {
+    if (Array.isArray(data.version_downloads)) {
+      return { recentDownloads: 0 };
+    }
     const crate = isJsonObject(data.crate) ? data.crate : undefined;
     return { recentDownloads: readFiniteNumber(crate?.recent_downloads) };
   }
@@ -108,8 +117,7 @@ function findDefaultVersionEntry(
       return candidate;
     }
   }
-  const [firstVersion] = versions;
-  return isJsonObject(firstVersion) ? firstVersion : undefined;
+  return readFirstObjectEntry(versions);
 }
 
 /** Project a crates.io crate document to its summary counts and default version metadata. */

@@ -108,8 +108,12 @@ export function filterIconCatalog(
   const brandAliasHits = new Set<string>();
   collectMatchingAliasTargets(index.lucideAliases, queryTokens, lucideAliasHits);
   collectMatchingAliasTargets(index.brandAliases, queryTokens, brandAliasHits);
-  collectMatchingAliasTargets(index.aliases, queryTokens, lucideAliasHits);
-  collectMatchingAliasTargets(index.aliases, queryTokens, brandAliasHits);
+  for (const [alias, primary] of Object.entries(index.aliases)) {
+    if (hasAllQueryTokens(alias, queryTokens)) {
+      lucideAliasHits.add(primary);
+      brandAliasHits.add(primary);
+    }
+  }
 
   const lucideMatches = computeSetMatches(
     index,

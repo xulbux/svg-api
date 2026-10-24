@@ -11,8 +11,9 @@ import { SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import { HTML_SECURITY_HEADERS } from '@/routes/http';
 import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
+import { resolveSvgRequest } from '@/routes/svg';
 import { listServiceMetricAliases } from '@/services/fetcher';
-import { getSiteAsset } from '@/site/assets';
+import { getSiteAsset, getSiteAssetUrl } from '@/site/assets';
 import { formatCountLowerBound, getIconSetCounts, STACK_EXAMPLE_GROUPS } from '@/site/catalog';
 import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
@@ -31,7 +32,7 @@ import { MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { escapeXml } from '@/svg/shared';
 import { GROUP_GAP_RATIO } from '@/svg/stack';
 import type { SiteClientCore } from '@/types';
-import { evaluateClientCore, requireDefined } from './helpers';
+import { evaluateClientCore, readClientModuleSources, requireDefined } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -49,6 +50,16 @@ interface ListedMetrics {
   aliases: string[];
   /** Listed canonical metrics. */
   metrics: string[];
+}
+
+/** Minimal attribute-backed switch element used in Node client-bundle tests. */
+interface FakeSwitchElement {
+  /** Register an event listener for `type`. */
+  addEventListener: (type: string, listener: () => void) => void;
+  /** Read an attribute value (`undefined` when absent). */
+  getAttribute: (name: string) => string | undefined;
+  /** Set an attribute value. */
+  setAttribute: (name: string, value: string) => void;
 }
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -93,6 +104,10 @@ const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
 /** Matches every `--c-…:` custom property definition. */
 const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
 
+/** Matches concrete SVG endpoint paths inside inline `<code>…</code>` spans. */
+const INLINE_SVG_ROUTE_CODE_RX =
+  /<code[^>]*>(?<path>\/(?:badge|btn|button|icon|quote|stack|type|typing)\/[^<\s]+)<\/code>/g;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Render the homepage, every documentation page, and every builder page. */
@@ -107,9 +122,9 @@ function renderAllPages(): RenderedPage[] {
   return pages;
 }
 
-/** Read the site script asset source. */
+/** Read the site client TypeScript module sources for structural source assertions. */
 function readSiteScript(): string {
-  return getSiteAsset('site.js')?.body ?? '';
+  return readClientModuleSources('site');
 }
 
 /** Evaluate the site script without a DOM and return its exposed pure helpers. */
@@ -147,6 +162,41 @@ function collectListedMetrics(row: string): ListedMetrics {
     }
   }
   return listed;
+}
+
+/** Build an attribute-backed fake toggle `<button>` element with click listener dispatch. */
+function createFakeSwitchButton(): {
+  click: () => void;
+  element: FakeSwitchElement;
+  getChecked: () => string | undefined;
+} {
+  const attributes = new Map<string, string>([['aria-checked', 'false']]);
+  const clickListeners: (() => void)[] = [];
+  const element: FakeSwitchElement = {
+    addEventListener(type: string, listener: () => void) {
+      if (type === 'click') {
+        clickListeners.push(listener);
+      }
+    },
+    getAttribute: (name: string) => attributes.get(name),
+    setAttribute(name: string, value: string) {
+      attributes.set(name, value);
+    },
+  };
+  return {
+    click() {
+      for (const listener of clickListeners) {
+        listener();
+      }
+    },
+    element,
+    getChecked: () => attributes.get('aria-checked'),
+  };
+}
+
+/** Minimal `ResizeObserver` constructor stub for evaluating `site.client.js` in Node. */
+function createFakeResizeObserver(): { observe: () => void; unobserve: () => void } {
+  return { observe: () => undefined, unobserve: () => undefined };
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -319,7 +369,7 @@ describe('documentation pages – accessibility', () => {
       'class="select-empty stack-catalog-empty" id="stack-catalog-empty" role="status" aria-live="polite" hidden'
     );
 
-    const builderJs = getSiteAsset('builder.js')?.body ?? '';
+    const builderJs = readClientModuleSources('builder');
     expect(builderJs).toContain("setAttribute('aria-required', 'true')");
     expect(builderJs).toContain("removeAttribute('aria-required')");
     expect(builderJs).not.toContain("toggleAttribute('aria-required'");
@@ -343,10 +393,10 @@ describe('documentation pages – head metadata & client script', () => {
         '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
       );
       expect(page.html, page.path).toContain(
-        '<link rel="preload" href="/assets/Geist-Regular.ttf" as="font" type="font/ttf" crossorigin="anonymous" />'
+        `<link rel="preload" href="${getSiteAssetUrl('Geist-Regular.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
       expect(page.html, page.path).toContain(
-        '<link rel="preload" href="/assets/Geist-Bold.ttf" as="font" type="font/ttf" crossorigin="anonymous" />'
+        `<link rel="preload" href="${getSiteAssetUrl('Geist-Bold.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
       expect(page.html, page.path).toContain(
         `<meta property="og:url" content="${SITE_ORIGIN}${page.path}" />`
@@ -444,8 +494,9 @@ describe('documentation pages – head metadata & client script', () => {
     expect(css).toContain('--c-preview-inverse-bg: light-dark(#101010, #FFFFFF);');
     expect(css).toContain('--c-preview-inverse-btn-bg: light-dark(#DCDCDC, #242424);');
     expect(css).toContain('--c-preview-inverse-btn-text: light-dark(#000000, #FAFAFA);');
+    expect(css).toContain('--c-preview-inverse-checker: light-dark(');
     expect(css).toMatch(
-      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: light-dark\(/
+      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
     );
     expect(css).not.toMatch(/data-preview-bg=['"]checker['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
@@ -575,7 +626,10 @@ describe('documentation pages – navigation & static assets', () => {
   it('references the versioned stylesheet and site script and keeps template placeholders out of the assets', () => {
     const css = getSiteAsset('site.css');
     const script = getSiteAsset('site.js');
-    expect(css?.body).toBe(getSiteStylesheet());
+    const builderBundle = getSiteAsset('builder.js');
+    expect(css?.body.replaceAll(/\?v=[\da-z]+/g, '')).toBe(getSiteStylesheet());
+    expect(script?.body).not.toContain('/**');
+    expect(builderBundle?.body).not.toContain('/**');
     for (const page of renderAllPages()) {
       expect(page.html, page.path).toContain(
         `<link rel="stylesheet" href="/assets/site.css?v=${css?.version}" />`
@@ -606,10 +660,9 @@ describe('documentation pages – navigation & static assets', () => {
       'Geist-SemiBoldItalic.ttf',
       'Geist-Bold.ttf',
       'JetBrainsMono-Regular.ttf',
-      'JetBrainsMono-Italic.ttf',
       'JetBrainsMono-Bold.ttf',
-      'JetBrainsMono-BoldItalic.ttf',
     ]);
+    const servedCss = getSiteAsset('site.css')?.body ?? '';
     for (const fontName of fontNames) {
       const asset = getSiteAsset(fontName);
       expect(asset?.contentType, fontName).toBe('font/ttf');
@@ -617,7 +670,10 @@ describe('documentation pages – navigation & static assets', () => {
       expect((asset?.body as ArrayBuffer | undefined)?.byteLength, fontName).toBeGreaterThan(
         100_000
       );
+      expect(servedCss, fontName).toContain(`/assets/${fontName}?v=${asset?.version}`);
     }
+    expect(getSiteAsset('JetBrainsMono-Italic.ttf')).toBeUndefined();
+    expect(getSiteAsset('JetBrainsMono-BoldItalic.ttf')).toBeUndefined();
   });
 });
 
@@ -1065,7 +1121,7 @@ describe('site stylesheet', () => {
     }
   });
 
-  it('protects asterisks inside inline code spans, serializes string popover attributes, marks variant=2 as the /docs/typing default, and rasterizes <circle> inside <g> (regressions: code-span asterisks became <strong>, string popover coerced to bare popover, /docs/typing variant=1 marked default, missing sparkles <circle> in og.png)', () => {
+  it('protects asterisks inside inline code spans, serializes string popover attributes, marks variant=3 as the /docs/typing default, and rasterizes <circle> inside <g> (regressions: code-span asterisks became <strong>, string popover coerced to bare popover, /docs/typing wrong variant marked default, missing sparkles <circle> in og.png)', () => {
     expect(formatInlineMarkupHtml('Match `**glob**` with **care**')).toBe(
       'Match <code>**glob**</code> with <strong>care</strong>'
     );
@@ -1076,6 +1132,9 @@ describe('site stylesheet', () => {
 
     const typingDocsHtml = renderDocsHtml('typing');
     expect(typingDocsHtml).toContain(
+      '<span class="card-title-text">Tertiary Neutral + Underscore Cursor</span><span class="card-title-pill">Default</span>'
+    );
+    expect(typingDocsHtml).not.toContain(
       '<span class="card-title-text">Secondary Tinted + Block Cursor</span><span class="card-title-pill">Default</span>'
     );
     expect(typingDocsHtml).not.toContain(
@@ -1128,5 +1187,135 @@ describe('site stylesheet', () => {
     expect(badgesDocsHtml).toContain('"name":"Static Badges","position":3');
     const badgeBuilderHtml = renderBuilderHtml('badge');
     expect(badgeBuilderHtml).toContain('"name":"Badge Builder","position":2');
+  });
+
+  it('resolves every concrete SVG example path in docs, resets closed OG subpaths after Z, and toggles theme/preview switches when localStorage is blocked (regressions: 3-segment /typing example returned 404, post-closepath coordinates polluted closed subpath, blocked localStorage froze theme and preview toggles)', () => {
+    // [1] Every concrete `/badge/…`, `/typing/…`, etc. code example in docs resolves without `404`:
+    let checkedExamples = 0;
+    for (const page of DOCS_PAGES) {
+      const html = renderDocsHtml(page.slug);
+      for (const match of html.matchAll(INLINE_SVG_ROUTE_CODE_RX)) {
+        const rawCodePath = (match.groups?.path ?? '').replaceAll('&amp;', '&');
+        const pathnamePart = rawCodePath.split('?')[0] ?? '';
+        const isPlaceholderPattern =
+          pathnamePart.includes(':') ||
+          pathnamePart.includes('*') ||
+          pathnamePart.includes('[') ||
+          pathnamePart.includes('<') ||
+          rawCodePath.includes('<');
+        if (!isPlaceholderPattern) {
+          checkedExamples += 1;
+          expect(
+            resolveSvgRequest(new URL(rawCodePath, SITE_ORIGIN)),
+            `${page.slug}: ${rawCodePath}`
+          ).toBeDefined();
+        }
+      }
+    }
+    expect(checkedExamples).toBeGreaterThan(0);
+
+    // [2] `flattenSvgPath` resets `command` and `currentSubpath` after `Z` instead of mutating the closed polygon:
+    const closedWithStrayCoords = flattenSvgPath('M0 0 H10 V10 Z 20 20');
+    expect(closedWithStrayCoords).toHaveLength(1);
+    expect(closedWithStrayCoords[0]?.points).toHaveLength(4);
+
+    const closedPlusLine = flattenSvgPath('M0 0 H10 V10 Z L30 20');
+    expect(closedPlusLine).toHaveLength(2);
+    expect(closedPlusLine[0]?.isClosed).toBe(true);
+    expect(closedPlusLine[0]?.points).toHaveLength(4);
+    expect(closedPlusLine[1]?.isClosed).toBe(false);
+    expect(closedPlusLine[1]?.points).toEqual([
+      [0, 0],
+      [30, 20],
+    ]);
+
+    // [3] Theme and preview-bg switches keep toggling back and forth when `localStorage` throws:
+    const schemeMeta = { content: 'light dark' };
+    const themeToggle = createFakeSwitchButton();
+    const previewBgToggle = createFakeSwitchButton();
+    const rootAttributes = new Map<string, string>();
+    const fakeRoot = {
+      clientWidth: 1280,
+      getAttribute: (name: string) => rootAttributes.get(name),
+      hasAttribute: (name: string) => rootAttributes.has(name),
+      removeAttribute: (name: string) => {
+        rootAttributes.delete(name);
+      },
+      setAttribute: (name: string, value: string) => {
+        rootAttributes.set(name, value);
+      },
+    };
+    const fakeMediaQuery = { addEventListener: () => undefined, matches: false };
+    const siteConfigJson = JSON.stringify({
+      drawerMediaQuery: '(max-width: 960px)',
+      previewBgStorageKey: 'preview-bg',
+      previewBgValues: ['auto', 'inverse'],
+      schemeStorageKey: 'color-scheme',
+      themeColors: { dark: DARK_BG, light: LIGHT_BG },
+    });
+    const throwingStorage = {
+      getItem() {
+        throw new Error('SecurityError');
+      },
+      removeItem() {
+        throw new Error('SecurityError');
+      },
+      setItem() {
+        throw new Error('SecurityError');
+      },
+    };
+    const fakeDocument = {
+      addEventListener: () => undefined,
+      documentElement: fakeRoot,
+      getElementById(id: string) {
+        if (id === 'site-config') {
+          return { textContent: siteConfigJson };
+        }
+        if (id === 'theme-toggle') {
+          return themeToggle.element;
+        }
+        if (id === 'preview-bg-toggle') {
+          return previewBgToggle.element;
+        }
+        return undefined;
+      },
+      querySelector: (selector: string) =>
+        selector === 'meta[name="color-scheme"]' ? schemeMeta : undefined,
+      querySelectorAll: () => [],
+    };
+    const fakeGlobal = {
+      addEventListener: () => undefined,
+      innerHeight: 800,
+      matchMedia: () => fakeMediaQuery,
+    };
+
+    // oxlint-disable-next-line typescript/no-implied-eval, no-new-func -- Executes the shipped site client bundle against a minimal DOM sandbox.
+    new Function(
+      'globalThis',
+      'document',
+      'localStorage',
+      'HTMLElement',
+      'ResizeObserver',
+      siteScript
+    )(fakeGlobal, fakeDocument, throwingStorage, { prototype: {} }, createFakeResizeObserver);
+
+    expect(themeToggle.getChecked()).toBe('false');
+    themeToggle.click();
+    expect(schemeMeta.content).toBe('dark');
+    expect(themeToggle.getChecked()).toBe('true');
+    themeToggle.click();
+    expect(schemeMeta.content).toBe('light dark');
+    expect(themeToggle.getChecked()).toBe('false');
+    themeToggle.click();
+    expect(schemeMeta.content).toBe('dark');
+    expect(themeToggle.getChecked()).toBe('true');
+
+    expect(previewBgToggle.getChecked()).toBe('false');
+    previewBgToggle.click();
+    expect(rootAttributes.get('data-preview-bg')).toBe('inverse');
+    expect(previewBgToggle.getChecked()).toBe('true');
+    previewBgToggle.click();
+    expect(rootAttributes.has('data-preview-bg')).toBe(false);
+    expect(previewBgToggle.getChecked()).toBe('false');
   });
 });

@@ -11,6 +11,8 @@ import {
   findOption,
   findService,
   getOwnValue,
+  MAX_TYPING_LINE_LENGTH,
+  MAX_TYPING_LINES,
   resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
   resolveIconSelectDisplay,
@@ -20,7 +22,6 @@ import {
   splitSize,
   splitSpecial,
 } from '@/site/shared';
-import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/svg/typing';
 import type {
   BuilderControl,
   BuilderField,
@@ -196,6 +197,7 @@ function renderCustomSelect(
         class="builder-input select-trigger"
         id={`${selectId}-trigger`}
         popovertarget={`${selectId}-menu`}
+        aria-expanded="false"
         aria-haspopup="listbox"
         aria-labelledby={`${labelId} ${selectId}-value`}
         aria-describedby={hintId}>
@@ -308,6 +310,7 @@ function renderIconSelect(options: IconSelectOptions): HtmlFragment {
           data-preset-icon={presetIcon}
           data-preset-dynamic={isPresetDynamic ? 'true' : undefined}
           popovertarget="icon-picker"
+          aria-expanded="false"
           aria-haspopup="dialog"
           aria-labelledby={`${labelId} ${inputId}-value`}
           aria-describedby={describedBy}>
@@ -475,6 +478,7 @@ function renderHelpButton(
       data-help-popover={popoverId}
       data-help-align={align}
       popovertarget={popoverId}
+      aria-expanded="false"
       aria-haspopup="dialog"
       aria-label={label}
       title="Syntax help">
@@ -556,8 +560,7 @@ function renderSpecialHelpPopover(field: BuilderField): HtmlFragment {
 function renderSpecialControl(
   field: BuilderField,
   schema: BuilderSchema,
-  selectedValue: string,
-  hintId: string | undefined
+  selectedValue: string
 ): HtmlFragment {
   const payloadId = buildFieldId(field, 'payload');
   const initialSpecial = splitSpecial(selectedValue, field.options ?? []);
@@ -596,7 +599,6 @@ function renderSpecialControl(
             data-part="payload"
             value={initialSpecial.payload || undefined}
             placeholder={kindOption?.placeholder}
-            aria-describedby={hintId}
             spellcheck={false}
           />
         </div>
@@ -804,6 +806,7 @@ function renderStackGroupsControl(
           data-icon-target={controlId}
           data-icon-insert="true"
           popovertarget="icon-picker"
+          aria-expanded="false"
           aria-haspopup="dialog">
           <UiIcon slug="layout-grid" size={14} />
           Insert icon
@@ -858,6 +861,7 @@ function renderTypingLinesControl(
           maxlength={maxLength}
           placeholder={i === 0 ? 'e.g., Full-Stack Developer' : `Line ${lineNumber}…`}
           aria-label={`Line ${lineNumber}`}
+          aria-required={i === 0 && field.isRequired ? 'true' : undefined}
           spellcheck={false}
         />
         <button
@@ -926,18 +930,13 @@ function renderIconPairControl(
 }
 
 /** Render the hint icon + text pair control on `/builder/typing`. */
-function renderHintControl(
-  field: BuilderField,
-  initialValue: string,
-  hintId: string | undefined
-): HtmlFragment {
+function renderHintControl(field: BuilderField, initialValue: string): HtmlFragment {
   const textId = buildFieldId(field, 'text');
   const initialHint = splitHint(initialValue);
   return (
     <div class="builder-inline is-pair">
       {renderIconSelect({
         field,
-        hintId,
         initialValue: initialHint.icon,
         part: 'icon',
         sublabel: 'Hint icon',
@@ -954,7 +953,6 @@ function renderHintControl(
           value={initialHint.text || undefined}
           maxlength={field.maxLength}
           placeholder={field.placeholder}
-          aria-describedby={hintId}
           spellcheck={false}
         />
       </div>
@@ -1039,7 +1037,7 @@ function renderFieldControl(
       return renderColorControl(field, schema, selectedValue, hintId);
     }
     case 'hint': {
-      return renderHintControl(field, initialValue, hintId);
+      return renderHintControl(field, initialValue);
     }
     case 'icon': {
       return renderIconSelect({ field, hintId, initialValue, part: 'main' });
@@ -1061,7 +1059,7 @@ function renderFieldControl(
       return renderSizeControl(field, selectedValue);
     }
     case 'special': {
-      return renderSpecialControl(field, schema, selectedValue, hintId);
+      return renderSpecialControl(field, schema, selectedValue);
     }
     case 'stackGroups': {
       return renderStackGroupsControl(controlId, initialValue, field.isRequired);

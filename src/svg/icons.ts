@@ -112,7 +112,7 @@ const FILE_ICONS_SCALE = 0.046875;
  * so icon families (`c` / `cplusplus` / `csharp`, `javascript` / `typescript`) share an identical geometric frame
  * and database icons (`mysql`, `sqlite`) use clean symbol-only marks without embedded wordmark text.
  */
-const DEVICON_PREFERRED_SLUGS: ReadonlySet<string> = new Set([
+const DEVICON_PREFERRED_SLUG_LIST: readonly string[] = [
   'c',
   'cplusplus',
   'csharp',
@@ -120,7 +120,10 @@ const DEVICON_PREFERRED_SLUGS: ReadonlySet<string> = new Set([
   'mysql',
   'sqlite',
   'typescript',
-]);
+];
+
+/** Lazily built set of `DEVICON_PREFERRED_SLUG_LIST` (`undefined` until first brand lookup). */
+let deviconPreferredSlugsCache: ReadonlySet<string> | undefined = undefined;
 
 /** Common icon slug aliases mapped to their canonical icon set slugs. */
 export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
@@ -253,8 +256,8 @@ const LINE_TAG_RX = /<line\b[^>]*>/g;
 /** Matches `<polyline …>` and `<polygon …>` elements in SVG markup. */
 const POLY_TAG_RX = /<(?:polyline|polygon)\b[^>]*>/g;
 
-/** Matches `d="…"` path data attributes in SVG markup. */
-const PATH_D_RX = /\bd="(?<d>[^"]+)"/g;
+/** Matches whitespace-delimited `d="…"` path data attributes in SVG markup (never `data-d="…"`). */
+const PATH_D_RX = /(?:^|\s)d="(?<d>[^"]+)"/g;
 
 /** Matches a whitespace-delimited `cx="…"` attribute. */
 const CX_ATTR_RX = /(?:^|\s)cx="(?<value>[^"]+)"/;
@@ -313,22 +316,28 @@ function recordShapeBounds(svgStr: string, scale: number, bounds: IconXBounds): 
     return;
   }
   for (const match of svgStr.matchAll(CIRCLE_TAG_RX)) {
-    const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
     const radius = extractNumericAttr(match[0], R_ATTR_RX);
-    updateBounds(bounds, centerX - radius, scale);
-    updateBounds(bounds, centerX + radius, scale);
+    if (radius > 0) {
+      const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
+      updateBounds(bounds, centerX - radius, scale);
+      updateBounds(bounds, centerX + radius, scale);
+    }
   }
   for (const match of svgStr.matchAll(ELLIPSE_TAG_RX)) {
-    const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
     const radiusX = extractNumericAttr(match[0], RX_ATTR_RX);
-    updateBounds(bounds, centerX - radiusX, scale);
-    updateBounds(bounds, centerX + radiusX, scale);
+    if (radiusX > 0) {
+      const centerX = extractNumericAttr(match[0], CX_ATTR_RX);
+      updateBounds(bounds, centerX - radiusX, scale);
+      updateBounds(bounds, centerX + radiusX, scale);
+    }
   }
   for (const match of svgStr.matchAll(RECT_TAG_RX)) {
-    const rectX = extractNumericAttr(match[0], X_ATTR_RX);
     const width = extractNumericAttr(match[0], WIDTH_ATTR_RX);
-    updateBounds(bounds, rectX, scale);
-    updateBounds(bounds, rectX + width, scale);
+    if (width > 0) {
+      const rectX = extractNumericAttr(match[0], X_ATTR_RX);
+      updateBounds(bounds, rectX, scale);
+      updateBounds(bounds, rectX + width, scale);
+    }
   }
   for (const match of svgStr.matchAll(LINE_TAG_RX)) {
     updateBounds(bounds, extractNumericAttr(match[0], X1_ATTR_RX), scale);
@@ -534,15 +543,114 @@ function readPathPointX(cursor: PathCursor, originX: number): number {
   return pointX;
 }
 
-/** Read an end point into the pen's current position. */
-function readPathEndPoint(
+/** Read an end point into the pen's current position (`false` when truncated). */
+function hasReadPathEndPoint(
   cursor: PathCursor,
   pen: PathPen,
   originX: number,
   originY: number
+): boolean {
+  const rawX = readPathNumber(cursor);
+  const rawY = readPathNumber(cursor);
+  if (!Number.isFinite(rawX) || !Number.isFinite(rawY)) {
+    return false;
+  }
+  pen.currentX = originX + rawX;
+  pen.currentY = originY + rawY;
+  return true;
+}
+
+/** Consume a cubic (`C`/`S`) path segment and record its horizontal bounds. */
+function applyCubicPathCommand(
+  cursor: PathCursor,
+  pen: PathPen,
+  originX: number,
+  originY: number,
+  startX: number,
+  lastCubicControlX: number | undefined,
+  isSmooth: boolean,
+  scale: number,
+  bounds: IconXBounds
 ): void {
-  pen.currentX = originX + readPathNumber(cursor);
-  pen.currentY = originY + readPathNumber(cursor);
+  const control1X = isSmooth
+    ? 2 * startX - (lastCubicControlX ?? startX)
+    : readPathPointX(cursor, originX);
+  const control2X = readPathPointX(cursor, originX);
+  if (
+    !Number.isFinite(control1X) ||
+    !Number.isFinite(control2X) ||
+    !hasReadPathEndPoint(cursor, pen, originX, originY)
+  ) {
+    return;
+  }
+  recordCubicXBounds(startX, control1X, control2X, pen.currentX, scale, bounds);
+  pen.lastCubicControlX = control2X;
+  updateBounds(bounds, pen.currentX, scale);
+}
+
+/** Consume a quadratic (`Q`/`T`) path segment and record its horizontal bounds. */
+function applyQuadPathCommand(
+  cursor: PathCursor,
+  pen: PathPen,
+  originX: number,
+  originY: number,
+  startX: number,
+  lastQuadControlX: number | undefined,
+  isSmooth: boolean,
+  scale: number,
+  bounds: IconXBounds
+): void {
+  const controlX = isSmooth
+    ? 2 * startX - (lastQuadControlX ?? startX)
+    : readPathPointX(cursor, originX);
+  if (!Number.isFinite(controlX) || !hasReadPathEndPoint(cursor, pen, originX, originY)) {
+    return;
+  }
+  recordQuadXBounds(startX, controlX, pen.currentX, scale, bounds);
+  pen.lastQuadControlX = controlX;
+  updateBounds(bounds, pen.currentX, scale);
+}
+
+/** Consume an elliptical arc (`A`) path segment and record its horizontal bounds. */
+function applyArcPathCommand(
+  cursor: PathCursor,
+  pen: PathPen,
+  originX: number,
+  originY: number,
+  startX: number,
+  scale: number,
+  bounds: IconXBounds
+): void {
+  const radiusX = readPathNumber(cursor);
+  const radiusY = readPathNumber(cursor);
+  const rotation = readPathNumber(cursor);
+  const isLargeArc = readPathArcFlag(cursor) === 1;
+  const isSweep = readPathArcFlag(cursor) === 1;
+  const startY = pen.currentY;
+  if (
+    !Number.isFinite(radiusX) ||
+    !Number.isFinite(radiusY) ||
+    !Number.isFinite(rotation) ||
+    !hasReadPathEndPoint(cursor, pen, originX, originY)
+  ) {
+    return;
+  }
+  recordArcXBounds(
+    {
+      endX: pen.currentX,
+      endY: pen.currentY,
+      isLargeArc,
+      isSweep,
+      radiusX,
+      radiusY,
+      rotation,
+      startX,
+      startY,
+    },
+    scale,
+    bounds
+  );
+  updateBounds(bounds, pen.currentX, scale);
 }
 
 /** Consume the coordinates of one path command (`pen.command`) and record its exact horizontal extent. */
@@ -565,7 +673,9 @@ function applyPathCommand(
   switch (upper) {
     case 'M':
     case 'L': {
-      readPathEndPoint(cursor, pen, originX, originY);
+      if (!hasReadPathEndPoint(cursor, pen, originX, originY)) {
+        return;
+      }
       if (upper === 'M') {
         pen.subpathStartX = pen.currentX;
         pen.subpathStartY = pen.currentY;
@@ -575,58 +685,53 @@ function applyPathCommand(
       break;
     }
     case 'H': {
-      pen.currentX = originX + readPathNumber(cursor);
+      const rawX = readPathNumber(cursor);
+      if (!Number.isFinite(rawX)) {
+        return;
+      }
+      pen.currentX = originX + rawX;
       break;
     }
     case 'V': {
-      pen.currentY = originY + readPathNumber(cursor);
+      const rawY = readPathNumber(cursor);
+      if (Number.isFinite(rawY)) {
+        pen.currentY = originY + rawY;
+      }
       return;
     }
     case 'C':
     case 'S': {
-      const control1X =
-        upper === 'C'
-          ? readPathPointX(cursor, originX)
-          : 2 * startX - (lastCubicControlX ?? startX);
-      const control2X = readPathPointX(cursor, originX);
-      readPathEndPoint(cursor, pen, originX, originY);
-      recordCubicXBounds(startX, control1X, control2X, pen.currentX, scale, bounds);
-      pen.lastCubicControlX = control2X;
-      break;
-    }
-    case 'Q':
-    case 'T': {
-      const controlX =
-        upper === 'Q' ? readPathPointX(cursor, originX) : 2 * startX - (lastQuadControlX ?? startX);
-      readPathEndPoint(cursor, pen, originX, originY);
-      recordQuadXBounds(startX, controlX, pen.currentX, scale, bounds);
-      pen.lastQuadControlX = controlX;
-      break;
-    }
-    case 'A': {
-      const radiusX = readPathNumber(cursor);
-      const radiusY = readPathNumber(cursor);
-      const rotation = readPathNumber(cursor);
-      const isLargeArc = readPathArcFlag(cursor) === 1;
-      const isSweep = readPathArcFlag(cursor) === 1;
-      const startY = pen.currentY;
-      readPathEndPoint(cursor, pen, originX, originY);
-      recordArcXBounds(
-        {
-          endX: pen.currentX,
-          endY: pen.currentY,
-          isLargeArc,
-          isSweep,
-          radiusX,
-          radiusY,
-          rotation,
-          startX,
-          startY,
-        },
+      applyCubicPathCommand(
+        cursor,
+        pen,
+        originX,
+        originY,
+        startX,
+        lastCubicControlX,
+        upper === 'S',
         scale,
         bounds
       );
-      break;
+      return;
+    }
+    case 'Q':
+    case 'T': {
+      applyQuadPathCommand(
+        cursor,
+        pen,
+        originX,
+        originY,
+        startX,
+        lastQuadControlX,
+        upper === 'T',
+        scale,
+        bounds
+      );
+      return;
+    }
+    case 'A': {
+      applyArcPathCommand(cursor, pen, originX, originY, startX, scale, bounds);
+      return;
     }
     case 'Z': {
       pen.currentX = pen.subpathStartX;
@@ -664,7 +769,9 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
       pen.command = char;
       cursor.index += 1;
     }
-    applyPathCommand(cursor, pen, scale, bounds);
+    if (pen.command.length > 0) {
+      applyPathCommand(cursor, pen, scale, bounds);
+    }
     // Skip unknown commands and malformed tokens so the scan always makes progress:
     if (cursor.index === iterationStart) {
       cursor.index += 1;
@@ -818,10 +925,11 @@ function getSimpleIconBody(slug: string): IconBody | undefined {
 
 /**
  * Read a brand/tech icon body with preferred-set deduplication:
- * `DEVICON_PREFERRED_SLUGS` check Devicon Plain first, otherwise Simple Icons -> Devicon Plain -> File Icons.
+ * `DEVICON_PREFERRED_SLUG_LIST` check Devicon Plain first, otherwise Simple Icons -> Devicon Plain -> File Icons.
  */
 function getBrandIconBody(slug: string): IconBody | undefined {
-  if (DEVICON_PREFERRED_SLUGS.has(slug)) {
+  deviconPreferredSlugsCache ??= new Set(DEVICON_PREFERRED_SLUG_LIST);
+  if (deviconPreferredSlugsCache.has(slug)) {
     return getDeviconPlainBody(slug) ?? getSimpleIconBody(slug) ?? getFileIconBody(slug);
   }
   return getSimpleIconBody(slug) ?? getDeviconPlainBody(slug) ?? getFileIconBody(slug);

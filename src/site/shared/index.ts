@@ -12,6 +12,7 @@ export {
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
+  capitalizeWord,
   decodeRouteSegments,
   decodeSegment,
   encodeSegment,
@@ -21,6 +22,8 @@ export {
   getOwnValue,
   HINT_ICON_REST_RX,
   LIST_SEPARATOR_RX,
+  MAX_TYPING_LINE_LENGTH,
+  MAX_TYPING_LINES,
   readState,
   TRUTHY_FLAG_LIST,
   TRUTHY_FLAG_TOKENS,
@@ -49,6 +52,7 @@ export {
   collectStackTileTokens,
   composeCategorizedStack,
   normalizeStackGroups,
+  resolveStackPrefillMode,
   STACK_PER_LINE_RANGE,
   stripStackTileColor,
 } from '@/site/shared/stackDsl';

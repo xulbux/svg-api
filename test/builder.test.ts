@@ -58,7 +58,7 @@ import type {
   IconPickerSetId,
   ServiceRequest,
 } from '@/types';
-import { evaluateClientCore } from './helpers';
+import { evaluateClientCore, readClientModuleSources } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -149,6 +149,8 @@ interface FakeDomNode {
   querySelectorAll: (selector: string) => FakeDomNode[];
   /** Release pointer capture for `pointerId`. */
   releasePointerCapture: (pointerId: number) => void;
+  /** Remove an attribute. */
+  removeAttribute: (name: string) => void;
   /** Replace all children with `nodes`. */
   replaceChildren: (...nodes: (FakeDomFragment | FakeDomNode)[]) => void;
   /** Set an attribute value. */
@@ -214,6 +216,7 @@ const SMIL_ANIMATION_RX = /<animate/;
 // -------------------------------------- INTERNALS --------------------------------------
 
 const core = evaluateClientCore<BuilderClientCore>(builderScript, 'svgBuilderCore');
+const builderClientSource = readClientModuleSources('builder');
 
 /** Collect the decoded `?path=` of every preview link on a page. */
 function collectPreviewPaths(html: string): string[] {
@@ -467,6 +470,9 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
       documentStub.activeElement = node;
     };
     node.getAttribute = (name) => node.attributes.get(name);
+    node.removeAttribute = (name) => {
+      node.attributes.delete(name);
+    };
     node.setAttribute = (name, value) => {
       node.attributes.set(name, value);
     };
@@ -1307,7 +1313,12 @@ describe('builder client core', () => {
     expect(core.splitSpecial('bar:92:pulse', specialOptions)).toEqual({
       kind: 'bar',
       modifier: '',
-      payload: '92:pulse',
+      payload: '92',
+    });
+    expect(core.splitSpecial('ring:84:static', specialOptions)).toEqual({
+      kind: 'ring',
+      modifier: '',
+      payload: '84',
     });
     expect(core.splitSpecial('delta:+24%', specialOptions)).toEqual({
       kind: 'delta',
@@ -1978,9 +1989,9 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(serviceHtml).toContain('data-color-auto="true" hidden');
     expect(serviceHtml).toContain('id="special-help-trigger"');
     expect(serviceHtml).toContain('id="special-syntax-help" popover role="dialog"');
-    expect(builderScript).toContain("querySelector('.builder-label-text')");
-    expect(builderScript).toContain('resolveSpecialHint(');
-    expect(builderScript).not.toContain('labelElement.textContent');
+    expect(builderClientSource).toContain("querySelector('.builder-label-text')");
+    expect(builderClientSource).toContain('resolveSpecialHint(');
+    expect(builderClientSource).not.toContain('labelElement.textContent');
     const stackHtml = renderBuilderHtml('stack');
     expect(stackHtml).toContain('title="Brand colors"');
     expect(stackHtml).toContain('<span class="visually-hidden">Brand colors</span>');
@@ -2020,22 +2031,24 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html).toContain(
       '<span id="builder-share-label" data-copy-label aria-live="polite">Copy builder link</span>'
     );
-    expect(builderScript).toContain("openLink.removeAttribute('href')");
-    expect(builderScript).toContain('openLink.tabIndex = 0');
-    expect(builderScript).toContain('openLink.tabIndex = -1');
-    expect(builderScript).toContain('copyButton.disabled = !isComplete');
-    expect(builderScript).toContain('site?.copyText(');
-    expect(builderScript).not.toContain('navigator.clipboard');
+    expect(builderClientSource).toContain("openLink.removeAttribute('href')");
+    expect(builderClientSource).toContain('openLink.tabIndex = 0');
+    expect(builderClientSource).toContain('openLink.tabIndex = -1');
+    expect(builderClientSource).toContain('copyButton.disabled = !isComplete');
+    expect(builderClientSource).toContain('site?.copyText(');
+    expect(builderClientSource).not.toContain('navigator.clipboard');
   });
 
   it('updates the preview alt text, disconnects picker observers, closes menus on focus loss, and measures fallback popovers (regressions)', () => {
-    expect(builderScript).toContain('previewImage.alt = alt');
-    const disconnectIndex = builderScript.indexOf('tileObserver?.disconnect()');
+    expect(builderClientSource).toContain('previewImage.alt = alt');
+    const disconnectIndex = builderClientSource.indexOf('tileObserver?.disconnect()');
     expect(disconnectIndex).toBeGreaterThan(-1);
-    expect(disconnectIndex).toBeLessThan(builderScript.indexOf('pickerGrid.replaceChildren()'));
-    expect(builderScript).toContain("addEventListener('focusout'");
-    expect(builderScript).toContain('site?.placePopover(picker, pickerTrigger');
-    expect(builderScript).not.toMatch(/innerHeight - 420|innerWidth - 380/);
+    expect(disconnectIndex).toBeLessThan(
+      builderClientSource.indexOf('pickerGrid.replaceChildren()')
+    );
+    expect(builderClientSource).toContain("addEventListener('focusout'");
+    expect(builderClientSource).toContain('site?.placePopover(picker, pickerTrigger');
+    expect(builderClientSource).not.toMatch(/innerHeight - 420|innerWidth - 380/);
   });
 
   it('renders the icon picker glyph templates and separate Lucide and Brands tabs without an All tab', () => {
@@ -2053,9 +2066,9 @@ describe('builder pages & "Open in Builder" links', () => {
       '<span data-picker-tab-label="brands" data-label="Brands">Brands</span>'
     );
     expect(html).not.toContain('name="icon-picker-set" value="all"');
-    expect(builderScript).toContain('updatePickerTabLabels(');
-    expect(builderScript).toContain('syncPickerTabForTarget(');
-    expect(builderScript).not.toContain("'stroke-linecap'");
+    expect(builderClientSource).toContain('updatePickerTabLabels(');
+    expect(builderClientSource).toContain('syncPickerTabForTarget(');
+    expect(builderClientSource).not.toContain("'stroke-linecap'");
   });
 
   it('renders verified developer categories, group-by-category toggle, and DSL syntax popover on /builder/stack', () => {
@@ -2070,8 +2083,8 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(html.indexOf('data-validation-for="field-groups"')).toBeLessThan(
       html.indexOf('data-stack-raw-actions')
     );
-    expect(builderScript).toContain("'is-invalid'");
-    expect(builderScript).toContain("classList.toggle('is-missing', isMissing)");
+    expect(builderClientSource).toContain("'is-invalid'");
+    expect(builderClientSource).toContain("classList.toggle('is-missing', isMissing)");
 
     const resolver = core.createIconResolver(getIconPickerIndex(), MAX_ICON_SLUG_LENGTH);
     const seenSlugs = new Set<string>();
@@ -2116,10 +2129,10 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(core.splitHint('icon:command K')).toEqual({ icon: 'command', text: 'K' });
     expect(core.splitHint('icon:corner-down-left')).toEqual({ icon: 'corner-down-left', text: '' });
     expect(core.splitHint('utf8')).toEqual({ icon: '', text: 'utf8' });
-    expect(builderScript).toContain('createTypingLinesController(');
-    expect(builderScript).toContain('typingLinesController.syncFromValue(value)');
-    expect(builderScript).toContain('typingLinesController.readValue()');
-    expect(builderScript).toContain('setPointerCapture');
+    expect(builderClientSource).toContain('createTypingLinesController(');
+    expect(builderClientSource).toContain('typingLinesController.syncFromValue(value)');
+    expect(builderClientSource).toContain('typingLinesController.readValue()');
+    expect(builderClientSource).toContain('setPointerCapture');
   });
 
   it('reorders a typing line across multiple positions in one continuous pointer drag without losing capture (regression: detaching the captured handle ended the drag after one swap)', () => {
@@ -2397,5 +2410,115 @@ describe('builder pages & "Open in Builder" links', () => {
         'https://svg.xul.is/badge/terraform/terraform-aws-modules/vpc/aws/v'
       )
     ).toBe('https://registry.terraform.io/modules/terraform-aws-modules/vpc/aws');
+  });
+
+  it('preserves sheen,none on /typing, strips frameless sheen, guards empty text/lines with author/prefix, and validates service builder targets (regressions: sheen,none dropped none, frameless sheen emitted, author/prefix swapped into empty body segment, invalid service metric linked to builder)', () => {
+    const typingSchema = getBuilderSchema('typing');
+    const quoteSchema = getBuilderSchema('quote');
+    const typingAnimOptions = findField(typingSchema, 'anim').options ?? [];
+
+    expect(core.splitAnim('sheen,none', typingAnimOptions)).toEqual({
+      hasSheen: true,
+      left: 'none',
+      right: '',
+    });
+    const [originalSheenNone, rebuiltSheenNone] = renderPrefillRoundTrip(
+      'typing',
+      '/typing/Hello;World?anim=sheen,none'
+    );
+    expect(rebuiltSheenNone).toBe(originalSheenNone);
+
+    expect(
+      core.buildPath(typingSchema, { anim: 'sheen', layout: 'none', lines: 'Hello' }).path
+    ).toBe('/typing/Hello?layout=none');
+    expect(
+      core.buildPath(typingSchema, { anim: 'sheen,none', layout: 'none', lines: 'Hello' }).path
+    ).toBe('/typing/Hello?layout=none&anim=none');
+
+    const emptyQuoteResult = core.buildPath(quoteSchema, { author: 'Ada', text: '' });
+    expect(emptyQuoteResult.missing).toContain('Quote');
+    expect(emptyQuoteResult.path).toBe('/quote?author=Ada');
+
+    const emptyTypingResult = core.buildPath(typingSchema, { lines: '', prefix: '$' });
+    expect(emptyTypingResult.missing).toContain('Typed lines');
+    expect(emptyTypingResult.path).toBe('/typing?prefix=%24');
+
+    expect(core.parsePath(typingSchema, '/typing/Hello?align=bogus&center=true')?.align).toBe(
+      'center'
+    );
+    expect(core.parsePath(typingSchema, '/typing/Hello?align=left&center=true')?.align).toBe(
+      'left'
+    );
+
+    expect(resolveBuilderTarget('/badge/NPM/hono/v')?.kind).toBe('service');
+    expect(resolveBuilderTarget('/badge/npm/hono/not-a-metric')).toBeUndefined();
+  });
+
+  it('hides the sheen checkbox on frameless /builder/typing and auto-selects Raw DSL on /builder/stack when prefill is not losslessly representable by Categories (regressions: frameless sheen toggle stayed visible, custom stack prefill hid non-catalog DSL)', () => {
+    const clientSource = readClientModuleSources('builder');
+
+    // [1] Frameless `/builder/typing` sheen stripping & visibility sync:
+    const typingSchema = getBuilderSchema('typing');
+    expect(
+      core.buildPath(typingSchema, { anim: 'sheen', layout: 'none', lines: 'Hello' }).path
+    ).toBe('/typing/Hello?layout=none');
+    expect(
+      core.buildPath(typingSchema, { anim: 'sheen,none', layout: 'none', lines: 'Hello' }).path
+    ).toBe('/typing/Hello?layout=none&anim=none');
+    expect(
+      core.buildPath(typingSchema, { anim: 'sheen', layout: 'window', lines: 'Hello' }).path
+    ).toBe('/typing/Hello?anim=sheen');
+    expect(clientSource).toContain('syncFramelessTypingSheen');
+    expect(clientSource).toContain(
+      "sheenInput?.closest('.builder-check')?.toggleAttribute('hidden', isFrameless)"
+    );
+
+    // [2] `/builder/stack` mode tab selection during prefill and reset:
+    const categoryGroups = [
+      ['js', 'ts'],
+      ['react', 'vue'],
+    ] as const;
+
+    expect(core.resolveStackPrefillMode('', categoryGroups, false)).toEqual({
+      isGroupedByCategory: true,
+      mode: 'categories',
+    });
+    expect(core.resolveStackPrefillMode('js,ts|react,vue', categoryGroups, false)).toEqual({
+      isGroupedByCategory: true,
+      mode: 'categories',
+    });
+    expect(core.resolveStackPrefillMode('js,ts,react,vue', categoryGroups, false)).toEqual({
+      isGroupedByCategory: false,
+      mode: 'categories',
+    });
+    expect(
+      core.resolveStackPrefillMode(
+        'js,ts,py:2;react,vue',
+        [
+          ['js', 'ts', 'py'],
+          ['react', 'vue'],
+        ],
+        false,
+        '2'
+      )
+    ).toEqual({ isGroupedByCategory: true, mode: 'categories' });
+
+    for (const customDsl of [
+      'js,ts:2',
+      'js,ts,react,vue:3',
+      'js,ts;react,vue',
+      'js@amber,ts',
+      'ts,js',
+    ]) {
+      expect(core.resolveStackPrefillMode(customDsl, categoryGroups, false), customDsl).toEqual({
+        isGroupedByCategory: undefined,
+        mode: 'raw',
+      });
+    }
+    expect(core.resolveStackPrefillMode('rocket,ts', [['ts'], []], true)).toEqual({
+      isGroupedByCategory: undefined,
+      mode: 'raw',
+    });
+    expect(clientSource).toContain('syncModeForPrefill');
   });
 });

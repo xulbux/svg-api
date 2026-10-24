@@ -66,6 +66,21 @@ function stripWeakPrefix(etag: string): string {
   return etag.startsWith('W/') ? etag.slice(2) : etag;
 }
 
+/** Check whether an `If-None-Match` request header matches `etag` (weak comparison, `*` matches any). */
+function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
+  if (!ifNoneMatch) {
+    return false;
+  }
+  const opaqueTag = stripWeakPrefix(etag);
+  for (const candidate of ifNoneMatch.split(',')) {
+    const trimmed = candidate.trim();
+    if (trimmed === '*' || stripWeakPrefix(trimmed) === opaqueTag) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -93,26 +108,6 @@ export function isDocumentNavigation(request: Request): boolean {
  */
 export function computeEtag(content: string): string {
   return `W/"${hashText(content)}-${content.length.toString(36)}"`;
-}
-
-/**
- * Check whether an `If-None-Match` request header matches `etag` (weak comparison, `*` matches any).
- * @param ifNoneMatch   Raw `If-None-Match` request header.
- * @param etag          Current entity tag of the resource.
- * @returns `true` when the client's cached copy is still current (answer with `304`).
- */
-export function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
-  if (!ifNoneMatch) {
-    return false;
-  }
-  const opaqueTag = stripWeakPrefix(etag);
-  for (const candidate of ifNoneMatch.split(',')) {
-    const trimmed = candidate.trim();
-    if (trimmed === '*' || stripWeakPrefix(trimmed) === opaqueTag) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**

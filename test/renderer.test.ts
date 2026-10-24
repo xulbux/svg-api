@@ -36,6 +36,7 @@ import type {
   AnimationMode,
   BadgeSpecialElement,
   BadgeVariant,
+  DotState,
   SizePreset,
   StripTickState,
   TypingCursor,
@@ -2003,5 +2004,57 @@ describe('renderTyping', () => {
       mixedFallbackStack
     )?.groups?.rects;
     expect((clipBlock ?? '').split('<rect ').length - 1).toBe(1);
+  });
+
+  it('ignores invalid runtime badge dots, centers frameless prefix=none typing banners, guards narrow typing hints, and sanitizes uncurated stack tile titles (regressions: invalid dot leaked into aria-label, frameless prefix=none left-aligned, narrow width=200 hint overflow, raw control chars in stack tile tooltip)', () => {
+    const invalidDotBadge = renderBadge({
+      color: 'indigo',
+      dot: 'bogus' as unknown as DotState,
+      label: 'build',
+      value: 'ok',
+      variant: '1',
+    });
+    expect(extractAriaLabel(invalidDotBadge)).toBe('build: ok');
+    expect(invalidDotBadge).not.toContain('status');
+
+    const omittedPrefixSvg = renderTyping({
+      color: 'indigo',
+      layout: 'none',
+      lines: ['Centered Headline'],
+      width: 400,
+    });
+    const explicitNonePrefixSvg = renderTyping({
+      color: 'indigo',
+      layout: 'none',
+      lines: ['Centered Headline'],
+      prefix: 'none',
+      width: 400,
+    });
+    expect(explicitNonePrefixSvg).toBe(omittedPrefixSvg);
+
+    const narrowOverflowHintSvg = renderTyping({
+      color: 'cyan',
+      hint: 'VERY-LONG-HEADER-PILL-TEXT',
+      icon: 'terminal',
+      layout: 'prompt',
+      lines: ['ship'],
+      width: TYPING_WIDTH_RANGE.min,
+    });
+    expect(narrowOverflowHintSvg).not.toContain('VERY-LONG-HEADER-PILL-TEXT');
+    expect(measureMaxTextInkX(narrowOverflowHintSvg)).toBeLessThan(TYPING_WIDTH_RANGE.min);
+
+    const narrowWindowHintSvg = renderTyping({
+      color: 'cyan',
+      hint: 'VERY-LONG-WINDOW-HEADER-HINT',
+      layout: 'window',
+      lines: ['ship'],
+      width: TYPING_WIDTH_RANGE.min,
+    });
+    expect(narrowWindowHintSvg).not.toContain('VERY-LONG-WINDOW-HEADER-HINT');
+
+    const controlTileStack = renderStack({ groups: [[{ icons: ['bad\u200Bslug\u0007name'] }]] });
+    expect(controlTileStack).not.toContain('\u200B');
+    expect(controlTileStack).not.toContain('\u0007');
+    expect(extractAriaLabel(controlTileStack)).toBe('tech stack: Bad slug name');
   });
 });

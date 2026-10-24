@@ -32,7 +32,7 @@ export type BuilderControl =
 /** Animation control layout mode for an `anim` builder field. */
 export type BuilderAnimScope = 'pair' | 'sheen' | 'single' | 'stack' | 'typing';
 
-/** Selectable option of a builder field (an empty `value` means "omit the parameter"). */
+/** Selectable option of a builder field (an empty `value` omits the parameter). */
 export interface BuilderOption {
   /** Alternative (lowercase) values the parser accepts for this option; Prefilled links map them onto `value`. */
   aliases?: readonly string[];
@@ -174,6 +174,8 @@ export interface VariantTier {
 
 /** Display label, payload example, descriptions, and modifiers of an inline data widget kind (`?special=`). */
 export interface SpecialKindDetail {
+  /** Alternative modifier tokens accepted as explicit aliases for the default (omitted) modifier. */
+  defaultModifierAliases?: readonly string[];
   /** Label of the default (omitted) motion modifier when `modifiers` is non-empty. */
   defaultModifierLabel?: string;
   /** Concise payload format description shown when this widget kind is selected. */
@@ -188,7 +190,7 @@ export interface SpecialKindDetail {
   summary: string;
 }
 
-/** Builder target of a documented SVG path (used by the "Open in Builder" preview links). */
+/** Builder target of a documented SVG path (used by preview edit links). */
 export interface BuilderTarget {
   /** Root-relative builder URL with the prefilled path (e.g., `'/builder/badge?path=…'`). */
   href: string;
@@ -334,6 +336,14 @@ export interface TypingLinesController {
   syncFromValue: (rawValue: string) => void;
 }
 
+/** Resolved `/builder/stack` mode tab and `Group by category` toggle state for a prefilled DSL string. */
+export interface StackPrefillModeResult {
+  /** Target state of `Group by category` (`undefined` when switching to `Raw DSL`). */
+  isGroupedByCategory: boolean | undefined;
+  /** Target stack editor tab (`'categories'` or `'raw'`). */
+  mode: 'categories' | 'raw';
+}
+
 /** Pure helpers exposed on `globalThis.svgBuilderCore` when the builder client runs without a DOM. */
 export interface BuilderClientCore {
   /** Build a human-readable default alt text for the current element state. */
@@ -412,6 +422,13 @@ export interface BuilderClientCore {
     presetIcon?: string,
     isPresetDynamic?: boolean
   ) => IconSelectDisplay;
+  /** Determine whether a prefilled `/stack` DSL string fits `Categories` mode or requires `Raw DSL`. */
+  resolveStackPrefillMode: (
+    dslValue: string,
+    categoryGroups: readonly (readonly string[])[],
+    hasCustomTokens: boolean,
+    rawPerLine?: string
+  ) => StackPrefillModeResult;
   /** Split an `?anim=` query value into the sheen toggle and left/right icon motion tokens. */
   splitAnim: (value: string, options?: readonly BuilderOption[]) => AnimSplitParts;
   /** Split a `?hint=` query value into its optional icon slug and label text. */

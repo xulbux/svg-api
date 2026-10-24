@@ -177,14 +177,14 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <link rel="expect" href="#main-content" blocking="render" />
           <link
             rel="preload"
-            href="/assets/Geist-Regular.ttf"
+            href={getSiteAssetUrl('Geist-Regular.ttf')}
             as="font"
             type="font/ttf"
             crossorigin="anonymous"
           />
           <link
             rel="preload"
-            href="/assets/Geist-Bold.ttf"
+            href={getSiteAssetUrl('Geist-Bold.ttf')}
             as="font"
             type="font/ttf"
             crossorigin="anonymous"

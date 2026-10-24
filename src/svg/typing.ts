@@ -10,6 +10,7 @@
 
 import { WHITE } from '@/config/palette';
 import { BASE_DARK, THEMES } from '@/config/theme';
+import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared/encoding';
 import { DEFAULT_ICON_STROKE_WIDTH, resolveIconLookup, resolvePlaceholderIcon } from '@/svg/icons';
 import {
   computeCenteredBaselineY,
@@ -25,11 +26,13 @@ import {
   buildBottomCrescentPath,
   clampInt,
   computeIconTranslateX,
+  createLruCache,
   getOwnValue,
   hashText,
   isAnimationDisabled,
   measureIconVisualWidth,
   prepareDisplayText,
+  readLruCache,
   renderIconGroup,
   renderKumoBoxSurface,
   renderSheenOverlay,
@@ -42,6 +45,7 @@ import {
   roundCoord,
   roundScale,
   roundTenths,
+  writeLruCache,
 } from '@/svg/shared';
 import type {
   AnimationMode,
@@ -608,6 +612,24 @@ interface MinHeaderWidthOptions {
   titleText: string;
 }
 
+/** Resolved default configuration tokens for a `renderTyping` invocation. */
+interface ResolvedTypingDefaults {
+  /** Effective motion mode token. */
+  animMode: AnimationMode;
+  /** Effective caret cursor style. */
+  cursorStyle: TypingCursor;
+  /** Effective erase transition mode. */
+  eraseMode: TypingEraseMode;
+  /** Effective font family preset. */
+  fontFamily: TypingFont;
+  /** Whether QWERTY neighbor typos are enabled. */
+  hasTypo: boolean;
+  /** Effective container layout preset. */
+  layout: TypingLayout;
+  /** Effective surface hierarchy variant. */
+  variant: BadgeVariant;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Container width bounds in pixels (auto-fits the longest line when omitted). */
@@ -622,14 +644,8 @@ export const TYPING_DURATION_RANGE: NumericRange = { default: 2200, max: 10_000,
 /** Per-line reading pause bounds in milliseconds. */
 export const TYPING_PAUSE_RANGE: NumericRange = { default: 1200, max: 6000, min: 200 };
 
-/** Maximum raw lines string length in UTF-16 code units before truncation. */
-export const MAX_TYPING_TEXT_LENGTH = 960;
-
-/** Maximum number of cycling lines rendered in a typing animation. */
-export const MAX_TYPING_LINES = 12;
-
-/** Maximum character length of a single typed line before ellipsis truncation. */
-export const MAX_TYPING_LINE_LENGTH = 80;
+/** Maximum raw lines string length in UTF-16 code units before truncation (fits `MAX_TYPING_LINES` full lines plus `;` separators). */
+export const MAX_TYPING_TEXT_LENGTH = MAX_TYPING_LINES * (MAX_TYPING_LINE_LENGTH + 1);
 
 /** Maximum character length of the optional static prefix. */
 export const MAX_TYPING_PREFIX_LENGTH = 48;
@@ -639,6 +655,9 @@ export const MAX_TYPING_TITLE_LENGTH = 64;
 
 /** Maximum character length of the optional keycap or header hint. */
 export const MAX_TYPING_HINT_LENGTH = 24;
+
+/** Default named size preset for typing animations when `size` is omitted. */
+export const DEFAULT_TYPING_SIZE: SizePreset = 'md';
 
 /** Preset font sizes in pixels for named `SizePreset` tokens. */
 export const TYPING_SIZE_MAP: Readonly<Record<SizePreset, number>> = {
@@ -653,6 +672,9 @@ const DEFAULT_TYPING_LINES: readonly string[] = [
   'Full-Stack Developer',
   'Design-Driven Engineering',
 ];
+
+/** Default surface hierarchy tier when `variant` is omitted. */
+export const DEFAULT_TYPING_VARIANT: BadgeVariant = '3';
 
 /** Default container layout when layout parameters are omitted. */
 export const DEFAULT_TYPING_LAYOUT: TypingLayout = 'window';
@@ -721,7 +743,7 @@ const TYPO_RECOVERY_PAUSE_MS = 85;
 const CURSOR_BLINK_MIN_OPACITY = 0.08;
 
 /** Fast alternating-hand and inward-rollover English bigrams (Dhakal et al. 2018 keystroke corpus). */
-const FAST_ROLLOVER_BIGRAMS: ReadonlySet<string> = new Set([
+const FAST_ROLLOVER_BIGRAM_LIST: readonly string[] = [
   'al',
   'an',
   'ar',
@@ -770,7 +792,16 @@ const FAST_ROLLOVER_BIGRAMS: ReadonlySet<string> = new Set([
   'to',
   'ur',
   've',
-]);
+];
+
+/** Lazily built set of `FAST_ROLLOVER_BIGRAM_LIST` (`undefined` until first animated render). */
+let fastRolloverBigramsCache: ReadonlySet<string> | undefined = undefined;
+
+/** Maximum `pathData` length cached in `GLYPH_ID_CACHE` to bound key memory per isolate. */
+const MAX_CACHED_GLYPH_PATH_LENGTH = 2048;
+
+/** Bounded LRU cache mapping serialized glyph `pathData` to its content-addressed `<defs>` ID. */
+const GLYPH_ID_CACHE = createLruCache<string>(256, (glyphId) => glyphId.length, 16_384);
 
 /** Horizontal QWERTY neighbor lookup table for realistic single-key slip typos. */
 const QWERTY_NEIGHBOR_MAP: Readonly<Record<string, string>> = {
@@ -815,33 +846,32 @@ const ASCII_LETTER_RX = /[A-Za-z]/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Normalize user-supplied lines (array or `;`-separated string) into at most `MAX_TYPING_LINES` clean strings. */
-function normalizeTypingLines(rawLines: readonly string[] | string): string[] {
-  const parts: string[] = [];
-  if (typeof rawLines === 'string') {
-    const capped = prepareDisplayText(rawLines, MAX_TYPING_TEXT_LENGTH);
-    for (const segment of capped.split(';')) {
-      parts.push(segment);
-    }
-  } else {
-    for (const entry of rawLines) {
-      for (const segment of prepareDisplayText(entry, MAX_TYPING_TEXT_LENGTH).split(';')) {
-        parts.push(segment);
+/** Append non-empty `;`-separated segments from `rawChunk` into `cleaned` up to `MAX_TYPING_LINES`. */
+function appendNormalizedLineSegments(rawChunk: string, cleaned: string[]): void {
+  for (const segment of prepareDisplayText(rawChunk, MAX_TYPING_TEXT_LENGTH).split(';')) {
+    const trimmed = prepareDisplayText(segment.trim(), MAX_TYPING_LINE_LENGTH).trim();
+    if (trimmed.length > 0) {
+      cleaned.push(trimmed);
+      if (cleaned.length >= MAX_TYPING_LINES) {
+        return;
       }
     }
   }
+}
 
+/** Normalize user-supplied lines (array or `;`-separated string) into at most `MAX_TYPING_LINES` clean strings. */
+function normalizeTypingLines(rawLines: readonly string[] | string): string[] {
   const cleaned: string[] = [];
-  for (const part of parts) {
-    const trimmed = prepareDisplayText(part.trim(), MAX_TYPING_LINE_LENGTH).trim();
-    if (trimmed.length > 0) {
-      cleaned.push(trimmed);
+  if (typeof rawLines === 'string') {
+    appendNormalizedLineSegments(rawLines, cleaned);
+  } else {
+    for (const entry of rawLines) {
+      appendNormalizedLineSegments(entry, cleaned);
       if (cleaned.length >= MAX_TYPING_LINES) {
         break;
       }
     }
   }
-
   return cleaned.length > 0 ? cleaned : [...DEFAULT_TYPING_LINES];
 }
 
@@ -850,9 +880,14 @@ function resolveTypingMetrics(
   sizeOption: SizePreset | number | undefined,
   layout: TypingLayout
 ): TypingMetrics {
-  const fontSize = resolveScaledFontSize(sizeOption, TYPING_SIZE_MAP, TYPING_FONT_SIZE_RANGE, 'md');
+  const fontSize = resolveScaledFontSize(
+    sizeOption,
+    TYPING_SIZE_MAP,
+    TYPING_FONT_SIZE_RANGE,
+    DEFAULT_TYPING_SIZE
+  );
 
-  const scale = fontSize / TYPING_SIZE_MAP.md;
+  const scale = fontSize / TYPING_SIZE_MAP[DEFAULT_TYPING_SIZE];
   const isFrameless = layout === 'none';
   const bodyHeight = isFrameless ? Math.round(fontSize * 2.1) : Math.round(48 * scale);
   const headerHeight = layout === 'window' || layout === 'ide' ? Math.round(30 * scale) : 0;
@@ -1131,8 +1166,11 @@ function computeKeystrokeWeight(
     const lowerPair = `${prevChar.toLowerCase()}${char.toLowerCase()}`;
     if (prevChar.toLowerCase() === char.toLowerCase() && ASCII_LETTER_RX.test(char)) {
       weight = 1.32;
-    } else if (FAST_ROLLOVER_BIGRAMS.has(lowerPair)) {
-      weight = 0.68;
+    } else {
+      fastRolloverBigramsCache ??= new Set(FAST_ROLLOVER_BIGRAM_LIST);
+      if (fastRolloverBigramsCache.has(lowerPair)) {
+        weight = 0.68;
+      }
     }
   }
 
@@ -1331,7 +1369,14 @@ function renderTimelineAnimate(
 
 /** Register a glyph's `(0, 0)` `<path>` outline in `glyphDefsById` and return its content-addressed ID. */
 function registerGlyphDef(pathData: string, glyphDefsById: Map<string, string>): string {
-  const glyphId = `type-g-${hashText(pathData)}`;
+  const isCacheable = pathData.length <= MAX_CACHED_GLYPH_PATH_LENGTH;
+  let glyphId = isCacheable ? readLruCache(GLYPH_ID_CACHE, pathData) : undefined;
+  if (glyphId === undefined) {
+    glyphId = `type-g-${hashText(pathData)}`;
+    if (isCacheable) {
+      writeLruCache(GLYPH_ID_CACHE, pathData, glyphId);
+    }
+  }
   if (!glyphDefsById.has(glyphId)) {
     glyphDefsById.set(glyphId, `<path id="${glyphId}" d="${pathData}" />`);
   }
@@ -2013,7 +2058,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
     }
   }
 
-  if (iconSlot) {
+  if (iconSlot && availableHeaderWidth >= headerIconSize) {
     const iconY = roundCoord((headerHeight - headerIconSize) / 2);
     const idealBoxX = (width - headerIconSize) / 2;
     const clampedBoxX = roundCoord(
@@ -2087,20 +2132,28 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
   const isTabClamped = tabStartX + tabWidth > maxTabEndX;
   const tabEndX = roundCoord(Math.min(maxTabEndX, tabStartX + tabWidth));
 
+  const tabArcStartX = roundCoord(tabStartX + tabRadius);
+  const tabArcEndX = roundCoord(tabEndX - tabRadius);
+  const tabCornerY = roundCoord(tabTopY + tabRadius);
+
   // Darken the recessed tab strip outside the active tab so the active tab seamlessly shares the editor surface:
-  const inactiveHeaderPath = `M 1 ${headerHeight} V ${1 + innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${1 + innerRadius} 1 H ${width - 1 - innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${width - 1} ${1 + innerRadius} V ${headerHeight} H ${tabEndX} V ${tabTopY + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabEndX - tabRadius} ${tabTopY} H ${tabStartX + tabRadius} A ${tabRadius} ${tabRadius} 0 0 0 ${tabStartX} ${tabTopY + tabRadius} V ${headerHeight} Z`;
+  const inactiveHeaderPath = `M 1 ${headerHeight} V ${1 + innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${1 + innerRadius} 1 H ${width - 1 - innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${width - 1} ${1 + innerRadius} V ${headerHeight} H ${tabEndX} V ${tabCornerY} A ${tabRadius} ${tabRadius} 0 0 0 ${tabArcEndX} ${tabTopY} H ${tabArcStartX} A ${tabRadius} ${tabRadius} 0 0 0 ${tabStartX} ${tabCornerY} V ${headerHeight} Z`;
   const inactiveHeaderOpacity = styleTokens.isOnPrimary ? '0.14' : '0.28';
-  const borderPath = `M 1 ${headerHeight} H ${tabStartX} V ${tabTopY + tabRadius} A ${tabRadius} ${tabRadius} 0 0 1 ${tabStartX + tabRadius} ${tabTopY} H ${tabEndX - tabRadius} A ${tabRadius} ${tabRadius} 0 0 1 ${tabEndX} ${tabTopY + tabRadius} V ${headerHeight} H ${width - 1}`;
+  const borderPath = `M 1 ${headerHeight} H ${tabStartX} V ${tabCornerY} A ${tabRadius} ${tabRadius} 0 0 1 ${tabArcStartX} ${tabTopY} H ${tabArcEndX} A ${tabRadius} ${tabRadius} 0 0 1 ${tabEndX} ${tabCornerY} V ${headerHeight} H ${width - 1}`;
 
   let markup =
     `<path d="${inactiveHeaderPath}" fill="#000000" fill-opacity="${inactiveHeaderOpacity}" />` +
     `<path d="${borderPath}" fill="none" stroke="${styleTokens.dividerColor}" stroke-width="1" />` +
-    `<line x1="${roundCoord(tabStartX + tabRadius)}" y1="${tabTopY}" x2="${roundCoord(tabEndX - tabRadius)}" y2="${tabTopY}" stroke="${styleTokens.accentColor}" stroke-width="1.5" stroke-linecap="round" />${
+    `<line x1="${tabArcStartX}" y1="${tabTopY}" x2="${tabArcEndX}" y2="${tabTopY}" stroke="${styleTokens.accentColor}" stroke-width="1.5" stroke-linecap="round" />${
       dotsMarkup
     }`;
 
+  const maxTabContentRightX = tabEndX - tabPadX - closeSize - closeGap;
   let cursorX = roundCoord(tabStartX + tabPadX);
-  if (iconSlot) {
+  if (
+    iconSlot &&
+    cursorX + measureIconVisualWidth(iconSlot.data, tabIconSize) <= maxTabContentRightX
+  ) {
     const iconY = roundCoord(tabTopY + (tabHeight - tabIconSize) / 2);
     const renderedIcon = renderPositionedIconSlot({
       boxSize: tabIconSize,
@@ -2117,13 +2170,7 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
 
   if (titleText.length > 0) {
     const fittedTitle = isTabClamped
-      ? clampTextToWidth(
-          titleText,
-          tabEndX - tabPadX - closeSize - closeGap - cursorX,
-          titleFontSize,
-          true,
-          'mono'
-        )
+      ? clampTextToWidth(titleText, maxTabContentRightX - cursorX, titleFontSize, true, 'mono')
       : titleText;
     if (fittedTitle.length > 0) {
       markup += renderTextPathMarkup(fittedTitle, {
@@ -2341,23 +2388,70 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
   return { markup, textStartX: currentX };
 }
 
-/** Render the static typing SVG showing the first line and stationary cursor. */
-function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
+/** Render a 6-keyframe spline opacity `<animate>` element fading in over `[appearStartMs, appearEndMs]` and out over `[eraseStartMs, eraseEndMs]`. */
+function renderOpacityWindowAnimate(
+  appearStartMs: number,
+  appearEndMs: number,
+  eraseStartMs: number,
+  eraseEndMs: number,
+  totalCycleMs: number,
+  cycleDurAttr: string
+): string {
+  const t1 = roundScale(Math.min(0.9992, Math.max(0.0001, appearStartMs / totalCycleMs)));
+  const t2 = roundScale(Math.min(0.9994, Math.max(t1 + 0.0002, appearEndMs / totalCycleMs)));
+  const t3 = roundScale(Math.min(0.9996, Math.max(t2 + 0.0002, eraseStartMs / totalCycleMs)));
+  const t4 = roundScale(Math.min(0.9998, Math.max(t3 + 0.0002, eraseEndMs / totalCycleMs)));
+  return `<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" />`;
+}
+
+/** Assemble the final root `<svg>` document for static and animated typing renders. */
+function assembleTypingSvgDocument(
+  context: TypingBodyRenderContext,
+  glyphDefsById: ReadonlyMap<string, string>,
+  foregroundBodyMarkup: string,
+  restTime?: number
+): string {
   const {
     animMode,
     ariaText,
-    baselineY,
-    cursorGeometry,
     height,
     hintMarkup,
     layout,
     leading,
     metrics,
-    preparedLines,
     styleTokens,
     surfaceMarkup,
     width,
   } = context;
+  const sheen =
+    layout === 'none'
+      ? { clipDef: '', overlay: '' }
+      : renderSheenOverlay({
+          animMode,
+          height,
+          idPrefix: 'typing-sheen',
+          radius: metrics.radius,
+          width,
+        });
+
+  let defsMarkup = `${styleTokens.gradDefs}${sheen.clipDef}`;
+  for (const defMarkup of glyphDefsById.values()) {
+    defsMarkup += defMarkup;
+  }
+
+  return renderSvgDocument({
+    ariaLabel: ariaText,
+    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${foregroundBodyMarkup}${sheen.overlay}`,
+    defs: defsMarkup,
+    height,
+    restTime,
+    width,
+  });
+}
+
+/** Render the static typing SVG showing the first line and stationary cursor. */
+function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
+  const { baselineY, cursorGeometry, leading, preparedLines, styleTokens } = context;
   const [firstLine] = preparedLines;
   const staticGlyphDefs = new Map<string, string>();
   let staticCharsMarkup = '';
@@ -2378,51 +2472,26 @@ function renderStaticTypingSvg(context: TypingBodyRenderContext): string {
   const staticCursorX = roundCoord(staticCursorBaseX + cursorGeometry.offsetX);
   const staticCursorMarkup = `<rect x="${staticCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" fill-opacity="${cursorGeometry.activeOpacity}" />`;
 
-  const sheen =
-    layout === 'none'
-      ? { clipDef: '', overlay: '' }
-      : renderSheenOverlay({
-          animMode,
-          height,
-          idPrefix: 'typing-sheen',
-          radius: metrics.radius,
-          width,
-        });
-
-  let defsMarkup = `${styleTokens.gradDefs}${sheen.clipDef}`;
-  for (const defMarkup of staticGlyphDefs.values()) {
-    defsMarkup += defMarkup;
-  }
-
-  return renderSvgDocument({
-    ariaLabel: ariaText,
-    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${staticCharsMarkup}${staticCursorMarkup}${sheen.overlay}`,
-    defs: defsMarkup,
-    height,
-    width,
-  });
+  return assembleTypingSvgDocument(
+    context,
+    staticGlyphDefs,
+    `${staticCharsMarkup}${staticCursorMarkup}`
+  );
 }
 
 /** Render the SMIL-animated typing SVG across all scheduled lines. */
 function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   const {
-    animMode,
-    ariaText,
     baselineY,
     cursorGeometry,
     eraseMode,
-    height,
-    hintMarkup,
-    layout,
     leading,
     metrics,
     options,
     preparedLines,
     styleTokens,
-    surfaceMarkup,
-    width,
   } = context;
-  const { fontSize, radius } = metrics;
+  const { fontSize } = metrics;
   const baseDurationMs = clampInt(options.duration, TYPING_DURATION_RANGE);
   const pauseMs = clampInt(options.pause, TYPING_PAUSE_RANGE);
   let totalChars = 0;
@@ -2469,31 +2538,29 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   const selectBoxY = roundCoord(baselineY - fontSize * 0.92);
   const selectBoxHeight = roundCoord(fontSize * 1.2);
   for (const flash of timelineState.selectionFlashes) {
-    const tStart = roundScale(Math.min(0.9992, Math.max(0.0001, flash.startMs / totalCycleMs)));
-    const tAppear = roundScale(Math.min(0.9994, tStart + 0.002));
-    const tEnd = roundScale(
-      Math.min(0.9996, Math.max(tAppear + 0.0002, flash.endMs / totalCycleMs))
+    const flashAnim = renderOpacityWindowAnimate(
+      flash.startMs,
+      flash.startMs + totalCycleMs * 0.002,
+      flash.endMs,
+      flash.endMs + totalCycleMs * 0.002,
+      totalCycleMs,
+      cycleDurAttr
     );
-    const tClear = roundScale(Math.min(0.9998, tEnd + 0.002));
-    selectionMarkup += `<rect x="${flash.rectX}" y="${selectBoxY}" width="${flash.rectWidth}" height="${selectBoxHeight}" rx="3" fill="${styleTokens.selectionColor}" fill-opacity="0.28" opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${tStart};${tAppear};${tEnd};${tClear};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" /></rect>`;
+    selectionMarkup += `<rect x="${flash.rectX}" y="${selectBoxY}" width="${flash.rectWidth}" height="${selectBoxHeight}" rx="3" fill="${styleTokens.selectionColor}" fill-opacity="0.28" opacity="0">${flashAnim}</rect>`;
   }
 
   let charsMarkup = `<g fill="${styleTokens.textColor}">`;
   for (const scheduled of timelineState.scheduledGlyphs) {
-    const t1 = roundScale(
-      Math.min(0.9992, Math.max(0.0001, scheduled.appearStartMs / totalCycleMs))
-    );
-    const t2 = roundScale(
-      Math.min(0.9994, Math.max(t1 + 0.0002, scheduled.appearEndMs / totalCycleMs))
-    );
-    const t3 = roundScale(
-      Math.min(0.9996, Math.max(t2 + 0.0002, scheduled.eraseStartMs / totalCycleMs))
-    );
-    const t4 = roundScale(
-      Math.min(0.9998, Math.max(t3 + 0.0002, scheduled.eraseEndMs / totalCycleMs))
-    );
     const baseOpacityAttr = scheduled.isFirstLineChar ? '' : ' opacity="0"';
-    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.glyphX}" y="${baselineY}"${baseOpacityAttr}><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="0;${t1};${t2};${t3};${t4};1" calcMode="spline" keySplines="0 0 1 1;0.25 0 0.2 1;0 0 1 1;0.4 0 0.2 1;0 0 1 1" dur="${cycleDurAttr}" repeatCount="indefinite" /></use>`;
+    const charAnim = renderOpacityWindowAnimate(
+      scheduled.appearStartMs,
+      scheduled.appearEndMs,
+      scheduled.eraseStartMs,
+      scheduled.eraseEndMs,
+      totalCycleMs,
+      cycleDurAttr
+    );
+    charsMarkup += `<use href="#${scheduled.glyphId}" x="${scheduled.glyphX}" y="${baselineY}"${baseOpacityAttr}>${charAnim}</use>`;
   }
   charsMarkup += '</g>';
 
@@ -2513,24 +2580,12 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   );
   const cursorMarkup = `<rect x="${timelineState.firstLineEndCursorX}" y="${cursorGeometry.cursorY}" width="${cursorGeometry.width}" height="${cursorGeometry.height}" rx="${cursorGeometry.radius}" fill="${styleTokens.cursorColor}" opacity="${cursorGeometry.activeOpacity}">${xAnimate}${opacityAnimate}</rect>`;
 
-  const sheen =
-    layout === 'none'
-      ? { clipDef: '', overlay: '' }
-      : renderSheenOverlay({ animMode, height, idPrefix: 'typing-sheen', radius, width });
-
-  let defsMarkup = `${styleTokens.gradDefs}${sheen.clipDef}`;
-  for (const defMarkup of timelineState.glyphDefsById.values()) {
-    defsMarkup += defMarkup;
-  }
-
-  return renderSvgDocument({
-    ariaLabel: ariaText,
-    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${selectionMarkup}${charsMarkup}${cursorMarkup}${sheen.overlay}`,
-    defs: defsMarkup,
-    height,
-    restTime: roundCoord(timelineState.firstLineRestMs / 1000),
-    width,
-  });
+  return assembleTypingSvgDocument(
+    context,
+    timelineState.glyphDefsById,
+    `${selectionMarkup}${charsMarkup}${cursorMarkup}`,
+    roundCoord(timelineState.firstLineRestMs / 1000)
+  );
 }
 
 /** Measure all lines at `(0, 0)` and return their layouts alongside the maximum advance width. */
@@ -2621,6 +2676,27 @@ function computeMinHeaderWidth(options: MinHeaderWidthOptions): number {
   return Math.ceil(tabStartX + tabWidth + rightClearance);
 }
 
+/** Check whether a measured hint badge fits within `width` without colliding with left container chrome. */
+function isHintBadgeFittingWidth(
+  geometry: HintBadgeGeometry,
+  layout: TypingLayout,
+  metrics: TypingMetrics,
+  width: number
+): boolean {
+  const badgeX = width - geometry.badgeRightInset - geometry.badgeWidth;
+  const { fontSize, headerHeight, scale } = metrics;
+  if (layout === 'window') {
+    const { rightEdgeX } = computeTrafficLightLayout(headerHeight, scale);
+    return badgeX >= rightEdgeX + Math.round(12 * scale);
+  }
+  if (layout === 'ide') {
+    const { rightEdgeX } = computeTrafficLightLayout(headerHeight, scale);
+    const minTabEndX = rightEdgeX + Math.round(12 * scale) + Math.round(84 * scale);
+    return badgeX >= minTabEndX + Math.round(8 * scale);
+  }
+  return badgeX >= resolveBodyStartX(layout, metrics) + fontSize * 2;
+}
+
 /** Resolve the effective horizontal text alignment of a typing card. */
 function resolveTypingAlignment(
   layout: TypingLayout,
@@ -2630,12 +2706,48 @@ function resolveTypingAlignment(
   if (layout === 'browser' || layout === 'ide') {
     return 'left';
   }
+  const trimmedPrefix = options.prefix?.trim();
+  const hasPrefix = Boolean(trimmedPrefix && trimmedPrefix.toLowerCase() !== 'none');
   const defaultAlign: TypingAlign =
-    layout === 'none' && !options.prefix && !hasIcon ? 'center' : 'left';
+    layout === 'none' && !hasPrefix && !hasIcon ? 'center' : DEFAULT_TYPING_ALIGN;
   return options.align ?? defaultAlign;
 }
 
+/** Clamp the leading prompt prefix when an explicit narrow `width` leaves less than two ems for typed text. */
+function fitLeadingPromptToWidth(
+  leading: LeadingPromptLayout,
+  promptOptions: LeadingPromptOptions,
+  availableRightX: number
+): LeadingPromptLayout {
+  const { fontFamily, metrics, prefixText } = promptOptions;
+  const { fontSize, scale } = metrics;
+  if (prefixText.length === 0 || leading.textStartX + fontSize * 2 <= availableRightX) {
+    return leading;
+  }
+  const iconOnlyLeading = renderLeadingPrompt({ ...promptOptions, prefixText: '' });
+  const maxPrefixWidth =
+    availableRightX - fontSize * 2 - iconOnlyLeading.textStartX - Math.round(9 * scale);
+  const fittedPrefixText = clampTextToWidth(prefixText, maxPrefixWidth, fontSize, true, fontFamily);
+  return renderLeadingPrompt({ ...promptOptions, prefixText: fittedPrefixText });
+}
+
+/** Fill omitted optional fields on `TypingRenderOptions` with their canonical preset defaults. */
+function resolveTypingDefaults(options: TypingRenderOptions): ResolvedTypingDefaults {
+  const layout: TypingLayout = options.layout ?? DEFAULT_TYPING_LAYOUT;
+  return {
+    animMode: options.anim ?? 'default',
+    cursorStyle: options.cursor ?? DEFAULT_TYPING_CURSOR,
+    eraseMode: options.erase ?? DEFAULT_TYPING_ERASE,
+    fontFamily: options.font ?? DEFAULT_LAYOUT_FONTS[layout],
+    hasTypo: options.hasTypo ?? false,
+    layout,
+    variant: options.variant ?? DEFAULT_TYPING_VARIANT,
+  };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared/encoding';
 
 /**
  * Render a standalone SVG typing animation with configurable container frame, caret cursor, erase transition,
@@ -2646,13 +2758,8 @@ function resolveTypingAlignment(
 export function renderTyping(options: TypingRenderOptions): string {
   const { color } = options;
   const palette = THEMES[color];
-  const variant: BadgeVariant = options.variant ?? '3';
-  const layout: TypingLayout = options.layout ?? DEFAULT_TYPING_LAYOUT;
-  const cursorStyle: TypingCursor = options.cursor ?? DEFAULT_TYPING_CURSOR;
-  const eraseMode: TypingEraseMode = options.erase ?? DEFAULT_TYPING_ERASE;
-  const fontFamily: TypingFont = options.font ?? DEFAULT_LAYOUT_FONTS[layout];
-  const animMode: AnimationMode = options.anim ?? 'default';
-  const hasTypo = options.hasTypo ?? false;
+  const { animMode, cursorStyle, eraseMode, fontFamily, hasTypo, layout, variant } =
+    resolveTypingDefaults(options);
 
   const lines = normalizeTypingLines(options.lines);
   const iconSlot = resolveTypingIcon(options.icon);
@@ -2677,7 +2784,7 @@ export function renderTyping(options: TypingRenderOptions): string {
   const cursorGeometry = computeCursorGeometry(cursorStyle, baselineY, fontSize);
   const cursorReserveWidth = Math.ceil(cursorGeometry.offsetX + cursorGeometry.width + 4);
 
-  let leading = renderLeadingPrompt({
+  const leadingOptions: LeadingPromptOptions = {
     baselineY,
     fontFamily,
     iconSlot,
@@ -2685,56 +2792,36 @@ export function renderTyping(options: TypingRenderOptions): string {
     metrics,
     prefixText,
     styleTokens,
-  });
-  const hintGeometry = measureHintBadgeGeometry(resolvedHint, layout, metrics);
-  const reservedBodyWidth = hintGeometry?.reservedBodyWidth ?? 0;
-  const reservedHeaderWidth = hintGeometry?.reservedHeaderWidth ?? 0;
+  };
+  let leading = renderLeadingPrompt(leadingOptions);
+  const rawHintGeometry = measureHintBadgeGeometry(resolvedHint, layout, metrics);
+  const initialReservedBodyWidth = rawHintGeometry?.reservedBodyWidth ?? 0;
+  const initialReservedHeaderWidth = rawHintGeometry?.reservedHeaderWidth ?? 0;
 
-  const rightInset = padX + reservedBodyWidth + cursorReserveWidth;
+  const initialRightInset = padX + initialReservedBodyWidth + cursorReserveWidth;
   const minAutoWidth = layout === 'none' ? 200 : Math.round(360 * Math.max(1, scale * 0.88));
   const minHeaderWidth = computeMinHeaderWidth({
     iconSlot,
     layout,
     metrics,
-    reservedHeaderWidth,
+    reservedHeaderWidth: initialReservedHeaderWidth,
     titleText,
   });
   const idealWidth = Math.max(
     minAutoWidth,
     minHeaderWidth,
-    Math.ceil(leading.textStartX + maxRawAdvance + rightInset)
+    Math.ceil(leading.textStartX + maxRawAdvance + initialRightInset)
   );
   const width = clampInt(options.width, TYPING_WIDTH_RANGE, idealWidth);
 
-  if (prefixText.length > 0 && leading.textStartX + fontSize * 2 > width - rightInset) {
-    const iconOnlyLeading = renderLeadingPrompt({
-      baselineY,
-      fontFamily,
-      iconSlot,
-      layout,
-      metrics,
-      prefixText: '',
-      styleTokens,
-    });
-    const maxPrefixWidth =
-      width - rightInset - fontSize * 2 - iconOnlyLeading.textStartX - Math.round(9 * scale);
-    const fittedPrefixText = clampTextToWidth(
-      prefixText,
-      maxPrefixWidth,
-      fontSize,
-      true,
-      fontFamily
-    );
-    leading = renderLeadingPrompt({
-      baselineY,
-      fontFamily,
-      iconSlot,
-      layout,
-      metrics,
-      prefixText: fittedPrefixText,
-      styleTokens,
-    });
-  }
+  const hintGeometry =
+    rawHintGeometry && isHintBadgeFittingWidth(rawHintGeometry, layout, metrics, width)
+      ? rawHintGeometry
+      : undefined;
+  const reservedBodyWidth = hintGeometry?.reservedBodyWidth ?? 0;
+  const reservedHeaderWidth = hintGeometry?.reservedHeaderWidth ?? 0;
+  const rightInset = padX + reservedBodyWidth + cursorReserveWidth;
+  leading = fitLeadingPromptToWidth(leading, leadingOptions, width - rightInset);
 
   const hintMarkup = renderHintBadge({
     geometry: hintGeometry,

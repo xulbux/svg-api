@@ -5,6 +5,7 @@
 import { STRIP_DARK_COLORS, WHITE } from '@/config/palette';
 import { BASE_DARK, THEMES } from '@/config/theme';
 import type {
+  ActiveStackMotion,
   AnimationMode,
   BadgeVariant,
   BandStop,
@@ -125,7 +126,7 @@ interface SvgDocumentOptions {
 /** ID of the shared dark-slate surface `<linearGradient>`. */
 const BG_DARK_ID = 'bg-dark';
 
-/** Default font size in pixels for standard badge labels and values (also the default text measurement size). */
+/** Default font size in pixels for standard badge labels and values. */
 export const BADGE_FONT_SIZE = 11;
 
 /**
@@ -163,12 +164,12 @@ export const ACTIVE_ICON_MOTION_TOKENS: readonly IconMotionMode[] = ICON_MOTION_
 /** Valid per-tile stack motion tokens in display order. */
 export const STACK_MOTION_TOKENS: readonly StackTileMotion[] = ['wave', 'float', 'pulse', 'none'];
 
-/** Active per-tile stack motion tokens excluding the static sentinel mode. */
-export const ACTIVE_STACK_MOTION_TOKENS: readonly StackTileMotion[] = STACK_MOTION_TOKENS.filter(
-  (token) => token !== 'none'
+/** Active per-tile stack motion tokens excluding static and default sentinel modes. */
+export const ACTIVE_STACK_MOTION_TOKENS: readonly ActiveStackMotion[] = STACK_MOTION_TOKENS.filter(
+  (token): token is ActiveStackMotion => token !== 'default' && token !== 'none'
 );
 
-/** Timing of the diagonal surface sheen sweep (also the base timing of the standalone icon sheen). */
+/** Timing of the diagonal surface sheen sweep. */
 export const SHEEN_SWEEP_TIMING: Readonly<SweepTiming> = {
   duration: '4s',
   easing: '0.42 0 0.25 1',
@@ -193,14 +194,11 @@ const XML_REPLACEMENT_MAP: Readonly<Record<string, string>> = {
   '>': '&gt;',
 };
 
-/** Set of valid per-icon motion tokens (derived from `ICON_MOTION_TOKENS`). */
-const ICON_MOTION_MODES: ReadonlySet<string> = new Set<string>(ICON_MOTION_TOKENS);
+/** Lazily built set of valid per-icon motion tokens (`undefined` until first lookup). */
+let iconMotionModesCache: ReadonlySet<string> | undefined = undefined;
 
-/** Set of valid per-tile stack motion tokens (including `'default'`). */
-const STACK_MOTION_MODES: ReadonlySet<string> = new Set<string>([
-  'default',
-  ...STACK_MOTION_TOKENS,
-]);
+/** Lazily built set of valid per-tile stack motion tokens (`undefined` until first lookup). */
+let stackMotionModesCache: ReadonlySet<string> | undefined = undefined;
 
 /** Default empty theme color list for surfaces without a vivid theme gradient. */
 const NO_THEME_COLORS: readonly ThemeColorName[] = [];
@@ -242,6 +240,33 @@ const INVISIBLE_CHARS_RX = /[\p{Cc}\p{Cf}]+/gu;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/**
+ * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest tenth.
+ */
+function roundTenths(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/**
+ * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest hundredth.
+ */
+function roundCoord(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/**
+ * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
+ * @param value   Number to round.
+ * @returns Number rounded to the nearest ten-thousandth.
+ */
+function roundScale(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
 /** Map a single matched character to its XML entity, keep XML-legal whitespace controls, and strip XML-illegal characters. */
 function replaceXmlChar(char: string): string {
   return XML_REPLACEMENT_MAP[char] ?? '';
@@ -249,7 +274,8 @@ function replaceXmlChar(char: string): string {
 
 /** Render a `1px` vertical divider `<line>` at `lineX` from `topY` to `bottomY`. */
 function renderDividerLine(lineX: number, topY: number, bottomY: number, stroke: string): string {
-  return `<line x1="${lineX}" y1="${topY}" x2="${lineX}" y2="${bottomY}" stroke="${stroke}" stroke-width="1" />`;
+  const roundedX = roundCoord(lineX);
+  return `<line x1="${roundedX}" y1="${roundCoord(topY)}" x2="${roundedX}" y2="${roundCoord(bottomY)}" stroke="${stroke}" stroke-width="1" />`;
 }
 
 /**
@@ -320,21 +346,21 @@ function buildTopCrescentPath(
   hasRoundedLeftCorner: boolean,
   topY = 0
 ): string {
-  const innerRadius = radius - 1;
-  const innerRadiusY = innerRadius - 1;
-  const rightArcStart = endX - 1 - innerRadius;
-  const rightTangentX = endX - 1;
-  const outerTopY = topY + 1;
-  const innerTopY = topY + 2;
-  const cornerEndY = outerTopY + innerRadius;
+  const innerRadius = roundCoord(radius - 1);
+  const innerRadiusY = roundCoord(innerRadius - 1);
+  const rightArcStart = roundCoord(endX - 1 - innerRadius);
+  const rightTangentX = roundCoord(endX - 1);
+  const outerTopY = roundCoord(topY + 1);
+  const innerTopY = roundCoord(topY + 2);
+  const cornerEndY = roundCoord(outerTopY + innerRadius);
 
   if (!hasRoundedLeftCorner) {
-    const leftEdgeX = startX + 0.5;
+    const leftEdgeX = roundCoord(startX + 0.5);
     return `M ${leftEdgeX} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftEdgeX} Z`;
   }
 
-  const leftTangentX = startX + 1;
-  const leftArcEnd = startX + 1 + innerRadius;
+  const leftTangentX = roundCoord(startX + 1);
+  const leftArcEnd = roundCoord(startX + 1 + innerRadius);
   return `M ${leftTangentX} ${cornerEndY} A ${innerRadius} ${innerRadius} 0 0 1 ${leftArcEnd} ${outerTopY} H ${rightArcStart} A ${innerRadius} ${innerRadius} 0 0 1 ${rightTangentX} ${cornerEndY} A ${innerRadius} ${innerRadiusY} 0 0 0 ${rightArcStart} ${innerTopY} H ${leftArcEnd} A ${innerRadius} ${innerRadiusY} 0 0 0 ${leftTangentX} ${cornerEndY} Z`;
 }
 
@@ -347,9 +373,15 @@ function buildLeftCapsulePath(
   topY = 0,
   isClosed = true
 ): string {
-  const bottomY = topY + height;
-  const cornerX = startX + radius;
-  return `M ${endX} ${topY} H ${cornerX} A ${radius} ${radius} 0 0 0 ${startX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 0 ${cornerX} ${bottomY} H ${endX}${isClosed ? ' Z' : ''}`;
+  const roundedStartX = roundCoord(startX);
+  const roundedEndX = roundCoord(endX);
+  const roundedTopY = roundCoord(topY);
+  const roundedBottomY = roundCoord(topY + height);
+  const roundedRadius = roundCoord(radius);
+  const cornerX = roundCoord(startX + radius);
+  const topArcEndY = roundCoord(topY + radius);
+  const bottomArcStartY = roundCoord(roundedBottomY - radius);
+  return `M ${roundedEndX} ${roundedTopY} H ${cornerX} A ${roundedRadius} ${roundedRadius} 0 0 0 ${roundedStartX} ${topArcEndY} V ${bottomArcStartY} A ${roundedRadius} ${roundedRadius} 0 0 0 ${cornerX} ${roundedBottomY} H ${roundedEndX}${isClosed ? ' Z' : ''}`;
 }
 
 /** Build the SVG `<path>` `d` attribute for the right capsule of a split badge (square left edge, rounded right corners). */
@@ -360,46 +392,26 @@ function buildRightCapsulePath(
   radius: number,
   topY = 0
 ): string {
-  const bottomY = topY + height;
-  return `M ${startX} ${topY} H ${endX - radius} A ${radius} ${radius} 0 0 1 ${endX} ${topY + radius} V ${bottomY - radius} A ${radius} ${radius} 0 0 1 ${endX - radius} ${bottomY} H ${startX} Z`;
+  const roundedStartX = roundCoord(startX);
+  const roundedEndX = roundCoord(endX);
+  const roundedTopY = roundCoord(topY);
+  const roundedBottomY = roundCoord(topY + height);
+  const roundedRadius = roundCoord(radius);
+  const arcStartX = roundCoord(endX - radius);
+  const topArcEndY = roundCoord(topY + radius);
+  const bottomArcStartY = roundCoord(roundedBottomY - radius);
+  return `M ${roundedStartX} ${roundedTopY} H ${arcStartX} A ${roundedRadius} ${roundedRadius} 0 0 1 ${roundedEndX} ${topArcEndY} V ${bottomArcStartY} A ${roundedRadius} ${roundedRadius} 0 0 1 ${arcStartX} ${roundedBottomY} H ${roundedStartX} Z`;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { buildThemeGradientId, renderVerticalGradientDef };
+export { buildThemeGradientId, renderVerticalGradientDef, roundCoord, roundScale, roundTenths };
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
   getOwnValue,
   HINT_ICON_REST_RX,
 } from '@/site/shared/encoding';
-
-/**
- * Round a finite number to 1 decimal place (`0.1` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest tenth.
- */
-export function roundTenths(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-/**
- * Round a finite number to 2 decimal places (`0.01` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest hundredth.
- */
-export function roundCoord(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-/**
- * Round a finite scale factor to 4 decimal places (`0.0001` precision) without string allocation.
- * @param value   Number to round.
- * @returns Number rounded to the nearest ten-thousandth.
- */
-export function roundScale(value: number): number {
-  return Math.round(value * 10_000) / 10_000;
-}
 
 /**
  * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
@@ -444,21 +456,29 @@ export function hasOwnKey<K extends string>(
 }
 
 /**
- * Check whether an optional token is a valid per-icon motion token (anything in `ICON_MOTION_TOKENS`).
+ * Check whether an optional token is a valid per-icon motion mode.
  * @param token   Candidate animation token.
  * @returns `true` when `token` is an `IconMotionMode`.
  */
 export function isIconMotionMode(token: string | undefined): token is IconMotionMode {
-  return token !== undefined && ICON_MOTION_MODES.has(token);
+  if (token === undefined) {
+    return false;
+  }
+  iconMotionModesCache ??= new Set<string>(ICON_MOTION_TOKENS);
+  return iconMotionModesCache.has(token);
 }
 
 /**
- * Check whether an optional token is a valid per-tile stack motion token (anything in `STACK_MOTION_TOKENS`).
+ * Check whether an optional token is a valid per-tile stack motion mode.
  * @param token   Candidate animation token.
  * @returns `true` when `token` is a `StackTileMotion`.
  */
 export function isStackMotionMode(token: string | undefined): token is StackTileMotion {
-  return token !== undefined && STACK_MOTION_MODES.has(token);
+  if (token === undefined) {
+    return false;
+  }
+  stackMotionModesCache ??= new Set<string>(['default', ...STACK_MOTION_TOKENS]);
+  return stackMotionModesCache.has(token);
 }
 
 /**
@@ -895,28 +915,23 @@ export function renderIconGroup(options: IconGroupOptions): string {
  * @returns Concatenated SVG surface, crescent, divider, and border `<rect>`/`<path>`/`<line>` elements.
  */
 export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
-  const {
-    boxX = 0,
-    boxY = 0,
-    height,
-    radius,
-    rightCapsuleStartX,
-    splitLineX,
-    variant,
-    width,
-  } = options;
+  const { rightCapsuleStartX, splitLineX, variant } = options;
+  const boxX = roundCoord(options.boxX ?? 0);
+  const boxY = roundCoord(options.boxY ?? 0);
+  const width = roundCoord(options.width);
+  const height = roundCoord(options.height);
+  const radius = roundCoord(options.radius);
   const palette = THEMES[options.color];
   const positionAttrs = boxX === 0 && boxY === 0 ? '' : `x="${boxX}" y="${boxY}" `;
-  const ringGeometry = `x="${boxX + 0.5}" y="${boxY + 0.5}" width="${width - 1}" height="${height - 1}" rx="${radius - 0.5}"`;
-  const crescentPath = buildTopCrescentPath(boxX, boxX + width, radius, true, boxY);
-  const bottomY = boxY + height;
-
+  const ringGeometry = `x="${roundCoord(boxX + 0.5)}" y="${roundCoord(boxY + 0.5)}" width="${roundCoord(width - 1)}" height="${roundCoord(height - 1)}" rx="${roundCoord(radius - 0.5)}"`;
+  const rightEdgeX = roundCoord(boxX + width);
+  const crescentPath = buildTopCrescentPath(boxX, rightEdgeX, radius, true, boxY);
+  const bottomY = roundCoord(boxY + height);
   const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
-  const rightEdgeX = boxX + width;
 
   if (variant === '1') {
     if (isRightCapsuleOnly) {
-      const innerRadius = radius - 0.5;
+      const innerRadius = roundCoord(radius - 0.5);
       const leftFillPath = buildLeftCapsulePath(boxX, rightCapsuleStartX, height, radius, boxY);
       const leftBorderPath = buildLeftCapsulePath(
         boxX + 0.5,

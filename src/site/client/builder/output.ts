@@ -3,6 +3,7 @@
  */
 
 import {
+  activateRovingTab,
   buildAltText,
   buildDefaultLinkTarget,
   buildPath,
@@ -92,6 +93,7 @@ const PREVIEW_DEBOUNCE_MS = 180;
 /**
  * Create the builder preview, status bar, snippet code renderer, and share-link controller.
  * @param options   DOM elements, schema, media query, state accessor, and shared site utilities.
+ * @returns Preview and snippet output controller.
  */
 export function createBuilderOutputController(
   options: BuilderOutputOptions
@@ -244,12 +246,7 @@ export function createBuilderOutputController(
   function selectTab(tab: HTMLElement): void {
     const { format } = tab.dataset;
     snippetFormat = format === 'html' || format === 'url' ? format : 'markdown';
-    for (const otherTab of document.querySelectorAll('.builder-tab')) {
-      const isSelected = otherTab === tab;
-      otherTab.classList.toggle('is-active', isSelected);
-      otherTab.setAttribute('aria-selected', String(isSelected));
-      otherTab.setAttribute('tabindex', isSelected ? '0' : '-1');
-    }
+    activateRovingTab(document.querySelectorAll('.builder-tab'), tab);
     document.getElementById('builder-code')?.setAttribute('aria-labelledby', tab.id);
     renderOutputs();
   }

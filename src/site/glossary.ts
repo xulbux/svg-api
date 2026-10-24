@@ -28,6 +28,7 @@ export const SPECIAL_KIND_DETAILS: Readonly<
   Record<BadgeSpecialElement['type'], SpecialKindDetail>
 > = {
   bar: {
+    defaultModifierAliases: ['pulse'],
     defaultModifierLabel: 'Shimmer',
     description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 92).`,
     example: '92',
@@ -50,6 +51,7 @@ export const SPECIAL_KIND_DETAILS: Readonly<
     summary: 'Delta pill (+ emerald, - rose)',
   },
   ring: {
+    defaultModifierAliases: ['static'],
     defaultModifierLabel: 'Static',
     description: `Percentage from ${PERCENT_RANGE.min} to ${PERCENT_RANGE.max} (e.g., 84).`,
     example: '84',
@@ -82,14 +84,7 @@ export const SPECIAL_KIND_DETAILS: Readonly<
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-/**
- * Capitalize the first character of a word.
- * @param word   Lowercase word (e.g., `'nudge'`).
- * @returns Capitalized word (e.g., `'Nudge'`).
- */
-export function capitalizeWord(word: string): string {
-  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
-}
+export { capitalizeWord } from '@/site/shared/encoding';
 
 /**
  * Join every variant identifier as a parameter table value.
@@ -161,4 +156,18 @@ export function formatConjunctionList(items: readonly string[], conjunction = 'a
     return `${items[0]} ${conjunction} ${items[1]}`;
   }
   return `${items.slice(0, -1).join(', ')}, ${conjunction} ${items.at(-1)}`;
+}
+
+/**
+ * Wrap each item in backticks and format as natural English prose (`'\`a\`'`, `'\`a\` and \`b\`'`).
+ * @param items         Code tokens to wrap and join in display order.
+ * @param conjunction   Coordinating conjunction (`'and'` or `'or'`).
+ * @returns Backtick-wrapped prose list.
+ */
+export function formatBacktickList(items: readonly string[], conjunction = 'and'): string {
+  const wrapped: string[] = [];
+  for (const item of items) {
+    wrapped.push(`\`${item}\``);
+  }
+  return formatConjunctionList(wrapped, conjunction);
 }

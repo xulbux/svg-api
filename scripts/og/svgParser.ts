@@ -284,7 +284,7 @@ function stepSvgCurveOrArcCommand(
   previousCtrlX: number | undefined,
   previousCtrlY: number | undefined,
   readNumber: () => number,
-  readArcFlag: () => boolean,
+  isNextArcFlagSet: () => boolean,
   toPoint: (rawX: number, rawY: number) => Point2D
 ): void {
   const targetPoints = state.currentSubpath?.points;
@@ -349,8 +349,8 @@ function stepSvgCurveOrArcCommand(
       const arcRx = readNumber();
       const arcRy = readNumber();
       const rotation = readNumber();
-      const isLargeArc = readArcFlag();
-      const isSweep = readArcFlag();
+      const isLargeArc = isNextArcFlagSet();
+      const isSweep = isNextArcFlagSet();
       const endX = baseX + readNumber();
       const endY = baseY + readNumber();
       const arcPoints: Point2D[] = [];
@@ -386,9 +386,13 @@ function stepSvgPathCommand(
   baseX: number,
   baseY: number,
   readNumber: () => number,
-  readArcFlag: () => boolean,
+  isNextArcFlagSet: () => boolean,
   toPoint: (rawX: number, rawY: number) => Point2D
 ): void {
+  if (upper !== 'M' && !state.currentSubpath) {
+    state.currentSubpath = { isClosed: false, points: [toPoint(state.cursorX, state.cursorY)] };
+    state.subpaths.push(state.currentSubpath);
+  }
   const targetPoints = state.currentSubpath?.points;
   const previousCtrlX = upper === 'Q' || upper === 'T' ? state.lastQuadCtrlX : state.lastCubicCtrlX;
   const previousCtrlY = upper === 'Q' || upper === 'T' ? state.lastQuadCtrlY : state.lastCubicCtrlY;
@@ -436,7 +440,7 @@ function stepSvgPathCommand(
         previousCtrlX,
         previousCtrlY,
         readNumber,
-        readArcFlag,
+        isNextArcFlagSet,
         toPoint
       );
     }
@@ -574,7 +578,7 @@ export function flattenSvgPath(
     return Number.parseFloat(match[0]);
   }
 
-  function readArcFlag(): boolean {
+  function isNextArcFlagSet(): boolean {
     skipSeparators();
     const char = pathData.charAt(cursorIndex);
     if (char === '0' || char === '1') {
@@ -600,6 +604,8 @@ export function flattenSvgPath(
           state.currentSubpath.isClosed = true;
           state.currentSubpath.points.push(toPoint(state.startX, state.startY));
         }
+        state.currentSubpath = undefined;
+        state.command = '';
         state.cursorX = state.startX;
         state.cursorY = state.startY;
         state.lastCubicCtrlX = undefined;
@@ -609,7 +615,7 @@ export function flattenSvgPath(
         isCloseCommand = true;
       }
     }
-    if (!isCloseCommand) {
+    if (!isCloseCommand && state.command.length > 0) {
       const isRelative = state.command === state.command.toLowerCase();
       stepSvgPathCommand(
         state,
@@ -617,7 +623,7 @@ export function flattenSvgPath(
         isRelative ? state.cursorX : 0,
         isRelative ? state.cursorY : 0,
         readNumber,
-        readArcFlag,
+        isNextArcFlagSet,
         toPoint
       );
     }

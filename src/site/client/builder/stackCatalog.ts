@@ -3,12 +3,14 @@
  */
 
 import {
+  activateRovingTab,
   BRAND_SLUG_CLEAN_RX,
   collectStackTileTokens,
   composeCategorizedStack,
   getOwnValue,
   handleRovingTabKeydown,
   readState,
+  resolveStackPrefillMode,
   stripStackTileColor,
 } from '@/site/client/builder/core';
 import type {
@@ -65,6 +67,8 @@ export interface StackCatalogController {
   flushPendingChips: () => void;
   /** Sync the `aria-pressed` state of every category chip and custom token list from a `/stack` DSL string. */
   syncFromDsl: (dslValue: string) => void;
+  /** Select `Categories` or `Raw DSL` based on whether `dslValue` is losslessly representable by the category chips. */
+  syncModeForPrefill: (dslValue: string, rawPerLine: string) => void;
   /** Sync the category chips or recompute `#field-groups` when a stack field changes. */
   syncStackFieldChange: (field: BuilderField) => void;
 }
@@ -74,6 +78,7 @@ export interface StackCatalogController {
 /**
  * Create the `/builder/stack` category picker controller.
  * @param options   DOM elements and callbacks.
+ * @returns Stack category catalog controller.
  */
 export function createStackCatalogController(options: StackCatalogOptions): StackCatalogController {
   const {
@@ -288,16 +293,35 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
 
   function selectStackModeTab(tab: HTMLElement): void {
     const isCategories = tab.dataset.stackMode !== 'raw';
-    for (const otherTab of form.querySelectorAll('.stack-mode-tab')) {
-      const isSelected = otherTab === tab;
-      otherTab.classList.toggle('is-active', isSelected);
-      otherTab.setAttribute('aria-selected', String(isSelected));
-      otherTab.setAttribute('tabindex', isSelected ? '0' : '-1');
-    }
+    activateRovingTab(form.querySelectorAll('.stack-mode-tab'), tab);
     stackCategoriesPanel?.toggleAttribute('hidden', !isCategories);
     stackRawPanel?.toggleAttribute('hidden', isCategories);
     stackRawActions?.toggleAttribute('hidden', isCategories);
     stackGroupToggleLabel?.toggleAttribute('hidden', !isCategories);
+  }
+
+  function setStackMode(mode: 'categories' | 'raw'): void {
+    const targetTab = form.querySelector(`.stack-mode-tab[data-stack-mode="${mode}"]`);
+    if (targetTab instanceof HTMLElement) {
+      selectStackModeTab(targetTab);
+    }
+  }
+
+  function syncModeForPrefill(dslValue: string, rawPerLine: string): void {
+    indexStackCatalog();
+    if (stackChips.length === 0) {
+      return;
+    }
+    const { isGroupedByCategory, mode } = resolveStackPrefillMode(
+      dslValue,
+      readSelectedCategoryGroups(),
+      customStackTokens.length > 0,
+      rawPerLine
+    );
+    if (stackGroupToggle && isGroupedByCategory !== undefined) {
+      stackGroupToggle.checked = isGroupedByCategory;
+    }
+    setStackMode(mode);
   }
 
   function bindStackCatalog(): void {
@@ -364,6 +388,7 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     filterCatalog: filterStackCatalog,
     flushPendingChips: flushPendingStackChips,
     syncFromDsl: syncStackCatalogFromDsl,
+    syncModeForPrefill,
     syncStackFieldChange,
   };
 }

@@ -15,6 +15,7 @@ import {
 } from '@/routes/params';
 import { DEFAULT_TYPING_VARIANT } from '@/routes/svg';
 import {
+  appendDefaultLabel,
   buildColorParamRow,
   buildSheenAnimParamRow,
   buildVariantParamRow,
@@ -27,6 +28,7 @@ import {
   DEFAULT_TYPING_CURSOR,
   DEFAULT_TYPING_ERASE,
   DEFAULT_TYPING_LAYOUT,
+  DEFAULT_TYPING_SIZE,
   DEFAULT_WINDOW_PROMPT,
   TYPING_DURATION_RANGE,
   TYPING_FONT_SIZE_RANGE,
@@ -48,7 +50,10 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: `Terminal window with traffic-light dots, centered title (?title=zsh), header pill (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt.`,
-    title: 'layout=window · Terminal Window (Default)',
+    title: appendDefaultLabel(
+      'layout=window · Terminal Window',
+      DEFAULT_TYPING_LAYOUT === 'window'
+    ),
   },
   {
     items: [
@@ -59,7 +64,10 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Command or AI prompt bar with an accent icon badge (?icon=sparkles) and keycap hint (?hint=icon:command+K).',
-    title: 'layout=prompt · Command / AI Prompt Bar',
+    title: appendDefaultLabel(
+      'layout=prompt · Command / AI Prompt Bar',
+      DEFAULT_TYPING_LAYOUT === 'prompt'
+    ),
   },
   {
     items: [
@@ -69,7 +77,10 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: `Code editor frame with an active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}) and line-number gutter.`,
-    title: 'layout=ide · Code Editor Tab & Line Gutter',
+    title: appendDefaultLabel(
+      'layout=ide · Code Editor Tab & Line Gutter',
+      DEFAULT_TYPING_LAYOUT === 'ide'
+    ),
   },
   {
     items: [
@@ -80,7 +91,10 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Browser toolbar with traffic-light dots, recessed URL bar (?icon=search), and keycap hint (?hint=icon:corner-down-left).',
-    title: 'layout=browser · Browser Search / URL Omnibox',
+    title: appendDefaultLabel(
+      'layout=browser · Browser Search / URL Omnibox',
+      DEFAULT_TYPING_LAYOUT === 'browser'
+    ),
   },
   {
     isCentered: true,
@@ -92,7 +106,10 @@ export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Frameless transparent canvas (?size=xl), ready to drop in as a README hero headline.',
-    title: 'layout=none · Frameless Transparent Headline',
+    title: appendDefaultLabel(
+      'layout=none · Frameless Transparent Headline',
+      DEFAULT_TYPING_LAYOUT === 'none'
+    ),
   },
 ];
 
@@ -106,7 +123,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: 'Primary gradient window with white text and bar cursor.',
-    title: 'variant=1 · Primary Brand Gradient',
+    title: appendDefaultLabel('variant=1 · Primary Brand Gradient', DEFAULT_TYPING_VARIANT === '1'),
   },
   {
     items: [
@@ -117,7 +134,10 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Tinted dark window with orange border, header icon (?icon=rust), and block cursor (?cursor=block).',
-    title: 'variant=2 · Secondary Tinted + Block Cursor (Default)',
+    title: appendDefaultLabel(
+      'variant=2 · Secondary Tinted + Block Cursor',
+      DEFAULT_TYPING_VARIANT === '2'
+    ),
   },
   {
     items: [
@@ -128,7 +148,10 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     ],
     subtitle:
       'Neutral dark surface with underscore cursor (?cursor=underscore) and diagonal sheen (?anim=sheen).',
-    title: 'variant=3 · Tertiary Neutral + Underscore Cursor',
+    title: appendDefaultLabel(
+      'variant=3 · Tertiary Neutral + Underscore Cursor',
+      DEFAULT_TYPING_VARIANT === '3'
+    ),
   },
 ];
 
@@ -183,7 +206,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
       description:
         'Semicolon-separated (;) lines to type in sequence (+ or %20 for spaces); The two-segment form sets a static prefix before the cycling lines.',
       name: ':prefix / :lines',
-      values: '/typing/Line+1;Line+2 | /typing/~/dev+$/npm+test;npm+run+build',
+      values: '/typing/Line+1;Line+2 | /typing/~%2Fdev+$/npm+test;npm+run+build',
     },
     {
       defaultVal: '~none',
@@ -217,7 +240,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
       values: TYPING_FONT_TOKENS.join(' | '),
     },
     {
-      defaultVal: `md (${TYPING_SIZE_MAP.md}px)`,
+      defaultVal: `${DEFAULT_TYPING_SIZE} (${TYPING_SIZE_MAP[DEFAULT_TYPING_SIZE]}px)`,
       description: 'Typography scale preset or custom pixel font size.',
       name: '?size=',
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(TYPING_FONT_SIZE_RANGE)}`,
@@ -245,7 +268,7 @@ export function buildTypingParamRows(): ParamTableRow[] {
     {
       defaultVal: '~none',
       description:
-        'Optional UI or brand icon slug (header bar on window, file tab on ide, badge on prompt, or URL bar on browser).',
+        'Optional UI or brand icon slug (header bar on window, file tab on ide, badge on prompt, URL bar on browser, or leading icon on none).',
       name: '?icon=',
       values: 'terminal | search | sparkles | rust | ts | none',
     },

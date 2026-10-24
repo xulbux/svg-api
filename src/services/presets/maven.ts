@@ -2,7 +2,12 @@
  * Maven Central service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import { createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -16,19 +21,15 @@ interface MavenArtifactProjection {
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a Maven coordinate identifier (ASCII letters, digits, dots, underscores, and hyphens; Excludes Lucene boolean operators). */
-const MAVEN_COORD_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d._-]*$/;
+const MAVEN_COORD_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d._-]{0,127}$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Project a Maven Central Solr search response to the first artifact's `latestVersion` (empty `docs` is not found). */
 function projectMavenArtifact(data: unknown): MavenArtifactProjection | undefined {
   const response = isJsonObject(data) ? data.response : undefined;
-  const docs = isJsonObject(response) ? response.docs : undefined;
-  const firstDoc: unknown = Array.isArray(docs) ? docs[0] : undefined;
-  if (!isJsonObject(firstDoc)) {
-    return undefined;
-  }
-  return { version: readText(firstDoc.latestVersion) };
+  const firstDoc = readFirstObjectEntry(isJsonObject(response) ? response.docs : undefined);
+  return firstDoc ? { version: readText(firstDoc.latestVersion) } : undefined;
 }
 
 /** Maven Central Solr search endpoint (1 row) with Sonatype Central artifact page redirect. */

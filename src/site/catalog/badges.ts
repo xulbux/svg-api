@@ -6,6 +6,7 @@ import { DEFAULT_THEME_COLOR, THEME_COLOR_NAMES } from '@/config/theme';
 import { ACTIVE_ICON_MOTION_TOKENS } from '@/routes/params';
 import { DEFAULT_BADGE_VARIANT } from '@/routes/svg';
 import {
+  appendDefaultLabel,
   buildAnimParamRow,
   buildColorParamRow,
   buildDotParamRow,
@@ -37,17 +38,17 @@ export const BADGE_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Gradient right cap for primary status and metrics.',
     id: '1',
-    title: 'variant=1 · Primary Badge (Default)',
+    title: appendDefaultLabel('variant=1 · Primary Badge', DEFAULT_BADGE_VARIANT === '1'),
   },
   {
     description: 'Tinted dark right cap with a colored border.',
     id: '2',
-    title: 'variant=2 · Secondary Badge',
+    title: appendDefaultLabel('variant=2 · Secondary Badge', DEFAULT_BADGE_VARIANT === '2'),
   },
   {
     description: 'Neutral dark surface with colored icon and muted value.',
     id: '3',
-    title: 'variant=3 · Tertiary Badge',
+    title: appendDefaultLabel('variant=3 · Tertiary Badge', DEFAULT_BADGE_VARIANT === '3'),
   },
 ];
 

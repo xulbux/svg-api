@@ -3333,4 +3333,34 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
     expect(await describeMetric('/badge/nuget/bad$/v')).toBe('nuget: invalid name');
     expect(fetchSpy).toHaveBeenCalledTimes(priorCalls);
   });
+
+  it('returns 0/90d on empty crates version_downloads, guards non-string npm types, rejects trailing-hyphen CPAN slugs, and accepts colon DIDs (regressions: empty crates version_downloads marked unavailable, non-string npm types crash, trailing-hyphen CPAN slug, colon segment rejection)', async () => {
+    mockUpstream({
+      'crates.io/api/v1/crates/brand-new/downloads': {
+        meta: { extra_downloads: [] },
+        version_downloads: [],
+      },
+      'public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=did%3Aplc%3Az72i7hdynmk6r22z27h6tvur':
+        { followersCount: 4200, postsCount: 85 },
+      'registry.npmjs.org/@types%2fweird-types/latest': null,
+      'registry.npmjs.org/weird-types/latest': {
+        types: { import: './index.d.mts' },
+        typings: true,
+        version: '1.0.0',
+      },
+    });
+
+    expect(await describeMetric('/badge/crates/brand-new/dq')).toBe('Downloads: 0/90d');
+    expect(await describeMetric('/badge/npm/weird-types/types')).toBe('Types: none');
+    expect(await describeMetric('/badge/bluesky/did:plc:z72i7hdynmk6r22z27h6tvur/followers')).toBe(
+      'Followers: 4.2k'
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const priorCalls = fetchSpy.mock.calls.length;
+    expect(await describeMetric('/badge/cpan/Foo-/v')).toBe('cpan: invalid name');
+    expect(await describeMetric('/badge/cpan/-Foo/v')).toBe('cpan: invalid name');
+    expect(await describeMetric('/badge/bluesky/::/followers')).toBe('bluesky: invalid name');
+    expect(fetchSpy).toHaveBeenCalledTimes(priorCalls);
+  });
 });

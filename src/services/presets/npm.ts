@@ -116,7 +116,8 @@ function projectNpmLatest(data: unknown): NpmLatestProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const hasTopLevelTypes = Boolean(data.types) || Boolean(data.typings);
+  const hasTopLevelTypes =
+    readText(data.types) !== undefined || readText(data.typings) !== undefined;
   return {
     hasTypes:
       hasTopLevelTypes || hasTypesCondition(data.exports, 0, { remainingKeys: MAX_EXPORTS_KEYS }),
@@ -154,7 +155,7 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
     bars12m: bucketSeries(daily, 12),
     bars30d: bucketSeries(recent30d, 10),
     currDl,
-    dl: sumSeries(daily, totalDays - 30),
+    dl: currDl ?? sumSeries(daily, totalDays - 30),
     dw: dw ?? sumSeries(daily, totalDays - 7),
     dy: sumSeries(daily),
     prevDl,

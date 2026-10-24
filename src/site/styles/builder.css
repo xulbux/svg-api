@@ -770,7 +770,6 @@
 /* Wrap long URLs instead of scrolling (the builder shows a single snippet): */
 
 .builder-code {
-  padding-inline-end: 42px;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   -webkit-mask-image: none;
@@ -946,7 +945,7 @@
   flex-direction: column;
   gap: 14px;
   max-block-size: 380px;
-  padding: 12px 10px;
+  padding: 14px 10px;
   overflow-y: auto;
   scrollbar-width: thin;
   -webkit-mask-image: linear-gradient(

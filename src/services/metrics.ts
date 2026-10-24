@@ -9,6 +9,7 @@ import {
   defineService,
   isJsonObject,
 } from '@/services/endpoint';
+import { capitalizeWord } from '@/site/shared/encoding';
 import { MAX_BARS_POINTS, MAX_SPARKLINE_POINTS, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
 import type {
@@ -57,7 +58,7 @@ interface CoverageServiceOptions<P extends object> {
   icon: string;
   /** Browser page URL template (`{owner}`, `{target}`). */
   page: string;
-  /** Optional reader for signed coverage percentage point change (e.g., Coveralls `coverage_change`). */
+  /** Optional reader for signed coverage percentage point change. */
   readDelta?: (payload: Partial<P>) => unknown;
   /** Reads the raw coverage percentage from the upstream payload. */
   readPercent: (payload: Partial<P>) => unknown;
@@ -260,9 +261,7 @@ function formatSpdxPart(part: string): string {
   if (override !== undefined) {
     return override;
   }
-  return part.length <= SPDX_ACRONYM_MAX_LENGTH
-    ? part.toUpperCase()
-    : part.charAt(0).toUpperCase() + part.slice(1);
+  return part.length <= SPDX_ACRONYM_MAX_LENGTH ? part.toUpperCase() : capitalizeWord(part);
 }
 
 /** Strip one pair of enclosing parentheses (`(MIT OR Apache-2.0)`), keeping `(A) OR (B)` intact. */
@@ -423,6 +422,27 @@ export const UPDATED: MetricPresentation = {
   defaultLabel: 'Updated',
 };
 
+/** Shared badge properties for a passing build or status check. */
+export const PASSING_STATUS: Partial<MetricResult> = {
+  color: 'emerald',
+  icon: 'circle-check',
+  value: 'passing',
+};
+
+/** Shared badge properties for a failing build or status check. */
+export const FAILING_STATUS: Partial<MetricResult> = {
+  color: 'rose',
+  icon: 'circle-x',
+  value: 'failing',
+};
+
+/** Shared badge properties for an unknown or absent build/status check. */
+export const UNKNOWN_STATUS: Partial<MetricResult> = {
+  color: 'slate',
+  icon: 'circle-help',
+  value: 'unknown',
+};
+
 export { SCORE_SPECIALS, readFiniteNumber, readText };
 
 /**
@@ -510,8 +530,9 @@ export function formatCurrency(
       ? absAmount.toFixed(2)
       : formatCompactNumber(absAmount);
   const code = (currency ?? '').toUpperCase();
-  if (Object.hasOwn(CURRENCY_SYMBOLS, code)) {
-    return `${sign}${CURRENCY_SYMBOLS[code]}${formatted}${suffix}`;
+  const symbol = getOwnValue(CURRENCY_SYMBOLS, code);
+  if (symbol !== undefined) {
+    return `${sign}${symbol}${formatted}${suffix}`;
   }
   return code ? `${sign}${formatted} ${code}${suffix}` : `${sign}${formatted}${suffix}`;
 }
@@ -962,7 +983,7 @@ export function createCommunityMetric<P>(
       autoSpecials,
       defaultColor: COMMUNITY_KINDS[kind],
       defaultIcon: icon,
-      defaultLabel: `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`,
+      defaultLabel: capitalizeWord(kind),
     },
     readCount,
     '',

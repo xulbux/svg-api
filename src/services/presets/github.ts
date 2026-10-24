@@ -144,7 +144,7 @@ const ZERO_COUNTS_PAYLOAD = {
   data: { repository: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } } },
 } as const;
 
-/** Memoized aliased GraphQL query documents keyed by batch size (`2`..`MAX_GRAPHQL_BATCH_SIZE`). */
+/** Memoized aliased GraphQL query documents keyed by batch size (`2`–`MAX_GRAPHQL_BATCH_SIZE`). */
 const BATCHED_QUERY_CACHE = new Map<number, string>();
 
 /** Open microtask batches keyed by `Authorization` header value. */
@@ -185,7 +185,7 @@ function buildGitHubHeaders(env: Env): Readonly<Record<string, string>> {
   return env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {};
 }
 
-/** Build (once per batch size `2`..`MAX_GRAPHQL_BATCH_SIZE`) a parameterized aliased GraphQL counts query. */
+/** Build (once per batch size `2`–`MAX_GRAPHQL_BATCH_SIZE`) a parameterized aliased GraphQL counts query. */
 function getBatchedCountsQuery(count: number): string {
   let cached = BATCHED_QUERY_CACHE.get(count);
   if (cached !== undefined) {

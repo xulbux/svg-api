@@ -43,11 +43,22 @@ export interface KindSyncController {
   syncTypingFields: () => void;
 }
 
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Sync the custom dropdown wrapper surrounding a native `<select>` control when present. */
+function syncSelectForControl(control: Element | undefined): void {
+  const wrapper = control?.closest('[data-select]');
+  if (wrapper) {
+    syncSelect(wrapper);
+  }
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
  * Create the kind-specific builder presentation synchronizer.
  * @param options   Schema, field lookup maps, form element, state accessor, and field controller.
+ * @returns Kind-specific field sync controller.
  */
 export function createKindSyncController(options: KindSyncOptions): KindSyncController {
   const { fieldElements, fieldsById, fieldsController, form, getState, schema } = options;
@@ -85,12 +96,7 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
       const modifier = getPart(specialElement, 'modifier')?.value ?? '';
       syncSpecialParts(specialField, specialElement, modifier);
     }
-    if (kindSelect instanceof HTMLSelectElement) {
-      const wrapper = kindSelect.closest('[data-select]');
-      if (wrapper) {
-        syncSelect(wrapper);
-      }
-    }
+    syncSelectForControl(kindSelect);
   }
 
   function syncServiceDotOptions(hasDynamicDot: boolean): void {
@@ -219,23 +225,29 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
     }
   }
 
-  function syncTypingFields(): void {
-    if (schema.kind !== 'typing') {
+  function syncFramelessTypingSheen(state: BuilderState, isFrameless: boolean): void {
+    const animElement = fieldElements.get('anim');
+    const sheenInput = animElement ? getPart(animElement, 'sheen') : undefined;
+    sheenInput?.closest('.builder-check')?.toggleAttribute('hidden', isFrameless);
+    if (!isFrameless) {
       return;
     }
-    const state = getState();
-    const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || 'window';
+    const rawAnim = (state.anim ?? '').trim().toLowerCase();
+    if (rawAnim === 'sheen') {
+      state.anim = '';
+    } else if (rawAnim === 'sheen,none' || rawAnim === 'none,sheen') {
+      state.anim = 'none';
+    }
+    if (sheenInput instanceof HTMLInputElement && sheenInput.checked) {
+      sheenInput.checked = false;
+      const animField = fieldsById.get('anim');
+      if (animField && animElement) {
+        state.anim = readFieldValue(animField, animElement);
+      }
+    }
+  }
 
-    fieldElements
-      .get('title')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('title', effectiveLayout));
-    fieldElements
-      .get('hint')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('hint', effectiveLayout));
-    fieldElements
-      .get('align')
-      ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout('align', effectiveLayout));
-
+  function syncTypingPlaceholders(effectiveLayout: string, defaultLayout: string): void {
     const titleControl = getControl('title');
     if (titleControl instanceof HTMLInputElement) {
       titleControl.placeholder =
@@ -243,7 +255,8 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
     }
     const prefixControl = getControl('prefix');
     if (prefixControl instanceof HTMLInputElement) {
-      prefixControl.placeholder = effectiveLayout === 'window' ? '❯ (window default)' : 'optional';
+      prefixControl.placeholder =
+        effectiveLayout === defaultLayout ? `❯ (${defaultLayout} default)` : 'optional';
     }
     const hintElement = fieldElements.get('hint');
     const hintTextControl = hintElement ? getPart(hintElement, 'text') : undefined;
@@ -251,14 +264,29 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
       hintTextControl.placeholder =
         effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
     }
+  }
 
-    const fontField = fieldsById.get('font');
-    if (fontField && !state.font) {
-      writeFieldValue(fontField, '');
+  function syncTypingFields(): void {
+    if (schema.kind !== 'typing') {
+      return;
     }
-    const alignField = fieldsById.get('align');
-    if (alignField && !state.align) {
-      writeFieldValue(alignField, '');
+    const state = getState();
+    const defaultLayout = fieldsById.get('layout')?.defaultValue ?? 'window';
+    const effectiveLayout = (state.layout ?? '').trim().toLowerCase() || defaultLayout;
+
+    for (const fieldId of ['title', 'hint', 'align']) {
+      fieldElements
+        .get(fieldId)
+        ?.toggleAttribute('hidden', !isTypingFieldActiveForLayout(fieldId, effectiveLayout));
+    }
+    syncFramelessTypingSheen(state, effectiveLayout === 'none');
+    syncTypingPlaceholders(effectiveLayout, defaultLayout);
+
+    for (const fieldId of ['font', 'align']) {
+      const field = fieldsById.get(fieldId);
+      if (field && !state[fieldId]) {
+        writeFieldValue(field, '');
+      }
     }
   }
 
@@ -277,11 +305,7 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
       state.special = readFieldValue(specialField, specialElement);
       if (!state.special) {
         writeFieldValue(specialField, '');
-        const kindSelect = getPart(specialElement, 'kind');
-        const wrapper = kindSelect?.closest('[data-select]');
-        if (wrapper) {
-          syncSelect(wrapper);
-        }
+        syncSelectForControl(getPart(specialElement, 'kind'));
       }
     }
   }

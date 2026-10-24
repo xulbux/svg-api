@@ -9,6 +9,7 @@ import {
   defineService,
   isJsonObject,
   pickFields,
+  readFirstObjectEntry,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -67,15 +68,15 @@ const CRANDB_ENDPOINT = createEndpoint({
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches the redundant `+ file LICENSE` suffix of CRAN license fields. */
-const FILE_LICENSE_SUFFIX_RX = /\s*\+\s*file\s+LICEN[CS]E$/i;
+/** Matches the redundant `+ file LICENSE` suffix of CRAN license fields without whitespace backtracking. */
+const FILE_LICENSE_SUFFIX_RX = /(?<!\s)\s*\+\s*file\s+LICEN[CS]E$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Project a cranlogs daily response into daily/weekly/monthly totals, deltas, and compact series. */
 function projectCranDownloads(data: unknown): CranDownloadsProjection | undefined {
-  const firstEntry: unknown = Array.isArray(data) ? data[0] : undefined;
-  if (!isJsonObject(firstEntry)) {
+  const firstEntry = readFirstObjectEntry(data);
+  if (!firstEntry) {
     return undefined;
   }
   const scalarCount = readFiniteNumber(firstEntry.downloads);

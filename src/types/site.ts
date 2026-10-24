@@ -59,8 +59,6 @@ export type SiteFontName =
   | 'Geist-SemiBold.ttf'
   | 'Geist-SemiBoldItalic.ttf'
   | 'JetBrainsMono-Bold.ttf'
-  | 'JetBrainsMono-BoldItalic.ttf'
-  | 'JetBrainsMono-Italic.ttf'
   | 'JetBrainsMono-Regular.ttf';
 
 /** Syntax highlighting token of a code snippet (`hl-*` class name and literal text). */
@@ -278,7 +276,7 @@ export interface UrlAnatomyPart {
   /** Syntax highlighting class (`hl-*`). */
   readonly className: string;
   /** Optional legend label (omitted on repeated roles in the URL). */
-  readonly label?: string | undefined;
+  readonly label?: string;
   /** Literal URL text. */
   readonly text: string;
 }

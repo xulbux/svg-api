@@ -3,7 +3,7 @@
  */
 
 import { LINE_BREAK_RX, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
-import type { NumericRange } from '@/types';
+import type { NumericRange, StackPrefillModeResult } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -251,4 +251,35 @@ export function composeCategorizedStack(
     bandStrings.push(formatStackBand(currentBand, maxBandCols) ?? '');
   }
   return bandStrings.join(';');
+}
+
+/**
+ * Determine whether a prefilled `/stack` DSL string can be represented losslessly by `Categories` mode
+ * (grouped or flat) or requires switching to `Raw DSL`.
+ * @param dslValue          Raw `/stack` groups DSL string.
+ * @param categoryGroups    Selected catalog icon tokens grouped by category in display order.
+ * @param hasCustomTokens   Whether `dslValue` contains non-catalog icon slugs.
+ * @param rawPerLine        Optional `#field-perline` value.
+ * @returns Target mode (`'categories'` or `'raw'`) and optional `Group by category` toggle state.
+ */
+export function resolveStackPrefillMode(
+  dslValue: string,
+  categoryGroups: readonly (readonly string[])[],
+  hasCustomTokens: boolean,
+  rawPerLine = ''
+): StackPrefillModeResult {
+  const normalizedDsl = normalizeStackGroups(dslValue).toLowerCase();
+  if (!normalizedDsl) {
+    return { isGroupedByCategory: true, mode: 'categories' };
+  }
+  if (hasCustomTokens || normalizedDsl.includes('@')) {
+    return { isGroupedByCategory: undefined, mode: 'raw' };
+  }
+  if (normalizedDsl === composeCategorizedStack(categoryGroups, true, rawPerLine).toLowerCase()) {
+    return { isGroupedByCategory: true, mode: 'categories' };
+  }
+  if (normalizedDsl === composeCategorizedStack(categoryGroups, false, rawPerLine).toLowerCase()) {
+    return { isGroupedByCategory: false, mode: 'categories' };
+  }
+  return { isGroupedByCategory: undefined, mode: 'raw' };
 }

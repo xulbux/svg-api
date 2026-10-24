@@ -2,7 +2,13 @@
  * URL builder client entry point – Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
  */
 
-import { buildPath, core, findService, parsePath } from '@/site/client/builder/core';
+import {
+  bindPopoverFocusDismiss,
+  buildPath,
+  core,
+  findService,
+  parsePath,
+} from '@/site/client/builder/core';
 import { createBuilderFieldsController } from '@/site/client/builder/fields';
 import { createIconPickerController } from '@/site/client/builder/iconPicker';
 import { createKindSyncController } from '@/site/client/builder/kindSync';
@@ -194,6 +200,12 @@ function initBuilderDom(): void {
         : ''
     );
     applyState(parsedState ?? schema.initialState);
+    if (schema.kind === 'stack' && parsedState) {
+      stackCatalogController?.syncModeForPrefill(
+        parsedState.groups ?? '',
+        parsedState.perline ?? ''
+      );
+    }
   }
 
   function bindHelpPopovers(): void {
@@ -208,15 +220,7 @@ function initBuilderDom(): void {
               site?.placePopover(popover, trigger, { align, gap: 6 });
             }
           });
-          popover.addEventListener('focusout', (event) => {
-            if (
-              event.relatedTarget instanceof Node &&
-              !popover.contains(event.relatedTarget) &&
-              !trigger.contains(event.relatedTarget)
-            ) {
-              site?.closePopover(popover);
-            }
-          });
+          bindPopoverFocusDismiss(popover, site, () => trigger);
         }
       }
     }
@@ -332,9 +336,7 @@ function initBuilderDom(): void {
       if (linkInput) {
         linkInput.value = '';
       }
-      if (stackGroupToggle && !stackGroupToggle.checked) {
-        stackGroupToggle.checked = true;
-      }
+      stackCatalogController?.syncModeForPrefill('', '');
       if (stackCategorySearch && stackCategorySearch.value) {
         stackCategorySearch.value = '';
         stackCatalogController?.filterCatalog();

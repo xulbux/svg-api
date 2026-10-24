@@ -48,25 +48,9 @@
 
 @font-face {
   font-family: 'JetBrains Mono NF';
-  src: url('/assets/JetBrainsMono-Italic.ttf') format('truetype');
-  font-weight: 400;
-  font-style: italic;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono NF';
   src: url('/assets/JetBrainsMono-Bold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'JetBrains Mono NF';
-  src: url('/assets/JetBrainsMono-BoldItalic.ttf') format('truetype');
-  font-weight: 700;
-  font-style: italic;
   font-display: swap;
 }
 

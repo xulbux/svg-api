@@ -2,8 +2,20 @@
  * Read the Docs service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
-import { buildRatioSpecials, readFiniteNumber } from '@/services/metrics';
+import {
+  createEndpoint,
+  createMetric,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
+import {
+  FAILING_STATUS,
+  PASSING_STATUS,
+  UNKNOWN_STATUS,
+  buildRatioSpecials,
+  readFiniteNumber,
+} from '@/services/metrics';
 import type { BadgeSpecialKind, BadgeSpecialMap, MetricResult, StripTickState } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -50,16 +62,6 @@ const RTD_SPECIALS: readonly BadgeSpecialKind[] = [
   'sparkline',
 ];
 
-/** Badge properties of a successful build. */
-const PASSING_BUILD: Partial<MetricResult> = {
-  color: 'emerald',
-  icon: 'circle-check',
-  value: 'passing',
-};
-
-/** Badge properties of a failed build. */
-const FAILING_BUILD: Partial<MetricResult> = { color: 'rose', icon: 'circle-x', value: 'failing' };
-
 /** Badge properties of a build that is still in progress. */
 const RUNNING_BUILD: Partial<MetricResult> = { color: 'amber', icon: 'loader', value: 'building' };
 
@@ -70,28 +72,23 @@ const CANCELLED_BUILD: Partial<MetricResult> = {
   value: 'cancelled',
 };
 
-/** Badge properties of a build in an unknown state. */
-const UNKNOWN_BUILD: Partial<MetricResult> = {
-  color: 'slate',
-  icon: 'circle-help',
-  value: 'unknown',
-};
-
-/** Build state codes of builds that are still in progress. */
-const IN_PROGRESS_STATES: ReadonlySet<string> = new Set([
-  'building',
-  'cloning',
-  'installing',
-  'triggered',
-  'uploading',
-]);
-
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches a valid Read the Docs project slug (DNS subdomain label: Alphanumeric, hyphens allowed after the first character). */
-const READ_THE_DOCS_PROJECT_RX = /^[a-z\d][a-z\d-]*$/i;
+/** Matches a valid Read the Docs project slug (DNS subdomain label: `1`–`63` chars, alphanumeric endpoints, inner hyphens). */
+const READ_THE_DOCS_PROJECT_RX = /^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether a Read the Docs build state code denotes an active build. */
+function isInProgressState(code: string | undefined): boolean {
+  return (
+    code === 'building' ||
+    code === 'cloning' ||
+    code === 'installing' ||
+    code === 'triggered' ||
+    code === 'uploading'
+  );
+}
 
 /** Map a single Read the Docs build entry to its strip tick state (`'9'`, `'5'`, `'3'`, `'0'`). */
 function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
@@ -102,14 +99,13 @@ function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
   if (code === 'cancelled') {
     return '3';
   }
-  return typeof code === 'string' && IN_PROGRESS_STATES.has(code) ? '5' : '3';
+  return isInProgressState(code) ? '5' : '3';
 }
 
 /** Project Read the Docs builds (`?limit=10`) to the newest build plus chronological history. */
 function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefined {
   const results = isJsonObject(data) ? data.results : undefined;
-  const firstEntry: unknown = Array.isArray(results) ? results[0] : undefined;
-  if (!isJsonObject(firstEntry)) {
+  if (!readFirstObjectEntry(results)) {
     return undefined;
   }
   const recent: ReadTheDocsBuild[] = [];
@@ -153,12 +149,12 @@ function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefi
 function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<MetricResult> {
   const { durations, latest, passedCount, states, totalCount } = projection;
   const stateCode = latest.state?.code;
-  let base: Partial<MetricResult> = UNKNOWN_BUILD;
+  let base: Partial<MetricResult> = UNKNOWN_STATUS;
   if (stateCode === 'finished') {
-    base = latest.isSuccess === true ? PASSING_BUILD : FAILING_BUILD;
+    base = latest.isSuccess === true ? PASSING_STATUS : FAILING_STATUS;
   } else if (stateCode === 'cancelled') {
     base = CANCELLED_BUILD;
-  } else if (typeof stateCode === 'string' && IN_PROGRESS_STATES.has(stateCode)) {
+  } else if (isInProgressState(stateCode)) {
     base = RUNNING_BUILD;
   }
   const ratio = buildRatioSpecials(passedCount, totalCount);

@@ -115,8 +115,7 @@ export function initThemeAndMotion(
   }
 
   themeToggle?.addEventListener('click', () => {
-    const renderedScheme =
-      sanitizeScheme(readStorage(siteConfig.schemeStorageKey)) ?? getSystemScheme();
+    const renderedScheme = sanitizeScheme(schemeMeta?.content) ?? getSystemScheme();
     const targetScheme = renderedScheme === 'dark' ? 'light' : 'dark';
     const storedScheme = targetScheme === getSystemScheme() ? undefined : targetScheme;
     writeStorage(siteConfig.schemeStorageKey, storedScheme);
@@ -124,13 +123,13 @@ export function initThemeAndMotion(
   });
 
   darkSchemeQuery.addEventListener('change', () => {
-    applyScheme(sanitizeScheme(readStorage(siteConfig.schemeStorageKey)));
+    applyScheme(sanitizeScheme(schemeMeta?.content));
   });
 
   reducedMotionQuery.addEventListener('change', syncPreviewAnimations);
 
   previewBgToggle?.addEventListener('click', () => {
-    const currentPreviewBg = sanitizePreviewBg(readStorage(siteConfig.previewBgStorageKey));
+    const currentPreviewBg = sanitizePreviewBg(rootElement.getAttribute('data-preview-bg'));
     const nextPreviewBg =
       currentPreviewBg === siteConfig.previewBgValues[0]
         ? (siteConfig.previewBgValues[1] ?? siteConfig.previewBgValues[0])

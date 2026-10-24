@@ -18,7 +18,7 @@ import {
   readDateKeyedSeries,
   readFiniteNumber,
 } from '@/services/metrics';
-import type { MetricEndpoint, MetricPresentation } from '@/types';
+import type { MetricEndpoint, MetricPresentation, ServiceMetricConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -72,7 +72,7 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   };
 }
 
-/** Create a jsDelivr npm package statistics endpoint for a period (`week`, `month`, `year`; Refreshed daily). */
+/** Create a jsDelivr npm package statistics endpoint for a rolling period (refreshed daily). */
 function createJsDelivrEndpoint(period: string): MetricEndpoint<JsDelivrHitsProjection> {
   return createEndpoint({
     api: `https://data.jsdelivr.com/v1/stats/packages/npm/{npm}?period=${period}`,
@@ -82,8 +82,8 @@ function createJsDelivrEndpoint(period: string): MetricEndpoint<JsDelivrHitsProj
   });
 }
 
-/** Create a jsDelivr hit count metric with automatic `sparkline`, `bars`, and `delta` widgets. */
-function createJsDelivrMetric(period: string, suffix: string) {
+/** Create a jsDelivr hit count metric with automatic series and delta widgets. */
+function createJsDelivrMetric(period: string, suffix: string): ServiceMetricConfig {
   return createCountMetric(
     createJsDelivrEndpoint(period),
     HITS,

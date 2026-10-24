@@ -21,6 +21,7 @@ import {
   clampInt,
   escapeXml,
   isSheenMode,
+  prepareDisplayText,
   renderIconGroup,
   renderKumoBoxSurface,
   renderSheenOverlay,
@@ -30,7 +31,6 @@ import {
   roundCoord,
   roundScale,
   roundTenths,
-  truncateText,
 } from '@/svg/shared';
 import type {
   BadgeVariant,
@@ -291,7 +291,7 @@ function buildStackTile(rawToken: string): StackTile | undefined {
   const color = resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
   const title =
     resolveStackIconTitle(cleanKey) ??
-    truncateText(formatSlugTitle(slug.slice(0, MAX_ICON_SLUG_LENGTH)), MAX_TILE_TITLE_LENGTH);
+    prepareDisplayText(formatSlugTitle(slug.slice(0, MAX_ICON_SLUG_LENGTH)), MAX_TILE_TITLE_LENGTH);
   return { color, colorOverride, data: lookup.data, title };
 }
 
@@ -463,7 +463,7 @@ function renderSingleStackTile(
 
   if (icon.isFallback) {
     const placeholderColor = THEMES.red.iconColor;
-    const hollowFrame = `<rect x="${tileX + 0.5}" y="${tileY + 0.5}" width="${tileSize - 1}" height="${tileSize - 1}" rx="${radius - 0.5}" stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" stroke-width="1" />`;
+    const hollowFrame = `<rect x="${roundCoord(tileX + 0.5)}" y="${roundCoord(tileY + 0.5)}" width="${tileSize - 1}" height="${tileSize - 1}" rx="${roundCoord(radius - 0.5)}" stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" stroke-width="1" />`;
     const placeholderIcon = renderIconGroup({
       color: placeholderColor,
       innerSvg: innerUseMarkup,
@@ -498,7 +498,7 @@ function renderSingleStackTile(
       (diagonalStep * STACK_WAVE_STEP_SECONDS) % STACK_WAVE_CYCLE_SECONDS
     );
     const pulseGlowColor = isOnPrimary ? WHITE : THEMES[themeColor].iconColor;
-    pulseGlowMarkup = `<rect x="${tileX + 1}" y="${tileY + 1}" width="${tileSize - 2}" height="${tileSize - 2}" rx="${Math.max(1, radius - 1)}" fill="${pulseGlowColor}" opacity="0"><animate attributeName="opacity" values="0;0.14;0;0" keyTimes="0;0.18;0.42;1" calcMode="spline" keySplines="0.33 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="${STACK_WAVE_CYCLE_SECONDS}s" begin="${beginSec}s" repeatCount="indefinite" /></rect>`;
+    pulseGlowMarkup = `<rect x="${roundCoord(tileX + 1)}" y="${roundCoord(tileY + 1)}" width="${tileSize - 2}" height="${tileSize - 2}" rx="${Math.max(1, radius - 1)}" fill="${pulseGlowColor}" opacity="0"><animate attributeName="opacity" values="0;0.14;0;0" keyTimes="0;0.18;0.42;1" calcMode="spline" keySplines="0.33 0 0.2 1;0.4 0 0.2 1;0 0 1 1" dur="${STACK_WAVE_CYCLE_SECONDS}s" begin="${beginSec}s" repeatCount="indefinite" /></rect>`;
   }
   const iconPaint = resolveForegroundPaint(isOnPrimary, THEMES[themeColor].iconColor);
   const iconMarkup = renderIconGroup({

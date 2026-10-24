@@ -310,10 +310,7 @@ button.btn-secondary {
 
 .preview-stage {
   --stage-bg: var(--c-bg);
-  --stage-checker: light-dark(
-    color-mix(in srgb, var(--c-text-1) 4%, transparent),
-    color-mix(in srgb, var(--c-text-1) 5%, transparent)
-  );
+  --stage-checker: var(--c-stage-checker);
 
   position: relative;
   display: flex;
@@ -339,10 +336,7 @@ button.btn-secondary {
   --c-btn-bg: var(--c-preview-inverse-btn-bg);
   --c-btn-text: var(--c-preview-inverse-btn-text);
   --stage-bg: var(--c-preview-inverse-bg);
-  --stage-checker: light-dark(
-    color-mix(in srgb, var(--c-bg) 5%, transparent),
-    color-mix(in srgb, var(--c-bg) 4%, transparent)
-  );
+  --stage-checker: var(--c-preview-inverse-checker);
 
   border-color: var(--c-preview-inverse-border);
 }
@@ -600,7 +594,8 @@ details.code-drawer[open] .drawer-chevron {
 
 .code-pre {
   margin: 0;
-  padding: 11px 14px;
+  padding-block: 11px;
+  padding-inline: 14px 42px;
   overflow-x: auto;
   border-radius: var(--radius-md);
   font-size: 0.76rem;

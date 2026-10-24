@@ -2,7 +2,12 @@
  * NuGet service preset – Live upstream metrics and redirect transformations.
  */
 
-import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  createEndpoint,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
   buildTrailingSeriesSpecials,
@@ -33,9 +38,8 @@ const NUGET_PACKAGE_ID_RX = /^(?=.{1,100}$)\w+(?:[.-]\w+)*$/;
 
 /** Project the first NuGet search entry to its version, total downloads, and recent per-version series. */
 function projectNuGetEntry(data: unknown): NuGetSearchProjection | undefined {
-  const entries = isJsonObject(data) ? data.data : undefined;
-  const entry: unknown = Array.isArray(entries) ? entries[0] : undefined;
-  if (!isJsonObject(entry)) {
+  const entry = readFirstObjectEntry(isJsonObject(data) ? data.data : undefined);
+  if (!entry) {
     return undefined;
   }
   const versionDownloads: number[] = [];

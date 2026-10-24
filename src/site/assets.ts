@@ -14,8 +14,6 @@ import geistRegularBuffer from '@/assets/fonts/Geist-Regular.ttf';
 import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
 import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
 import jetBrainsMonoBoldBuffer from '@/assets/fonts/JetBrainsMono-Bold.ttf';
-import jetBrainsMonoBoldItalicBuffer from '@/assets/fonts/JetBrainsMono-BoldItalic.ttf';
-import jetBrainsMonoItalicBuffer from '@/assets/fonts/JetBrainsMono-Italic.ttf';
 import jetBrainsMonoRegularBuffer from '@/assets/fonts/JetBrainsMono-Regular.ttf';
 import { getSiteStylesheet } from '@/site/styles';
 import { getIconPickerIndex, getIconPickerPage } from '@/svg/icons';
@@ -62,8 +60,6 @@ const SITE_FONT_BUFFERS: Readonly<Record<SiteFontName, ArrayBuffer>> = {
   'Geist-SemiBold.ttf': geistSemiBoldBuffer,
   'Geist-SemiBoldItalic.ttf': geistSemiBoldItalicBuffer,
   'JetBrainsMono-Bold.ttf': jetBrainsMonoBoldBuffer,
-  'JetBrainsMono-BoldItalic.ttf': jetBrainsMonoBoldItalicBuffer,
-  'JetBrainsMono-Italic.ttf': jetBrainsMonoItalicBuffer,
   'JetBrainsMono-Regular.ttf': jetBrainsMonoRegularBuffer,
 };
 
@@ -75,22 +71,13 @@ const SITE_FONT_CACHE = new Map<SiteFontName, SiteAsset<ArrayBuffer>>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
+/** Matches bundled font URLs inside `@font-face` declarations (`/assets/<name>.ttf`). */
+const FONT_ASSET_URL_RX = /\/assets\/(?<name>[\w-]+\.ttf)/g;
+
 /** Matches icon picker page file names (`icons-lucide-0.json`, `icons-brands-12.json`). */
 const ICON_PAGE_NAME_RX = /^icons-(?<set>brands|lucide)-(?<page>0|[1-9]\d{0,2})\.json$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
-
-/** Build (once per isolate) a static website asset with its content version. */
-function buildSiteAsset(name: SiteAssetName): SiteAsset {
-  let asset = SITE_ASSET_CACHE.get(name);
-  if (!asset) {
-    const source = SITE_ASSET_SOURCES[name];
-    const body = source.render();
-    asset = { body, contentType: source.contentType, version: hashText(body) };
-    SITE_ASSET_CACHE.set(name, asset);
-  }
-  return asset;
-}
 
 /** Build (once per isolate) a static website font asset with its content version. */
 function buildFontAsset(name: SiteFontName): SiteAsset<ArrayBuffer> {
@@ -99,6 +86,28 @@ function buildFontAsset(name: SiteFontName): SiteAsset<ArrayBuffer> {
     const body = SITE_FONT_BUFFERS[name];
     asset = { body, contentType: FONT_CONTENT_TYPE, version: hashBytes(body) };
     SITE_FONT_CACHE.set(name, asset);
+  }
+  return asset;
+}
+
+/** Append content-hash `?v=` query parameters to every bundled font URL inside `css`. */
+function versionStylesheetFonts(css: string): string {
+  return css.replace(FONT_ASSET_URL_RX, (fullMatch, name: string) =>
+    getOwnValue(SITE_FONT_BUFFERS, name)
+      ? `/assets/${name}?v=${buildFontAsset(name as SiteFontName).version}`
+      : fullMatch
+  );
+}
+
+/** Build (once per isolate) a static website asset with its content version. */
+function buildSiteAsset(name: SiteAssetName): SiteAsset {
+  let asset = SITE_ASSET_CACHE.get(name);
+  if (!asset) {
+    const source = SITE_ASSET_SOURCES[name];
+    const rawBody = source.render();
+    const body = name === 'site.css' ? versionStylesheetFonts(rawBody) : rawBody;
+    asset = { body, contentType: source.contentType, version: hashText(body) };
+    SITE_ASSET_CACHE.set(name, asset);
   }
   return asset;
 }
@@ -146,10 +155,13 @@ export function getSiteAsset(name: string): SiteAsset<ArrayBuffer | string> | un
 }
 
 /**
- * Build the versioned URL of a static website asset.
- * @param name   Asset file name.
+ * Build the versioned URL of a static website asset or bundled font.
+ * @param name   Asset or font file name.
  * @returns Root-relative URL with a content hash (e.g., `'/assets/site.css?v=1x2k9f'`).
  */
-export function getSiteAssetUrl(name: SiteAssetName): string {
-  return `/assets/${name}?v=${buildSiteAsset(name).version}`;
+export function getSiteAssetUrl(name: SiteAssetName | SiteFontName): string {
+  const version = getOwnValue(SITE_FONT_BUFFERS, name)
+    ? buildFontAsset(name as SiteFontName).version
+    : buildSiteAsset(name as SiteAssetName).version;
+  return `/assets/${name}?v=${version}`;
 }

@@ -94,6 +94,19 @@ const SERVICE_REDIRECT_HEADERS: Readonly<Record<string, string>> = {
   Vary: SERVICE_VARY_HEADER,
 };
 
+/** Headers of memoized documentation and builder HTML pages. */
+const HTML_DOCUMENT_HEADERS: Readonly<Record<string, string>> = {
+  ...HTML_SECURITY_HEADERS,
+  'Cache-Control': HTML_CACHE_CONTROL,
+  'Content-Type': 'text/html; charset=utf-8',
+};
+
+/** Headers of the branded `404` HTML error page. */
+const NOT_FOUND_HTML_HEADERS: Readonly<Record<string, string>> = {
+  ...HTML_SECURITY_HEADERS,
+  'Cache-Control': NOT_FOUND_CACHE_CONTROL,
+};
+
 /** Headers of the branded `500` HTML error page for failed site routes. */
 const SERVER_ERROR_HTML_HEADERS: Readonly<Record<string, string>> = {
   ...HTML_SECURITY_HEADERS,
@@ -101,15 +114,15 @@ const SERVER_ERROR_HTML_HEADERS: Readonly<Record<string, string>> = {
   'Content-Type': 'text/html; charset=utf-8',
 };
 
-/** Headers of the plain-text `500` response for failed non-HTML and fallback error paths. */
-const INTERNAL_ERROR_HEADERS: Readonly<Record<string, string>> = {
+/** Headers of uncached plain-text error responses (`414` and `500`). */
+const PLAIN_ERROR_HEADERS: Readonly<Record<string, string>> = {
   ...NOSNIFF_HEADERS,
   'Cache-Control': 'no-store',
   'Content-Type': 'text/plain; charset=utf-8',
 };
 
 /** Non-HTML root routes (favicons, social cards, and crawler documents) that keep plain-text error responses. */
-const NON_HTML_ROOT_PATHS: ReadonlySet<string> = new Set([
+const NON_HTML_ROOT_PATHS: readonly string[] = [
   '/favicon.ico',
   '/favicon.svg',
   '/llms.txt',
@@ -117,14 +130,7 @@ const NON_HTML_ROOT_PATHS: ReadonlySet<string> = new Set([
   '/og.svg',
   '/robots.txt',
   '/sitemap.xml',
-]);
-
-/** Headers of the plain-text `414 URI Too Long` response. */
-const URI_TOO_LONG_HEADERS: Readonly<Record<string, string>> = {
-  ...NOSNIFF_HEADERS,
-  'Cache-Control': 'no-store',
-  'Content-Type': 'text/plain; charset=utf-8',
-};
+];
 
 /** Headers of the plain-text `404` response for unmatched SVG and static asset routes. */
 const PLAIN_NOT_FOUND_HEADERS: Readonly<Record<string, string>> = {
@@ -147,7 +153,22 @@ const DOCUMENT_CACHE = new Map<string, MemoizedDocument>();
 /** Lazily computed entity tag of the bundled `/og.png` social card. */
 let ogImagePngEtag: string | undefined = undefined;
 
+/** Lazily populated lookup set for `NON_HTML_ROOT_PATHS`. */
+let nonHtmlRootPathsCache: ReadonlySet<string> | undefined = undefined;
+
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether `pathname` is a non-HTML root discovery or asset endpoint. */
+function isNonHtmlRootPath(pathname: string): boolean {
+  nonHtmlRootPathsCache ??= new Set(NON_HTML_ROOT_PATHS);
+  return nonHtmlRootPathsCache.has(pathname);
+}
+
+/** Extract the first path segment after the leading slash without allocating an array. */
+function extractFirstPathSegment(pathname: string): string {
+  const nextSlash = pathname.indexOf('/', 1);
+  return nextSlash === -1 ? pathname.slice(1) : pathname.slice(1, nextSlash);
+}
 
 /** Reject oversized request URLs before routing, query parsing, or upstream work. */
 function guardRequestUrlLength(
@@ -156,7 +177,7 @@ function guardRequestUrlLength(
 ): ReturnType<MiddlewareHandler<{ Bindings: Env }>> {
   if (context.req.url.length > MAX_REQUEST_URL_LENGTH) {
     return Promise.resolve(
-      new Response('URI Too Long', { headers: URI_TOO_LONG_HEADERS, status: 414 })
+      new Response('URI Too Long', { headers: PLAIN_ERROR_HEADERS, status: 414 })
     );
   }
   return next();
@@ -176,20 +197,18 @@ function getMemoizedDocument(documentId: string, render: () => string): Memoized
 /** Serve a memoized documentation page with security headers, answering matching revalidations with `304`. */
 function buildHtmlResponse(context: AppContext, pageId: string, render: () => string): Response {
   const page = getMemoizedDocument(pageId, render);
-  return buildConditionalBodyResponse(page.body, page.etag, context.req.header('If-None-Match'), {
-    ...HTML_SECURITY_HEADERS,
-    'Cache-Control': HTML_CACHE_CONTROL,
-    'Content-Type': 'text/html; charset=utf-8',
-  });
+  return buildConditionalBodyResponse(
+    page.body,
+    page.etag,
+    context.req.header('If-None-Match'),
+    HTML_DOCUMENT_HEADERS
+  );
 }
 
 /** Serve the memoized branded `404` HTML page with `noindex` metadata and security headers. */
 function buildNotFoundHtmlResponse(context: AppContext): Response {
   const page = getMemoizedDocument('404', renderNotFoundHtml);
-  return context.html(page.body, 404, {
-    ...HTML_SECURITY_HEADERS,
-    'Cache-Control': NOT_FOUND_CACHE_CONTROL,
-  });
+  return context.html(page.body, 404, NOT_FOUND_HTML_HEADERS);
 }
 
 /** Serve a memoized plain-text or XML crawler discovery document. */
@@ -474,7 +493,7 @@ function handleAssetRoute(context: AppContext): Response | Promise<Response> {
 
 /** Answer unmatched asset and SVG routes with a compact plain-text `404` and site routes with the branded `404` HTML page. */
 function handleNotFound(context: AppContext): Response {
-  const prefix = getRawPathname(context.req.raw).split('/', 2)[1] ?? '';
+  const prefix = extractFirstPathSegment(getRawPathname(context.req.raw));
   if (prefix === 'assets' || findSvgRoute(prefix)) {
     return new Response('404 Not Found', { headers: PLAIN_NOT_FOUND_HEADERS, status: 404 });
   }
@@ -489,14 +508,14 @@ function handleAppError(error: Error, context: AppContext): Response {
   // oxlint-disable-next-line no-console -- Surface unexpected failures in Workers Logs (observability).
   console.error(`Unhandled ${context.req.method} ${context.req.url}:`, error);
   const pathname = getRawPathname(context.req.raw);
-  const prefix = pathname.split('/', 2)[1] ?? '';
+  const prefix = extractFirstPathSegment(pathname);
   if (findSvgRoute(prefix)) {
     try {
       return buildSvgResponse(renderInternalErrorBadge(), SERVICE_ERROR_TTL_SECONDS);
     } catch {
       // Rendering the error badge failed as well; fall back to the plain-text response below.
     }
-  } else if (prefix !== 'assets' && !NON_HTML_ROOT_PATHS.has(pathname)) {
+  } else if (prefix !== 'assets' && !isNonHtmlRootPath(pathname)) {
     try {
       const page = getMemoizedDocument('500', renderServerErrorHtml);
       return new Response(page.body, { headers: SERVER_ERROR_HTML_HEADERS, status: 500 });
@@ -504,7 +523,7 @@ function handleAppError(error: Error, context: AppContext): Response {
       // Rendering the error page failed as well; fall back to the plain-text response below.
     }
   }
-  return new Response('Internal Server Error', { headers: INTERNAL_ERROR_HEADERS, status: 500 });
+  return new Response('Internal Server Error', { headers: PLAIN_ERROR_HEADERS, status: 500 });
 }
 
 // ----------------------------------------- MAIN ----------------------------------------

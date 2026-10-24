@@ -48,13 +48,11 @@ export type TypingAlign = 'center' | 'left';
 /** Staggered per-tile micro-animation token for tech stack grids. */
 export type StackTileMotion = 'default' | 'float' | 'none' | 'pulse' | 'wave';
 
+/** Active non-static per-tile micro-animation token for tech stack grids. */
+export type ActiveStackMotion = Exclude<StackTileMotion, 'default' | 'none'>;
+
 /** Animation mode for tech stack grids, supporting static tiles, surface sheen, staggered tile motion, or sheen combined with tile motion. */
-export type StackAnimationMode =
-  | StackTileMotion
-  | 'sheen'
-  | 'sheen,float'
-  | 'sheen,pulse'
-  | 'sheen,wave';
+export type StackAnimationMode = StackTileMotion | 'sheen' | `sheen,${ActiveStackMotion}`;
 
 /** A single logical group of tech stack icons with an optional group-specific `perLine` column limit. */
 export interface StackGroup {

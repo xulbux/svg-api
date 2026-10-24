@@ -7,6 +7,7 @@ import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import { SIZE_TOKENS } from '@/routes/params';
 import { DEFAULT_BUTTON_VARIANT } from '@/routes/svg';
 import {
+  appendDefaultLabel,
   buildAnimParamRow,
   buildColorParamRow,
   buildIconQueryParamRow,
@@ -14,7 +15,7 @@ import {
   buildVariantParamRow,
   formatRange,
 } from '@/site/catalog/shared';
-import { BUTTON_HEIGHT_RANGE, BUTTON_SIZE_PRESETS } from '@/svg/renderer';
+import { BUTTON_HEIGHT_RANGE, BUTTON_SIZE_PRESETS, DEFAULT_BUTTON_SIZE } from '@/svg/renderer';
 import type {
   BadgeVariant,
   ParamTableRow,
@@ -30,17 +31,17 @@ export const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
   {
     description: 'Gradient surface with an upper-edge highlight.',
     id: '1',
-    title: 'variant=1 · Primary Button (Default)',
+    title: appendDefaultLabel('variant=1 · Primary Button', DEFAULT_BUTTON_VARIANT === '1'),
   },
   {
     description: 'Tinted dark surface with a colored border.',
     id: '2',
-    title: 'variant=2 · Secondary Button',
+    title: appendDefaultLabel('variant=2 · Secondary Button', DEFAULT_BUTTON_VARIANT === '2'),
   },
   {
     description: 'Neutral dark surface with a subtle border and colored icon.',
     id: '3',
-    title: 'variant=3 · Tertiary Button',
+    title: appendDefaultLabel('variant=3 · Tertiary Button', DEFAULT_BUTTON_VARIANT === '3'),
   },
 ];
 
@@ -170,7 +171,7 @@ export function buildButtonParamRows(): ParamTableRow[] {
     buildVariantParamRow(DEFAULT_BUTTON_VARIANT, 'Surface tier'),
     buildColorParamRow(DEFAULT_THEME_COLOR, 'Theme color for gradients, borders, and icons.'),
     {
-      defaultVal: `md (${BUTTON_SIZE_PRESETS.md.height}px)`,
+      defaultVal: `${DEFAULT_BUTTON_SIZE} (${BUTTON_SIZE_PRESETS[DEFAULT_BUTTON_SIZE].height}px)`,
       description: `Button scale preset (${presetHeights.join(', ')}) or custom pixel height.`,
       name: '?size=',
       values: `${SIZE_TOKENS.join(' | ')} | ${formatRange(BUTTON_HEIGHT_RANGE)}`,

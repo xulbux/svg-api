@@ -2,6 +2,7 @@
  * Typing lines controller – Interactive line-by-line list editor for the `/builder/typing` URL builder.
  */
 
+import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared';
 import type { TypingLinesController } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -128,9 +129,11 @@ export function createTypingLinesController(
   options: TypingLinesControllerOptions
 ): TypingLinesController {
   const { addButton, editorElement, hiddenInput, listElement } = options;
-  const maxLines = Number(editorElement?.dataset.maxLines) || 12;
-  const maxLength = Number(editorElement?.dataset.maxLength) || 80;
+  const maxLines = Number(editorElement?.dataset.maxLines) || MAX_TYPING_LINES;
+  const maxLength = Number(editorElement?.dataset.maxLength) || MAX_TYPING_LINE_LENGTH;
   const firstRow = listElement?.querySelector('[data-typing-line-row]');
+  const isEditorRequired =
+    firstRow?.querySelector('.typing-line-input')?.getAttribute('aria-required') === 'true';
   const rowTemplate =
     firstRow instanceof HTMLElement ? (firstRow.cloneNode(true) as HTMLElement) : undefined;
 
@@ -162,6 +165,7 @@ export function createTypingLinesController(
   function refreshRowMetadata(): void {
     const rows = getRows();
     const isSingleRow = rows.length <= 1;
+    const isFieldMissing = Boolean(listElement?.closest('.is-missing'));
     for (let i = 0; i < rows.length; i += 1) {
       const row = rows[i];
       if (row) {
@@ -182,6 +186,16 @@ export function createTypingLinesController(
         if (input instanceof HTMLInputElement) {
           input.placeholder = i === 0 ? 'e.g., Full-Stack Developer' : `Line ${lineNumber}…`;
           input.setAttribute('aria-label', `Line ${lineNumber}`);
+          if (isEditorRequired && i === 0) {
+            input.setAttribute('aria-required', 'true');
+          } else {
+            input.removeAttribute('aria-required');
+          }
+          if (isFieldMissing) {
+            input.setAttribute('aria-invalid', 'true');
+          } else if (!input.closest('.is-invalid')) {
+            input.removeAttribute('aria-invalid');
+          }
         }
         const removeButton = row.querySelector('[data-typing-line-remove]');
         if (removeButton instanceof HTMLButtonElement) {

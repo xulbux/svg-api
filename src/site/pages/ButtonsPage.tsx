@@ -11,6 +11,7 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
+import { formatBacktickList } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -20,15 +21,10 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="buttons">` JSX fragment.
  */
 export function ButtonsSection(): HtmlFragment {
-  const sizePresetCodes: string[] = [];
-  for (const presetName of SIZE_TOKENS) {
-    sizePresetCodes.push(`\`${presetName}\``);
-  }
-  const sizePresetsMarkup = sizePresetCodes.join(', ');
   return (
     <section class="doc-section" id="buttons">
       <SectionHeader
-        description={`Action buttons with size presets (${sizePresetsMarkup}), leading and trailing icons, animations, and split compartments.`}
+        description={`Action buttons with size presets (${formatBacktickList(SIZE_TOKENS)}), leading and trailing icons, animations, and split compartments.`}
         routes={['/button/:label', '/btn/:label', '/button/:label/:value', '/btn/:label/:value']}
         title="Interactive CTA Buttons"
       />

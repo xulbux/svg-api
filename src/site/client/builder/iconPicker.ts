@@ -3,6 +3,7 @@
  */
 
 import {
+  bindPopoverFocusDismiss,
   collectStackSlugs,
   computeGridFocusIndex,
   createAsyncCache,
@@ -83,6 +84,7 @@ const MAX_LISTED_UNKNOWN_ICONS = 3;
 /**
  * Create the builder icon picker, glyph loader, and icon input validator controller.
  * @param options   DOM elements, schema, and callbacks.
+ * @returns Icon picker controller.
  */
 export function createIconPickerController(options: IconPickerOptions): IconPickerController {
   const {
@@ -527,21 +529,22 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     if (event.isComposing) {
       return;
     }
-    if (event.key === 'ArrowDown') {
-      event.preventDefault();
-      const rovingTile = pickerGrid?.querySelector('.icon-tile[tabindex="0"]');
-      if (rovingTile instanceof HTMLElement) {
-        rovingTile.focus();
-      }
-    } else if (event.key === 'Enter') {
+    if (event.key === 'ArrowDown' || event.key === 'Enter') {
       event.preventDefault();
       if (pickerSearchFrame) {
         cancelAnimationFrame(pickerSearchFrame);
         renderPicker(false);
       }
-      const [firstMatch] = pickerMatches;
-      if (firstMatch) {
-        applyPickedSlug(firstMatch.slug);
+      if (event.key === 'ArrowDown') {
+        const rovingTile = pickerGrid?.querySelector('.icon-tile[tabindex="0"]');
+        if (rovingTile instanceof HTMLElement) {
+          rovingTile.focus();
+        }
+      } else {
+        const [firstMatch] = pickerMatches;
+        if (firstMatch) {
+          applyPickedSlug(firstMatch.slug);
+        }
       }
     }
   }
@@ -618,15 +621,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
         openPicker();
       }
     });
-    pickerElement.addEventListener('focusout', (event) => {
-      if (
-        event.relatedTarget instanceof Node &&
-        !pickerElement.contains(event.relatedTarget) &&
-        (!pickerTrigger || !pickerTrigger.contains(event.relatedTarget))
-      ) {
-        site?.closePopover(pickerElement);
-      }
-    });
+    bindPopoverFocusDismiss(pickerElement, site, () => pickerTrigger);
     pickerElement.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.name === 'icon-picker-set') {
         renderPicker(false);

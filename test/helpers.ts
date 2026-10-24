@@ -2,6 +2,9 @@
  * Shared test helpers – Worker environment bindings, SVG attribute extraction, client bundle evaluation, and an in-memory edge cache stub shared by the test suites.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
 import type { Env } from '@/types';
 
@@ -23,6 +26,9 @@ export interface EdgeCacheStub {
 
 /** Default unauthenticated test Worker environment bindings. */
 export const TEST_ENV: Env = {};
+
+/** Cached concatenated TypeScript module sources per client bundle directory. */
+const CLIENT_SOURCE_CACHE: Partial<Record<'builder' | 'site', string>> = {};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -105,4 +111,32 @@ export function evaluateClientCore<T>(bundleSource: string, exportName: string):
     throw new Error(`The client bundle did not expose ${exportName} without a DOM.`);
   }
   return exposed as T;
+}
+
+/**
+ * Read and concatenate the TypeScript source modules of a browser client (`src/site/client/<kind>/*.ts`),
+ * so structural source guards stay independent of `esbuild` minification while runtime tests execute the shipped bundle.
+ * @param clientKind   Client bundle directory (`'builder'` or `'site'`).
+ * @returns Concatenated TypeScript module source text.
+ */
+export function readClientModuleSources(clientKind: 'builder' | 'site'): string {
+  const cached = CLIENT_SOURCE_CACHE[clientKind];
+  if (cached !== undefined) {
+    return cached;
+  }
+  const clientDir = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    '../src/site/client',
+    clientKind
+  );
+  const filenames = readdirSync(clientDir)
+    .filter((filename) => filename.endsWith('.ts'))
+    .toSorted();
+  const sources: string[] = [];
+  for (const filename of filenames) {
+    sources.push(readFileSync(path.join(clientDir, filename), { encoding: 'utf8' }));
+  }
+  const combined = sources.join('\n');
+  CLIENT_SOURCE_CACHE[clientKind] = combined;
+  return combined;
 }

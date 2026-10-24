@@ -3,7 +3,12 @@
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
-import { createVersionMetric } from '@/services/metrics';
+import {
+  FAILING_STATUS,
+  PASSING_STATUS,
+  UNKNOWN_STATUS,
+  createVersionMetric,
+} from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -18,23 +23,6 @@ interface DocsRsStatusPayload {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Badge properties of a passing docs.rs build. */
-const PASSING_DOCS: Partial<MetricResult> = {
-  color: 'emerald',
-  icon: 'circle-check',
-  value: 'passing',
-};
-
-/** Badge properties of a failing docs.rs build. */
-const FAILING_DOCS: Partial<MetricResult> = { color: 'rose', icon: 'circle-x', value: 'failing' };
-
-/** Badge properties when `doc_status` is absent or non-boolean. */
-const UNKNOWN_DOCS: Partial<MetricResult> = {
-  color: 'slate',
-  icon: 'circle-help',
-  value: 'unknown',
-};
-
 /** docs.rs crate status endpoint with crate documentation page redirect. */
 const DOCSRS_ENDPOINT = createEndpoint({
   api: 'https://docs.rs/crate/{target}/latest/status.json',
@@ -47,12 +35,12 @@ const DOCSRS_ENDPOINT = createEndpoint({
 /** Transform a docs.rs status payload into `passing`, `failing`, or `unknown`. */
 function transformDocsRsStatus(payload: Partial<DocsRsStatusPayload>): Partial<MetricResult> {
   if (payload.doc_status === true) {
-    return PASSING_DOCS;
+    return PASSING_STATUS;
   }
   if (payload.doc_status === false) {
-    return FAILING_DOCS;
+    return FAILING_STATUS;
   }
-  return UNKNOWN_DOCS;
+  return UNKNOWN_STATUS;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------

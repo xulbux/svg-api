@@ -2,7 +2,12 @@
  * Composite builder parameter codecs – Composes and splits multi-part query DSL values (`?icon=`, `?hint=`, `?anim=`, `?special=`, and `?size=`).
  */
 
-import { findOption, HINT_ICON_REST_RX, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
+import {
+  findOption,
+  HINT_ICON_REST_RX,
+  LIST_SEPARATOR_RX,
+  resolveOptionValue,
+} from '@/site/shared/encoding';
 import type {
   AnimSplitParts,
   BuilderOption,
@@ -22,15 +27,7 @@ function resolveAnimOptionToken(
   if (token === 'default') {
     return '';
   }
-  if (!options) {
-    return token;
-  }
-  for (const option of options) {
-    if (option.value === token || option.aliases?.includes(token)) {
-      return option.value;
-    }
-  }
-  return undefined;
+  return options ? resolveOptionValue(options, token) : token;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -160,7 +157,7 @@ export function splitAnim(value: string, options?: readonly BuilderOption[]): An
   }
   const left = motions[0] ?? '';
   const right = motions[1] ?? '';
-  if (hasSheen && !right && left === 'none') {
+  if (hasSheen && !right && left === 'default') {
     return { hasSheen, left: '', right: '' };
   }
   return { hasSheen, left, right };
@@ -226,8 +223,12 @@ export function splitSpecial(value: string, options: readonly BuilderOption[]): 
   let modifier = '';
   const { modifiers } = kindOption;
   const trimmedPayloadLower = payload.trim().toLowerCase();
-  if (modifiers && trimmedPayloadLower && findOption(modifiers, trimmedPayloadLower)) {
-    return { kind, modifier: trimmedPayloadLower, payload: '' };
+  const bareModifier =
+    modifiers && trimmedPayloadLower
+      ? resolveOptionValue(modifiers, trimmedPayloadLower)
+      : undefined;
+  if (bareModifier !== undefined) {
+    return { kind, modifier: bareModifier, payload: '' };
   }
   const lastColon = payload.lastIndexOf(':');
   if (modifiers && lastColon !== -1) {
@@ -235,8 +236,9 @@ export function splitSpecial(value: string, options: readonly BuilderOption[]): 
       .slice(lastColon + 1)
       .trim()
       .toLowerCase();
-    if (candidate && findOption(modifiers, candidate)) {
-      modifier = candidate;
+    const resolvedModifier = candidate ? resolveOptionValue(modifiers, candidate) : undefined;
+    if (resolvedModifier !== undefined) {
+      modifier = resolvedModifier;
       payload = payload.slice(0, lastColon);
     }
   }

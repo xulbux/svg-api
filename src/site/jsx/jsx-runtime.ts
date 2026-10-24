@@ -57,7 +57,7 @@ export namespace JSX {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** HTML void elements serialized with a self-closing ` />` suffix and no closing tag. */
-const VOID_ELEMENT_TAGS: ReadonlySet<string> = new Set([
+const VOID_ELEMENT_TAGS: readonly string[] = [
   'area',
   'base',
   'br',
@@ -72,10 +72,10 @@ const VOID_ELEMENT_TAGS: ReadonlySet<string> = new Set([
   'source',
   'track',
   'wbr',
-]);
+];
 
 /** HTML boolean attributes serialized as bare attribute names when enabled and omitted when disabled. */
-const BOOLEAN_ATTRIBUTES: ReadonlySet<string> = new Set([
+const BOOLEAN_ATTRIBUTES: readonly string[] = [
   'checked',
   'defer',
   'disabled',
@@ -86,7 +86,7 @@ const BOOLEAN_ATTRIBUTES: ReadonlySet<string> = new Set([
   'readonly',
   'required',
   'selected',
-]);
+];
 
 /** React-style prop names mapped to their canonical HTML attribute names. */
 const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
@@ -95,21 +95,39 @@ const ATTRIBUTE_ALIASES: Readonly<Record<string, string>> = {
   tabIndex: 'tabindex',
 };
 
+/** Lazily populated lookup set for `VOID_ELEMENT_TAGS`. */
+let voidElementTagsCache: ReadonlySet<string> | undefined = undefined;
+
+/** Lazily populated lookup set for `BOOLEAN_ATTRIBUTES`. */
+let booleanAttributesCache: ReadonlySet<string> | undefined = undefined;
+
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Check whether `tag` is an HTML void element. */
+function isVoidElementTag(tag: string): boolean {
+  voidElementTagsCache ??= new Set(VOID_ELEMENT_TAGS);
+  return voidElementTagsCache.has(tag);
+}
+
+/** Check whether `name` is an HTML boolean attribute. */
+function isBooleanAttribute(name: string): boolean {
+  booleanAttributesCache ??= new Set(BOOLEAN_ATTRIBUTES);
+  return booleanAttributesCache.has(name);
+}
 
 /** Check whether a value is a pre-escaped `HtmlFragment`. */
 function isHtmlFragment(value: unknown): value is HtmlFragment {
   return typeof value === 'object' && value !== null && 'rawHtml' in value;
 }
 
+/** Return the pre-escaped HTML of this `HtmlFragment`. */
+function fragmentToString(this: HtmlFragment): string {
+  return this.rawHtml;
+}
+
 /** Wrap a pre-escaped HTML string in an `HtmlFragment` object. */
 function createHtmlFragment(html: string): HtmlFragment {
-  return {
-    rawHtml: html,
-    toString() {
-      return html;
-    },
-  };
+  return { rawHtml: html, toString: fragmentToString };
 }
 
 /** Serialize any JSX child or nested child array into escaped HTML. */
@@ -158,9 +176,9 @@ function serializeSingleAttribute(rawName: string, rawValue: unknown): string {
     if (name.startsWith('aria-') || name === 'draggable' || name === 'spellcheck') {
       return ` ${name}="${String(rawValue)}"`;
     }
-    return rawValue && (BOOLEAN_ATTRIBUTES.has(name) || name.startsWith('data-')) ? ` ${name}` : '';
+    return rawValue && (isBooleanAttribute(name) || name.startsWith('data-')) ? ` ${name}` : '';
   }
-  if (rawValue === '' && BOOLEAN_ATTRIBUTES.has(name)) {
+  if (rawValue === '' && isBooleanAttribute(name)) {
     return ` ${name}`;
   }
   return ` ${name}="${escapeXml(String(rawValue))}"`;
@@ -220,7 +238,7 @@ export function jsx(
     return tag(props);
   }
   const attrsHtml = serializeAttributes(props);
-  if (VOID_ELEMENT_TAGS.has(tag)) {
+  if (isVoidElementTag(tag)) {
     return createHtmlFragment(`<${tag}${attrsHtml} />`);
   }
   const childrenHtml = serializeChildren(props.children as JsxChild);

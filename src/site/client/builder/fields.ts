@@ -118,6 +118,7 @@ export { getPart };
 /**
  * Create the builder field DOM reader, writer, and composite-part synchronizer.
  * @param options   Schema, field element map, state accessor, and sub-controllers.
+ * @returns Field DOM controller.
  */
 export function createBuilderFieldsController(
   options: BuilderFieldsOptions

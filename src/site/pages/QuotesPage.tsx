@@ -11,6 +11,7 @@ import {
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 import { CardGrid } from '@/site/components/ShowcaseCard';
+import { formatBacktickList } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -20,11 +21,10 @@ import type { HtmlFragment } from '@/site/jsx';
  * @returns Rendered `<section class="doc-section" id="quotes">` JSX fragment.
  */
 export function QuotesSection(): HtmlFragment {
-  const layoutCodes = QUOTE_LAYOUT_TOKENS.map((token) => `\`${token}\``).join(' or ');
   return (
     <section class="doc-section" id="quotes">
       <SectionHeader
-        description={`Auto-wrapping quote cards in ${layoutCodes} layouts with customizable width, text size, and accent color.`}
+        description={`Auto-wrapping quote cards in ${formatBacktickList(QUOTE_LAYOUT_TOKENS, ' or ')} layouts with customizable width, text size, and accent color.`}
         routes={['/quote/:author/:text', '/quote/:text', '/quote?text=:text&author=:author']}
         title="Styled README Quote Cards"
       />

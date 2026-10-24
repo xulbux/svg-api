@@ -11,6 +11,7 @@ import {
 } from '@/routes/params';
 import { DEFAULT_QUOTE_VARIANT } from '@/routes/svg';
 import {
+  appendDefaultLabel,
   buildColorParamRow,
   buildSheenAnimParamRow,
   buildVariantParamRow,
@@ -46,7 +47,10 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: 'Primary gradient card with centered quote watermarks.',
-    title: 'variant=1 · Vertical Primary Brand Quote',
+    title: appendDefaultLabel(
+      'variant=1 · Vertical Primary Brand Quote',
+      DEFAULT_QUOTE_VARIANT === '1'
+    ),
   },
   {
     isCentered: true,
@@ -57,7 +61,10 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: 'Tinted dark card with an indigo border.',
-    title: 'variant=2 · Vertical Secondary Tinted Quote (Default)',
+    title: appendDefaultLabel(
+      'variant=2 · Vertical Secondary Tinted Quote',
+      DEFAULT_QUOTE_VARIANT === '2'
+    ),
   },
   {
     isCentered: true,
@@ -68,7 +75,10 @@ export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: 'Neutral dark card with subtle border and cyan watermarks.',
-    title: 'variant=3 · Vertical Tertiary Neutral Quote',
+    title: appendDefaultLabel(
+      'variant=3 · Vertical Tertiary Neutral Quote',
+      DEFAULT_QUOTE_VARIANT === '3'
+    ),
   },
 ];
 
@@ -77,14 +87,20 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
   {
     items: [{ alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=1` }],
     subtitle: 'Horizontal card with a left accent bar and gradient fill.',
-    title: 'variant=1 · Horizontal Primary Brand Quote',
+    title: appendDefaultLabel(
+      'variant=1 · Horizontal Primary Brand Quote',
+      DEFAULT_QUOTE_VARIANT === '1'
+    ),
   },
   {
     items: [
       { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=2&color=cyan` },
     ],
     subtitle: 'Horizontal card with a cyan border and left accent bar.',
-    title: 'variant=2 · Horizontal Secondary Tinted Quote (Default)',
+    title: appendDefaultLabel(
+      'variant=2 · Horizontal Secondary Tinted Quote',
+      DEFAULT_QUOTE_VARIANT === '2'
+    ),
   },
   {
     items: [
@@ -94,7 +110,10 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
       },
     ],
     subtitle: 'Single-segment /quote/:text form with ?author= and diagonal sheen (?anim=sheen).',
-    title: 'variant=3 · Horizontal Tertiary Neutral Quote',
+    title: appendDefaultLabel(
+      'variant=3 · Horizontal Tertiary Neutral Quote',
+      DEFAULT_QUOTE_VARIANT === '3'
+    ),
   },
 ];
 
@@ -105,7 +124,7 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildQuoteParamRows(): ParamTableRow[] {
-  const verticalAliases = [...VERTICAL_LAYOUT_TOKENS].filter((token) => token !== 'vertical');
+  const verticalAliases = VERTICAL_LAYOUT_TOKENS.filter((token) => token !== 'vertical');
   return [
     {
       defaultVal: '~required',

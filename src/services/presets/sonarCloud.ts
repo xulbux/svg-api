@@ -5,7 +5,13 @@
  * `metric -> value` map.
  */
 
-import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
+import {
+  createEndpoint,
+  createMetric,
+  defineService,
+  isJsonObject,
+  readFirstObjectEntry,
+} from '@/services/endpoint';
 import {
   buildRatioSpecials,
   createCoverageMetric,
@@ -16,6 +22,7 @@ import {
   toFiniteNumber,
 } from '@/services/metrics';
 import { MAX_STEPS_COUNT, MAX_STRIP_TICKS } from '@/svg/renderer';
+import { getOwnValue } from '@/svg/shared';
 import type {
   BadgeSpecialKind,
   BadgeSpecialMap,
@@ -130,11 +137,8 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
   if (isJsonObject(measure.period) && typeof measure.period.value === 'string') {
     return measure.period.value;
   }
-  const periods = Array.isArray(measure.periods) ? measure.periods : undefined;
-  const firstPeriod: unknown = periods ? periods[0] : undefined;
-  return isJsonObject(firstPeriod) && typeof firstPeriod.value === 'string'
-    ? firstPeriod.value
-    : undefined;
+  const firstPeriod = readFirstObjectEntry(measure.periods);
+  return typeof firstPeriod?.value === 'string' ? firstPeriod.value : undefined;
 }
 
 /** Project a SonarCloud measures response into a `metric -> value` map of the requested measures. */
@@ -218,9 +222,7 @@ function buildQualityGateSpecials(detailsJson: string | undefined): BadgeSpecial
 /** Transform the quality gate status into `passed`, `failed`, or `warning`. */
 function transformQualityGate(measures: SonarMeasures): Partial<MetricResult> {
   const status = measures.alert_status;
-  const base = (status && Object.hasOwn(QUALITY_GATE_STATES, status)
-    ? QUALITY_GATE_STATES[status]
-    : undefined) ?? { value: 'n/a' };
+  const base = (status ? getOwnValue(QUALITY_GATE_STATES, status) : undefined) ?? { value: 'n/a' };
   const specials = buildQualityGateSpecials(measures.quality_gate_details);
   return specials ? { ...base, specials } : base;
 }

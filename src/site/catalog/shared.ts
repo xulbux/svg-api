@@ -124,6 +124,16 @@ export function buildSheenAnimParamRow(description: string): ParamTableRow {
 }
 
 /**
+ * Append `' (Default)'` to a showcase card title when `isDefault` is `true`.
+ * @param title       Base showcase card title.
+ * @param isDefault   Whether the card represents the default option.
+ * @returns Card title with optional `' (Default)'` suffix.
+ */
+export function appendDefaultLabel(title: string, isDefault: boolean): string {
+  return isDefault ? `${title} (Default)` : title;
+}
+
+/**
  * Build showcase card configurations for a list of variant descriptors.
  * @param descriptors   Variant descriptors in hierarchy order.
  * @param buildItems    Callback returning the showcase items for a given variant.

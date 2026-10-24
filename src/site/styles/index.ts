@@ -140,7 +140,15 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildColorToken('switch-bg', ISOLUX_UI.bubble),
     buildColorToken('switch-thumb-bg', { dark: ISOLUX_GRAY[950], light: WHITE }),
     // Inverted preview stage; GitHub's README canvas and `Edit` chip of the opposite color scheme:
+    buildColorToken('stage-checker', {
+      dark: 'color-mix(in srgb, var(--c-text-1) 5%, transparent)',
+      light: 'color-mix(in srgb, var(--c-text-1) 4%, transparent)',
+    }),
     buildColorToken('preview-inverse-bg', { dark: LIGHT_BG, light: DARK_BG }),
+    buildColorToken('preview-inverse-checker', {
+      dark: 'color-mix(in srgb, var(--c-bg) 4%, transparent)',
+      light: 'color-mix(in srgb, var(--c-bg) 5%, transparent)',
+    }),
     buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
     buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
     buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),

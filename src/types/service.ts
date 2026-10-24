@@ -138,14 +138,14 @@ export interface MetricEndpoint<P = unknown> {
   /** Optional custom HTTP request builder (e.g., an authenticated GraphQL `POST` query). */
   buildRequest?: ServiceRequestBuilder;
   /**
-   * Top-level keys of the upstream JSON object whose values are the only parts needed (e.g., PyPI's
-   * `['info']` or pub.dev's `['latest']`); Unneeded keys are skipped in `O(1)` memory while
-   * streaming, and the body stream is cancelled as soon as all listed keys are read.
+   * Top-level keys of the upstream JSON object whose values are the only parts needed; Unneeded
+   * keys are skipped in `O(1)` memory while streaming, and the body stream is cancelled as soon
+   * as all listed keys are read.
    */
   extractKeys?: readonly string[];
   /**
-   * Additional upstream HTTP error statuses that mean the package does not exist (e.g., Fedora
-   * mdapi's `400`); They are reported and cached like a `404`.
+   * Additional upstream HTTP error statuses that mean the target does not exist; They are
+   * reported and cached like a `404`.
    */
   missingStatuses?: readonly number[];
   /** Optional projection of the raw payload (defaults to the raw JSON object). */
@@ -248,10 +248,12 @@ export interface ServiceDocs {
  * canonical metric keys, so alias targets are checked at compile time.
  */
 export interface ServiceDefinition<M extends string = string> {
-  /** Returns additional upstream request headers (e.g., an `Authorization` token). */
+  /** Returns additional dynamic upstream request headers (e.g., an `Authorization` token). */
   buildHeaders?: (env: Env) => Readonly<Record<string, string>>;
   /** Documentation metadata for the service reference table. */
   docs: ServiceDocs;
+  /** Additional static upstream request headers merged on top of default headers. */
+  headers?: Readonly<Record<string, string>>;
   /**
    * Service-specific alternative metric slugs mapped to their canonical metric slug; They extend
    * and override the global default metric aliases (e.g., `l` -> `license`).

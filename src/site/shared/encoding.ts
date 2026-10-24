@@ -12,6 +12,12 @@ import type {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** Maximum number of cycling lines accepted by `/typing` and the typing builder. */
+export const MAX_TYPING_LINES = 12;
+
+/** Maximum character length per individual typing line before truncation. */
+export const MAX_TYPING_LINE_LENGTH = 80;
+
 /** Truthy boolean query tokens accepted by boolean flag parameters in display order. */
 export const TRUTHY_FLAG_LIST = ['true', '1', 'yes'] as const;
 
@@ -61,6 +67,15 @@ export function getOwnValue<V>(record: Readonly<Record<string, V>>, key: string)
 }
 
 /**
+ * Capitalize the first character of a word.
+ * @param word   Lowercase word (e.g., `'nudge'`).
+ * @returns Capitalized word (e.g., `'Nudge'`).
+ */
+export function capitalizeWord(word: string): string {
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+}
+
+/**
  * Capitalize the first letter of every `-`/`_`-separated slug part and join the parts with `joiner`.
  * @param slug     Hyphen- or underscore-separated slug.
  * @param joiner   Optional separator inserted between capitalized parts.
@@ -70,7 +85,7 @@ export function capitalizeSlugParts(slug: string, joiner = ''): string {
   let result = '';
   for (const part of slug.split(SLUG_SEPARATOR_RX)) {
     if (part.length > 0) {
-      result += `${result.length > 0 ? joiner : ''}${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+      result += `${result.length > 0 ? joiner : ''}${capitalizeWord(part)}`;
     }
   }
   return result;
@@ -150,6 +165,24 @@ export function findOption<T extends BuilderOption>(
   for (const option of options ?? []) {
     if (option.value === value) {
       return option;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Resolve a lowercase token against an option list, matching either canonical `value` or `aliases`.
+ * @param options   Option list.
+ * @param token     Lowercase token to match.
+ * @returns Canonical option `value`, or `undefined` when unmatched.
+ */
+export function resolveOptionValue(
+  options: readonly BuilderOption[] | undefined,
+  token: string
+): string | undefined {
+  for (const option of options ?? []) {
+    if (option.value === token || option.aliases?.includes(token)) {
+      return option.value;
     }
   }
   return undefined;

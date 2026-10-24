@@ -2,6 +2,7 @@
  * Custom dropdown controller – Lazy option rendering, search filtering, keyboard navigation, and native `<select>` synchronization for `[data-select]` controls.
  */
 
+import { bindPopoverFocusDismiss } from '@/site/client/builder/core';
 import type { SvgSite } from '@/site/client/site/types';
 import { getOwnValue } from '@/site/shared';
 import type { BuilderOption } from '@/types';
@@ -27,13 +28,13 @@ export interface SelectParts {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Cached dropdown part lookups keyed by `[data-select]` wrapper element. */
-const selectPartsCache = new WeakMap<Element, SelectParts>();
+const SELECT_PARTS_CACHE = new WeakMap<Element, SelectParts>();
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Find (once) the parts of a custom dropdown (`[data-select]`). */
 function getSelectParts(wrapper: Element): SelectParts {
-  let parts = selectPartsCache.get(wrapper);
+  let parts = SELECT_PARTS_CACHE.get(wrapper);
   if (!parts) {
     parts = {
       empty: wrapper.querySelector('[data-select-empty]'),
@@ -43,7 +44,7 @@ function getSelectParts(wrapper: Element): SelectParts {
       select: wrapper.querySelector('select'),
       trigger: wrapper.querySelector('.select-trigger'),
     };
-    selectPartsCache.set(wrapper, parts);
+    SELECT_PARTS_CACHE.set(wrapper, parts);
   }
   return parts;
 }
@@ -70,7 +71,9 @@ function renderSelectOptions(wrapper: Element): void {
   const fragment = document.createDocumentFragment();
   for (const option of select.options) {
     const isMatch =
-      !query || option.text.toLowerCase().includes(query) || option.value.includes(query);
+      !query ||
+      option.text.toLowerCase().includes(query) ||
+      option.value.toLowerCase().includes(query);
     if (isMatch) {
       const item = document.createElement('div');
       item.className = 'select-option';
@@ -306,11 +309,9 @@ export function bindSelects(form: HTMLFormElement | null, site: SvgSite | undefi
     });
     menu?.addEventListener('keydown', (event) => handleSelectKeydown(event, wrapper, site));
     // Keyboard focus leaving the dropdown (e.g., `Tab`) closes the menu; pointer dismissal is native:
-    menu?.addEventListener('focusout', (event) => {
-      if (event.relatedTarget instanceof Node && !wrapper.contains(event.relatedTarget)) {
-        site?.closePopover(menu);
-      }
-    });
+    if (menu) {
+      bindPopoverFocusDismiss(menu, site, () => wrapper);
+    }
     search?.addEventListener('input', () => renderSelectOptions(wrapper));
     trigger?.addEventListener('keydown', (event) => {
       if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && menu) {

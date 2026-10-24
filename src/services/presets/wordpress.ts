@@ -17,7 +17,7 @@ import type { ServiceDefinition } from '@/types';
 
 /** Partial WordPress.org plugin/theme information payload (`api.wordpress.org/{plugins|themes}/info/1.2/`). */
 interface WordPressInfoPayload {
-  /** Active install bucket (e.g., `5000000` for "5+ million"). */
+  /** Active install bucket (e.g., `5000000` for `'5+ million'`). */
   active_installs: number;
   /** All-time downloads. */
   downloaded: number;

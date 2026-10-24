@@ -1,10 +1,8 @@
 /**
  * SVG route dispatcher – Maps every registered SVG endpoint URL onto its SSOT renderer.
  *
- * Shared by the Worker router and the documentation previews, so every documented Markdown snippet
- * is rendered by the exact same parsing path as a live request. The `SVG_ROUTES` table is the single
- * source of the route prefixes, alias mappings, segment limits, builder targets, and the query
- * parameters each route reads (which also form its normalized edge cache key).
+ * The `SVG_ROUTES` table is the single source of the route prefixes, alias mappings, segment limits,
+ * builder targets, and the query parameters each route reads (which also form its normalized edge cache key).
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
@@ -34,7 +32,7 @@ import { renderQuote } from '@/svg/quote';
 import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
 import { parseStackGroups, renderStack } from '@/svg/stack';
-import { renderTyping } from '@/svg/typing';
+import { DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT, renderTyping } from '@/svg/typing';
 import type {
   BadgeSpecialElement,
   BadgeSpecialMap,
@@ -94,11 +92,11 @@ export const DEFAULT_QUOTE_VARIANT: BadgeVariant = '2';
 /** Default visual hierarchy variant for tech stack grids. */
 export const DEFAULT_STACK_VARIANT: BadgeVariant = '2';
 
-/** Default visual hierarchy variant for typing animations. */
-export const DEFAULT_TYPING_VARIANT: BadgeVariant = '3';
+/** Default visual hierarchy variant for animated typing banners. */
+export const DEFAULT_TYPING_VARIANT: BadgeVariant = TYPING_DEFAULT_VARIANT;
 
 /** Recognized query parameters for badge routes, sorted. */
-export const BADGE_QUERY_PARAMS: readonly string[] = [
+const BADGE_QUERY_PARAMS: readonly string[] = [
   'anim',
   'color',
   'dot',
@@ -173,6 +171,28 @@ const TYPING_QUERY_PARAMS: readonly string[] = [
 ];
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Return the first candidate containing non-whitespace characters, or `''` when all are blank. */
+function pickNonBlank(
+  first: string | null | undefined,
+  second?: string | null,
+  third?: string | null,
+  fourth?: string | null
+): string {
+  if (first && first.trim().length > 0) {
+    return first;
+  }
+  if (second && second.trim().length > 0) {
+    return second;
+  }
+  if (third && third.trim().length > 0) {
+    return third;
+  }
+  if (fourth && fourth.trim().length > 0) {
+    return fourth;
+  }
+  return '';
+}
 
 /** Build a deferred static SVG route match. */
 function buildStaticMatch(
@@ -307,16 +327,21 @@ function resolveIconRoute(
 /** Resolve a tech stack grid route. */
 function resolveStackRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   return buildStaticMatch(() => {
-    // `||` (not `??`); empty aliases (`/stack/?icons=react`, `?groupgap=&ggap=12`) fall through:
-    const rawGroups =
-      segments[0] || query.get('groups') || query.get('icons') || query.get('i') || '';
+    // Blank aliases (`/stack/?icons=react`, `?groupgap=%20&ggap=12`) fall through to later fallbacks:
+    const rawGroups = pickNonBlank(
+      segments[0],
+      query.get('groups'),
+      query.get('icons'),
+      query.get('i')
+    );
     const perLineList = parsePerLineList(query.get('perline'));
+    const rawGroupGap = pickNonBlank(query.get('groupgap'), query.get('ggap'));
     return renderStack({
       anim: resolveStackAnimationMode(query.get('anim')),
       // Invalid colors keep the per-icon brand palettes instead of forcing the default fallback:
       color: resolveOptionalColor(query.get('color')),
       gap: parseOptionalNumber(query.get('gap')),
-      groupGap: parseOptionalNumber(query.get('groupgap') || query.get('ggap')),
+      groupGap: parseOptionalNumber(rawGroupGap),
       groups: parseStackGroups(rawGroups, perLineList),
       perLine: perLineList?.[0],
       size: parseOptionalNumber(query.get('size')),
@@ -336,7 +361,7 @@ function resolveQuoteRoute(segments: readonly string[], query: URLSearchParams):
       color: resolveColor(query.get('color')),
       layout: resolveQuoteLayout(query.get('layout'), query.get('type'), query.get('center')),
       size: resolveSizeToken(query.get('size')),
-      text: pathText || query.get('text') || query.get('quote') || '',
+      text: pickNonBlank(pathText, query.get('text'), query.get('quote')),
       variant: resolveVariant(query.get('variant'), DEFAULT_QUOTE_VARIANT),
       width: parseOptionalNumber(query.get('width')),
     })
@@ -347,7 +372,7 @@ function resolveQuoteRoute(segments: readonly string[], query: URLSearchParams):
 function resolveTypingRoute(segments: readonly string[], query: URLSearchParams): SvgRouteMatch {
   const hasPrefixSegment = segments.length === 2;
   const pathLines = hasPrefixSegment ? segments[1] : segments[0];
-  const queryPrefix = query.get('prefix') || query.get('prompt');
+  const queryPrefix = pickNonBlank(query.get('prefix'), query.get('prompt')) || undefined;
   return buildStaticMatch(() =>
     renderTyping({
       align: resolveTypingAlign(query.get('align'), query.get('center')),
@@ -361,7 +386,7 @@ function resolveTypingRoute(segments: readonly string[], query: URLSearchParams)
       hint: query.get('hint') ?? undefined,
       icon: resolveIconQueryParam(query.get('icon')),
       layout: resolveTypingLayout(query.get('layout'), query.get('frame'), query.get('type')),
-      lines: pathLines || query.get('lines') || query.get('text') || '',
+      lines: pickNonBlank(pathLines, query.get('lines'), query.get('text')),
       pause: parseOptionalNumber(query.get('pause')),
       prefix: (hasPrefixSegment ? segments[0] : queryPrefix) ?? undefined,
       size: resolveSizeToken(query.get('size')),

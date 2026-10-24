@@ -39,7 +39,7 @@ import {
   findSvgRoute,
   resolveSvgRoute,
 } from '@/routes/svg';
-import { listServiceMetricAliases } from '@/services/fetcher';
+import { listServiceMetricAliases, resolveServiceMetricConfig } from '@/services/fetcher';
 import {
   capitalizeWord,
   collectAliasesForTarget,
@@ -47,6 +47,7 @@ import {
   SPECIAL_KIND_DETAILS,
   VARIANT_TIERS,
 } from '@/site/glossary';
+import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared';
 import { MAX_ICON_SLUG_LENGTH } from '@/svg/icons';
 import {
   DEFAULT_HORIZONTAL_QUOTE_SIZE,
@@ -61,6 +62,7 @@ import {
 import {
   BUTTON_HEIGHT_RANGE,
   BUTTON_SIZE_PRESETS,
+  DEFAULT_BUTTON_SIZE,
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
   MAX_LABEL_LENGTH,
@@ -75,13 +77,13 @@ import {
 import {
   DEFAULT_IDE_TITLE,
   DEFAULT_LAYOUT_FONTS,
+  DEFAULT_TYPING_ALIGN,
   DEFAULT_TYPING_CURSOR,
   DEFAULT_TYPING_ERASE,
   DEFAULT_TYPING_LAYOUT,
+  DEFAULT_TYPING_SIZE,
   DEFAULT_WINDOW_PROMPT,
   MAX_TYPING_HINT_LENGTH,
-  MAX_TYPING_LINE_LENGTH,
-  MAX_TYPING_LINES,
   MAX_TYPING_PREFIX_LENGTH,
   MAX_TYPING_TITLE_LENGTH,
   TYPING_DURATION_RANGE,
@@ -275,7 +277,10 @@ function buildSpecialField(hasPresetValue = false): BuilderField {
     const detail = SPECIAL_KIND_DETAILS[kind];
     const modifiers: BuilderOption[] = [];
     if (detail.modifiers.length > 0) {
-      modifiers.push(buildDefaultOption(detail.defaultModifierLabel ?? 'Default'));
+      modifiers.push({
+        ...buildDefaultOption(detail.defaultModifierLabel ?? 'Default'),
+        aliases: detail.defaultModifierAliases,
+      });
       for (const modifier of detail.modifiers) {
         modifiers.push({ label: capitalizeWord(modifier), value: modifier });
       }
@@ -331,7 +336,7 @@ function buildAnimField(scope: BuilderAnimScope): BuilderField {
   } else if (scope === 'typing') {
     options.push(buildDefaultOption('Typing'), { label: 'Static (none)', value: 'none' });
   } else {
-    options.push(buildDefaultOption('Static'));
+    options.push({ aliases: ['none'], label: 'Static', value: '' });
   }
   const descriptions: Readonly<Record<BuilderAnimScope, string>> = {
     pair: 'Surface sheen plus one motion per icon; None also stops widget and dot animations.',
@@ -526,10 +531,10 @@ function buildServiceOptions(): BuilderServiceOption[] {
   return services;
 }
 
-/** Check whether a parsed service request matches the service's required/optional owner and target segment arity. */
+/** Check whether a parsed service request matches a known service, metric (or alias), owner mode, and target segment arity. */
 function isEditableServiceRequest(request: ServiceRequest): boolean {
-  const service = getOwnValue(SERVICES_CONFIG, request.service);
-  if (!service || !request.target) {
+  const service = getOwnValue(SERVICES_CONFIG, request.service.toLowerCase());
+  if (!service || !request.target || !resolveServiceMetricConfig(service, request.metric)) {
     return false;
   }
   const { maxSegments = 1, minSegments = 1 } = service.route.target;
@@ -649,7 +654,7 @@ function buildButtonFields(): BuilderField[] {
     buildSizePresetField(
       presetHeights,
       BUTTON_HEIGHT_RANGE,
-      'md',
+      DEFAULT_BUTTON_SIZE,
       'Height preset or custom pixel height.'
     ),
     buildIconPairField('Leading icon, trailing icon, or both.'),
@@ -707,9 +712,7 @@ function buildStackFields(): BuilderField[] {
 
 /** Build the quote card builder fields (`aliases` of path segment fields list their query fallbacks). */
 function buildQuoteFields(): BuilderField[] {
-  const verticalAliases = [...VERTICAL_LAYOUT_TOKENS]
-    .filter((token) => token !== 'vertical')
-    .toSorted();
+  const verticalAliases = VERTICAL_LAYOUT_TOKENS.filter((token) => token !== 'vertical').toSorted();
   const layoutOptions: BuilderOption[] = [];
   for (const layoutToken of QUOTE_LAYOUT_TOKENS) {
     layoutOptions.push({
@@ -825,7 +828,7 @@ function buildTypingFields(): BuilderField[] {
     buildSizePresetField(
       TYPING_SIZE_MAP,
       TYPING_FONT_SIZE_RANGE,
-      'md',
+      DEFAULT_TYPING_SIZE,
       'Typography preset or custom font size in pixels.'
     ),
     buildNumberField('width', 'Width (px)', TYPING_WIDTH_RANGE, {
@@ -834,7 +837,7 @@ function buildTypingFields(): BuilderField[] {
     }),
     {
       control: 'select',
-      defaultValue: 'left',
+      defaultValue: DEFAULT_TYPING_ALIGN,
       id: 'align',
       label: 'Alignment',
       options: alignOptions,

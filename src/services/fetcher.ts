@@ -124,12 +124,12 @@ interface ErrorResultOptions {
   redirectUrl?: string;
 }
 
-/** Merged upstream request headers of a service, memoized per environment object. */
+/** Merged upstream request headers of a service, memoized by authentication token. */
 interface MergedHeadersEntry {
-  /** Environment the headers were built for. */
-  env: Env;
   /** Default headers merged with the service headers. */
   headers: Readonly<Record<string, string>>;
+  /** Normalized `GITHUB_TOKEN` value the headers were built for (`''` when unset). */
+  token: string;
 }
 
 /** Phase of the streaming top-level JSON object key extractor. */
@@ -291,16 +291,19 @@ const MEMORY_CACHE = createLruCache<UpstreamOutcome>(
 /** Pending upstream loads keyed by API URL, so concurrent badge requests share one upstream call. */
 const IN_FLIGHT_LOADS = new Map<string, Promise<UpstreamOutcome>>();
 
-/** Merged request headers per service (bounded by the number of service presets). */
-const MERGED_HEADERS = new WeakMap<ServiceDefinition, MergedHeadersEntry>();
+/** Memoized merged request headers for services with static `service.headers`. */
+const STATIC_MERGED_HEADERS = new WeakMap<ServiceDefinition, Readonly<Record<string, string>>>();
+
+/** Memoized merged request headers for services with dynamic `service.buildHeaders`. */
+const DYNAMIC_MERGED_HEADERS = new WeakMap<ServiceDefinition, MergedHeadersEntry>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /**
- * Matches a safe owner or target path segment: Word characters, dots, hyphens, `@`, and `+`,
- * rejecting dot-only segments (`..` path traversal) and bare `@` / `@@…` scope prefixes. Slashes never match, so every segment stays atomic.
+ * Matches a safe owner or target path segment: Word characters, dots, colons, hyphens, `@`, and `+`,
+ * rejecting dot-only (`..` path traversal), colon-only, and bare `@` / `@@…` segments. Slashes never match, so every segment stays atomic.
  */
-const SAFE_SEGMENT_RX = /^(?!\.+$)(?!@(?:$|@))[\w.@+-]{1,214}$/;
+const SAFE_SEGMENT_RX = /^(?!\.+$)(?!:+$)(?!@(?:$|@))[\w.:@+-]{1,214}$/;
 
 /** Matches a non-negative integer or decimal number (e.g., `Retry-After` and `x-ratelimit-*` headers). */
 const NON_NEGATIVE_NUMBER_RX = /^\d+(?:\.\d+)?$/;
@@ -363,6 +366,19 @@ function resolveMetricKey(service: ServiceDefinition, metricKey: string): string
   return serviceAlias ?? getOwnValue(DEFAULT_METRIC_ALIASES, metricKey) ?? metricKey;
 }
 
+/**
+ * Resolve a requested metric slug (or alias) to its metric configuration on `service`.
+ * @param service   Service definition.
+ * @param metric    Raw requested metric slug or alias.
+ * @returns Matching `ServiceMetricConfig`, or `undefined` when unknown.
+ */
+function resolveServiceMetricConfig(
+  service: ServiceDefinition,
+  metric: string
+): ServiceMetricConfig | undefined {
+  return getOwnValue(service.metrics, resolveMetricKey(service, metric.toLowerCase()));
+}
+
 /** Validate a service request and resolve its preset, metric, and effective route params. */
 function resolveServiceContext(
   request: ServiceRequest
@@ -398,10 +414,7 @@ function resolveServiceContext(
     return buildErrorResult(serviceKey, 'invalid name', 400);
   }
 
-  const metric = getOwnValue(
-    service.metrics,
-    resolveMetricKey(service, request.metric.toLowerCase())
-  );
+  const metric = resolveServiceMetricConfig(service, request.metric);
   if (!metric) {
     return buildRouteErrorResult(serviceKey, 'invalid metric');
   }
@@ -416,20 +429,29 @@ function isResolvedError(
   return 'status' in candidate;
 }
 
-/** Resolve the upstream request headers of a service (memoized per service and environment). */
+/** Resolve the upstream request headers of a service (memoized per service and token). */
 function resolveRequestHeaders(
   service: ServiceDefinition,
   env: Env
 ): Readonly<Record<string, string>> {
-  if (!service.buildHeaders) {
+  if (!service.headers && !service.buildHeaders) {
     return DEFAULT_HEADERS;
   }
-  const cached = MERGED_HEADERS.get(service);
-  if (cached?.env === env) {
-    return cached.headers;
+  if (!service.buildHeaders) {
+    let cachedStatic = STATIC_MERGED_HEADERS.get(service);
+    if (!cachedStatic) {
+      cachedStatic = { ...DEFAULT_HEADERS, ...service.headers };
+      STATIC_MERGED_HEADERS.set(service, cachedStatic);
+    }
+    return cachedStatic;
   }
-  const headers = { ...DEFAULT_HEADERS, ...service.buildHeaders(env) };
-  MERGED_HEADERS.set(service, { env, headers });
+  const token = env.GITHUB_TOKEN ?? '';
+  const cachedDynamic = DYNAMIC_MERGED_HEADERS.get(service);
+  if (cachedDynamic?.token === token) {
+    return cachedDynamic.headers;
+  }
+  const headers = { ...DEFAULT_HEADERS, ...service.headers, ...service.buildHeaders(env) };
+  DYNAMIC_MERGED_HEADERS.set(service, { headers, token });
   return headers;
 }
 
@@ -560,8 +582,8 @@ function skipJsonWhitespace(text: string, index: number): number {
   return position;
 }
 
-/** Append a slice of a wanted value to `scanner.valueBuffer`, enforcing `MAX_UPSTREAM_BYTES`. */
-function appendCapturedSlice(
+/** Append a slice of a wanted value to `scanner.valueBuffer`, returning `false` when `MAX_UPSTREAM_BYTES` is exceeded. */
+function hasAppendedCapturedSlice(
   scanner: JsonStreamScanner,
   chunk: string,
   start: number,
@@ -641,13 +663,13 @@ function scanValueString(chunk: string, startIndex: number, scanner: JsonStreamS
     } else if (char === '\\') {
       scanner.isEscaped = true;
     } else if (char === '"') {
-      if (appendCapturedSlice(scanner, chunk, startIndex, i + 1)) {
+      if (hasAppendedCapturedSlice(scanner, chunk, startIndex, i + 1)) {
         finishScannedValue(scanner);
       }
       return i + 1;
     }
   }
-  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  hasAppendedCapturedSlice(scanner, chunk, startIndex, chunk.length);
   return chunk.length;
 }
 
@@ -670,14 +692,14 @@ function scanValueContainer(chunk: string, startIndex: number, scanner: JsonStre
     } else if (char === '}' || char === ']') {
       scanner.depth -= 1;
       if (scanner.depth === 0) {
-        if (appendCapturedSlice(scanner, chunk, startIndex, i + 1)) {
+        if (hasAppendedCapturedSlice(scanner, chunk, startIndex, i + 1)) {
           finishScannedValue(scanner);
         }
         return i + 1;
       }
     }
   }
-  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  hasAppendedCapturedSlice(scanner, chunk, startIndex, chunk.length);
   return chunk.length;
 }
 
@@ -686,13 +708,13 @@ function scanValuePrimitive(chunk: string, startIndex: number, scanner: JsonStre
   for (let i = startIndex; i < chunk.length; i += 1) {
     const char = chunk[i] ?? '';
     if (char === ',' || char === '}' || isJsonWhitespace(char)) {
-      if (appendCapturedSlice(scanner, chunk, startIndex, i)) {
+      if (hasAppendedCapturedSlice(scanner, chunk, startIndex, i)) {
         finishScannedValue(scanner);
       }
       return i;
     }
   }
-  appendCapturedSlice(scanner, chunk, startIndex, chunk.length);
+  hasAppendedCapturedSlice(scanner, chunk, startIndex, chunk.length);
   return chunk.length;
 }
 
@@ -950,6 +972,12 @@ function resolveFetchTarget(
   };
 }
 
+/** Map a thrown `fetch` or stream error to its synthetic upstream HTTP status. */
+function buildFetchErrorBody(error: unknown): UpstreamBody {
+  const isTimeout = error instanceof Error && error.name === 'TimeoutError';
+  return { status: isTimeout ? 504 : 502 };
+}
+
 /**
  * Fetch an upstream document body, mapping conditional `304` hits, timeouts, network errors, rate
  * limits, oversized bodies, and the endpoint's `missingStatuses` (to `404`) to statuses.
@@ -976,8 +1004,7 @@ async function fetchUpstreamBody(
           signal,
         });
   } catch (error) {
-    const isTimeout = error instanceof Error && error.name === 'TimeoutError';
-    return { status: isTimeout ? 504 : 502 };
+    return buildFetchErrorBody(error);
   }
 
   if (response.status === NOT_MODIFIED_STATUS) {
@@ -1016,8 +1043,7 @@ async function fetchUpstreamBody(
     const body = await readResponseBody(response, extractKeys);
     return { ...body, adaptiveTtl, etag, retryAfter };
   } catch (error) {
-    const isTimeout = error instanceof Error && error.name === 'TimeoutError';
-    return { status: isTimeout ? 504 : 502 };
+    return buildFetchErrorBody(error);
   }
 }
 
@@ -1027,7 +1053,7 @@ function buildFailureOutcome(status: number, retryAfter?: number): UpstreamOutco
 }
 
 /**
- * Classify GraphQL-style error payloads (`{ errors: [...] }`) so rate-limit and server errors on
+ * Classify GraphQL-style error payloads (`{ errors: […] }`) so rate-limit and server errors on
  * HTTP `200` responses map to `429` or `502` instead of being misclassified as `404 not found`.
  */
 function classifyGraphQlErrorStatus(parsed: unknown): number | undefined {
@@ -1384,7 +1410,28 @@ function buildMetricResult(
   };
 }
 
+/** Transform projected payload data into a `ResolvedServiceMetric`, mapping invalid or empty results to error badges. */
+function resolveTransformedMetric(
+  metric: ServiceMetricConfig,
+  projected: unknown,
+  params: ServiceRouteParams,
+  redirectUrl: string,
+  status: number
+): ResolvedServiceMetric {
+  const errorOptions: ErrorResultOptions = { icon: metric.defaultIcon, redirectUrl };
+  const transformed = projected === undefined ? undefined : runTransform(metric, projected, params);
+  if (transformed === 'invalid') {
+    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions);
+  }
+  if (!transformed) {
+    return buildErrorResult(metric.defaultLabel, 'not found', 404, errorOptions);
+  }
+  return { result: buildMetricResult(metric, transformed, redirectUrl), status };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { resolveServiceMetricConfig };
 
 /**
  * Clear the in-isolate memory cache and the in-flight request registry.
@@ -1449,23 +1496,16 @@ export function resolveServicePreview(
   if (typeof sample === 'string') {
     return buildMetricResult(metric, { value: sample }, redirectUrl);
   }
-  const errorOptions: ErrorResultOptions = { icon: metric.defaultIcon, redirectUrl };
   let projected: unknown = undefined;
   try {
     projected = metric.endpoint.project ? metric.endpoint.project(sample) : sample;
   } catch {
-    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions)
-      .result;
+    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, {
+      icon: metric.defaultIcon,
+      redirectUrl,
+    }).result;
   }
-  const transformed = projected === undefined ? undefined : runTransform(metric, projected, params);
-  if (transformed === 'invalid') {
-    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions)
-      .result;
-  }
-  if (!transformed) {
-    return buildErrorResult(metric.defaultLabel, 'not found', 404, errorOptions).result;
-  }
-  return buildMetricResult(metric, transformed, redirectUrl);
+  return resolveTransformedMetric(metric, projected, params, redirectUrl, 200).result;
 }
 
 /**
@@ -1508,12 +1548,5 @@ export async function resolveServiceMetric(
     );
   }
 
-  const transformed = runTransform(metric, outcome.data, params);
-  if (transformed === 'invalid') {
-    return buildErrorResult(metric.defaultLabel, 'invalid data', INVALID_DATA_STATUS, errorOptions);
-  }
-  if (!transformed) {
-    return buildErrorResult(metric.defaultLabel, 'not found', 404, errorOptions);
-  }
-  return { result: buildMetricResult(metric, transformed, redirectUrl), status: outcome.status };
+  return resolveTransformedMetric(metric, outcome.data, params, redirectUrl, outcome.status);
 }

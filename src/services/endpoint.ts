@@ -78,11 +78,7 @@ function joinNpmPackage({ owner, target }: ServiceRouteParams): string {
   return owner.startsWith('@') ? `${owner}/${target}` : `@${owner}/${target}`;
 }
 
-/**
- * Strip an optional leading `@` from a package scope segment.
- * @param owner   Scope with or without a leading `@` (e.g., `'@std'`, `'std'`).
- * @returns Scope without `@` (e.g., `'std'`).
- */
+/** Strip an optional leading `@` from a package scope segment (`'@std'` -> `'std'`). */
 function stripScopePrefix(owner: string): string {
   return owner.startsWith('@') ? owner.slice(1) : owner;
 }
@@ -169,8 +165,6 @@ export const NPM_PACKAGE_ROUTE: ServiceRoute = {
   target: { placeholder: ':pkg' },
 };
 
-export { stripScopePrefix };
-
 /**
  * Check whether a JSON value is a plain (non-array) object.
  * @param value   Parsed JSON value.
@@ -187,6 +181,16 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
  */
 export function asJsonObject(value: unknown): Record<string, unknown> | undefined {
   return isJsonObject(value) ? value : undefined;
+}
+
+/**
+ * Return the first plain-object element of a JSON array, or `undefined` when not a non-empty array of objects.
+ * @param entries   Candidate JSON array.
+ * @returns First object element, or `undefined`.
+ */
+export function readFirstObjectEntry(entries: unknown): Record<string, unknown> | undefined {
+  const first: unknown = Array.isArray(entries) ? entries[0] : undefined;
+  return isJsonObject(first) ? first : undefined;
 }
 
 /**
@@ -258,8 +262,8 @@ export function projectFirstEntry<E extends object>(
     if (listKey !== undefined) {
       entries = isJsonObject(data) ? data[listKey] : undefined;
     }
-    const entry: unknown = Array.isArray(entries) ? entries[0] : undefined;
-    if (!isJsonObject(entry)) {
+    const entry = readFirstObjectEntry(entries);
+    if (!entry) {
       return undefined;
     }
     return pickEntryFields ? pickEntryFields(entry) : (entry as Partial<E>);

@@ -54,11 +54,11 @@ interface ParsedPercentage {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
+/** Surface sheen token accepted in `?anim=` query parameters. */
+export const ANIM_SHEEN_TOKEN = 'sheen';
+
 /** Valid visual hierarchy variant identifiers in tier order. */
 export const VARIANT_TOKENS: readonly BadgeVariant[] = ['1', '2', '3'];
-
-/** Set of valid variant identifiers (derived from `VARIANT_TOKENS`). */
-const VALID_VARIANTS: ReadonlySet<string> = new Set<string>(VARIANT_TOKENS);
 
 /** Inline data widget kinds accepted by `?special=<kind>[:<payload>]` in display order. */
 export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialKind[] = [
@@ -71,14 +71,8 @@ export const SPECIAL_ELEMENT_KINDS: readonly BadgeSpecialKind[] = [
   'delta',
 ];
 
-/** Set of valid inline data widget kinds (derived from `SPECIAL_ELEMENT_KINDS`). */
-const VALID_SPECIAL_KINDS: ReadonlySet<string> = new Set<string>(SPECIAL_ELEMENT_KINDS);
-
 /** Valid named size presets in ascending size order. */
 export const SIZE_TOKENS: readonly SizePreset[] = ['sm', 'md', 'lg', 'xl'];
-
-/** Set of valid named size presets (derived from `SIZE_TOKENS`). */
-const VALID_SIZE_TOKENS: ReadonlySet<string> = new Set<string>(SIZE_TOKENS);
 
 /** Valid per-icon and per-tile motion tokens. */
 export {
@@ -118,7 +112,7 @@ export const FALSY_FLAG_LIST = ['0', 'false', 'no'] as const;
 export const QUOTE_LAYOUT_TOKENS: readonly QuoteLayout[] = ['horizontal', 'vertical'];
 
 /** Normalized `?layout=` / `?type=` values that select the vertical quote layout. */
-export const VERTICAL_LAYOUT_TOKENS: ReadonlySet<string> = new Set(['center', 'v', 'vertical']);
+export const VERTICAL_LAYOUT_TOKENS: readonly string[] = ['center', 'v', 'vertical'];
 
 /** Valid typing container layouts in display order. */
 export const TYPING_LAYOUT_TOKENS: readonly TypingLayout[] = [
@@ -381,18 +375,33 @@ function parseSpecialKindAndPayload(
   }
 }
 
+/** Check whether `candidate` is a valid `BadgeVariant` token. */
+function isBadgeVariant(candidate: string): candidate is BadgeVariant {
+  return (VARIANT_TOKENS as readonly string[]).includes(candidate);
+}
+
+/** Check whether `candidate` is a valid `BadgeSpecialKind` token. */
+function isSpecialElementKind(candidate: string): candidate is BadgeSpecialKind {
+  return (SPECIAL_ELEMENT_KINDS as readonly string[]).includes(candidate);
+}
+
+/** Check whether `candidate` is a valid `SizePreset` token. */
+function isSizePreset(candidate: string): candidate is SizePreset {
+  return (SIZE_TOKENS as readonly string[]).includes(candidate);
+}
+
 /** Parse a bare or modifier-only `?special=` value requesting automatic upstream widget data. */
 function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefined {
   const colonIndex = trimmed.indexOf(':');
   if (colonIndex === -1) {
     const kind = trimmed.toLowerCase();
-    return VALID_SPECIAL_KINDS.has(kind) ? { kind: kind as BadgeSpecialKind } : undefined;
+    return isSpecialElementKind(kind) ? { kind } : undefined;
   }
   if (colonIndex === 0) {
     return undefined;
   }
   const kind = trimmed.slice(0, colonIndex).trim().toLowerCase();
-  if (!VALID_SPECIAL_KINDS.has(kind)) {
+  if (!isSpecialElementKind(kind)) {
     return undefined;
   }
   const rest = trimmed
@@ -400,7 +409,7 @@ function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefine
     .trim()
     .toLowerCase();
   if (rest === '' || rest === 'auto') {
-    return { kind: kind as BadgeSpecialKind };
+    return { kind };
   }
   if (kind === 'bar' || kind === 'ring') {
     if (rest === 'pulse' || rest === ':pulse' || rest === 'auto:pulse') {
@@ -413,13 +422,14 @@ function parseAutoSpecialRequest(trimmed: string): AutoSpecialRequest | undefine
   return undefined;
 }
 
-/** Parse `?anim=` tokens (optional `'sheen'` plus up to `maxMotions` motion tokens resolved through `aliases`). */
+/** Parse `?anim=` tokens (optional `ANIM_SHEEN_TOKEN` plus up to `maxMotions` motion tokens resolved through `aliases`). */
 function resolveAnimationTokens<T extends string>(
   input: string | null | undefined,
   fallback: T,
   aliases: Readonly<Record<string, string>>,
   isValidMotion: (token: string | undefined) => boolean,
-  maxMotions: number
+  maxMotions: number,
+  isNoneCollapsedWithSheen: boolean
 ): T {
   const normalized = normalizeQueryToken(input);
   if (!normalized || normalized.length > MAX_ANIMATION_INPUT_LENGTH) {
@@ -430,7 +440,7 @@ function resolveAnimationTokens<T extends string>(
   const motionTokens: string[] = [];
   for (const token of normalized.split(LIST_SEPARATOR_RX)) {
     if (token.length > 0) {
-      if (token === 'sheen') {
+      if (token === ANIM_SHEEN_TOKEN) {
         if (hasSheen) {
           return fallback;
         }
@@ -446,18 +456,18 @@ function resolveAnimationTokens<T extends string>(
   }
 
   if (motionTokens.length === 0) {
-    return (hasSheen ? 'sheen' : fallback) as T;
+    return (hasSheen ? ANIM_SHEEN_TOKEN : fallback) as T;
   }
   if (
     hasSheen &&
     motionTokens.length === 1 &&
-    (motionTokens[0] === 'none' || motionTokens[0] === 'default')
+    (motionTokens[0] === 'default' || (isNoneCollapsedWithSheen && motionTokens[0] === 'none'))
   ) {
-    return 'sheen' as T;
+    return ANIM_SHEEN_TOKEN as T;
   }
 
   const joined = motionTokens.join(',');
-  return (hasSheen ? `sheen,${joined}` : joined) as T;
+  return (hasSheen ? `${ANIM_SHEEN_TOKEN},${joined}` : joined) as T;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -551,7 +561,7 @@ export function resolveVariant(
   fallback: BadgeVariant = '1'
 ): BadgeVariant {
   const candidate = (input ?? '').trim();
-  return VALID_VARIANTS.has(candidate) ? (candidate as BadgeVariant) : fallback;
+  return isBadgeVariant(candidate) ? candidate : fallback;
 }
 
 /**
@@ -564,7 +574,7 @@ export function resolveAnimationMode(
   input: string | null | undefined,
   fallback: AnimationMode = 'default'
 ): AnimationMode {
-  return resolveAnimationTokens(input, fallback, ICON_MOTION_ALIASES, isIconMotionMode, 2);
+  return resolveAnimationTokens(input, fallback, ICON_MOTION_ALIASES, isIconMotionMode, 2, false);
 }
 
 /**
@@ -577,7 +587,7 @@ export function resolveStackAnimationMode(
   input: string | null | undefined,
   fallback: StackAnimationMode = 'default'
 ): StackAnimationMode {
-  return resolveAnimationTokens(input, fallback, STACK_MOTION_ALIASES, isStackMotionMode, 1);
+  return resolveAnimationTokens(input, fallback, STACK_MOTION_ALIASES, isStackMotionMode, 1, true);
 }
 
 /**
@@ -607,8 +617,8 @@ export function resolveDotState(
  */
 export function resolveSizeToken(raw: string | null | undefined): SizePreset | number | undefined {
   const clean = normalizeQueryToken(raw);
-  if (VALID_SIZE_TOKENS.has(clean)) {
-    return clean as SizePreset;
+  if (isSizePreset(clean)) {
+    return clean;
   }
   return parseOptionalNumber(clean);
 }
@@ -654,7 +664,7 @@ export function resolveQuoteLayout(
 ): QuoteLayout {
   const candidate = normalizeQueryToken(layoutParam) || normalizeQueryToken(typeParam);
   const isVertical = candidate
-    ? VERTICAL_LAYOUT_TOKENS.has(candidate)
+    ? VERTICAL_LAYOUT_TOKENS.includes(candidate)
     : TRUTHY_FLAG_TOKENS.has(normalizeQueryToken(centerParam));
   return isVertical ? 'vertical' : DEFAULT_QUOTE_LAYOUT;
 }

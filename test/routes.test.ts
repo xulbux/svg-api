@@ -26,6 +26,7 @@ import {
   resolveQuoteLayout,
   resolveSizeToken,
   resolveSpecialParam,
+  resolveStackAnimationMode,
   resolveVariant,
   SIZE_TOKENS,
 } from '@/routes/params';
@@ -342,7 +343,8 @@ describe('route parameter parsers', () => {
   });
 
   it('rejects animation inputs with duplicate sheen, more than 3 tokens, or excessive length early', () => {
-    expect(resolveAnimationMode('sheen,none')).toBe('sheen');
+    expect(resolveAnimationMode('sheen,none')).toBe('sheen,none');
+    expect(resolveAnimationMode('sheen,default')).toBe('sheen');
     expect(resolveAnimationMode(' Sheen , Auto ')).toBe('sheen,auto');
     expect(resolveAnimationMode('sheen,shake,nudge')).toBe('sheen,shake,nudge');
     expect(resolveAnimationMode('sheen,sheen')).toBe('default');
@@ -1274,5 +1276,26 @@ describe('unexpected errors', () => {
     ]);
     expect(canonicalPageRes.status).toBe(200);
     expect(leadingZeroPageRes.status).toBe(404);
+  });
+
+  it('falls through whitespace-only primary query params to aliases and preserves sheen,none on /typing while collapsing it on /stack (regressions: whitespace-only primary query blocked alias fallback, sheen,none collapsed typing text motion)', () => {
+    expect(resolveAnimationMode('sheen,none')).toBe('sheen,none');
+    expect(resolveStackAnimationMode('sheen,none')).toBe('sheen');
+
+    const sheenStaticTypingSvg = renderSvgPath('/typing/Hello;World?anim=sheen,none');
+    expect(sheenStaticTypingSvg).toContain('id="typing-sheen-grad-');
+    expect(sheenStaticTypingSvg).not.toContain('attributeName="opacity"');
+
+    expect(extractAriaLabel(renderSvgPath('/quote?text=%20%20&quote=Fallback+quote'))).toBe(
+      'Fallback quote'
+    );
+    expect(extractAriaLabel(renderSvgPath('/stack?groups=%20%20&icons=ts,rust'))).toBe(
+      'tech stack: TypeScript, Rust'
+    );
+    expect(renderSvgPath('/stack/ts,rust|react,vue?groupgap=%20%20&ggap=20')).toBe(
+      renderSvgPath('/stack/ts,rust|react,vue?groupgap=20')
+    );
+    expect(extractAriaLabel(renderSvgPath('/typing?lines=%20%20&text=Ship+It'))).toBe('❯ Ship It');
+    expect(extractAriaLabel(renderSvgPath('/typing/Ship?prefix=%20%20&prompt=%24'))).toBe('$ Ship');
   });
 });

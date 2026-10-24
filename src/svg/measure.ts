@@ -474,7 +474,7 @@ export function measureTextAdvance(
 
 /**
  * Render a text string directly as an SVG `<path>` vector outline.
- * Aligns the path using its exact analytical Bezier bounding box (`x1..x2`) so horizontal centering or
+ * Aligns the path using its exact analytical Bezier bounding box (`x1`–`x2`) so horizontal centering or
  * left-alignment has `0.00px` sidebearing error on every operating system and browser.
  * @param text      Raw unescaped text string to convert to an SVG `<path>`.
  * @param options   Anchor position, baseline, font size, fill, weight/style, and alignment.
