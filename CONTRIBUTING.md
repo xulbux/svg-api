@@ -41,8 +41,6 @@ pnpm run dev     # Local preview at http://localhost:8787
 pnpm run check   # Format, lint, type-check, test & dry-run bundle
 ```
 
-**Optional `.dev.vars` (`GITHUB_TOKEN`):** Tests mock `fetch` and `pnpm run dev` runs locally without touching production rate limits. When testing `/badge/gh/*` locally (especially GraphQL `issues`/`prs`), add your own read-only fine-grained token to a gitignored `.dev.vars` file (`GITHUB_TOKEN=github_pat_…`).
-
 <br>
 
 ## <a href="#adding-a-service-preset"><img src="https://svg.xul.is/icon/plug?size=32&stroke=2" align="left" /></a>Adding a Service Preset
