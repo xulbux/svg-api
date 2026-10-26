@@ -9,7 +9,7 @@ import {
   AUTHOR_GITHUB_URL,
   AUTHOR_NAME,
   REPO_GITHUB_URL,
-  SITE_HOST,
+  SITE_NAME,
   SITE_ORIGIN,
 } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
@@ -185,7 +185,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         description,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
-        name: SITE_HOST,
+        name: SITE_NAME,
         url: SITE_ORIGIN,
       },
       {
@@ -194,7 +194,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         documentation: `${SITE_ORIGIN}/docs`,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
-        name: `${SITE_HOST} Edge SVG API`,
+        name: SITE_NAME,
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
         provider: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_GITHUB_URL },
         url: SITE_ORIGIN,
@@ -228,7 +228,7 @@ export function buildDocsJsonLd(
         headline: title,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
-        isPartOf: { '@type': 'WebSite', name: SITE_HOST, url: SITE_ORIGIN },
+        isPartOf: { '@type': 'WebSite', name: SITE_NAME, url: SITE_ORIGIN },
         url: `${SITE_ORIGIN}${canonicalPath}`,
       },
       buildBreadcrumbListJsonLd(breadcrumbs),
@@ -351,7 +351,7 @@ export function renderLlmsTxt(): string {
       }
     }
     llmsTxtCache = [
-      `# ${SITE_HOST}`,
+      `# ${SITE_NAME}`,
       '',
       '> Zero-cold-start edge SVG API for READMEs and documentation: dynamic status badges, live package/forge service metrics, and customizable vector elements. 100% free, no API keys, no signup.',
       '',
@@ -424,7 +424,7 @@ export function renderOgImageSvg(): string {
       isBold: false,
       isUncached: true,
     });
-    const brandDomain = renderTextPathMarkup(SITE_HOST, {
+    const brandTitle = renderTextPathMarkup(SITE_NAME, {
       align: 'left',
       anchorX: 152,
       baselineY: 136,
@@ -448,7 +448,7 @@ export function renderOgImageSvg(): string {
     );
 
     ogImageSvgCache = [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_HOST} – Edge SVG Engine for READMEs and Documentation">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_NAME} – Edge SVG Engine for READMEs and Documentation">`,
       '<defs>',
       '<linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">',
       `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
@@ -464,7 +464,7 @@ export function renderOgImageSvg(): string {
       `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-glow)" />`,
       `<rect x="40.5" y="40.5" width="${OG_IMAGE_WIDTH - 81}" height="${OG_IMAGE_HEIGHT - 81}" rx="28" fill="none" stroke="${ISOLUX_GRAY[600]}" />`,
       brandIcon.bodyMarkup,
-      brandDomain,
+      brandTitle,
       titleLine1,
       titleLine2,
       subtitle,

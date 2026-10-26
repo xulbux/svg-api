@@ -3,7 +3,7 @@
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
+import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ENCODED_CHAOS_QUOTE,
@@ -182,7 +182,7 @@ function HomePage(): HtmlFragment {
     );
   }
 
-  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge for ${SITE_HOST}.`;
+  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge.`;
 
   return (
     <PageLayout
@@ -190,7 +190,7 @@ function HomePage(): HtmlFragment {
       canonicalPath="/"
       description={homeDescription}
       jsonLd={buildHomeJsonLd(homeDescription)}
-      title={`${SITE_HOST} · Edge SVG Graphics & Live Telemetry Engine`}>
+      title={`${SITE_NAME} · Edge SVG Graphics & Live Telemetry Engine`}>
       <section class="hero">
         <h1 class="hero-title">
           One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs & Docs

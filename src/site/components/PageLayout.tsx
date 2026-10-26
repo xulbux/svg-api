@@ -3,7 +3,7 @@
  */
 
 import brandIconSvg from '@brand/icon.svg';
-import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
+import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
 import { getSiteAssetUrl } from '@/site/assets';
 import { Footer } from '@/site/components/Footer';
 import { HeaderNav } from '@/site/components/HeaderNav';
@@ -57,7 +57,7 @@ const THEME_COLORS: SiteClientConfig['themeColors'] = { dark: DARK_BG, light: LI
 const PREVIEW_BG_VALUES: SiteClientConfig['previewBgValues'] = ['auto', 'inverse'];
 
 /** Accessible description of the OpenGraph social preview card. */
-const OG_IMAGE_ALT = `${SITE_HOST} – Dynamic SVG graphics and live repository telemetry at the edge.`;
+const OG_IMAGE_ALT = `${SITE_NAME} – Dynamic SVG graphics and live repository telemetry at the edge.`;
 
 /** Memoized inline `<head>` script body (`undefined` until first accessed). */
 let headScriptBodyCache: string | undefined = undefined;
@@ -187,7 +187,7 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
           <meta property="og:type" content="website" />
           <meta property="og:locale" content="en_US" />
-          <meta property="og:site_name" content={SITE_HOST} />
+          <meta property="og:site_name" content={SITE_NAME} />
           <meta property="og:title" content={props.title} />
           <meta property="og:description" content={props.description} />
           {canonicalUrl ? <meta property="og:url" content={canonicalUrl} /> : undefined}

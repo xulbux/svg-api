@@ -2,7 +2,7 @@
  * Header navigation component – Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, top-level navigation tabs, preview background switch, theme switch, and GitHub link.
  */
 
-import { REPO_GITHUB_URL, SITE_HOST } from '@/config/site';
+import { REPO_GITHUB_URL, SITE_NAME } from '@/config/site';
 import { UiIcon } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
@@ -109,7 +109,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
       <div class="header-inner">
         <a href="/" class="brand-link" tabindex="0">
           <img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />
-          {SITE_HOST}
+          {SITE_NAME}
         </a>
         <div class="header-nav-row">
           {sidebar ? renderSidebarToggle(sidebar) : undefined}

@@ -12,7 +12,7 @@ body:
     id: url
     attributes:
       label: Affected URL
-      description: Paste the `svg.xul.is` SVG or page URL reproducing the issue.
+      description: Paste the SVG or page URL reproducing the issue.
       placeholder: https://svg.xul.is/badge/...
     validations:
       required: true

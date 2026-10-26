@@ -11,7 +11,13 @@ import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasteriz
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
-import { AUTHOR_GITHUB_URL, REPO_GITHUB_URL, SITE_ORIGIN } from '@/config/site';
+import {
+  AUTHOR_GITHUB_URL,
+  REPO_GITHUB_URL,
+  SITE_HOST,
+  SITE_NAME,
+  SITE_ORIGIN,
+} from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import app from '@/index';
 import { HTML_SECURITY_HEADERS } from '@/routes/http';
@@ -1057,8 +1063,14 @@ describe('documentation pages – head metadata & client script', () => {
         `<link rel="apple-touch-icon" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
       );
       expect(page.html, page.path).toContain(
-        '<img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />'
+        `<img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />${SITE_NAME}</a>`
       );
+      expect(page.html, page.path).toContain(
+        `<meta property="og:site_name" content="${SITE_NAME}" />`
+      );
+      const pageTitle = /<title>(?<title>[^<]+)<\/title>/.exec(page.html)?.groups?.title ?? '';
+      expect(pageTitle, page.path).toContain(SITE_NAME);
+      expect(pageTitle, page.path).not.toContain(SITE_HOST);
       expect(page.html, page.path).toContain(
         `<link rel="preload" href="${getSiteAssetUrl('Geist-Regular.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
@@ -2392,7 +2404,13 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(ciYml.slice(0, ciYml.indexOf('- name: Deploy to Cloudflare Workers'))).not.toContain(
       'CLOUDFLARE_API_TOKEN:'
     );
-    expect(renderLlmsTxt()).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
+    const llmsTxt = renderLlmsTxt();
+    expect(llmsTxt.startsWith(`# ${SITE_NAME}\n`)).toBe(true);
+    expect(llmsTxt).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
+    expect(contributingMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(securityMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(contributingMd).not.toContain(`(${SITE_HOST})`);
+    expect(contributingMd).not.toContain(`([**${SITE_HOST}**]`);
     assertBrandAssetsAndLicenseParity(repoRoot, readmeMd, licenseTxt);
 
     // [2] Heading icons, anchors, ToC, and `README.md` `## Endpoints` table order, routes, aliases, and widgets:

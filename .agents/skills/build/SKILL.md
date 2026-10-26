@@ -5,7 +5,7 @@ description: Runs the local Wrangler dev server for live previewing, verifies th
 
 # Build & Deploy
 
-Use this skill to preview `svg.xul.is` locally via Wrangler, verify the Cloudflare Worker bundle, or deploy to production.
+Use this skill to preview `SVG API` locally via Wrangler, verify the Cloudflare Worker bundle, or deploy to production.
 
 ## 1. Prerequisites
 

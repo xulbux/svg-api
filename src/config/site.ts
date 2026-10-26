@@ -6,6 +6,9 @@ import type { Env } from '@/types';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+/** Official display name of the service and documentation site. */
+export const SITE_NAME = 'SVG API';
+
 /** Public hostname of the deployed Worker. */
 export const SITE_HOST = 'svg.xul.is';
 

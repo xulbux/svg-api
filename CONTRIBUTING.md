@@ -1,6 +1,6 @@
 # Contributing to SVG API
 
-Thanks for contributing to **SVG API** ([**svg.xul.is**](https://svg.xul.is))!
+Thanks for contributing to [**SVG API**](https://svg.xul.is)!
 
 <br>
 
