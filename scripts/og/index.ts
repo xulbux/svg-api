@@ -1,5 +1,5 @@
 /**
- * OpenGraph image builder – Evaluates `renderOgImageSvg()` from `src/site/seo.ts` and writes `src/assets/og.png` when its digest changes.
+ * Brand & OpenGraph raster asset builder – Rasterizes `assets/icon.svg` into `dist/client/favicon.png` and `renderOgImageSvg()` into `src/assets/og.png` when their SVG digests change.
  */
 
 import { createHash } from 'node:crypto';
@@ -7,13 +7,19 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { build } from 'esbuild';
-import { rasterizeOgSvgToPng } from './rasterizer.ts';
+import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from './rasterizer.ts';
 import type { LiveOgModule } from './types.ts';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Absolute path of the repository root directory. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
+
+/** Canonical single-source-of-truth vector brand logo path (`assets/icon.svg`). */
+const BRAND_ICON_SVG_PATH = path.resolve(REPO_ROOT, 'assets', 'icon.svg');
+
+/** Output path of the generated raster favicon bundled from gitignored `dist/client/`. */
+const FAVICON_PNG_OUTPUT_PATH = path.resolve(REPO_ROOT, 'dist', 'client', 'favicon.png');
 
 /** Output path of the generated OpenGraph raster card bundled by Wrangler. */
 const OG_PNG_OUTPUT_PATH = path.resolve(REPO_ROOT, 'src', 'assets', 'og.png');
@@ -24,11 +30,22 @@ const OG_PNG_OUTPUT_PATH = path.resolve(REPO_ROOT, 'src', 'assets', 'og.png');
 const BINARY_ASSET_RX = /\.(?:ttf|png)$/;
 
 /** Matches text asset extensions loaded as raw string modules in Worker builds. */
-const TEXT_ASSET_RX = /\.(?:css|client\.js)$/;
+const TEXT_ASSET_RX = /\.(?:css|client\.js|svg)$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Bundle and evaluate `renderOgImageSvg()` from `src/site/seo.ts` via `esbuild` with externalized packages. */
+/** Check whether an existing PNG file at `outputPath` already carries `sourceDigest` in its `tEXt` chunk. */
+async function hasMatchingSvgDigest(outputPath: string, sourceDigest: string): Promise<boolean> {
+  const expectedMarker = Buffer.from(`Comment\0svg-sha256=${sourceDigest}`, 'ascii');
+  try {
+    const existingBuffer = await readFile(outputPath);
+    return existingBuffer.includes(expectedMarker);
+  } catch {
+    return false;
+  }
+}
+
+/** Bundle and evaluate `src/site/seo.ts` image exports via `esbuild` with externalized packages. */
 async function evaluateLiveOgSvg(): Promise<LiveOgModule> {
   const tempBundlePath = path.resolve(REPO_ROOT, '.wrangler', `og-eval-${process.pid}.cjs`);
   await mkdir(path.dirname(tempBundlePath), { recursive: true });
@@ -55,7 +72,7 @@ async function evaluateLiveOgSvg(): Promise<LiveOgModule> {
     ],
     stdin: {
       contents:
-        "export { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, renderOgImageSvg } from './src/site/seo.ts';",
+        "export { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, renderOgImageSvg } from './src/site/seo.ts';",
       loader: 'ts',
       resolveDir: REPO_ROOT,
     },
@@ -71,26 +88,41 @@ async function evaluateLiveOgSvg(): Promise<LiveOgModule> {
   }
 }
 
+/** Render `dist/client/favicon.png` RGBA icon directly from `assets/icon.svg` when its digest changes. */
+async function buildFaviconPng(faviconSize: number): Promise<void> {
+  const rawSvg = await readFile(BRAND_ICON_SVG_PATH, 'utf8');
+  const svgMarkup = rawSvg.replaceAll('\r\n', '\n').trim();
+  const sourceDigest = createHash('sha256').update(svgMarkup).digest('hex');
+  if (await hasMatchingSvgDigest(FAVICON_PNG_OUTPUT_PATH, sourceDigest)) {
+    return;
+  }
+  await mkdir(path.dirname(FAVICON_PNG_OUTPUT_PATH), { recursive: true });
+  const pngBuffer = rasterizeSvgToRgbaPng(svgMarkup, faviconSize, faviconSize, sourceDigest);
+  await writeFile(FAVICON_PNG_OUTPUT_PATH, pngBuffer);
+}
+
+/** Render `src/assets/og.png` RGB social card directly from `renderOgImageSvg()` when its digest changes. */
+async function buildOgCardPng(liveOg: LiveOgModule): Promise<void> {
+  const svgMarkup = liveOg.renderOgImageSvg();
+  const sourceDigest = createHash('sha256').update(svgMarkup).digest('hex');
+  if (await hasMatchingSvgDigest(OG_PNG_OUTPUT_PATH, sourceDigest)) {
+    return;
+  }
+  const pngBuffer = rasterizeOgSvgToPng(
+    svgMarkup,
+    liveOg.OG_IMAGE_WIDTH,
+    liveOg.OG_IMAGE_HEIGHT,
+    sourceDigest
+  );
+  await writeFile(OG_PNG_OUTPUT_PATH, pngBuffer);
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render `src/assets/og.png` directly from `renderOgImageSvg()`, skipping rasterization when its SHA-256 matches.
+ * Rebuild `dist/client/favicon.png` (from `assets/icon.svg`) and `src/assets/og.png` (from `renderOgImageSvg()`) when their source SVG digests change.
  */
-export async function buildOgImagePng(): Promise<void> {
-  const { OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH, renderOgImageSvg } = await evaluateLiveOgSvg();
-  const svgMarkup = renderOgImageSvg();
-  const sourceDigest = createHash('sha256').update(svgMarkup).digest('hex');
-  const expectedMarker = Buffer.from(`Comment\0svg-sha256=${sourceDigest}`, 'ascii');
-
-  try {
-    const existingBuffer = await readFile(OG_PNG_OUTPUT_PATH);
-    if (existingBuffer.includes(expectedMarker)) {
-      return;
-    }
-  } catch {
-    // `og.png` does not exist yet on a clean checkout.
-  }
-
-  const pngBuffer = rasterizeOgSvgToPng(svgMarkup, OG_IMAGE_WIDTH, OG_IMAGE_HEIGHT, sourceDigest);
-  await writeFile(OG_PNG_OUTPUT_PATH, pngBuffer);
+export async function buildBrandRasterAssets(): Promise<void> {
+  const liveOg = await evaluateLiveOgSvg();
+  await Promise.all([buildFaviconPng(liveOg.FAVICON_PNG_SIZE), buildOgCardPng(liveOg)]);
 }

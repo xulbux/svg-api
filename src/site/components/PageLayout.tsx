@@ -2,24 +2,17 @@
  * Page layout component – Shared responsive HTML document shell (`<PageLayout />`) with FOUC-free color-scheme support, view transitions, social/canonical metadata, header, optional sidebar, footer, and SVG favicon.
  */
 
-import { WHITE } from '@/config/palette';
+import brandIconSvg from '@brand/icon.svg';
 import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
 import { getSiteAssetUrl } from '@/site/assets';
 import { Footer } from '@/site/components/Footer';
 import { HeaderNav } from '@/site/components/HeaderNav';
 import { Sidebar } from '@/site/components/Sidebar';
 import { serializeInlineJson, UiSprite } from '@/site/components/UiIcon';
-import { raw, renderHtml } from '@/site/jsx';
+import { raw } from '@/site/jsx';
 import type { HtmlFragment, JsxChild } from '@/site/jsx';
-import { OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
-import {
-  BRAND_GRADIENT_END,
-  BRAND_GRADIENT_START,
-  DARK_BG,
-  DRAWER_BREAKPOINT_PX,
-  LIGHT_BG,
-} from '@/site/styles';
-import { resolveIcon } from '@/svg/icons';
+import { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
+import { DARK_BG, DRAWER_BREAKPOINT_PX, LIGHT_BG } from '@/site/styles';
 import type { NavPageId, PageSidebar, SiteClientConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -125,30 +118,11 @@ export function getHeadScriptBody(): string {
 }
 
 /**
- * Render (once per isolate) the standalone `32x32` SVG favicon matching the navbar brand mark (indigo gradient squircle with Lucide `sparkles`).
+ * Return (once per isolate) the canonical standalone SVG favicon sourced from `assets/icon.svg`.
  * @returns Standalone `<svg>` XML string.
  */
 export function renderFaviconSvg(): string {
-  faviconSvgCache ??= renderHtml(
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color={BRAND_GRADIENT_START} />
-          <stop offset="100%" stop-color={BRAND_GRADIENT_END} />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#bg)" />
-      <g
-        transform="translate(6 6) scale(0.8333)"
-        fill="none"
-        stroke={WHITE}
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round">
-        {raw(resolveIcon('sparkles')?.innerSvg ?? '')}
-      </g>
-    </svg>
-  );
+  faviconSvgCache ??= brandIconSvg.replaceAll('\r\n', '\n').trim();
   return faviconSvgCache;
 }
 
@@ -198,7 +172,18 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <meta name="description" content={props.description} />
           {props.isNoIndex ? <meta name="robots" content="noindex" /> : undefined}
           {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : undefined}
-          <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+          <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />
+          <link
+            rel="icon"
+            type="image/png"
+            sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}
+            href="/favicon.png"
+          />
+          <link
+            rel="apple-touch-icon"
+            sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}
+            href="/favicon.png"
+          />
           <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
           <meta property="og:type" content="website" />
           <meta property="og:locale" content="en_US" />

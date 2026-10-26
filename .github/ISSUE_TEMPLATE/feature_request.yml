@@ -1,0 +1,23 @@
+name: Feature Request
+description: Propose an enhancement to an SVG element, query parameter, icon alias, or the URL builder.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **Icons:** New icon packs aren't added (request missing icons upstream in [Lucide](https://github.com/lucide-icons/lucide), [Simple Icons](https://github.com/simple-icons/simple-icons), or [Devicon](https://github.com/devicons/devicon)); Shorthand aliases and stack entries for bundled icons are welcome!
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: What would you like to add or improve, and why?
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example URL or Behavior (optional)
+      description: Sample URL syntax, parameter values, or visual reference.

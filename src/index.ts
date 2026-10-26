@@ -2,6 +2,7 @@
  * Worker entrypoint – Hono router for documentation, builder, and error pages, crawler/social discovery documents, versioned static assets, registered SVG routes, smart document redirects, and Tier-2 SVG edge caching.
  */
 
+import faviconPngBuffer from '@bundles/favicon.png';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -125,6 +126,7 @@ const PLAIN_ERROR_HEADERS: Readonly<Record<string, string>> = {
 /** Non-HTML root routes (favicons, social cards, and crawler documents) that keep plain-text error responses. */
 const NON_HTML_ROOT_PATHS: readonly string[] = [
   '/favicon.ico',
+  '/favicon.png',
   '/favicon.svg',
   '/llms.txt',
   '/og.png',
@@ -150,6 +152,9 @@ const TRAILING_SLASH_PATHS: readonly string[] = [
 
 /** Memoized HTML, crawler, and brand SVG documents and their entity tags keyed by internal identifier. */
 const DOCUMENT_CACHE = new Map<string, MemoizedDocument>();
+
+/** Lazily computed entity tag of the bundled `/favicon.png` raster icon. */
+let faviconPngEtag: string | undefined = undefined;
 
 /** Lazily computed entity tag of the bundled `/og.png` social card. */
 let ogImagePngEtag: string | undefined = undefined;
@@ -370,14 +375,35 @@ function handleSvgRoute(context: AppContext): Response | Promise<Response> {
   );
 }
 
+/** Serve a bundled binary PNG asset (e.g., `/favicon.png` or `/og.png`) with `ETag` revalidation. */
+function buildBundledPngResponse(
+  context: AppContext,
+  pngBuffer: ArrayBuffer,
+  etag: string
+): Response {
+  return buildConditionalBodyResponse(pngBuffer, etag, context.req.header('If-None-Match'), {
+    ...NOSNIFF_HEADERS,
+    'Access-Control-Allow-Origin': '*',
+    'Cache-Control': buildSvgCacheControl(FAVICON_TTL_SECONDS),
+    'Content-Security-Policy': "default-src 'none'",
+    'Content-Type': 'image/png',
+  });
+}
+
 /** Handle `/favicon.svg` with the memoized brand SVG mark. */
 function handleFaviconRoute(context: AppContext): Response {
   return buildMemoizedSvgResponse(context, 'favicon.svg', renderFaviconSvg);
 }
 
-/** Permanently redirect `/favicon.ico` to `/favicon.svg`. */
+/** Handle `/favicon.png` with the rasterized RGBA brand icon. */
+function handleFaviconPngRoute(context: AppContext): Response {
+  faviconPngEtag ??= `W/"${hashBytes(faviconPngBuffer)}-${faviconPngBuffer.byteLength.toString(36)}"`;
+  return buildBundledPngResponse(context, faviconPngBuffer, faviconPngEtag);
+}
+
+/** Permanently redirect `/favicon.ico` to `/favicon.png`. */
 function handleFaviconIcoRoute(context: AppContext): Response {
-  return context.redirect('/favicon.svg', 301);
+  return context.redirect('/favicon.png', 301);
 }
 
 /** Handle `/og.svg` with the memoized vector OpenGraph social card. */
@@ -388,18 +414,7 @@ function handleOgImageRoute(context: AppContext): Response {
 /** Handle `/og.png` with the bundled raster OpenGraph social card. */
 function handleOgImagePngRoute(context: AppContext): Response {
   ogImagePngEtag ??= `W/"${hashBytes(ogImagePngBuffer)}-${ogImagePngBuffer.byteLength.toString(36)}"`;
-  return buildConditionalBodyResponse(
-    ogImagePngBuffer,
-    ogImagePngEtag,
-    context.req.header('If-None-Match'),
-    {
-      ...NOSNIFF_HEADERS,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': buildSvgCacheControl(FAVICON_TTL_SECONDS),
-      'Content-Security-Policy': "default-src 'none'",
-      'Content-Type': 'image/png',
-    }
-  );
+  return buildBundledPngResponse(context, ogImagePngBuffer, ogImagePngEtag);
 }
 
 /** Handle `/robots.txt` crawler directives. */
@@ -537,6 +552,7 @@ app.use('*', guardRequestUrlLength);
 // [2] Website pages, discovery metadata, and static assets:
 app.get('/', handleRootRoute);
 app.get('/favicon.svg', handleFaviconRoute);
+app.get('/favicon.png', handleFaviconPngRoute);
 app.get('/favicon.ico', handleFaviconIcoRoute);
 app.get('/og.png', handleOgImagePngRoute);
 app.get('/og.svg', handleOgImageRoute);

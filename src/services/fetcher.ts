@@ -208,7 +208,7 @@ const MIN_MEMORY_LIFETIME = 1000;
 const UPSTREAM_TIMEOUT = 8000;
 
 /** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
-const MAX_UPSTREAM_BYTES = 2_097_152;
+export const MAX_UPSTREAM_BYTES = 2_097_152;
 
 /**
  * Maximum wire bytes scanned by the streaming JSON key extractor: Unneeded keys are
@@ -271,7 +271,7 @@ const INVALID_DATA_STATUS = 502;
  * Global default metric aliases (alias -> canonical metric); An alias applies to every service that
  * defines the canonical metric, unless the service defines a metric or alias with the same slug.
  */
-const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
+export const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
   cov: 'coverage',
   dm: 'dl',
   l: 'license',

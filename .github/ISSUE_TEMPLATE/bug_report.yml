@@ -1,0 +1,33 @@
+name: Bug Report
+description: Report a rendering bug, broken service badge, or website/builder issue.
+title: '[Bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [Encoding Path Segments](https://svg.xul.is/docs#overview) first if `+` or `%` behaved unexpectedly.
+
+  - type: input
+    id: url
+    attributes:
+      label: Affected URL
+      description: Paste the `svg.xul.is` SVG or page URL reproducing the issue.
+      placeholder: https://svg.xul.is/badge/...
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Actual vs. Expected Behavior
+      description: What rendered and what did you expect instead? Attach a screenshot for visual issues.
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Context (optional)
+      description: Where are you viewing it (e.g., GitHub dark mode, Firefox, `/builder/typing`)?
+      placeholder: GitHub README (dark mode)

@@ -4,19 +4,25 @@
 
 /* oxlint-disable unicorn/no-null -- Upstream JSON payloads legitimately contain `null` values. */
 
+import { readdirSync } from 'node:fs';
+import nodePath from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
+import { isThemeColorName } from '@/config/theme';
 import app from '@/index';
 import { resolveSvgRoute } from '@/routes/svg';
 import {
   CACHE_TTL,
   createEndpoint,
   defineService,
+  isJsonObject,
   pickFields,
   projectFirstEntry,
 } from '@/services/endpoint';
 import {
+  DEFAULT_METRIC_ALIASES,
   listServiceMetricAliases,
   resetUpstreamCaches,
   resolveServiceMetric,
@@ -55,6 +61,7 @@ import type {
   ServiceDefinition,
   ServiceMetricConfig,
   ServiceRequest,
+  ServiceRouteParams,
 } from '@/types';
 import { createEdgeCacheStub, extractAriaLabel, installEdgeCacheStub, TEST_ENV } from './helpers';
 
@@ -96,6 +103,61 @@ const AUTHENTICATED_GH_ENV: Env = { GITHUB_TOKEN: 'github_pat_test_token' };
 
 /** Reference timestamp of the cache expiry tests in milliseconds. */
 const REFERENCE_NOW = Date.parse('2026-10-19T12:00:00Z');
+
+/** Non-canonical metric slugs that presets must never register directly (handled via `DEFAULT_METRIC_ALIASES` or canonical download keys). */
+const NON_CANONICAL_METRIC_KEYS: readonly string[] = [
+  ...Object.keys(DEFAULT_METRIC_ALIASES).filter((alias) => alias !== 'pulls'),
+  'download',
+  'downloads',
+  'ver',
+];
+
+/** Adversarial and malformed upstream JSON payloads exercised across every registered service metric. */
+const CHAOS_UPSTREAM_PAYLOADS: readonly unknown[] = [
+  {},
+  [],
+  null,
+  'bad',
+  0,
+  { results: [{}] },
+  { results: [{ metadata: null, state: { code: null }, success: 'yes', version: '  ' }] },
+  { versions: [{ suites: ['sid'], version: '1.0' }] },
+  {
+    row_1: {
+      bins_30d: [null, 'NaN'],
+      last_month: 'NaN',
+      monthly_12m: ['bad'],
+      prev_month: null,
+      total: '  ',
+    },
+  },
+  { data: { attributes: { downloads: 'NaN' } }, included: [{ attributes: null }] },
+  { data: [{}] },
+  { response: { docs: [{}], numFound: 1 } },
+  { 'channel-map': [{}], snap: {} },
+  { downloads: [{}] },
+  { crate: {}, versions: [{}] },
+  { info: { classifiers: ['License :: '], license: '\n\n', requires_python: '  ', version: '' } },
+  {
+    repository: {
+      forkCount: null,
+      issues: null,
+      licenseInfo: {},
+      pullRequests: null,
+      pushedAt: 'invalid',
+      releases: { nodes: [{}] },
+      stargazerCount: 'bad',
+    },
+  },
+];
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches a lowercase kebab-case service or metric slug (`[a-z\d]` segments joined by single hyphens). */
+const KEBAB_SLUG_RX = /^[a-z\d]+(?:-[a-z\d]+)*$/;
+
+/** Matches unguarded stringified JavaScript primitives or objects in badge text (`undefined`, `null`, `NaN`, `Infinity`, `[object …]`). */
+const SPURIOUS_BADGE_TEXT_RX = /\b(?:undefined|null|NaN|Infinity)\b|\[object\b/i;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -242,6 +304,122 @@ function buildMetricApiUrl(service: string, metric: string, owner: string, targe
   return getServiceMetric(service, metric).endpoint.buildApiUrl({ owner, target });
 }
 
+/** Check whether an exported module value is a `ServiceDefinition` object. */
+function isServiceDefinitionCandidate(value: unknown): value is ServiceDefinition {
+  return (
+    isJsonObject(value) &&
+    isJsonObject(value.docs) &&
+    isJsonObject(value.metrics) &&
+    isJsonObject(value.route)
+  );
+}
+
+/** Load every `ServiceDefinition` exported from `src/services/presets/*.ts`. */
+async function loadExportedPresetServices(): Promise<ServiceDefinition[]> {
+  const presetsDir = nodePath.resolve(import.meta.dirname, '../src/services/presets');
+  const presetFiles = readdirSync(presetsDir)
+    .filter((fileName) => fileName.endsWith('.ts'))
+    .toSorted();
+  const modules = await Promise.all(
+    presetFiles.map(
+      (fileName) =>
+        import(pathToFileURL(nodePath.resolve(presetsDir, fileName)).href) as Promise<
+          Record<string, unknown>
+        >
+    )
+  );
+  const exportedServices: ServiceDefinition[] = [];
+  for (const moduleExports of modules) {
+    for (const exportedValue of Object.values(moduleExports)) {
+      if (isServiceDefinitionCandidate(exportedValue)) {
+        exportedServices.push(exportedValue);
+      }
+    }
+  }
+  return exportedServices;
+}
+
+/** Build valid sample route parameters (`owner` and `target`) for a service preset definition. */
+function buildSampleRouteParams(service: ServiceDefinition): ServiceRouteParams {
+  let owner = '';
+  if (service.route.owner) {
+    owner =
+      service.route.owner.pattern && !service.route.owner.pattern.test('example')
+        ? '@example'
+        : (service.route.owner.defaultValue ?? 'example');
+  }
+  const sampleSegment =
+    service.route.target.pattern && !service.route.target.pattern.test('example')
+      ? '12345'
+      : 'example';
+  const target = Array.from(
+    { length: service.route.target.minSegments ?? 1 },
+    () => sampleSegment
+  ).join('/');
+  return { owner, target };
+}
+
+/** Assert that a resolved endpoint URL is a valid `https:` URL with no unexpanded `{…}` placeholders. */
+function assertHttpsEndpointUrl(url: string, label: string): void {
+  const parsed = new URL(url);
+  expect(parsed.protocol, label).toBe('https:');
+  expect(url, label).not.toMatch(/[{}]/);
+}
+
+/** Assert naming, documentation, canonical metric keys, and HTTPS endpoint conventions for one service preset. */
+function assertServiceDefinitionConventions(serviceKey: string, service: ServiceDefinition): void {
+  expect(serviceKey).toMatch(KEBAB_SLUG_RX);
+  expect(service.docs.title.trim().length, `${serviceKey} title`).toBeGreaterThan(0);
+  expect(service.docs.description.endsWith('.'), `${serviceKey} description`).toBe(true);
+
+  const metricKeys = Object.keys(service.metrics);
+  expect(metricKeys.length, `${serviceKey} metrics`).toBeGreaterThan(0);
+  expect(metricKeys, `${serviceKey} metric sort`).toEqual(metricKeys.toSorted());
+
+  const sampleParams = buildSampleRouteParams(service);
+  for (const [metricKey, metric] of Object.entries(service.metrics)) {
+    const context = `${serviceKey}/${metricKey}`;
+    expect(metricKey, context).toMatch(KEBAB_SLUG_RX);
+    expect(NON_CANONICAL_METRIC_KEYS, `${context} canonical key`).not.toContain(metricKey);
+    expect(isThemeColorName(metric.defaultColor), `${context} defaultColor`).toBe(true);
+    expect(metric.defaultLabel.trim().length, `${context} defaultLabel`).toBeGreaterThan(0);
+    expect(metric.endpoint.ttl, `${context} ttl`).toBeGreaterThan(0);
+    assertHttpsEndpointUrl(metric.endpoint.buildApiUrl(sampleParams), `${context} apiUrl`);
+    assertHttpsEndpointUrl(metric.endpoint.buildPageUrl(sampleParams), `${context} pageUrl`);
+  }
+}
+
+/** Assert that projecting and transforming a malformed upstream payload never throws or produces spurious badge text. */
+function assertChaosPayloadSafety(
+  context: string,
+  metric: ServiceMetricConfig,
+  sampleParams: ServiceRouteParams,
+  rawPayload: unknown
+): void {
+  const projected = metric.endpoint.project
+    ? metric.endpoint.project(rawPayload)
+    : (rawPayload ?? {});
+  if (projected === undefined) {
+    return;
+  }
+  const transformed = metric.transform(projected, sampleParams);
+  if (transformed === undefined) {
+    return;
+  }
+  const label = transformed.label ?? metric.defaultLabel;
+  const value = transformed.value ?? '';
+  expect(label.trim().length, `${context} label`).toBeGreaterThan(0);
+  expect(label, `${context} label`).not.toMatch(SPURIOUS_BADGE_TEXT_RX);
+  expect(value.trim().length, `${context} value`).toBeGreaterThan(0);
+  expect(value, `${context} value`).not.toMatch(SPURIOUS_BADGE_TEXT_RX);
+  if (transformed.color !== undefined) {
+    expect(isThemeColorName(transformed.color), `${context} color`).toBe(true);
+  }
+  if (transformed.icon !== undefined) {
+    expect(resolveIcon(transformed.icon), `${context} icon`).toBeDefined();
+  }
+}
+
 // ----------------------------------------- MAIN ----------------------------------------
 
 afterEach(() => {
@@ -249,6 +427,39 @@ afterEach(() => {
 });
 
 describe('service registry integrity', () => {
+  it('enforces preset module registration, alphabetical kebab-case keys, canonical metric naming, and valid HTTPS endpoints across SERVICES_CONFIG', async () => {
+    const exportedPresetServices = await loadExportedPresetServices();
+    const registeredServices = new Set(Object.values(SERVICES_CONFIG));
+    expect(exportedPresetServices.length).toBeGreaterThan(0);
+    for (const presetService of exportedPresetServices) {
+      expect(registeredServices, presetService.docs.title).toContain(presetService);
+    }
+
+    const serviceKeys = Object.keys(SERVICES_CONFIG);
+    expect(serviceKeys).toEqual(serviceKeys.toSorted());
+    for (const [serviceKey, service] of Object.entries(SERVICES_CONFIG)) {
+      assertServiceDefinitionConventions(serviceKey, service);
+    }
+  });
+
+  it('never throws or renders spurious undefined/null/NaN/Infinity/[object] values on empty or malformed upstream JSON across SERVICES_CONFIG', () => {
+    const entries = Object.entries(SERVICES_CONFIG);
+    expect(entries.length).toBeGreaterThan(0);
+    for (const [serviceKey, service] of entries) {
+      const sampleParams = buildSampleRouteParams(service);
+      for (const [metricKey, metric] of Object.entries(service.metrics)) {
+        for (let i = 0; i < CHAOS_UPSTREAM_PAYLOADS.length; i += 1) {
+          assertChaosPayloadSafety(
+            `${serviceKey}/${metricKey}#${i}`,
+            metric,
+            sampleParams,
+            CHAOS_UPSTREAM_PAYLOADS[i]
+          );
+        }
+      }
+    }
+  });
+
   it('resolves every metric default icon, redirect URL, and effective metric alias target across SERVICES_CONFIG', () => {
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
       const owner = service.route.owner ? 'example' : undefined;

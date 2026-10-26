@@ -2,7 +2,7 @@
  * Header navigation component – Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, top-level navigation tabs, preview background switch, theme switch, and GitHub link.
  */
 
-import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SITE_HOST } from '@/config/site';
+import { REPO_GITHUB_URL, SITE_HOST } from '@/config/site';
 import { UiIcon } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
@@ -108,9 +108,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
     <header class="site-header">
       <div class="header-inner">
         <a href="/" class="brand-link" tabindex="0">
-          <span class="brand-mark" aria-hidden="true">
-            <UiIcon slug="sparkles" size={15} />
-          </span>
+          <img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />
           {SITE_HOST}
         </a>
         <div class="header-nav-row">
@@ -146,12 +144,12 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
           </button>
           <span class="header-divider" aria-hidden="true"></span>
           <a
-            href={AUTHOR_GITHUB_URL}
+            href={REPO_GITHUB_URL}
             class="gh-link"
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`${AUTHOR_NAME} on GitHub`}
-            title={`${AUTHOR_NAME} on GitHub`}
+            aria-label="Source code on GitHub"
+            title="View source on GitHub"
             tabindex="0">
             <UiIcon slug="github" size={20} />
           </a>

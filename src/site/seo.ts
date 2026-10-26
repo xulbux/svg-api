@@ -2,9 +2,16 @@
  * SEO, crawler & AI discoverability – Generates `/robots.txt`, `/sitemap.xml`, `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
  */
 
+import brandIconSvg from '@brand/icon.svg';
 import { BRAND_INDIGO, ISOLUX_GRAY, OG_CARD_SURFACE, WHITE } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
-import { AUTHOR_GITHUB_URL, AUTHOR_NAME, SITE_HOST, SITE_ORIGIN } from '@/config/site';
+import {
+  AUTHOR_GITHUB_URL,
+  AUTHOR_NAME,
+  REPO_GITHUB_URL,
+  SITE_HOST,
+  SITE_ORIGIN,
+} from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ACTIVE_ICON_MOTION_TOKENS,
@@ -26,11 +33,14 @@ import {
   DOCS_PAGES,
 } from '@/site/navigation';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START } from '@/site/styles';
-import { ALL_ICON_SOURCE_NAMES, resolveIcon } from '@/svg/icons';
+import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
 import { renderTextPathMarkup } from '@/svg/measure';
 import { escapeXml } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
+
+/** Square pixel dimension of the raster `/favicon.png` (`48px` multiple for Google Search and Apple touch icons). */
+export const FAVICON_PNG_SIZE = 192;
 
 /** Intrinsic width in pixels of the shared OpenGraph social preview card (`/og.png` and `/og.svg`). */
 export const OG_IMAGE_WIDTH = 1200;
@@ -52,6 +62,22 @@ let llmsTxtCache: string | undefined = undefined;
 
 /** Memoized `/og.svg` image (`undefined` until first requested). */
 let ogImageSvgCache: string | undefined = undefined;
+
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches the `viewBox="0 0 <size> <size>"` attribute of `assets/icon.svg`. */
+const BRAND_ICON_VIEWBOX_RX = /viewBox="0 0 (?<size>[\d.]+) [\d.]+"/;
+
+/** Matches the `<defs>…</defs>` block of `assets/icon.svg`. */
+const BRAND_ICON_DEFS_RX = /<defs>(?<defs>[\s\S]*?)<\/defs>/;
+
+/** Matches top-level body primitives inside `assets/icon.svg`. */
+const BRAND_ICON_PRIMITIVE_RX =
+  /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|circle|path)\s+[^>]*\/>)/g;
+
+/** Matches numeric XML attributes scaled when positioning `assets/icon.svg` inside `/og.svg`. */
+const SCALED_NUMERIC_ATTR_RX =
+  /\b(?<name>x|y|width|height|rx|cx|cy|r|stroke-width)="(?<val>[\d.]+)"/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -88,6 +114,59 @@ function buildBreadcrumbListJsonLd(
     });
   }
   return { '@type': 'BreadcrumbList', itemListElement };
+}
+
+/** Scale a `<rect>` or `<circle>` tag from `assets/icon.svg` into `(targetX, targetY)` at `scale`. */
+function scaleBrandShapeTag(
+  selfTag: string,
+  targetX: number,
+  targetY: number,
+  scale: number
+): string {
+  return selfTag.replace(SCALED_NUMERIC_ATTR_RX, (_match, attrName: string, rawVal: string) => {
+    const numeric = Number.parseFloat(rawVal);
+    if (attrName === 'x' || attrName === 'cx') {
+      return `${attrName}="${targetX + numeric * scale}"`;
+    }
+    if (attrName === 'y' || attrName === 'cy') {
+      return `${attrName}="${targetY + numeric * scale}"`;
+    }
+    return `${attrName}="${numeric * scale}"`;
+  });
+}
+
+/** Extract gradient `<defs>` and scaled body primitives from `assets/icon.svg` at `(targetX, targetY, targetSize)`. */
+function embedBrandIconInOgCard(
+  targetX: number,
+  targetY: number,
+  targetSize: number
+): { bodyMarkup: string; defsMarkup: string } {
+  const normalizedSvg = brandIconSvg.replaceAll('\r\n', '\n');
+  const viewBoxSize = Number.parseFloat(
+    BRAND_ICON_VIEWBOX_RX.exec(normalizedSvg)?.groups?.size ?? '512'
+  );
+  const scale = targetSize / viewBoxSize;
+  const defsMarkup = (BRAND_ICON_DEFS_RX.exec(normalizedSvg)?.groups?.defs ?? '').trim();
+  const rawBody = normalizedSvg.replace(BRAND_ICON_DEFS_RX, '');
+  const transformAttr = `transform="translate(${targetX} ${targetY}) scale(${scale})"`;
+  const parts: string[] = [];
+
+  for (const match of rawBody.matchAll(BRAND_ICON_PRIMITIVE_RX)) {
+    if (match.groups?.groupAttrs !== undefined) {
+      parts.push(
+        `<g ${transformAttr} ${match.groups.groupAttrs}>${match.groups.groupBody ?? ''}</g>`
+      );
+    } else {
+      const selfTag = match.groups?.selfTag ?? '';
+      parts.push(
+        selfTag.startsWith('<path')
+          ? `<path ${transformAttr} ${selfTag.slice('<path '.length)}`
+          : scaleBrandShapeTag(selfTag, targetX, targetY, scale)
+      );
+    }
+  }
+
+  return { bodyMarkup: parts.join(''), defsMarkup };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -279,6 +358,7 @@ export function renderLlmsTxt(): string {
       '## Endpoints',
       '',
       `- Base origin: \`${SITE_ORIGIN}\``,
+      `- Source repository: ${REPO_GITHUB_URL}`,
       `- Families: ${formatBacktickTokens(getEndpointRoutes(), ', ')}${aliasRoutes.length > 0 ? ` (aliases: ${aliasRoutes.join(', ')})` : ''}`,
       '',
       '## Shared Query Parameters',
@@ -315,7 +395,7 @@ export function renderLlmsTxt(): string {
  */
 export function renderOgImageSvg(): string {
   if (ogImageSvgCache === undefined) {
-    const sparklesInner = resolveIcon('sparkles')?.innerSvg ?? '';
+    const brandIcon = embedBrandIconInOgCard(88, 98, 48);
     const ogCapabilities = BUILDER_PAGES.map((page) => page.ogLabel).join(' · ');
     const titleLine1 = renderTextPathMarkup('One Cohesive Edge SVG Engine', {
       align: 'left',
@@ -374,20 +454,16 @@ export function renderOgImageSvg(): string {
       `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
       `<stop offset="100%" stop-color="${OG_CARD_SURFACE.bgEnd}" />`,
       '</linearGradient>',
-      '<linearGradient id="og-brand" x1="0" y1="0" x2="1" y2="1">',
-      `<stop offset="0%" stop-color="${BRAND_GRADIENT_START}" />`,
-      `<stop offset="100%" stop-color="${BRAND_GRADIENT_END}" />`,
-      '</linearGradient>',
       '<radialGradient id="og-glow" cx="85%" cy="18%" r="65%">',
       `<stop offset="0%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0.28" />`,
       `<stop offset="100%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0" />`,
       '</radialGradient>',
+      brandIcon.defsMarkup,
       '</defs>',
       `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-bg)" />`,
       `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-glow)" />`,
       `<rect x="40.5" y="40.5" width="${OG_IMAGE_WIDTH - 81}" height="${OG_IMAGE_HEIGHT - 81}" rx="28" fill="none" stroke="${ISOLUX_GRAY[600]}" />`,
-      '<rect x="88" y="98" width="48" height="48" rx="12" fill="url(#og-brand)" />',
-      `<g transform="translate(99 109) scale(1.0833)" fill="none" stroke="${WHITE}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${sparklesInner}</g>`,
+      brandIcon.bodyMarkup,
       brandDomain,
       titleLine1,
       titleLine2,

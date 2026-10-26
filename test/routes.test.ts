@@ -32,7 +32,9 @@ import {
 } from '@/routes/params';
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
+import { renderFaviconSvg } from '@/site/components';
 import { BUILDER_PAGES } from '@/site/navigation';
+import { FAVICON_PNG_SIZE } from '@/site/seo';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
@@ -521,9 +523,13 @@ describe('Hono routes on svg.xul.is', () => {
     }
   });
 
-  it('serves /og.png (1200x630 RGB PNG) and /og.svg with ETag revalidation', async () => {
-    const [rawOgPngRes, rawOgSvgRes] = await requestAll(['/og.png', '/og.svg'], TEST_ENV);
+  it('serves /og.png (1200x630 RGB PNG), /favicon.png (192x192 RGBA PNG), and /og.svg with ETag revalidation', async () => {
+    const [rawOgPngRes, rawFaviconPngRes, rawOgSvgRes] = await requestAll(
+      ['/og.png', '/favicon.png', '/og.svg'],
+      TEST_ENV
+    );
     const ogPngRes = requireDefined(rawOgPngRes, '/og.png');
+    const faviconPngRes = requireDefined(rawFaviconPngRes, '/favicon.png');
     const ogSvgRes = requireDefined(rawOgSvgRes, '/og.svg');
 
     expect(ogPngRes.status).toBe(200);
@@ -536,12 +542,35 @@ describe('Hono routes on svg.xul.is', () => {
     const ogPngView = new DataView(ogPngBytes.buffer, ogPngBytes.byteOffset, ogPngBytes.byteLength);
     expect(ogPngView.getUint32(16)).toBe(1200);
     expect(ogPngView.getUint32(20)).toBe(630);
+    expect(ogPngBytes[25]).toBe(2); // 24-bit RGB color type.
     const ogPngNotModified = await app.request(
       '/og.png',
       { headers: { 'If-None-Match': ogPngEtag } },
       TEST_ENV
     );
     expect(ogPngNotModified.status).toBe(304);
+
+    expect(faviconPngRes.status).toBe(200);
+    expect(faviconPngRes.headers.get('Content-Type')).toBe('image/png');
+    expect(faviconPngRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    const faviconPngEtag = faviconPngRes.headers.get('ETag') ?? '';
+    expect(faviconPngEtag).toMatch(/^W\/"[\da-z]+-[\da-z]+"$/);
+    const faviconPngBytes = new Uint8Array(await faviconPngRes.arrayBuffer());
+    expect([...faviconPngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    const faviconPngView = new DataView(
+      faviconPngBytes.buffer,
+      faviconPngBytes.byteOffset,
+      faviconPngBytes.byteLength
+    );
+    expect(faviconPngView.getUint32(16)).toBe(FAVICON_PNG_SIZE);
+    expect(faviconPngView.getUint32(20)).toBe(FAVICON_PNG_SIZE);
+    expect(faviconPngBytes[25]).toBe(6); // 32-bit RGBA color type.
+    const faviconPngNotModified = await app.request(
+      '/favicon.png',
+      { headers: { 'If-None-Match': faviconPngEtag } },
+      TEST_ENV
+    );
+    expect(faviconPngNotModified.status).toBe(304);
 
     expect(ogSvgRes.status).toBe(200);
     expect(ogSvgRes.headers.get('Content-Type')).toContain('image/svg+xml');
@@ -626,7 +655,9 @@ describe('Hono routes on svg.xul.is', () => {
     const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
     expect(faviconRes.status).toBe(200);
     expect(faviconRes.headers.get('Content-Type')).toContain('image/svg+xml');
-    expect(await faviconRes.text()).toContain('width="32" height="32"');
+    const faviconSvg = await faviconRes.text();
+    expect(faviconSvg).toBe(renderFaviconSvg());
+    expect(faviconSvg).toContain('width="512" height="512"');
 
     const singleBadgeRes = await app.request(
       '/badge/xulbux?color=indigo&icon=sparkles',
@@ -979,7 +1010,7 @@ describe('response headers & revalidation', () => {
     );
     const faviconIcoRes = await app.request('/favicon.ico', {}, TEST_ENV);
     expect(faviconIcoRes.status).toBe(301);
-    expect(faviconIcoRes.headers.get('Location')).toBe('/favicon.svg');
+    expect(faviconIcoRes.headers.get('Location')).toBe('/favicon.png');
   });
 
   it('sends CORS, CSP, nosniff, and per-route Cache-Control headers on every SVG route kind', async () => {

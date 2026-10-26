@@ -1,8 +1,8 @@
 /**
- * Footer component – Shared site footer (`<Footer />`) with feedback mailto link, MIT license notice, and author credit.
+ * Footer component – Shared site footer (`<Footer />`) with GitHub contribution links, MIT license link, and author credit.
  */
 
-import { AUTHOR_GITHUB_URL, AUTHOR_NAME, CONTACT_EMAIL } from '@/config/site';
+import { AUTHOR_GITHUB_URL, AUTHOR_NAME, REPO_GITHUB_URL } from '@/config/site';
 import { UiIcon } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
@@ -21,14 +21,39 @@ function renderFooter(): string {
       <footer class="site-footer">
         <div class="footer-inner">
           <p class="footer-feedback">
-            Missing a service, icon, or SVG element? Reach out at{' '}
-            <a href={`mailto:${CONTACT_EMAIL}`} class="text-link" tabindex="0">
-              {CONTACT_EMAIL}
-            </a>
-            .
+            Found a bug, have a suggestion, or missing a service preset? Open an{' '}
+            <a
+              href={`${REPO_GITHUB_URL}/issues`}
+              class="text-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              tabindex="0">
+              issue
+            </a>{' '}
+            or submit a{' '}
+            <a
+              href={`${REPO_GITHUB_URL}/pulls`}
+              class="text-link"
+              target="_blank"
+              rel="noopener noreferrer"
+              tabindex="0">
+              pull request
+            </a>{' '}
+            on GitHub.
           </p>
           <div class="footer-meta">
-            <p class="footer-license">Released under the MIT License.</p>
+            <p class="footer-license">
+              Released under the{' '}
+              <a
+                href={`${REPO_GITHUB_URL}/blob/main/LICENSE`}
+                class="text-link"
+                target="_blank"
+                rel="noopener noreferrer"
+                tabindex="0">
+                MIT License
+              </a>
+              .
+            </p>
             <p class="footer-credit">
               <UiIcon slug="sparkles" size={14} extraClass="footer-sparkle" />
               From{' '}

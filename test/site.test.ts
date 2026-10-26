@@ -2,25 +2,50 @@
  * Documentation website tests – HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards, and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/site/`).
  */
 
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { inflateSync } from 'node:zlib';
 import siteScript from '@bundles/site.client.js';
-import { rasterizeOgSvgToPng } from '@scripts/og/rasterizer';
+import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasterizer';
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_ORIGIN } from '@/config/site';
+import { AUTHOR_GITHUB_URL, REPO_GITHUB_URL, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
+import app from '@/index';
 import { HTML_SECURITY_HEADERS } from '@/routes/http';
-import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
-import { resolveSvgRequest } from '@/routes/svg';
-import { listServiceMetricAliases } from '@/services/fetcher';
+import {
+  ICON_MOTION_TOKENS,
+  QUOTE_LAYOUT_TOKENS,
+  SIZE_TOKENS,
+  SPECIAL_ELEMENT_KINDS,
+  VARIANT_TOKENS,
+} from '@/routes/params';
+import { findSvgRoute, renderSvgPath, resolveSvgRequest, SVG_ROUTES } from '@/routes/svg';
+import { URL_PLACEHOLDER_RX } from '@/services/endpoint';
+import {
+  DEFAULT_METRIC_ALIASES,
+  listServiceMetricAliases,
+  MAX_UPSTREAM_BYTES,
+} from '@/services/fetcher';
+import { DOWNLOAD_PERIODS } from '@/services/metrics';
 import { getSiteAsset, getSiteAssetUrl } from '@/site/assets';
 import {
+  buildServicePresetCards,
   formatCountLowerBound,
   getEndpointRoutes,
   getIconSetCounts,
+  listRouteAliases,
+  SERVICE_ROUTE_PATTERN,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog';
-import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
+import {
+  formatInlineMarkupHtml,
+  getHeadScriptBody,
+  renderFaviconSvg,
+  renderParamTable,
+} from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
 import { jsx } from '@/site/jsx/jsx-runtime';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/site/navigation';
@@ -31,9 +56,14 @@ import {
   renderNotFoundHtml,
   renderServerErrorHtml,
 } from '@/site/pages';
-import { renderLlmsTxt } from '@/site/seo';
+import { FAVICON_PNG_SIZE, renderLlmsTxt, renderOgImageSvg } from '@/site/seo';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
-import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
+import {
+  ALL_ICON_SOURCE_NAMES,
+  FALLBACK_ICON_SLUG,
+  ICON_SLUG_ALIASES,
+  resolveIcon,
+} from '@/svg/icons';
 import {
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
@@ -48,13 +78,19 @@ import {
   TYPING_PAUSE_RANGE,
   TYPING_WIDTH_RANGE,
 } from '@/svg/typing';
-import type { PopoverPlacementOptions, SiteClientCore } from '@/types';
+import type {
+  DocsPageSlug,
+  DownloadMetricKey,
+  PopoverPlacementOptions,
+  SiteClientCore,
+} from '@/types';
 import {
   countOccurrences,
   evaluateClientCore,
   evaluateClientDom,
   readClientModuleSources,
   requireDefined,
+  TEST_ENV,
 } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -84,6 +120,92 @@ interface FakeSwitchElement {
   /** Set an attribute value. */
   setAttribute: (name: string, value: string) => void;
 }
+
+/** Subset of `package.json` verified against repository documentation and templates. */
+interface RepoPackageJson {
+  /** Issue tracker metadata. */
+  bugs: { url: string };
+  /** Production dependencies. */
+  dependencies: Record<string, string>;
+  /** Runtime engine constraints. */
+  engines: { node: string };
+  /** SPDX license identifier. */
+  license: string;
+  /** Source repository metadata. */
+  repository: { url: string };
+  /** Developer and CI scripts. */
+  scripts: Record<string, string>;
+}
+
+/** Parsed row of the `## Endpoints` table in `README.md`. */
+interface ReadmeEndpointRow {
+  /** Description cell text. */
+  description: string;
+  /** Linked documentation URL. */
+  docsUrl: string;
+  /** Bold endpoint label. */
+  label: string;
+  /** Route pattern cell code text. */
+  route: string;
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Canonical documentation page slugs mapped from each non-alias `SVG_ROUTES` prefix. */
+const ROUTE_PREFIX_DOCS_SLUGS: Readonly<Record<string, readonly DocsPageSlug[]>> = {
+  badge: ['badges', 'services'],
+  button: ['buttons'],
+  icon: ['icons'],
+  quote: ['quotes'],
+  stack: ['stack'],
+  typing: ['typing'],
+};
+
+/** Exported module identifiers referenced in prose inside `CONTRIBUTING.md` and `SECURITY.md`. */
+const PROSE_REFERENCED_EXPORTS: readonly {
+  readonly doc: 'contributing' | 'security';
+  readonly modulePath: string;
+  readonly symbols: readonly string[];
+}[] = [
+  { doc: 'contributing', modulePath: '@/config/services', symbols: ['SERVICES_CONFIG'] },
+  { doc: 'contributing', modulePath: '@/config/stack', symbols: ['STACK_CATEGORIES'] },
+  { doc: 'contributing', modulePath: '@/routes/http', symbols: ['HTML_SECURITY_HEADERS'] },
+  { doc: 'security', modulePath: '@/routes/http', symbols: ['sanitizeRedirectUrl'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/services/endpoint',
+    symbols: [
+      'NPM_PACKAGE_ROUTE',
+      'OWNER_REPO_ROUTE',
+      'PACKAGE_ROUTE',
+      'createEndpoint',
+      'pickFields',
+      'projectFirstEntry',
+    ],
+  },
+  { doc: 'contributing', modulePath: '@/services/fetcher', symbols: ['DEFAULT_METRIC_ALIASES'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/services/metrics',
+    symbols: ['formatCount', 'formatLicense', 'formatVersion', 'readFiniteNumber', 'readText'],
+  },
+  {
+    doc: 'contributing',
+    modulePath: '@/site/catalog/services',
+    symbols: ['buildServicePresetCards'],
+  },
+  {
+    doc: 'contributing',
+    modulePath: '@/site/components/PageLayout',
+    symbols: ['getHeadScriptBody'],
+  },
+  { doc: 'contributing', modulePath: '@/svg/icons', symbols: ['ICON_SLUG_ALIASES'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/svg/shared',
+    symbols: ['createLruCache', 'prepareDisplayText'],
+  },
+];
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -130,6 +252,83 @@ const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
 /** Matches concrete SVG endpoint paths inside inline `<code>…</code>` spans. */
 const INLINE_SVG_ROUTE_CODE_RX =
   /<code[^>]*>(?<path>\/(?:badge|btn|button|icon|quote|stack|type|typing)\/[^<\s]+)<\/code>/g;
+
+/** Matches level-2 Markdown headings carrying an anchored `svg.xul.is/icon/<slug>` image. */
+const MD_H2_ICON_HEADING_RX =
+  /^## <a href="#(?<anchor>[\w-]+)"><img src="https:\/\/svg\.xul\.is\/icon\/(?<icon>[\w-]+)\?[^"]*" align="left" \/><\/a>(?<title>.+)$/gm;
+
+/** Matches every level-2 Markdown heading line. */
+const MD_H2_LINE_RX = /^## .+$/gm;
+
+/** Matches in-document anchor links inside a Markdown Table of Contents bullet list. */
+const MD_TOC_ANCHOR_RX = /^- {3}\[[^\]]+\]\(#(?<anchor>[\w-]+)\)$/gm;
+
+/** Matches `pnpm run <script>` invocations inside Markdown and YAML files. */
+const MD_PNPM_SCRIPT_RX = /\bpnpm run (?<script>[\w:-]+)/g;
+
+/** Matches concrete repository file or directory paths inside backtick code spans. */
+const MD_REPO_PATH_SPAN_RX =
+  /`(?<relPath>(?:assets|src|test|scripts|\.github|\.agents)(?:\/[\w.-]+)+\/?)`/g;
+
+/** Matches SVG `<path>` `d="…"` attributes. */
+const PATH_DATA_ATTRIBUTE_RX = /\bd="(?<d>[^"]+)"/g;
+
+/** Matches named `import { … } from '@/…'` statements inside Markdown code examples. */
+const MD_TS_IMPORT_RX = /import\s*\{(?<specifiers>[^}]+)\}\s*from\s*'(?<modulePath>@\/[\w/-]+)';/g;
+
+/** Matches punctuation stripped when GitHub generates a heading anchor slug. */
+const HEADING_PUNCT_RX = /[^\w\s-]/g;
+
+/** Matches an `as` alias separator inside a named import specifier (`foo as bar`). */
+const IMPORT_ALIAS_SPLIT_RX = /\s+as\s+/;
+
+/** Matches every route pattern rendered inside a documentation header `<RoutePills />` strip. */
+const ROUTE_PILL_PATTERN_RX =
+  /<code class="route-pill"><span class="route-method">GET<\/span>(?<pattern>[^<]+)<\/code>/g;
+
+/** Matches a colon-prefixed route segment placeholder (`/:label`, `/[:owner/]`). */
+const PATH_PARAM_PLACEHOLDER_RX = /\/\[?:[a-z]/;
+
+/** Matches every parameter table `<th scope="row" role="rowheader">` cell. */
+const ROW_HEADER_CELL_RX = /<th scope="row" role="rowheader">(?<cell>[\s\S]*?)<\/th>/g;
+
+/** Matches every `?<param>=` query parameter token inside a parameter table header cell. */
+const QUERY_PARAM_TOKEN_RX = /\?(?<param>[a-z][\w-]*)=/g;
+
+/** Matches a data row inside the `## Endpoints` Markdown table of `README.md`. */
+const MD_ENDPOINT_ROW_RX =
+  /^\| \[\*\*(?<label>[^*]+)\*\*\]\((?<docsUrl>https:\/\/[^)]+)\) \| `(?<route>\/[^`]+)` \| (?<description>[^|]+) \|$/gm;
+
+/** Matches a backticked `/<alias>/*` wildcard route alias inside Markdown prose. */
+const MD_ROUTE_ALIAS_WILDCARD_RX = /`(?<wildcard>\/[\w-]+\/\*)`/g;
+
+/** Matches backticked identifier tokens inside a Markdown table cell. */
+const MD_INLINE_CODE_TOKEN_RX = /`(?<token>[\w-]+)`/g;
+
+/** Matches every `https://svg.xul.is` URL across Markdown and YAML files. */
+const MD_SITE_URL_RX = /(?<url>https:\/\/svg\.xul\.is[^\s"')<>]*)/g;
+
+/** Matches `blob/main/<path>[#<anchor>]` repository file URLs. */
+const MD_REPO_BLOB_URL_RX =
+  /https:\/\/github\.com\/xulbux\/svg-api\/blob\/main\/(?<relPath>[\w./-]+)(?:#(?<anchor>[\w-]+))?/g;
+
+/** Matches the `**Node.js:**` version constraint line in `CONTRIBUTING.md`. */
+const MD_NODE_PREREQ_RX = /^- {3}\*\*Node\.js:\*\* `(?<engine>[^`]+)`$/m;
+
+/** Matches inline download metric period items (`` `dd` (`/day`) ``) in `CONTRIBUTING.md`. */
+const MD_DOWNLOAD_KEY_ITEM_RX = /`(?<key>[\w-]+)` \((?<detail>[^)]+)\)/g;
+
+/** Matches backticked `{placeholder}` tokens in `CONTRIBUTING.md`. */
+const MD_PLACEHOLDER_TOKEN_RX = /`\{(?<name>[\w-]+)\}`/g;
+
+/** Matches bundled icon library bullets (`-   **Name** (\`pkg\`) – …`) in `CONTRIBUTING.md`. */
+const MD_ICON_SOURCE_BULLET_RX = /^- {3}\*\*(?<name>[^*]+)\*\* \(`(?<pkg>[^`]+)`\) – /gm;
+
+/** Matches the named placeholder alternation inside `URL_PLACEHOLDER_RX.source`. */
+const URL_PLACEHOLDER_GROUP_RX = /\(\?<placeholder>(?<names>[^)]+)\)/;
+
+/** Matches a GitHub Actions `if:` conditional referencing the disallowed `secrets` context. */
+const YAML_IF_SECRETS_RX = /^\s*if:.*\bsecrets\./m;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -245,6 +444,415 @@ function FakeHtmlElement(): undefined {
   return undefined;
 }
 FakeHtmlElement.prototype = Object.create(FakeElement.prototype);
+
+/** Read a UTF-8 text file relative to the repository root. */
+function readRepoFile(repoRoot: string, relPath: string): string {
+  return readFileSync(path.resolve(repoRoot, relPath), 'utf8');
+}
+
+/** Convert a Markdown heading title into GitHub's generated anchor slug. */
+function toGitHubHeadingSlug(title: string): string {
+  return title.toLowerCase().replace(HEADING_PUNCT_RX, '').trim().replaceAll(' ', '-');
+}
+
+/** Verify every icon-bearing `##` heading in `markdown` resolves its icon and matches GitHub's anchor slug. */
+function collectIconHeadingAnchors(docName: string, markdown: string): string[] {
+  const iconHeadings = [...markdown.matchAll(MD_H2_ICON_HEADING_RX)];
+  expect(iconHeadings.length, docName).toBeGreaterThan(0);
+  const headingAnchors: string[] = [];
+  for (const match of iconHeadings) {
+    const anchor = match.groups?.anchor ?? '';
+    const iconSlug = match.groups?.icon ?? '';
+    const title = (match.groups?.title ?? '').trim();
+    expect(anchor, `${docName}: ${title}`).toBe(toGitHubHeadingSlug(title));
+    expect(resolveIcon(iconSlug), `${docName} icon: ${iconSlug}`).toBeDefined();
+    headingAnchors.push(anchor);
+  }
+  return headingAnchors;
+}
+
+/** Verify every `##` heading in `CONTRIBUTING.md` carries a valid icon, matches GitHub's anchor slug, and aligns with the ToC. */
+function assertContributingHeadingsAndToc(contributingMd: string): ReadonlySet<string> {
+  const allH2Lines = contributingMd.match(MD_H2_LINE_RX) ?? [];
+  const headingAnchors = collectIconHeadingAnchors('CONTRIBUTING.md', contributingMd);
+  expect(headingAnchors).toHaveLength(allH2Lines.length);
+  const tocAnchors = collectGroups(contributingMd, MD_TOC_ANCHOR_RX, 'anchor');
+  expect(tocAnchors).toEqual(headingAnchors.slice(1));
+  return new Set(headingAnchors);
+}
+
+/** Derive the compact bracketed route pattern of an endpoint directly from its `/docs/:slug` `<RoutePills />`. */
+function deriveCompactEndpointRoute(slug: DocsPageSlug, aliasSet: ReadonlySet<string>): string {
+  const rawPills = collectGroups(renderDocsHtml(slug), ROUTE_PILL_PATTERN_RX, 'pattern');
+  const canonicalPatterns = rawPills.filter(
+    (pattern) =>
+      !pattern.includes('?') &&
+      !pattern.includes('//') &&
+      PATH_PARAM_PLACEHOLDER_RX.test(pattern) &&
+      !aliasSet.has(pattern.split('/')[1] ?? '')
+  );
+  if (canonicalPatterns.length === 1) {
+    return requireDefined(canonicalPatterns[0], `${slug} single route`);
+  }
+  expect(canonicalPatterns, slug).toHaveLength(2);
+  const [shortPattern = '', longPattern = ''] = canonicalPatterns.toSorted(
+    (left, right) => left.length - right.length
+  );
+  const [prefix = '', singleSegment = ''] = shortPattern.slice(1).split('/');
+  const [, firstSegment = '', secondSegment = ''] = longPattern.slice(1).split('/');
+  return singleSegment === firstSegment
+    ? `/${prefix}/${firstSegment}[/${secondSegment}]`
+    : `/${prefix}/[${firstSegment}/]${secondSegment}`;
+}
+
+/** Parse the `## Endpoints` Markdown table rows from `README.md`. */
+function parseReadmeEndpointRows(readmeMd: string): ReadmeEndpointRow[] {
+  const rows: ReadmeEndpointRow[] = [];
+  for (const match of readmeMd.matchAll(MD_ENDPOINT_ROW_RX)) {
+    const groups = requireDefined(match.groups, 'README endpoint row');
+    rows.push({
+      description: requireDefined(groups.description, 'description'),
+      docsUrl: requireDefined(groups.docsUrl, 'docsUrl'),
+      label: requireDefined(groups.label, 'label'),
+      route: requireDefined(groups.route, 'route'),
+    });
+  }
+  return rows;
+}
+
+/** Verify the `## Endpoints` table in `README.md` matches canonical order, routes, aliases, and widget tokens. */
+function assertReadmeEndpointsTable(readmeMd: string): void {
+  const endpointDocsPages = DOCS_PAGES.filter(
+    (page) => page.group === 'badges' || page.group === 'elements'
+  );
+  expect(BUILDER_PAGES.map((page) => page.docsSlug)).toEqual(
+    endpointDocsPages.map((page) => page.slug)
+  );
+
+  const rows = parseReadmeEndpointRows(readmeMd);
+  expect(rows).toHaveLength(endpointDocsPages.length);
+
+  const aliasSet = new Set(
+    SVG_ROUTES.filter((route) => route.aliasOf !== undefined).map((route) => route.prefix)
+  );
+  const seenPrefixes = new Set<string>();
+
+  for (let i = 0; i < endpointDocsPages.length; i += 1) {
+    const docsPage = requireDefined(endpointDocsPages[i], `docsPage ${i}`);
+    const builderPage = requireDefined(BUILDER_PAGES[i], `builderPage ${i}`);
+    const row = requireDefined(rows[i], `README row ${i}`);
+
+    expect(row.docsUrl, docsPage.slug).toBe(`${SITE_ORIGIN}${buildDocsPath(docsPage.slug)}`);
+    expect([docsPage.navLabel, builderPage.ogLabel], docsPage.slug).toContain(row.label);
+    expect(row.route, docsPage.slug).toBe(deriveCompactEndpointRoute(docsPage.slug, aliasSet));
+
+    const canonicalPrefix = requireDefined(row.route.split('/')[1], `${docsPage.slug} prefix`);
+    seenPrefixes.add(canonicalPrefix);
+
+    const expectedAliases =
+      docsPage.slug === 'services'
+        ? []
+        : listRouteAliases(canonicalPrefix).map((alias) => `/${alias}/*`);
+    const actualAliases = collectGroups(row.description, MD_ROUTE_ALIAS_WILDCARD_RX, 'wildcard');
+    expect(actualAliases, `${docsPage.slug} aliases`).toEqual(expectedAliases);
+  }
+
+  expect([...seenPrefixes].toSorted()).toEqual(
+    getEndpointRoutes()
+      .map((pattern) => pattern.split('/')[1] ?? '')
+      .toSorted()
+  );
+  expect(rows[1]?.route).toBe(SERVICE_ROUTE_PATTERN);
+
+  const badgeRow = requireDefined(rows[0], 'badges row');
+  expect(collectGroups(badgeRow.description, MD_INLINE_CODE_TOKEN_RX, 'token')).toEqual([
+    ...SPECIAL_ELEMENT_KINDS,
+  ]);
+  expect(VARIANT_TOKENS).toHaveLength(3);
+  expect(rows[2]?.description).toContain('three hierarchy variants');
+  expect(rows[6]?.description).toContain(`${QUOTE_LAYOUT_TOKENS.join(' and ')} layouts`);
+}
+
+/** Collect every sorted `?<param>=` query parameter documented across `slugs` parameter tables. */
+function collectDocumentedQueryParams(slugs: readonly DocsPageSlug[]): string[] {
+  const params = new Set<string>();
+  for (const slug of slugs) {
+    for (const rawCell of collectGroups(renderDocsHtml(slug), ROW_HEADER_CELL_RX, 'cell')) {
+      const plainCell = rawCell.replace(HTML_TAG_RX, '');
+      for (const param of collectGroups(plainCell, QUERY_PARAM_TOKEN_RX, 'param')) {
+        params.add(param);
+      }
+    }
+  }
+  return [...params].toSorted();
+}
+
+/** Verify `CONTRIBUTING.md` standard & download metric keys, global aliases, and `createEndpoint()` placeholders. */
+function assertContributingDownloadAndPlaceholderSpecs(contributingMd: string): void {
+  const standardKeysStart = contributingMd.indexOf('-   **Standard Metric Keys:**');
+  const downloadsStart = contributingMd.indexOf('-   **Download Metric Keys:**');
+  const placeholdersStart = contributingMd.indexOf('-   **URL Placeholders:**');
+  const iconsSectionStart = contributingMd.indexOf('<br>', placeholdersStart);
+  expect(standardKeysStart).toBeGreaterThan(-1);
+  expect(downloadsStart).toBeGreaterThan(standardKeysStart);
+  expect(placeholdersStart).toBeGreaterThan(downloadsStart);
+  expect(iconsSectionStart).toBeGreaterThan(placeholdersStart);
+
+  const standardKeysLine = contributingMd.slice(standardKeysStart, downloadsStart);
+  const downloadsLine = contributingMd.slice(downloadsStart, placeholdersStart);
+  const documentedItems = new Map<string, string>();
+  for (const match of downloadsLine.matchAll(MD_DOWNLOAD_KEY_ITEM_RX)) {
+    const groups = requireDefined(match.groups, 'download item');
+    documentedItems.set(
+      requireDefined(groups.key, 'download key'),
+      requireDefined(groups.detail, 'download detail')
+    );
+  }
+  expect([...documentedItems.keys()].toSorted()).toEqual(Object.keys(DOWNLOAD_PERIODS).toSorted());
+
+  for (const [key, detail] of documentedItems) {
+    const spec = DOWNLOAD_PERIODS[key as DownloadMetricKey];
+    if (spec.suffix.length > 0) {
+      expect(detail, key).toContain(`\`${spec.suffix}\``);
+    } else {
+      expect(detail, key).not.toMatch(/`\/\w+`/);
+    }
+  }
+  for (const [alias, canonical] of Object.entries(DEFAULT_METRIC_ALIASES)) {
+    if (Object.hasOwn(DOWNLOAD_PERIODS, canonical)) {
+      expect(documentedItems.get(canonical), `${alias} -> ${canonical}`).toContain(`\`${alias}\``);
+    } else {
+      expect(standardKeysLine, `${alias} -> ${canonical}`).toContain(`\`${canonical}\``);
+      expect(standardKeysLine, `${alias} -> ${canonical}`).toContain(`\`${alias}\``);
+    }
+  }
+
+  const placeholdersBlock = contributingMd.slice(placeholdersStart, iconsSectionStart);
+  const documentedPlaceholders = collectGroups(placeholdersBlock, MD_PLACEHOLDER_TOKEN_RX, 'name');
+  const expectedPlaceholders = (
+    URL_PLACEHOLDER_GROUP_RX.exec(URL_PLACEHOLDER_RX.source)?.groups?.names ?? ''
+  ).split('|');
+  expect([...new Set(documentedPlaceholders)].toSorted()).toEqual(expectedPlaceholders.toSorted());
+}
+
+/** Verify `CONTRIBUTING.md` clone URL, Node engine, core commands, payload cap, and icon libraries. */
+function assertContributingScriptsEngineAndIcons(
+  contributingMd: string,
+  serviceRequestYml: string,
+  agentsMd: string,
+  packageJson: RepoPackageJson
+): void {
+  expect(contributingMd).toContain(`git clone ${REPO_GITHUB_URL}.git`);
+  expect(contributingMd).toContain('pnpm run dev');
+  expect(contributingMd).toContain('pnpm run check');
+
+  const documentedNodeEngine = MD_NODE_PREREQ_RX.exec(contributingMd)?.groups?.engine ?? '';
+  expect(documentedNodeEngine.replaceAll(' ', '')).toBe(
+    packageJson.engines.node.replaceAll(' ', '')
+  );
+
+  const maxUpstreamMb = `${MAX_UPSTREAM_BYTES / (1024 * 1024)} MB`;
+  expect(contributingMd).toContain(`above \`${maxUpstreamMb}\``);
+  expect(serviceRequestYml).toContain(`\`<= ${maxUpstreamMb}\``);
+  expect(agentsMd).toContain(`Bodies above ${maxUpstreamMb}`);
+  expect(contributingMd).toContain(`\`${SERVICE_ROUTE_PATTERN}\``);
+
+  const iconSourceNames: string[] = [];
+  const iconPackages: string[] = [];
+  for (const match of contributingMd.matchAll(MD_ICON_SOURCE_BULLET_RX)) {
+    const groups = requireDefined(match.groups, 'icon source bullet');
+    iconSourceNames.push(requireDefined(groups.name, 'icon source name'));
+    iconPackages.push(requireDefined(groups.pkg, 'icon package'));
+  }
+  expect(iconSourceNames).toEqual([...ALL_ICON_SOURCE_NAMES]);
+  const expectedIconPackages = Object.keys(packageJson.dependencies)
+    .filter((dep) => dep === 'lucide-static' || dep.startsWith('@iconify-json/'))
+    .toSorted();
+  expect(iconPackages.toSorted()).toEqual(expectedIconPackages);
+}
+
+/** Verify every `pnpm run <script>` and concrete repository path across docs, workflows, and agent rules exists. */
+function assertReferencedScriptsAndPathsExist(
+  repoRoot: string,
+  docsWithNames: readonly (readonly [name: string, text: string])[],
+  packageScripts: Readonly<Record<string, string>>
+): void {
+  let checkedScripts = 0;
+  let checkedPaths = 0;
+  for (const [docName, docText] of docsWithNames) {
+    for (const scriptName of collectGroups(docText, MD_PNPM_SCRIPT_RX, 'script')) {
+      checkedScripts += 1;
+      expect(Object.hasOwn(packageScripts, scriptName), `${docName} script: ${scriptName}`).toBe(
+        true
+      );
+    }
+    for (const relPath of collectGroups(docText, MD_REPO_PATH_SPAN_RX, 'relPath')) {
+      checkedPaths += 1;
+      expect(existsSync(path.resolve(repoRoot, relPath)), `${docName} path: ${relPath}`).toBe(true);
+    }
+  }
+  expect(checkedScripts).toBeGreaterThan(0);
+  expect(checkedPaths).toBeGreaterThan(0);
+}
+
+/** Request a `https://svg.xul.is` non-SVG page URL, following a single `301` canonical redirect when present. */
+async function resolveSitePageResponse(
+  rawUrl: string
+): Promise<{ fragment: string; html: string; rawUrl: string; status: number }> {
+  const parsedUrl = new URL(rawUrl);
+  let response = await app.request(`${parsedUrl.pathname}${parsedUrl.search}`, {}, TEST_ENV);
+  if (response.status === 301) {
+    const redirectLocation = requireDefined(
+      response.headers.get('Location') ?? undefined,
+      `${rawUrl} 301 Location`
+    );
+    response = await app.request(redirectLocation, {}, TEST_ENV);
+  }
+  return {
+    fragment: parsedUrl.hash.slice(1),
+    html: await response.text(),
+    rawUrl,
+    status: response.status,
+  };
+}
+
+/** Verify every `https://svg.xul.is` SVG/page URL and `${REPO_GITHUB_URL}/blob/main/…` link resolves cleanly. */
+async function assertSiteAndRepoUrlsResolve(
+  repoRoot: string,
+  docsWithNames: readonly (readonly [name: string, text: string])[],
+  anchorsByFile: ReadonlyMap<string, ReadonlySet<string>>
+): Promise<void> {
+  const uniquePageUrls = new Set<string>();
+  for (const [docName, docText] of docsWithNames) {
+    for (const rawUrl of collectGroups(docText, MD_SITE_URL_RX, 'url')) {
+      if (!rawUrl.includes('...')) {
+        const parsedUrl = new URL(rawUrl);
+        if (resolveSvgRequest(parsedUrl)) {
+          const svgMarkup = renderSvgPath(`${parsedUrl.pathname}${parsedUrl.search}`, 'MIT');
+          expect(svgMarkup, `${docName}: ${rawUrl}`).toContain('<svg ');
+          if (parsedUrl.pathname.startsWith('/icon/')) {
+            const iconSlug = decodeURIComponent(parsedUrl.pathname.slice('/icon/'.length));
+            expect(resolveIcon(iconSlug), `${docName} icon: ${iconSlug}`).toBeDefined();
+          }
+        } else {
+          uniquePageUrls.add(rawUrl);
+        }
+      }
+    }
+    for (const match of docText.matchAll(MD_REPO_BLOB_URL_RX)) {
+      const relPath = match.groups?.relPath ?? '';
+      const anchor = match.groups?.anchor;
+      expect(existsSync(path.resolve(repoRoot, relPath)), `${docName} blob: ${relPath}`).toBe(true);
+      if (anchor) {
+        expect(anchorsByFile.get(relPath)?.has(anchor), `${docName} #${anchor}`).toBe(true);
+      }
+    }
+  }
+
+  expect(uniquePageUrls.size).toBeGreaterThan(0);
+  const pageResponses = await Promise.all([...uniquePageUrls].map(resolveSitePageResponse));
+  for (const { fragment, html, rawUrl, status } of pageResponses) {
+    expect(status, rawUrl).toBe(200);
+    if (fragment.length > 0) {
+      expect(html, `${rawUrl} #${fragment}`).toContain(`id="${fragment}"`);
+    }
+  }
+}
+
+/** Verify every `import { … } from '@/…'` inside a Markdown code block imports real module exports. */
+async function assertMarkdownModuleImports(markdown: string): Promise<void> {
+  const importMatches = [...markdown.matchAll(MD_TS_IMPORT_RX)];
+  expect(importMatches.length).toBeGreaterThan(0);
+  const loadedModules = await Promise.all(
+    importMatches.map(async (match) => {
+      const modulePath = match.groups?.modulePath ?? '';
+      const importedModule = (await import(modulePath)) as Record<string, unknown>;
+      return { importedModule, modulePath, rawSpecifiers: match.groups?.specifiers ?? '' };
+    })
+  );
+  for (const { importedModule, modulePath, rawSpecifiers } of loadedModules) {
+    for (const rawSpecifier of rawSpecifiers.split(',')) {
+      const bindingName = rawSpecifier.trim().split(IMPORT_ALIAS_SPLIT_RX)[0]?.trim() ?? '';
+      if (bindingName.length > 0) {
+        expect(importedModule[bindingName], `${modulePath} export: ${bindingName}`).toBeDefined();
+      }
+    }
+  }
+}
+
+/** Verify prose-referenced exported identifiers in `CONTRIBUTING.md` and `SECURITY.md` exist on their modules. */
+async function assertProseModuleExports(contributingMd: string, securityMd: string): Promise<void> {
+  const loadedEntries = await Promise.all(
+    PROSE_REFERENCED_EXPORTS.map(async (entry) => ({
+      entry,
+      importedModule: (await import(entry.modulePath)) as Record<string, unknown>,
+    }))
+  );
+  for (const { entry, importedModule } of loadedEntries) {
+    const markdown = entry.doc === 'contributing' ? contributingMd : securityMd;
+    for (const symbolName of entry.symbols) {
+      expect(markdown, `${entry.doc} mentions ${symbolName}`).toContain(`\`${symbolName}`);
+      expect(importedModule[symbolName], `${entry.modulePath} export: ${symbolName}`).toBeDefined();
+    }
+  }
+}
+
+/** Decompress the `IDAT` scanline payload from an encoded PNG buffer. */
+function inflateIdatScanlines(pngBuffer: Buffer): Buffer {
+  let offset = 8; // Skip 8-byte PNG signature.
+  while (offset + 8 <= pngBuffer.length) {
+    const chunkLength = pngBuffer.readUInt32BE(offset);
+    const chunkType = pngBuffer.subarray(offset + 4, offset + 8).toString('ascii');
+    if (chunkType === 'IDAT') {
+      return inflateSync(pngBuffer.subarray(offset + 8, offset + 8 + chunkLength));
+    }
+    offset += 12 + chunkLength;
+  }
+  throw new Error('Missing IDAT chunk in PNG buffer');
+}
+
+/** Verify `assets/icon.svg` is the single SSOT brand asset across `LICENSE`, `README.md`, `/favicon.*`, and `/og.*`. */
+function assertBrandAssetsAndLicenseParity(
+  repoRoot: string,
+  readmeMd: string,
+  licenseTxt: string
+): void {
+  expect(readdirSync(path.resolve(repoRoot, 'assets'))).toEqual(['icon.svg']);
+
+  const canonicalBrandSvg = readRepoFile(repoRoot, 'assets/icon.svg').trim();
+  expect(renderFaviconSvg()).toBe(canonicalBrandSvg);
+
+  const ogSvg = renderOgImageSvg();
+  const brandGradientIds = collectGroups(canonicalBrandSvg, ID_ATTRIBUTE_RX, 'id');
+  expect(brandGradientIds.length).toBeGreaterThan(0);
+  for (const gradientId of brandGradientIds) {
+    expect(ogSvg, gradientId).toContain(`id="${gradientId}"`);
+  }
+  const brandPathDataList = collectGroups(canonicalBrandSvg, PATH_DATA_ATTRIBUTE_RX, 'd');
+  expect(brandPathDataList.length).toBeGreaterThan(0);
+  for (const pathData of brandPathDataList) {
+    expect(ogSvg, pathData).toContain(`d="${pathData}"`);
+  }
+
+  const rawBrandUrl = `https://raw.githubusercontent.com/${REPO_GITHUB_URL.slice('https://github.com/'.length)}/main/assets/icon.svg`;
+  expect(readmeMd).toContain(`<img height="96" src="${rawBrandUrl}" />`);
+  expect(readmeMd).toContain('/badge/License/MIT*?variant=3&color=neutral&icon=scale');
+
+  expect(licenseTxt).toContain('MIT License');
+  expect(licenseTxt).toContain('Artwork & Branding Notice:');
+  expect(licenseTxt).toContain('`assets/`');
+
+  const faviconPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'favicon.png'));
+  const faviconExpectedDigest = createHash('sha256').update(canonicalBrandSvg).digest('hex');
+  expect(faviconPngBuffer.toString('latin1')).toContain(
+    `Comment\0svg-sha256=${faviconExpectedDigest}`
+  );
+  expect(inflateIdatScanlines(faviconPngBuffer)[4]).toBe(0); // Transparent `(0, 0)` squircle corner.
+
+  const ogPngBuffer = readFileSync(path.resolve(repoRoot, 'src', 'assets', 'og.png'));
+  const ogExpectedDigest = createHash('sha256').update(ogSvg).digest('hex');
+  expect(ogPngBuffer.toString('latin1')).toContain(`Comment\0svg-sha256=${ogExpectedDigest}`);
+}
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -438,6 +1046,18 @@ describe('documentation pages – head metadata & client script', () => {
       );
       expect(page.html, page.path).toContain(
         '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
+      );
+      expect(page.html, page.path).toContain(
+        '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />'
+      );
+      expect(page.html, page.path).toContain(
+        `<link rel="icon" type="image/png" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
+      );
+      expect(page.html, page.path).toContain(
+        `<link rel="apple-touch-icon" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
+      );
+      expect(page.html, page.path).toContain(
+        '<img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />'
       );
       expect(page.html, page.path).toContain(
         `<link rel="preload" href="${getSiteAssetUrl('Geist-Regular.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
@@ -688,7 +1308,8 @@ describe('documentation pages – navigation & static assets', () => {
       expect(page.html, page.path).not.toContain('<style>');
     }
     expect(css?.body).not.toContain('${');
-    expect(css?.body).toContain('--brand-gradient-start: #818CF8;');
+    expect(css?.body).toContain('.brand-mark {');
+    expect(css?.body).not.toContain('--brand-gradient-start');
     expect(getSiteAsset('__proto__')).toBeUndefined();
   });
 
@@ -1025,7 +1646,15 @@ describe('website client scripts & markup regressions', () => {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).not.toContain('<span>');
       expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(html).toContain('Missing a service, icon, or SVG element?');
+      expect(html).toContain(
+        'Found a bug, have a suggestion, or missing a service preset? Open an'
+      );
+      expect(html).toContain(`href="${REPO_GITHUB_URL}"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/issues"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/pulls"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/blob/main/LICENSE"`);
+      expect(html).toContain(`href="${AUTHOR_GITHUB_URL}"`);
+      expect(html).not.toContain('mailto:');
     }
 
     expect(docsBySlug.get('badges')).toContain(
@@ -1093,18 +1722,22 @@ describe('site stylesheet', () => {
       (name) => !defined.has(name)
     );
     expect(undefinedTokens).toEqual([]);
-    expect(css).toMatch(/\.brand-mark \{[^}]*color: var\(--c-on-brand\);/);
+    expect(css).toMatch(/\.brand-mark \{[^}]*inline-size: 26px;[^}]*block-size: 26px;/);
     expect(css).not.toContain('--c-btn-brand-text');
   });
 
-  it('drops the removed tokens and uses the renamed brand gradient stops', () => {
+  it('drops the removed tokens and unused legacy brand gradient stops', () => {
     const css = getSiteStylesheet();
-    for (const removed of ['--c-bg-alt', '--c-brand-3', '--base-brand', '--c-border-subtle']) {
+    for (const removed of [
+      '--c-bg-alt',
+      '--c-brand-3',
+      '--base-brand',
+      '--c-border-subtle',
+      '--brand-gradient-start',
+      '--brand-gradient-end',
+    ]) {
       expect(css, removed).not.toContain(removed);
     }
-    expect(css).toContain('--brand-gradient-end: #4F46E5;');
-    expect(css).toContain('var(--brand-gradient-start) 0%');
-    expect(css).toContain('var(--brand-gradient-end) 100%');
   });
 
   it('hides [hidden] elements with exactly one global rule', () => {
@@ -1271,6 +1904,23 @@ describe('site stylesheet', () => {
       '00'
     );
     expect(circleGroupPng.equals(emptyGroupPng)).toBe(false);
+
+    // `rasterizeSvgToRgbaPng` preserves alpha transparency outside painted shapes while painting opaque fills:
+    const centeredCircleRgba = rasterizeSvgToRgbaPng(
+      '<svg width="16" height="16" viewBox="0 0 32 32"><circle cx="16" cy="16" r="8" fill="#00E5FF" /></svg>',
+      16,
+      16,
+      '00'
+    );
+    const cornerCircleRgba = rasterizeSvgToRgbaPng(
+      '<svg width="16" height="16" viewBox="0 0 32 32"><circle cx="0" cy="0" r="8" fill="#00E5FF" /></svg>',
+      16,
+      16,
+      '00'
+    );
+    expect(centeredCircleRgba[25]).toBe(6); // RGBA color type.
+    expect(inflateIdatScanlines(centeredCircleRgba)[4]).toBe(0);
+    expect(inflateIdatScanlines(cornerCircleRgba)[4]).toBe(255);
 
     // Multi-stop `<linearGradient>` interpolates intermediate stops instead of skipping straight from first to last:
     const gradients = parseGradientDefs(
@@ -1667,5 +2317,133 @@ describe('site stylesheet', () => {
     }
     expect(isCopyPrevented).toBe(false);
     expect(copiedText).toBeUndefined();
+  });
+});
+
+/******************************* Repository drift guards ********************************/
+
+describe('repository & OSS Markdown drift guards', () => {
+  it('keeps SVG_ROUTES query parameters and SERVICES_CONFIG showcase cards in bidirectional parity with documentation pages (drift guard)', () => {
+    const canonicalPrefixes: string[] = [];
+    for (const route of SVG_ROUTES) {
+      if (route.aliasOf !== undefined) {
+        expect(route.queryParams, route.prefix).toEqual(findSvgRoute(route.aliasOf)?.queryParams);
+      } else {
+        canonicalPrefixes.push(route.prefix);
+        const docsSlugs = requireDefined(ROUTE_PREFIX_DOCS_SLUGS[route.prefix], route.prefix);
+        expect([...route.queryParams], route.prefix).toEqual(
+          collectDocumentedQueryParams(docsSlugs)
+        );
+      }
+    }
+    expect(canonicalPrefixes).toEqual(Object.keys(ROUTE_PREFIX_DOCS_SLUGS).toSorted());
+
+    const showcasedServices = new Set<string>();
+    for (const card of buildServicePresetCards()) {
+      for (const item of card.items) {
+        const [, serviceKey] = item.path.slice(1).split('/');
+        if (serviceKey) {
+          showcasedServices.add(serviceKey);
+        }
+      }
+    }
+    expect([...showcasedServices].toSorted()).toEqual(Object.keys(SERVICES_CONFIG).toSorted());
+  });
+
+  it('keeps README.md, CONTRIBUTING.md, SECURITY.md, .github/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const packageJson = JSON.parse(readRepoFile(repoRoot, 'package.json')) as RepoPackageJson;
+    const gitattributesTxt = readRepoFile(repoRoot, '.gitattributes');
+    const editorconfigTxt = readRepoFile(repoRoot, '.editorconfig');
+    const gitignoreTxt = readRepoFile(repoRoot, '.gitignore');
+    const licenseTxt = readRepoFile(repoRoot, 'LICENSE');
+    const readmeMd = readRepoFile(repoRoot, 'README.md');
+    const contributingMd = readRepoFile(repoRoot, 'CONTRIBUTING.md');
+    const securityMd = readRepoFile(repoRoot, 'SECURITY.md');
+    const prTemplateMd = readRepoFile(repoRoot, '.github/PULL_REQUEST_TEMPLATE.md');
+    const ciYml = readRepoFile(repoRoot, '.github/workflows/ci.yaml');
+    const fundingYml = readRepoFile(repoRoot, '.github/FUNDING.yml');
+    const codeownersTxt = readRepoFile(repoRoot, '.github/CODEOWNERS');
+    const issueConfigYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/config.yml');
+    const bugReportYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/bug_report.yml');
+    const featureRequestYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/feature_request.yml');
+    const serviceRequestYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/service_request.yml');
+    const agentsMd = readRepoFile(repoRoot, '.agents/AGENTS.md');
+    const buildSkillMd = readRepoFile(repoRoot, '.agents/skills/build/SKILL.md');
+    const testSkillMd = readRepoFile(repoRoot, '.agents/skills/test/SKILL.md');
+
+    // [1] Repository, editor/git LF hygiene, funding, CODEOWNERS, CI secret & dependency-review scope, and `/llms.txt` metadata parity:
+    const authorHandle = AUTHOR_GITHUB_URL.slice('https://github.com/'.length);
+    expect(packageJson.repository.url).toBe(REPO_GITHUB_URL);
+    expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
+    expect(packageJson.license).toBe('MIT');
+    expect(existsSync(path.resolve(repoRoot, 'LICENSE'))).toBe(true);
+    expect(gitattributesTxt).toContain('* text=auto eol=lf');
+    expect(editorconfigTxt).toContain('end_of_line = lf');
+    expect(gitignoreTxt).toContain('/.dev.vars*');
+    expect(fundingYml.trim()).toBe(`github: [${authorHandle}]`);
+    expect(codeownersTxt.trim()).toBe(`* @${authorHandle}`);
+    expect(readmeMd).toContain(`https://github.com/sponsors/${authorHandle}`);
+    expect(issueConfigYml).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(securityMd).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(ciYml).toContain('actions/dependency-review-action@');
+    expect(ciYml).toContain('!github.event.repository.private');
+    expect(ciYml).not.toMatch(YAML_IF_SECRETS_RX);
+    expect(ciYml.slice(0, ciYml.indexOf('- name: Deploy to Cloudflare Workers'))).not.toContain(
+      'CLOUDFLARE_API_TOKEN:'
+    );
+    expect(renderLlmsTxt()).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
+    assertBrandAssetsAndLicenseParity(repoRoot, readmeMd, licenseTxt);
+
+    // [2] Heading icons, anchors, ToC, and `README.md` `## Endpoints` table order, routes, aliases, and widgets:
+    const readmeAnchors = new Set(collectIconHeadingAnchors('README.md', readmeMd));
+    const contributingAnchors = assertContributingHeadingsAndToc(contributingMd);
+    const securityAnchors = collectIconHeadingAnchors('SECURITY.md', securityMd);
+    expect(securityAnchors).toHaveLength((securityMd.match(MD_H2_LINE_RX) ?? []).length);
+    assertReadmeEndpointsTable(readmeMd);
+
+    // [3] `CONTRIBUTING.md` download period keys, URL placeholders, Node engine, scripts, limits, and icon sets:
+    assertContributingDownloadAndPlaceholderSpecs(contributingMd);
+    assertContributingScriptsEngineAndIcons(
+      contributingMd,
+      serviceRequestYml,
+      agentsMd,
+      packageJson
+    );
+
+    // [4] Scripts, concrete file/directory paths, live `svg.xul.is` URLs, and GitHub blob links across all OSS files:
+    assertReferencedScriptsAndPathsExist(
+      repoRoot,
+      [
+        ['CONTRIBUTING.md', contributingMd],
+        ['.github/PULL_REQUEST_TEMPLATE.md', prTemplateMd],
+        ['.github/workflows/ci.yaml', ciYml],
+        ['.agents/AGENTS.md', agentsMd],
+        ['.agents/skills/build/SKILL.md', buildSkillMd],
+        ['.agents/skills/test/SKILL.md', testSkillMd],
+      ],
+      packageJson.scripts
+    );
+    await assertSiteAndRepoUrlsResolve(
+      repoRoot,
+      [
+        ['README.md', readmeMd],
+        ['CONTRIBUTING.md', contributingMd],
+        ['SECURITY.md', securityMd],
+        ['.github/ISSUE_TEMPLATE/config.yml', issueConfigYml],
+        ['.github/ISSUE_TEMPLATE/bug_report.yml', bugReportYml],
+        ['.github/ISSUE_TEMPLATE/feature_request.yml', featureRequestYml],
+        ['.github/ISSUE_TEMPLATE/service_request.yml', serviceRequestYml],
+      ],
+      new Map<string, ReadonlySet<string>>([
+        ['CONTRIBUTING.md', contributingAnchors],
+        ['README.md', readmeAnchors],
+        ['SECURITY.md', new Set(securityAnchors)],
+      ])
+    );
+
+    // [5] Code example imports and prose-referenced module exports:
+    await assertMarkdownModuleImports(contributingMd);
+    await assertProseModuleExports(contributingMd, securityMd);
   });
 });

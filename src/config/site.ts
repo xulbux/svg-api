@@ -1,5 +1,5 @@
 /**
- * Site configuration – Public host, origin, author metadata, fallback redirect destination, and default Worker bindings.
+ * Site configuration – Public host, origin, repository and author metadata, fallback redirect destination, and default Worker bindings.
  */
 
 import type { Env } from '@/types';
@@ -18,8 +18,8 @@ export const AUTHOR_NAME = 'XulbuX';
 /** Author GitHub profile URL. */
 export const AUTHOR_GITHUB_URL = 'https://github.com/xulbux';
 
-/** Public feedback email address. */
-export const CONTACT_EMAIL = 'hi@xul.is';
+/** Public GitHub repository URL. */
+export const REPO_GITHUB_URL = `${AUTHOR_GITHUB_URL}/svg-api`;
 
 /** Fallback redirect destination for invalid service badge routes. */
 export const FALLBACK_REDIRECT_URL = 'https://xul.is';

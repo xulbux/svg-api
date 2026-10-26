@@ -120,6 +120,8 @@ export interface GroupSegments {
 
 /** Exports evaluated from `src/site/seo.ts` at build time. */
 export interface LiveOgModule {
+  /** Square pixel dimension of `/favicon.png`. */
+  FAVICON_PNG_SIZE: number;
   /** OpenGraph card height in pixels. */
   OG_IMAGE_HEIGHT: number;
   /** OpenGraph card width in pixels. */

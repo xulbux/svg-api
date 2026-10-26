@@ -1,5 +1,5 @@
 /**
- * PNG encoder – Compresses floating-point RGB canvases into Bayer-dithered truecolor PNG buffers with IEEE 802.3 CRC-32 chunks.
+ * PNG encoder – Compresses floating-point RGB and RGBA canvases into Bayer-dithered PNG buffers with IEEE 802.3 CRC-32 chunks.
  */
 
 /* oxlint-disable no-bitwise -- PNG CRC-32, scanline filtering, and 4x4 Bayer indexing require bitwise integer operations. */
@@ -71,11 +71,12 @@ function predictPaeth(leftByte: number, upByte: number, upLeftByte: number): num
   return distUp <= distUpLeft ? upByte : upLeftByte;
 }
 
-/** Filter a single RGB scanline with PNG filter `1` (`Sub`) and `4` (`Paeth`), writing the smaller residue into `rawScanlines`. */
+/** Filter a single scanline with PNG filter `1` (`Sub`) and `4` (`Paeth`), writing the smaller residue into `rawScanlines`. */
 function filterPngScanline(
-  rgbPixels: Uint8Array,
+  pixels: Uint8Array,
   row: number,
   rowBytes: number,
+  bytesPerPixel: 3 | 4,
   subRow: Uint8Array,
   paethRow: Uint8Array,
   rawScanlines: Buffer
@@ -86,10 +87,11 @@ function filterPngScanline(
   let paethScore = 0;
 
   for (let i = 0; i < rowBytes; i += 1) {
-    const current = rgbPixels[rowOffset + i] ?? 0;
-    const left = i >= 3 ? (rgbPixels[rowOffset + i - 3] ?? 0) : 0;
-    const up = row > 0 ? (rgbPixels[prevRowOffset + i] ?? 0) : 0;
-    const upLeft = row > 0 && i >= 3 ? (rgbPixels[prevRowOffset + i - 3] ?? 0) : 0;
+    const current = pixels[rowOffset + i] ?? 0;
+    const left = i >= bytesPerPixel ? (pixels[rowOffset + i - bytesPerPixel] ?? 0) : 0;
+    const up = row > 0 ? (pixels[prevRowOffset + i] ?? 0) : 0;
+    const upLeft =
+      row > 0 && i >= bytesPerPixel ? (pixels[prevRowOffset + i - bytesPerPixel] ?? 0) : 0;
 
     const subByte = (current - left) & 0xff;
     const paethByte = (current - predictPaeth(left, up, upLeft)) & 0xff;
@@ -109,6 +111,40 @@ function filterPngScanline(
   }
 }
 
+/** Encode an 8-bit `pixels` scanline buffer (`3` RGB or `4` RGBA bytes per pixel) into a PNG `Buffer`. */
+function encodePngBuffer(
+  width: number,
+  height: number,
+  pixels: Uint8Array,
+  bytesPerPixel: 3 | 4,
+  sourceDigest: string
+): Buffer {
+  const rowBytes = width * bytesPerPixel;
+  const rawScanlines = Buffer.allocUnsafe(height * (1 + rowBytes));
+  const subRow = new Uint8Array(rowBytes);
+  const paethRow = new Uint8Array(rowBytes);
+
+  for (let row = 0; row < height; row += 1) {
+    filterPngScanline(pixels, row, rowBytes, bytesPerPixel, subRow, paethRow, rawScanlines);
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // 8 bits per channel.
+  ihdr[9] = bytesPerPixel === 4 ? 6 : 2; // Truecolor RGBA (`6`) or RGB (`2`).
+
+  const compressed = deflateSync(rawScanlines, { level: 9 });
+  const textChunkData = Buffer.from(`Comment\0svg-sha256=${sourceDigest}`, 'ascii');
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    packPngChunk('IHDR', ihdr),
+    packPngChunk('tEXt', textChunkData),
+    packPngChunk('IDAT', compressed),
+    packPngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -123,11 +159,11 @@ export function clampRange(value: number, minValue: number, maxValue: number): n
 }
 
 /**
- * Convert floating-point `canvas` RGB pixels into `4x4` Bayer-dithered `Uint8Array` bytes.
- * @param canvas   Floating-point RGB pixel buffer (`width * height * 3` floats).
+ * Convert floating-point RGBA `canvas` pixels (`width * height * 4` floats) into `4x4` Bayer-dithered RGB `Uint8Array` bytes.
+ * @param canvas   Floating-point RGBA pixel buffer (`rgb` in `[0, 255]`, `alpha` in `[0, 1]`).
  * @param width    Image width in pixels.
  * @param height   Image height in pixels.
- * @returns 8-bit RGB pixel buffer.
+ * @returns 8-bit RGB pixel buffer (`width * height * 3` bytes).
  */
 export function ditherCanvasToRgb(canvas: Float32Array, width: number, height: number): Uint8Array {
   const rgbPixels = new Uint8Array(width * height * 3);
@@ -135,13 +171,57 @@ export function ditherCanvasToRgb(canvas: Float32Array, width: number, height: n
     const bayerRowOffset = (row & 3) * 4;
     for (let col = 0; col < width; col += 1) {
       const dither = BAYER_4X4[bayerRowOffset + (col & 3)] ?? 0;
-      const offset = (row * width + col) * 3;
-      rgbPixels[offset] = clampRange(Math.round((canvas[offset] ?? 0) + dither), 0, 255);
-      rgbPixels[offset + 1] = clampRange(Math.round((canvas[offset + 1] ?? 0) + dither), 0, 255);
-      rgbPixels[offset + 2] = clampRange(Math.round((canvas[offset + 2] ?? 0) + dither), 0, 255);
+      const inOffset = (row * width + col) * 4;
+      const outOffset = (row * width + col) * 3;
+      const alpha = canvas[inOffset + 3] ?? 0;
+      rgbPixels[outOffset] = clampRange(
+        Math.round((canvas[inOffset] ?? 0) * alpha + dither),
+        0,
+        255
+      );
+      rgbPixels[outOffset + 1] = clampRange(
+        Math.round((canvas[inOffset + 1] ?? 0) * alpha + dither),
+        0,
+        255
+      );
+      rgbPixels[outOffset + 2] = clampRange(
+        Math.round((canvas[inOffset + 2] ?? 0) * alpha + dither),
+        0,
+        255
+      );
     }
   }
   return rgbPixels;
+}
+
+/**
+ * Convert floating-point RGBA `canvas` pixels (`width * height * 4` floats) into `4x4` Bayer-dithered RGBA `Uint8Array` bytes.
+ * @param canvas   Floating-point RGBA pixel buffer (`rgb` in `[0, 255]`, `alpha` in `[0, 1]`).
+ * @param width    Image width in pixels.
+ * @param height   Image height in pixels.
+ * @returns 8-bit RGBA pixel buffer (`width * height * 4` bytes).
+ */
+export function ditherCanvasToRgba(
+  canvas: Float32Array,
+  width: number,
+  height: number
+): Uint8Array {
+  const rgbaPixels = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row += 1) {
+    const bayerRowOffset = (row & 3) * 4;
+    for (let col = 0; col < width; col += 1) {
+      const offset = (row * width + col) * 4;
+      const alphaByte = clampRange(Math.round((canvas[offset + 3] ?? 0) * 255), 0, 255);
+      if (alphaByte > 0) {
+        const dither = BAYER_4X4[bayerRowOffset + (col & 3)] ?? 0;
+        rgbaPixels[offset] = clampRange(Math.round((canvas[offset] ?? 0) + dither), 0, 255);
+        rgbaPixels[offset + 1] = clampRange(Math.round((canvas[offset + 1] ?? 0) + dither), 0, 255);
+        rgbaPixels[offset + 2] = clampRange(Math.round((canvas[offset + 2] ?? 0) + dither), 0, 255);
+        rgbaPixels[offset + 3] = alphaByte;
+      }
+    }
+  }
+  return rgbaPixels;
 }
 
 /**
@@ -158,28 +238,22 @@ export function encodeRgbPng(
   rgbPixels: Uint8Array,
   sourceDigest: string
 ): Buffer {
-  const rowBytes = width * 3;
-  const rawScanlines = Buffer.allocUnsafe(height * (1 + rowBytes));
-  const subRow = new Uint8Array(rowBytes);
-  const paethRow = new Uint8Array(rowBytes);
+  return encodePngBuffer(width, height, rgbPixels, 3, sourceDigest);
+}
 
-  for (let row = 0; row < height; row += 1) {
-    filterPngScanline(rgbPixels, row, rowBytes, subRow, paethRow, rawScanlines);
-  }
-
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // 8 bits per channel.
-  ihdr[9] = 2; // Truecolor RGB (`image/png`).
-
-  const compressed = deflateSync(rawScanlines, { level: 9 });
-  const textChunkData = Buffer.from(`Comment\0svg-sha256=${sourceDigest}`, 'ascii');
-  return Buffer.concat([
-    PNG_SIGNATURE,
-    packPngChunk('IHDR', ihdr),
-    packPngChunk('tEXt', textChunkData),
-    packPngChunk('IDAT', compressed),
-    packPngChunk('IEND', Buffer.alloc(0)),
-  ]);
+/**
+ * Encode an `rgbaPixels` (`Uint8Array` of `width * height * 4` bytes) image into a compressed RGBA PNG `Buffer`.
+ * @param width          Image width in pixels.
+ * @param height         Image height in pixels.
+ * @param rgbaPixels     8-bit RGBA scanline buffer.
+ * @param sourceDigest   Hex SHA-256 digest of the source SVG stored in a `tEXt` chunk.
+ * @returns Complete RGBA PNG binary buffer.
+ */
+export function encodeRgbaPng(
+  width: number,
+  height: number,
+  rgbaPixels: Uint8Array,
+  sourceDigest: string
+): Buffer {
+  return encodePngBuffer(width, height, rgbaPixels, 4, sourceDigest);
 }

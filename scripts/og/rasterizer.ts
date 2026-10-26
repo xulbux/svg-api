@@ -1,8 +1,14 @@
 /**
- * OpenGraph vector rasterizer – Paints rounded `<rect>` SDFs, `4x4` supersampled filled `<path>` outlines, and stroked `<g>` icon groups onto an RGB canvas.
+ * Vector SVG rasterizer – Paints rounded `<rect>` and `<circle>` SDFs, `4x4` supersampled filled `<path>` outlines, and stroked `<g>` groups onto an RGBA canvas.
  */
 
-import { clampRange, ditherCanvasToRgb, encodeRgbPng } from './png.ts';
+import {
+  clampRange,
+  ditherCanvasToRgb,
+  ditherCanvasToRgba,
+  encodeRgbaPng,
+  encodeRgbPng,
+} from './png.ts';
 import {
   CURVE_STEPS,
   evaluatePaint,
@@ -16,10 +22,25 @@ import type {
   FlattenedSubpath,
   GradientDef,
   GroupSegments,
-  RgbaTuple,
   ScanlineCrossing,
   Segment2D,
 } from './types.ts';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Shared canvas dimensions, root coordinate scale, and parsed gradient map for primitive painters. */
+interface RasterScene {
+  /** Floating-point RGBA pixel buffer (`width * height * 4` floats). */
+  canvas: Float32Array;
+  /** Parsed `<linearGradient>` and `<radialGradient>` definitions. */
+  gradients: ReadonlyMap<string, GradientDef>;
+  /** Target raster height in pixels. */
+  height: number;
+  /** Uniform scale from SVG `viewBox` units to target raster pixels. */
+  rootScale: number;
+  /** Target raster width in pixels. */
+  width: number;
+}
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -31,12 +52,15 @@ const SUPERSAMPLE_COLS = 4;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
+/** Matches the opening `<svg …>` tag to read `viewBox` or `width` dimensions. */
+const SVG_OPEN_TAG_RX = /<svg\s+(?<attrs>[^>]+)>/;
+
 /** Matches `<defs>…</defs>` so it can be stripped before walking painted body elements. */
 const DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/;
 
-/** Matches painted top-level SVG body primitives (`<rect>`, `<g>…</g>`, or `<path>`). */
+/** Matches painted top-level SVG body primitives (`<g>…</g>`, `<rect>`, `<circle>`, or `<path>`). */
 const BODY_PRIMITIVE_RX =
-  /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|path)\s+[^>]*\/>)/g;
+  /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|circle|path)\s+[^>]*\/>)/g;
 
 /** Matches `<path … />` and `<circle … />` elements inside a `<g>` group. */
 const INNER_SHAPE_RX = /<(?<tag>path|circle)\s+(?<attrs>[^>]*)\/>/g;
@@ -47,9 +71,12 @@ const TRANSLATE_RX = /translate\(\s*(?<tx>[-+\d.]+)[\s,]+(?<ty>[-+\d.]+)\s*\)/;
 /** Matches `scale(s)` inside a `transform` attribute. */
 const SCALE_RX = /scale\(\s*(?<scale>[-+\d.]+)\s*\)/;
 
+/** Matches whitespace or comma separators inside an SVG `viewBox` attribute. */
+const VIEWBOX_SEP_RX = /[\s,]+/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Alpha-composite `[red, green, blue, alpha]` onto `canvas` (`Float32Array`) at pixel index `pixelOffset`. */
+/** Porter-Duff `source over destination` alpha blend onto `canvas` (`Float32Array`) at `pixelOffset`. */
 function blendPixel(
   canvas: Float32Array,
   pixelOffset: number,
@@ -65,12 +92,37 @@ function blendPixel(
     canvas[pixelOffset] = red;
     canvas[pixelOffset + 1] = green;
     canvas[pixelOffset + 2] = blue;
+    canvas[pixelOffset + 3] = 1;
     return;
   }
+  const destAlpha = canvas[pixelOffset + 3] ?? 0;
   const invAlpha = 1 - alpha;
-  canvas[pixelOffset] = (canvas[pixelOffset] ?? 0) * invAlpha + red * alpha;
-  canvas[pixelOffset + 1] = (canvas[pixelOffset + 1] ?? 0) * invAlpha + green * alpha;
-  canvas[pixelOffset + 2] = (canvas[pixelOffset + 2] ?? 0) * invAlpha + blue * alpha;
+  const outAlpha = alpha + destAlpha * invAlpha;
+  if (outAlpha <= 0) {
+    return;
+  }
+  canvas[pixelOffset] =
+    (red * alpha + (canvas[pixelOffset] ?? 0) * destAlpha * invAlpha) / outAlpha;
+  canvas[pixelOffset + 1] =
+    (green * alpha + (canvas[pixelOffset + 1] ?? 0) * destAlpha * invAlpha) / outAlpha;
+  canvas[pixelOffset + 2] =
+    (blue * alpha + (canvas[pixelOffset + 2] ?? 0) * destAlpha * invAlpha) / outAlpha;
+  canvas[pixelOffset + 3] = outAlpha;
+}
+
+/** Resolve the uniform coordinate scale from `<svg viewBox="…">` (or `width`) to `targetWidth`. */
+function resolveRootScale(svgMarkup: string, targetWidth: number): number {
+  const openMatch = SVG_OPEN_TAG_RX.exec(svgMarkup);
+  const svgAttrs = parseXmlAttrs(openMatch?.groups?.attrs ?? '');
+  if (svgAttrs.viewBox) {
+    const parts = svgAttrs.viewBox.trim().split(VIEWBOX_SEP_RX);
+    const viewBoxWidth = Number.parseFloat(parts[2] ?? '0');
+    if (viewBoxWidth > 0) {
+      return targetWidth / viewBoxWidth;
+    }
+  }
+  const declaredWidth = Number.parseFloat(svgAttrs.width ?? '0');
+  return declaredWidth > 0 ? targetWidth / declaredWidth : 1;
 }
 
 /** Compute analytical signed distance from `(pointX, pointY)` to a rounded rectangle. */
@@ -91,62 +143,57 @@ function signedDistanceRoundedRect(
   return outsideDist + insideDist - clampedRadius;
 }
 
-/** Blend one `<rect>` pixel sample's fill and stroke coverage onto `canvas`. */
-function blendRectSample(
-  canvas: Float32Array,
+/** Blend signed-distance `dist` fill and stroke coverage for one pixel sample onto `scene.canvas`. */
+function blendSdfSample(
+  scene: RasterScene,
   pixelOffset: number,
   dist: number,
   unitX: number,
   unitY: number,
   fillSpec: string | undefined,
   fillOpacity: number,
-  gradients: ReadonlyMap<string, GradientDef>,
-  strokeColor: RgbaTuple | undefined,
+  strokeSpec: string | undefined,
   strokeOpacity: number,
   halfStroke: number
 ): void {
   if (fillSpec !== undefined && dist < 0.5) {
-    const paint = evaluatePaint(fillSpec, gradients, unitX, unitY);
-    if (paint) {
-      const fillCoverage = clampRange(0.5 - dist, 0, 1);
+    const fillPaint = evaluatePaint(fillSpec, scene.gradients, unitX, unitY);
+    if (fillPaint) {
       blendPixel(
-        canvas,
+        scene.canvas,
         pixelOffset,
-        paint[0],
-        paint[1],
-        paint[2],
-        paint[3] * fillOpacity * fillCoverage
+        fillPaint[0],
+        fillPaint[1],
+        fillPaint[2],
+        fillPaint[3] * fillOpacity * clampRange(0.5 - dist, 0, 1)
       );
     }
   }
-  if (strokeColor) {
+  if (strokeSpec !== undefined && halfStroke > 0) {
     const strokeCoverage = clampRange(halfStroke + 0.5 - Math.abs(dist), 0, 1);
     if (strokeCoverage > 0) {
-      blendPixel(
-        canvas,
-        pixelOffset,
-        strokeColor[0],
-        strokeColor[1],
-        strokeColor[2],
-        strokeColor[3] * strokeOpacity * strokeCoverage
-      );
+      const strokePaint = evaluatePaint(strokeSpec, scene.gradients, unitX, unitY);
+      if (strokePaint) {
+        blendPixel(
+          scene.canvas,
+          pixelOffset,
+          strokePaint[0],
+          strokePaint[1],
+          strokePaint[2],
+          strokePaint[3] * strokeOpacity * strokeCoverage
+        );
+      }
     }
   }
 }
 
-/** Paint a `<rect>` primitive (solid or gradient fill plus optional stroke) onto `canvas`. */
-function paintRect(
-  canvas: Float32Array,
-  canvasWidth: number,
-  canvasHeight: number,
-  attrs: Readonly<Record<string, string>>,
-  gradients: ReadonlyMap<string, GradientDef>
-): void {
-  const rectX = Number.parseFloat(attrs.x ?? '0');
-  const rectY = Number.parseFloat(attrs.y ?? '0');
-  const rectWidth = Number.parseFloat(attrs.width ?? '0');
-  const rectHeight = Number.parseFloat(attrs.height ?? '0');
-  const cornerRadius = Number.parseFloat(attrs.rx ?? '0');
+/** Paint a `<rect>` primitive (solid or gradient fill plus optional stroke) onto `scene`. */
+function paintRect(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
+  const rectX = Number.parseFloat(attrs.x ?? '0') * scene.rootScale;
+  const rectY = Number.parseFloat(attrs.y ?? '0') * scene.rootScale;
+  const rectWidth = Number.parseFloat(attrs.width ?? '0') * scene.rootScale;
+  const rectHeight = Number.parseFloat(attrs.height ?? '0') * scene.rootScale;
+  const cornerRadius = Number.parseFloat(attrs.rx ?? '0') * scene.rootScale;
   if (rectWidth <= 0 || rectHeight <= 0) {
     return;
   }
@@ -155,13 +202,10 @@ function paintRect(
   const strokeSpec = attrs.stroke ?? 'none';
   const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
   const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
-  const strokeWidth = Number.parseFloat(attrs['stroke-width'] ?? '1');
-  const halfStroke = strokeWidth / 2;
+  const halfStroke = (Number.parseFloat(attrs['stroke-width'] ?? '1') * scene.rootScale) / 2;
   const activeFillSpec = fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined;
-  const strokeColor =
-    strokeSpec !== 'none' && strokeWidth > 0 && strokeOpacity > 0
-      ? evaluatePaint(strokeSpec, gradients, 0, 0)
-      : undefined;
+  const activeStrokeSpec =
+    strokeSpec !== 'none' && halfStroke > 0 && strokeOpacity > 0 ? strokeSpec : undefined;
 
   const halfWidth = rectWidth / 2;
   const halfHeight = rectHeight / 2;
@@ -170,9 +214,9 @@ function paintRect(
   const pad = Math.ceil(Math.max(0, halfStroke) + 2);
 
   const minCol = Math.max(0, Math.floor(rectX - pad));
-  const maxCol = Math.min(canvasWidth - 1, Math.ceil(rectX + rectWidth + pad));
+  const maxCol = Math.min(scene.width - 1, Math.ceil(rectX + rectWidth + pad));
   const minRow = Math.max(0, Math.floor(rectY - pad));
-  const maxRow = Math.min(canvasHeight - 1, Math.ceil(rectY + rectHeight + pad));
+  const maxRow = Math.min(scene.height - 1, Math.ceil(rectY + rectHeight + pad));
 
   for (let row = minRow; row <= maxRow; row += 1) {
     const sampleY = row + 0.5;
@@ -188,16 +232,63 @@ function paintRect(
         halfHeight,
         cornerRadius
       );
-      blendRectSample(
-        canvas,
-        (row * canvasWidth + col) * 3,
+      blendSdfSample(
+        scene,
+        (row * scene.width + col) * 4,
         dist,
         (sampleX - rectX) / rectWidth,
         unitY,
         activeFillSpec,
         fillOpacity,
-        gradients,
-        strokeColor,
+        activeStrokeSpec,
+        strokeOpacity,
+        halfStroke
+      );
+    }
+  }
+}
+
+/** Paint a top-level `<circle>` primitive (solid or gradient fill plus optional stroke) onto `scene`. */
+function paintCircle(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
+  const radius = Number.parseFloat(attrs.r ?? '0') * scene.rootScale;
+  if (radius <= 0) {
+    return;
+  }
+  const centerX = Number.parseFloat(attrs.cx ?? '0') * scene.rootScale;
+  const centerY = Number.parseFloat(attrs.cy ?? '0') * scene.rootScale;
+  const fillSpec = attrs.fill ?? '#000000';
+  const strokeSpec = attrs.stroke ?? 'none';
+  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+  const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
+  const halfStroke = (Number.parseFloat(attrs['stroke-width'] ?? '1') * scene.rootScale) / 2;
+  const activeFillSpec = fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined;
+  const activeStrokeSpec =
+    strokeSpec !== 'none' && halfStroke > 0 && strokeOpacity > 0 ? strokeSpec : undefined;
+
+  const diameter = radius * 2;
+  const originX = centerX - radius;
+  const originY = centerY - radius;
+  const pad = Math.ceil(radius + Math.max(0, halfStroke) + 2);
+  const minCol = Math.max(0, Math.floor(centerX - pad));
+  const maxCol = Math.min(scene.width - 1, Math.ceil(centerX + pad));
+  const minRow = Math.max(0, Math.floor(centerY - pad));
+  const maxRow = Math.min(scene.height - 1, Math.ceil(centerY + pad));
+
+  for (let row = minRow; row <= maxRow; row += 1) {
+    const sampleY = row + 0.5;
+    const unitY = (sampleY - originY) / diameter;
+    for (let col = minCol; col <= maxCol; col += 1) {
+      const sampleX = col + 0.5;
+      const dist = Math.hypot(sampleX - centerX, sampleY - centerY) - radius;
+      blendSdfSample(
+        scene,
+        (row * scene.width + col) * 4,
+        dist,
+        (sampleX - originX) / diameter,
+        unitY,
+        activeFillSpec,
+        fillOpacity,
+        activeStrokeSpec,
         strokeOpacity,
         halfStroke
       );
@@ -298,74 +389,124 @@ function accumulateSubRowHits(
   }
 }
 
-/** Paint a filled `<path>` primitive onto `canvas` using `4x4` non-zero winding scanline supersampling. */
-function paintFilledPath(
-  canvas: Float32Array,
-  canvasWidth: number,
-  canvasHeight: number,
-  pathData: string,
-  fillColor: RgbaTuple,
-  offsetX = 0,
-  offsetY = 0,
-  scale = 1
+/** Parse optional `translate(...)` and `scale(...)` attributes scaled by `rootScale`. */
+function resolveElementTransform(
+  transformAttr: string | undefined,
+  rootScale: number
+): { localScale: number; offsetX: number; offsetY: number } {
+  const transform = transformAttr ?? '';
+  const translateMatch = TRANSLATE_RX.exec(transform);
+  const scaleMatch = SCALE_RX.exec(transform);
+  return {
+    localScale: Number.parseFloat(scaleMatch?.groups?.scale ?? '1') * rootScale,
+    offsetX: Number.parseFloat(translateMatch?.groups?.tx ?? '0') * rootScale,
+    offsetY: Number.parseFloat(translateMatch?.groups?.ty ?? '0') * rootScale,
+  };
+}
+
+/** Blend one supersampled scanline `row` of a filled `<path>` onto `scene.canvas`. */
+function paintFilledScanlineRow(
+  scene: RasterScene,
+  row: number,
+  startCol: number,
+  hitCounts: Uint8Array,
+  fillSpec: string,
+  fillOpacity: number,
+  minX: number,
+  spanX: number,
+  unitY: number
 ): void {
-  const { edges, maxX, maxY, minX, minY } = collectFilledPathEdges(
-    flattenSvgPath(pathData, offsetX, offsetY, scale)
-  );
-  if (edges.length === 0) {
-    return;
-  }
-
-  const startRow = Math.max(0, Math.floor(minY));
-  const endRow = Math.min(canvasHeight - 1, Math.ceil(maxY));
-  const startCol = Math.max(0, Math.floor(minX));
-  const endCol = Math.min(canvasWidth - 1, Math.ceil(maxX));
-  const rowWidth = endCol - startCol + 1;
-  const hitCounts = new Uint8Array(rowWidth);
   const totalSamples = SUPERSAMPLE_ROWS * SUPERSAMPLE_COLS;
-  const crossings: ScanlineCrossing[] = [];
-
-  for (let row = startRow; row <= endRow; row += 1) {
-    hitCounts.fill(0);
-    for (let subRow = 0; subRow < SUPERSAMPLE_ROWS; subRow += 1) {
-      const scanY = row + (subRow + 0.5) / SUPERSAMPLE_ROWS;
-      accumulateSubRowHits(edges, scanY, startCol, endCol, hitCounts, crossings);
-    }
-    for (let i = 0; i < rowWidth; i += 1) {
-      const hits = hitCounts[i] ?? 0;
-      if (hits > 0) {
-        const pixelOffset = (row * canvasWidth + (startCol + i)) * 3;
+  for (let i = 0; i < hitCounts.length; i += 1) {
+    const hits = hitCounts[i] ?? 0;
+    if (hits > 0) {
+      const col = startCol + i;
+      const paint = evaluatePaint(fillSpec, scene.gradients, (col + 0.5 - minX) / spanX, unitY);
+      if (paint) {
         blendPixel(
-          canvas,
-          pixelOffset,
-          fillColor[0],
-          fillColor[1],
-          fillColor[2],
-          (fillColor[3] * hits) / totalSamples
+          scene.canvas,
+          (row * scene.width + col) * 4,
+          paint[0],
+          paint[1],
+          paint[2],
+          (paint[3] * fillOpacity * hits) / totalSamples
         );
       }
     }
   }
 }
 
-/** Squared distance from `(pointX, pointY)` to segment `(ax, ay) -> (bx, by)`. */
+/** Paint a self-closing `<path>` element with optional `translate(...)` and `scale(...)` transforms. */
+function paintPathElement(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
+  const fillSpec = attrs.fill ?? '#FFFFFF';
+  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+  if (!attrs.d || fillSpec === 'none' || fillOpacity <= 0) {
+    return;
+  }
+  const { localScale, offsetX, offsetY } = resolveElementTransform(
+    attrs.transform,
+    scene.rootScale
+  );
+  const { edges, maxX, maxY, minX, minY } = collectFilledPathEdges(
+    flattenSvgPath(attrs.d, offsetX, offsetY, localScale)
+  );
+  if (edges.length === 0) {
+    return;
+  }
+
+  const startRow = Math.max(0, Math.floor(minY));
+  const endRow = Math.min(scene.height - 1, Math.ceil(maxY));
+  const startCol = Math.max(0, Math.floor(minX));
+  const endCol = Math.min(scene.width - 1, Math.ceil(maxX));
+  const hitCounts = new Uint8Array(endCol - startCol + 1);
+  const crossings: ScanlineCrossing[] = [];
+  const spanX = Math.max(1e-6, maxX - minX);
+  const spanY = Math.max(1e-6, maxY - minY);
+
+  for (let row = startRow; row <= endRow; row += 1) {
+    hitCounts.fill(0);
+    for (let subRow = 0; subRow < SUPERSAMPLE_ROWS; subRow += 1) {
+      accumulateSubRowHits(
+        edges,
+        row + (subRow + 0.5) / SUPERSAMPLE_ROWS,
+        startCol,
+        endCol,
+        hitCounts,
+        crossings
+      );
+    }
+    paintFilledScanlineRow(
+      scene,
+      row,
+      startCol,
+      hitCounts,
+      fillSpec,
+      fillOpacity,
+      minX,
+      spanX,
+      (row + 0.5 - minY) / spanY
+    );
+  }
+}
+
+/** Squared distance from `(pointX, pointY)` to segment `(startX, startY) -> (endX, endY)`. */
 function distToSegmentSquared(
   pointX: number,
   pointY: number,
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number
 ): number {
-  const segDx = bx - ax;
-  const segDy = by - ay;
+  const segDx = endX - startX;
+  const segDy = endY - startY;
   const segLenSq = segDx * segDx + segDy * segDy;
   if (segLenSq === 0) {
-    return (pointX - ax) * (pointX - ax) + (pointY - ay) * (pointY - ay);
+    return (pointX - startX) * (pointX - startX) + (pointY - startY) * (pointY - startY);
   }
-  const proj = clampRange(((pointX - ax) * segDx + (pointY - ay) * segDy) / segLenSq, 0, 1);
-  const nearX = ax + proj * segDx;
-  const nearY = ay + proj * segDy;
+  const proj = clampRange(((pointX - startX) * segDx + (pointY - startY) * segDy) / segLenSq, 0, 1);
+  const nearX = startX + proj * segDx;
+  const nearY = startY + proj * segDy;
   return (pointX - nearX) * (pointX - nearX) + (pointY - nearY) * (pointY - nearY);
 }
 
@@ -382,12 +523,12 @@ function collectGroupSegments(
   let maxX = Number.NEGATIVE_INFINITY;
   let maxY = Number.NEGATIVE_INFINITY;
 
-  function pushSegment(ax: number, ay: number, bx: number, by: number): void {
-    segments.push([ax, ay, bx, by]);
-    minX = Math.min(minX, ax, bx);
-    minY = Math.min(minY, ay, by);
-    maxX = Math.max(maxX, ax, bx);
-    maxY = Math.max(maxY, ay, by);
+  function pushSegment(startX: number, startY: number, endX: number, endY: number): void {
+    segments.push([startX, startY, endX, endY]);
+    minX = Math.min(minX, startX, endX);
+    minY = Math.min(minY, startY, endY);
+    maxX = Math.max(maxX, startX, endX);
+    maxY = Math.max(maxY, startY, endY);
   }
 
   for (const shapeMatch of groupBody.matchAll(INNER_SHAPE_RX)) {
@@ -427,24 +568,38 @@ function collectGroupSegments(
   return { maxX, maxY, minX, minY, segments };
 }
 
-/** Paint a stroked `<g>` icon group (round caps & joins) onto `canvas` using exact segment SDF. */
+/** Compute the minimum squared distance from `(sampleX, sampleY)` across `segments`. */
+function measureMinSegmentDistSq(
+  sampleX: number,
+  sampleY: number,
+  segments: readonly Segment2D[]
+): number {
+  let minDistSq = Number.POSITIVE_INFINITY;
+  for (const [segStartX, segStartY, segEndX, segEndY] of segments) {
+    minDistSq = Math.min(
+      minDistSq,
+      distToSegmentSquared(sampleX, sampleY, segStartX, segStartY, segEndX, segEndY)
+    );
+  }
+  return minDistSq;
+}
+
+/** Paint a stroked `<g>` group (round caps & joins, solid or gradient stroke) onto `scene`. */
 function paintStrokedGroup(
-  canvas: Float32Array,
-  canvasWidth: number,
-  canvasHeight: number,
+  scene: RasterScene,
   groupAttrs: Readonly<Record<string, string>>,
-  groupBody: string,
-  gradients: ReadonlyMap<string, GradientDef>
+  groupBody: string
 ): void {
-  const strokeColor = evaluatePaint(groupAttrs.stroke ?? '#FFFFFF', gradients, 0, 0);
-  if (!strokeColor) {
+  const strokeSpec = groupAttrs.stroke ?? '#FFFFFF';
+  const strokeOpacity = clampRange(Number.parseFloat(groupAttrs['stroke-opacity'] ?? '1'), 0, 1);
+  if (strokeSpec === 'none' || strokeOpacity <= 0) {
     return;
   }
-  const translateMatch = TRANSLATE_RX.exec(groupAttrs.transform ?? '');
-  const scaleMatch = SCALE_RX.exec(groupAttrs.transform ?? '');
-  const offsetX = Number.parseFloat(translateMatch?.groups?.tx ?? '0');
-  const offsetY = Number.parseFloat(translateMatch?.groups?.ty ?? '0');
-  const scale = Number.parseFloat(scaleMatch?.groups?.scale ?? '1');
+  const {
+    localScale: scale,
+    offsetX,
+    offsetY,
+  } = resolveElementTransform(groupAttrs.transform, scene.rootScale);
   const halfStroke = (Number.parseFloat(groupAttrs['stroke-width'] ?? '2') * scale) / 2;
 
   const { maxX, maxY, minX, minY, segments } = collectGroupSegments(
@@ -459,105 +614,80 @@ function paintStrokedGroup(
 
   const pad = Math.ceil(halfStroke + 2);
   const startRow = Math.max(0, Math.floor(minY - pad));
-  const endRow = Math.min(canvasHeight - 1, Math.ceil(maxY + pad));
+  const endRow = Math.min(scene.height - 1, Math.ceil(maxY + pad));
   const startCol = Math.max(0, Math.floor(minX - pad));
-  const endCol = Math.min(canvasWidth - 1, Math.ceil(maxX + pad));
+  const endCol = Math.min(scene.width - 1, Math.ceil(maxX + pad));
+  const spanX = Math.max(1e-6, maxX - minX);
+  const spanY = Math.max(1e-6, maxY - minY);
 
   for (let row = startRow; row <= endRow; row += 1) {
     const sampleY = row + 0.5;
+    const unitY = (sampleY - minY) / spanY;
     for (let col = startCol; col <= endCol; col += 1) {
       const sampleX = col + 0.5;
-      let minDistSq = Number.POSITIVE_INFINITY;
-      for (const [ax, ay, bx, by] of segments) {
-        minDistSq = Math.min(minDistSq, distToSegmentSquared(sampleX, sampleY, ax, ay, bx, by));
-      }
+      const minDistSq = measureMinSegmentDistSq(sampleX, sampleY, segments);
       const coverage = clampRange(halfStroke + 0.5 - Math.sqrt(minDistSq), 0, 1);
       if (coverage > 0) {
-        const pixelOffset = (row * canvasWidth + col) * 3;
-        blendPixel(
-          canvas,
-          pixelOffset,
-          strokeColor[0],
-          strokeColor[1],
-          strokeColor[2],
-          strokeColor[3] * coverage
-        );
+        const paint = evaluatePaint(strokeSpec, scene.gradients, (sampleX - minX) / spanX, unitY);
+        if (paint) {
+          blendPixel(
+            scene.canvas,
+            (row * scene.width + col) * 4,
+            paint[0],
+            paint[1],
+            paint[2],
+            paint[3] * strokeOpacity * coverage
+          );
+        }
       }
     }
   }
 }
 
-/** Paint a self-closing `<path>` element with optional `translate(...)` and `scale(...)` transforms. */
-function paintPathElement(
-  canvas: Float32Array,
-  width: number,
-  height: number,
-  attrs: Readonly<Record<string, string>>,
-  gradients: ReadonlyMap<string, GradientDef>
-): void {
-  if (!attrs.d) {
-    return;
-  }
-  const fillColor = evaluatePaint(attrs.fill ?? '#FFFFFF', gradients, 0, 0);
-  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
-  if (!fillColor || fillOpacity <= 0) {
-    return;
-  }
-  const transform = attrs.transform ?? '';
-  const translateMatch = TRANSLATE_RX.exec(transform);
-  const scaleMatch = SCALE_RX.exec(transform);
-  const offsetX = Number.parseFloat(translateMatch?.groups?.tx ?? '0');
-  const offsetY = Number.parseFloat(translateMatch?.groups?.ty ?? '0');
-  const scale = Number.parseFloat(scaleMatch?.groups?.scale ?? '1');
-  paintFilledPath(
-    canvas,
-    width,
-    height,
-    attrs.d,
-    [fillColor[0], fillColor[1], fillColor[2], fillColor[3] * fillOpacity],
-    offsetX,
-    offsetY,
-    scale
-  );
-}
-
-/** Paint a single matched SVG body primitive (`<g>`, `<rect>`, or `<path>`) onto `canvas`. */
-function paintBodyPrimitive(
-  canvas: Float32Array,
-  width: number,
-  height: number,
-  match: RegExpExecArray,
-  gradients: ReadonlyMap<string, GradientDef>
-): void {
+/** Paint a single matched SVG body primitive (`<g>`, `<rect>`, `<circle>`, or `<path>`) onto `scene`. */
+function paintBodyPrimitive(scene: RasterScene, match: RegExpExecArray): void {
   if (match.groups?.groupAttrs !== undefined) {
-    paintStrokedGroup(
-      canvas,
-      width,
-      height,
-      parseXmlAttrs(match.groups.groupAttrs),
-      match.groups.groupBody ?? '',
-      gradients
-    );
+    paintStrokedGroup(scene, parseXmlAttrs(match.groups.groupAttrs), match.groups.groupBody ?? '');
     return;
   }
   const selfTag = match.groups?.selfTag ?? '';
   const attrs = parseXmlAttrs(selfTag);
   if (selfTag.startsWith('<rect')) {
-    paintRect(canvas, width, height, attrs, gradients);
+    paintRect(scene, attrs);
+  } else if (selfTag.startsWith('<circle')) {
+    paintCircle(scene, attrs);
   } else if (selfTag.startsWith('<path')) {
-    paintPathElement(canvas, width, height, attrs, gradients);
+    paintPathElement(scene, attrs);
   }
+}
+
+/** Paint `svgMarkup` onto a floating-point RGBA `Float32Array` (`width * height * 4` floats). */
+function rasterizeSvgCanvas(svgMarkup: string, width: number, height: number): Float32Array {
+  const scene: RasterScene = {
+    canvas: new Float32Array(width * height * 4),
+    gradients: parseGradientDefs(svgMarkup),
+    height,
+    rootScale: resolveRootScale(svgMarkup, width),
+    width,
+  };
+  const bodyMarkup = svgMarkup.replace(DEFS_BLOCK_RX, '');
+
+  for (const match of bodyMarkup.matchAll(BODY_PRIMITIVE_RX)) {
+    paintBodyPrimitive(scene, match);
+  }
+
+  return scene.canvas;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Rasterize `svgMarkup` (`width` x `height`) into a compressed PNG `Buffer`.
- * @param svgMarkup      Source SVG card markup.
- * @param width          Card width in pixels.
- * @param height         Card height in pixels.
+ * Rasterize `svgMarkup` (`width` x `height`) into a compressed RGB PNG `Buffer`.
+ * @param svgMarkup      Source SVG document markup.
+ * @param width          Output width in pixels.
+ * @param height         Output height in pixels.
  * @param sourceDigest   Hex SHA-256 digest of `svgMarkup`.
- * @returns Compressed PNG image buffer.
+ * @returns Compressed 24-bit RGB PNG image buffer.
  */
 export function rasterizeOgSvgToPng(
   svgMarkup: string,
@@ -565,13 +695,24 @@ export function rasterizeOgSvgToPng(
   height: number,
   sourceDigest: string
 ): Buffer {
-  const gradients = parseGradientDefs(svgMarkup);
-  const canvas = new Float32Array(width * height * 3);
-  const bodyMarkup = svgMarkup.replace(DEFS_BLOCK_RX, '');
-
-  for (const match of bodyMarkup.matchAll(BODY_PRIMITIVE_RX)) {
-    paintBodyPrimitive(canvas, width, height, match, gradients);
-  }
-
+  const canvas = rasterizeSvgCanvas(svgMarkup, width, height);
   return encodeRgbPng(width, height, ditherCanvasToRgb(canvas, width, height), sourceDigest);
+}
+
+/**
+ * Rasterize `svgMarkup` (`width` x `height`) into a compressed RGBA PNG `Buffer` preserving outer transparency.
+ * @param svgMarkup      Source SVG document markup.
+ * @param width          Output width in pixels.
+ * @param height         Output height in pixels.
+ * @param sourceDigest   Hex SHA-256 digest of `svgMarkup`.
+ * @returns Compressed 32-bit RGBA PNG image buffer.
+ */
+export function rasterizeSvgToRgbaPng(
+  svgMarkup: string,
+  width: number,
+  height: number,
+  sourceDigest: string
+): Buffer {
+  const canvas = rasterizeSvgCanvas(svgMarkup, width, height);
+  return encodeRgbaPng(width, height, ditherCanvasToRgba(canvas, width, height), sourceDigest);
 }

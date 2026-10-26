@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "paths": { "@/*": ["./src/*"], "@bundles/*": ["./dist/client/*"] },
+    "paths": { "@/*": ["./src/*"], "@brand/*": ["./assets/*"], "@bundles/*": ["./dist/client/*"] },
     "types": ["@cloudflare/workers-types"]
   },
   "exclude": ["node_modules", "dist", ".wrangler", "src/site/client"],

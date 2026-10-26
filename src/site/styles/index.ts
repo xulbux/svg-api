@@ -42,7 +42,7 @@ export const LIGHT_BG = WHITE;
 /** Page background in the dark color scheme (Isolux gray `900`, also the dark `theme-color`). */
 export const { 900: DARK_BG } = ISOLUX_GRAY;
 
-/** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand gradient (navbar brand mark and favicon). */
+/** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand accent. */
 export const { 400: BRAND_GRADIENT_START, 600: BRAND_GRADIENT_END } = BRAND_INDIGO;
 
 /** Viewport width in pixels at and below which the left sidebar collapses into a popover drawer. */
@@ -240,8 +240,6 @@ function renderTokenCss(): string {
   const lightOverrideSelector = buildSchemeOverrideSelector('light');
   return `/* Generated Design Tokens */
 :root {
-  --brand-gradient-start: ${BRAND_GRADIENT_START};
-  --brand-gradient-end: ${BRAND_GRADIENT_END};
   --font-sans: ${SANS_FONT_STACK};
   --font-mono: ${MONO_FONT_STACK};
 ${renderBaseTokenBindings('light', true)}}

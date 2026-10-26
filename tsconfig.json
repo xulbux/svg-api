@@ -16,6 +16,7 @@
     "noUnusedParameters": true,
     "paths": {
       "@/*": ["./src/*"],
+      "@brand/*": ["./assets/*"],
       "@bundles/*": ["./dist/client/*"],
       "@scripts/*": ["./scripts/*"]
     },

@@ -1,0 +1,62 @@
+<!-- TEMPORARY DRAFT ICON -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="svg.xul.is">
+  <defs>
+    <linearGradient id="brand-icon-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#626772" />
+      <stop offset="100%" stop-color="#272A32" />
+    </linearGradient>
+    <linearGradient id="brand-icon-face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#40444D" />
+      <stop offset="50%" stop-color="#23252C" />
+      <stop offset="100%" stop-color="#13141A" />
+    </linearGradient>
+    <radialGradient id="brand-icon-glow-left" cx="27%" cy="56%" r="28%">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.24" />
+      <stop offset="100%" stop-color="#00E5FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="brand-icon-glow-top" cx="50%" cy="34%" r="30%">
+      <stop offset="0%" stop-color="#7666FF" stop-opacity="0.28" />
+      <stop offset="100%" stop-color="#7666FF" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="brand-icon-glow-right" cx="73%" cy="56%" r="28%">
+      <stop offset="0%" stop-color="#FF3F5E" stop-opacity="0.26" />
+      <stop offset="100%" stop-color="#FF3F5E" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="brand-icon-glow-sparkle" cx="50%" cy="62%" r="20%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.20" />
+      <stop offset="100%" stop-color="#7666FF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="brand-icon-stem" x1="0" y1="0.5" x2="1" y2="0.5">
+      <stop offset="0%" stop-color="#00E5FF" stop-opacity="0.85" />
+      <stop offset="32%" stop-color="#94A3B8" stop-opacity="0.75" />
+      <stop offset="68%" stop-color="#94A3B8" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#FF3F5E" stop-opacity="0.85" />
+    </linearGradient>
+    <linearGradient id="brand-icon-bezier" x1="0" y1="0.5" x2="1" y2="0.5">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="46%" stop-color="#7666FF" />
+      <stop offset="74%" stop-color="#C84BFF" />
+      <stop offset="100%" stop-color="#FF3F5E" />
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#brand-icon-rim)" />
+  <rect x="4" y="4" width="504" height="504" rx="108" fill="#000000" />
+  <rect x="4" y="4" width="504" height="492" rx="108" fill="url(#brand-icon-face)" />
+  <rect x="4" y="4" width="504" height="492" rx="108" fill="url(#brand-icon-glow-left)" />
+  <rect x="4" y="4" width="504" height="492" rx="108" fill="url(#brand-icon-glow-top)" />
+  <rect x="4" y="4" width="504" height="492" rx="108" fill="url(#brand-icon-glow-right)" />
+  <rect x="4" y="4" width="504" height="492" rx="108" fill="url(#brand-icon-glow-sparkle)" />
+  <g fill="none" stroke="url(#brand-icon-stem)" stroke-width="11" stroke-linecap="round">
+    <path d="M 106 160 L 406 160" />
+  </g>
+  <g fill="none" stroke="url(#brand-icon-bezier)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 126 364 C 126 226 178 160 256 160 C 334 160 386 226 386 364" />
+  </g>
+  <circle cx="98" cy="160" r="20" fill="#181A22" stroke="#00E5FF" stroke-width="11" />
+  <circle cx="414" cy="160" r="20" fill="#181A22" stroke="#FF3F5E" stroke-width="11" />
+  <rect x="230" y="134" width="52" height="52" rx="13" fill="#181A22" stroke="#7666FF" stroke-width="12" />
+  <rect x="100" y="338" width="52" height="52" rx="13" fill="#181A22" stroke="#00E5FF" stroke-width="12" />
+  <rect x="360" y="338" width="52" height="52" rx="13" fill="#181A22" stroke="#FF3F5E" stroke-width="12" />
+  <path d="M 248 250 C 253 292 263 302 305 307 C 263 312 253 322 248 364 C 243 322 233 312 191 307 C 233 302 243 292 248 250 Z" fill="#F8FAFC" />
+  <path d="M 304 238 C 306 254 310 258 326 260 C 310 262 306 266 304 282 C 302 266 298 262 282 260 C 298 258 302 254 304 238 Z" fill="#00E5FF" />
+</svg>

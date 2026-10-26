@@ -1,56 +1,61 @@
-# `svg-api` Dev Cheatsheet
+<div align="center">
+  <br><br>
+  <h1>
+    <a href="https://svg.xul.is"><img height="96" src="https://raw.githubusercontent.com/xulbux/svg-api/main/assets/icon.svg" /></a>
+    <br>
+    SVG API
+    <br><br>
+    <a href="https://svg.xul.is"><img src="https://svg.xul.is/badge/svg.xul.is?icon=sparkles,external-link&anim=sheen,default,nudge" /></a>
+    <a href="https://svg.xul.is/builder"><img src="https://svg.xul.is/badge/Builder?variant=2&icon=sliders-vertical,external-link&anim=default,nudge" /></a>
+    <a href="https://github.com/xulbux/svg-api/blob/main/LICENSE"><img src="https://svg.xul.is/badge/License/MIT*?variant=3&color=neutral&icon=scale" /></a>
+    <a href="https://github.com/xulbux/svg-api/commits"><img src="https://svg.xul.is/badge/gh/xulbux/svg-api/commit?variant=3&color=neutral" /></a>
+    <a href="https://github.com/sponsors/xulbux"><img src="https://svg.xul.is/badge/Sponsor?variant=2&color=rose&icon=heart&anim=pulse" /></a>
+  </h1>
+  <h3>High-performance, zero-cold-start dynamic SVG engine on Cloudflare Workers.</h3>
+  <br><br>
+</div>
 
-Private Cloudflare Worker codebase for **[svg.xul.is](https://svg.xul.is)**.
+**SVG API** powers [**svg.xul.is**](https://svg.xul.is) – an open-source edge engine for dynamic badges, live service metrics, and animated SVG cards from plain URLs.
 
-## Commands
+> <br>
+> &numsp;<b>Official Website:</b>&numsp;Visit <a href="https://svg.xul.is"><b>svg.xul.is</b></a><br>
+> &numsp;<b>Interactive Builder:</b>&numsp;Configure and preview any SVG live in the <a href="https://svg.xul.is/builder"><b>URL Builder</b></a>.<br>
+> &numsp;<b>Documentation:</b>&numsp;Explore all parameters, variants, and presets in the <a href="https://svg.xul.is/docs"><b>API Docs</b></a>.
+> <br><br>
 
-```bash
-pnpm run dev          # Build client bundles + start Wrangler dev server (http://localhost:8787)
-pnpm run check        # Full suite: client build, fmt, oxlint, markdownlint, 3x tsc, vitest, dry-run
-pnpm run fmt          # Format codebase (oxfmt)
-pnpm run lint         # Auto-fix lint issues (oxlint)
-pnpm run test         # Build client bundles + run vitest once
-pnpm run test:watch   # Watch mode
-pnpm run deploy       # Build client bundles + deploy to Cloudflare
-```
+<br>
+<br>
 
-## Secrets & `.dev.vars`
+## <a href="#endpoints"><img src="https://svg.xul.is/icon/layers?size=32&stroke=2" align="left" /></a>Endpoints
 
-Optional `.dev.vars` in the repo root for local GitHub API calls (`60 req/hr` unauthenticated fallback otherwise):
+| Endpoint | Route | Description |
+| :------- | :---- | :---------- |
+| [**Badges**](https://svg.xul.is/docs/badges) | `/badge/:label[/:value]` | Status badges with dual icons, status dots, and inline widgets (`sparkline`, `bars`, `bar`, `steps`, `ring`, `strip`, `delta`). |
+| [**Live Services**](https://svg.xul.is/docs/services) | `/badge/:service/[:owner/]:target/:metric` | Live versions, downloads, stars, coverage, and health badges from public registries and forges. |
+| [**Buttons**](https://svg.xul.is/docs/buttons) | `/button/:label[/:value]` | Call-to-action buttons (`/btn/*` alias) across three hierarchy variants, sizes, and icon motions. |
+| [**Icons**](https://svg.xul.is/docs/icons) | `/icon/:icon` | Standalone UI and brand icons with custom size, stroke, color, and motion. |
+| [**Tech Stacks**](https://svg.xul.is/docs/stack) | `/stack/:groups` | Grouped tech icon grids with custom columns, row bands, brand colors, and motion. |
+| [**Typing**](https://svg.xul.is/docs/typing) | `/typing/[:prefix/]:lines` | Typing animations (`/type/*` alias) in terminal, prompt, code editor, browser, or frameless frames. |
+| [**Quotes**](https://svg.xul.is/docs/quotes) | `/quote/[:author/]:text` | Auto-wrapping quote cards in horizontal and vertical layouts. |
 
-```ini
-GITHUB_TOKEN=github_pat_...
-```
+<br>
 
-Production secret:
+## <a href="#contributing"><img src="https://svg.xul.is/icon/handshake?size=32&stroke=2" align="left" /></a>Contributing
 
-```bash
-pnpm exec wrangler secret put GITHUB_TOKEN
-```
+Contributions, bug reports, and new service presets are welcome! See the [**Contributing Guide**](CONTRIBUTING.md) to get started.
 
-Use a **Fine-Grained PAT** scoped to **Public Repositories (read-only)** with zero repository or account permissions (`5,000 req/hr` REST Core + free `304` `ETag` revalidations + `5,000 pts/hr` GraphQL v4).
+<br>
+<br>
+<br>
 
-## Adding a Service Preset
+## Enjoying this project?&numsp;Have suggestions?
 
-1.  Create `src/services/presets/<service>.ts` with `defineService()` + `createEndpoint()` (`src/services/endpoint.ts`) and metric factories (`src/services/metrics.ts`). Always set a `project` projection (e.g., `pickFields`) and `ttl` from `CACHE_TTL`.
-2.  Register in `SERVICES_CONFIG` (`src/config/services.ts`); routing, validation, global metric aliases, `/docs/services`, and `/builder/service` pick it up automatically.
-3.  Add a preview card to `buildServicePresetCards()` (`src/site/catalog/services.ts`) and transform tests in `test/services.test.ts`.
+Consider leaving a [![star](https://svg.xul.is/icon/star?size=20&anim=shake)](https://github.com/xulbux/svg-api) on [**GitHub**](https://github.com/xulbux/svg-api) or opening an [**Issue**](https://github.com/xulbux/svg-api/issues) for bugs, ideas, and preset requests.
 
-### `createEndpoint()` URL Placeholders
+<br>
+<br>
+<br>
 
--   `{owner}`, `{target}` – Single path segment (`encodeURIComponent` per segment)
--   `{scope}` – Encoded `owner` with any leading `@` stripped, or empty when omitted
--   `{path}` – `[owner/]target`
--   `{id}` – Fully URL-encoded `[owner%2F]target`
--   `{npm}` / `{npm-id}` – `[@owner/]target` / `[@owner%2F]target`
+---
 
-### Canonical Download Metric Keys
-
--   `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, aliased as `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (all-time)
-
-## Gotchas
-
--   **Path encoding:** `+` in SVG route segments decodes to a space; encode literal `+` as `%2B` (e.g., `C%2B%2B`, `gtk%2B3`) and `%` as `%25`. Multi-segment targets set `route.target.maxSegments`; non-`404` missing responses set `endpoint.missingStatuses`.
--   **Worker entrypoint (`src/index.ts`):** Must **only** `export default app;`. Any named non-function export crashes `workerd` at startup.
--   **Inline `<head>` script CSP:** Changing `buildHeadScriptBody()` in `src/site/components/PageLayout.tsx` requires updating its `sha256-...` hash in `HTML_SECURITY_HEADERS['Content-Security-Policy']` (`src/routes/http.ts`).
--   **Client bundle boundary:** `src/site/client/**` and `src/site/shared/**` are checked against DOM types (`tsconfig.client.json`) without Worker bindings and bundled into gitignored `dist/client/*.client.js` via `pnpm run build:client`.
+[![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com) Always creating more cool stuff for you! [![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com)&emsp;–&numsp;[**XulbuX**](https://xulbux.com)
