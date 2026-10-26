@@ -1053,11 +1053,13 @@ describe('documentation pages – head metadata & client script', () => {
       expect(page.html, page.path).toContain(
         '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
       );
-      expect(page.html, page.path).toContain(
-        '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />'
-      );
-      expect(page.html, page.path).toContain(
-        `<link rel="icon" type="image/png" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
+      const pngFaviconTag = `<link rel="icon" type="image/png" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`;
+      const svgFaviconTag =
+        '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />';
+      expect(page.html, page.path).toContain(pngFaviconTag);
+      expect(page.html, page.path).toContain(svgFaviconTag);
+      expect(page.html.indexOf(pngFaviconTag), page.path).toBeLessThan(
+        page.html.indexOf(svgFaviconTag)
       );
       expect(page.html, page.path).toContain(
         `<link rel="apple-touch-icon" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`

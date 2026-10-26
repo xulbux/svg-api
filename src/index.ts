@@ -401,9 +401,15 @@ function handleFaviconPngRoute(context: AppContext): Response {
   return buildBundledPngResponse(context, faviconPngBuffer, faviconPngEtag);
 }
 
-/** Permanently redirect `/favicon.ico` to `/favicon.png`. */
-function handleFaviconIcoRoute(context: AppContext): Response {
-  return context.redirect('/favicon.png', 301);
+/** Permanently redirect `/favicon.ico` to `/favicon.png` with edge caching. */
+function handleFaviconIcoRoute(): Response {
+  return new Response(undefined, {
+    headers: {
+      'Cache-Control': `public, max-age=${FAVICON_TTL_SECONDS}, s-maxage=${FAVICON_TTL_SECONDS}`,
+      Location: '/favicon.png',
+    },
+    status: 301,
+  });
 }
 
 /** Handle `/og.svg` with the memoized vector OpenGraph social card. */

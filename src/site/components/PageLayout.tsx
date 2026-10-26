@@ -172,13 +172,13 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <meta name="description" content={props.description} />
           {props.isNoIndex ? <meta name="robots" content="noindex" /> : undefined}
           {canonicalUrl ? <link rel="canonical" href={canonicalUrl} /> : undefined}
-          <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />
           <link
             rel="icon"
             type="image/png"
             sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}
             href="/favicon.png"
           />
+          <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />
           <link
             rel="apple-touch-icon"
             sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}
