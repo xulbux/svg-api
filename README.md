@@ -1,15 +1,15 @@
 <div align="center">
   <br><br>
   <h1>
-    <a href="https://svg.xul.is"><img height="96" src="https://raw.githubusercontent.com/xulbux/svg-api/main/assets/icon.svg" /></a>
+    <a href="https://svg.xul.is"><img height="96" src="https://raw.githubusercontent.com/xulbux/svg-api/main/assets/icon.png" /></a>
     <br>
     SVG API
     <br><br>
-    <a href="https://svg.xul.is"><img src="https://svg.xul.is/badge/svg.xul.is?icon=sparkles,external-link&anim=sheen,default,nudge" /></a>
-    <a href="https://svg.xul.is/builder"><img src="https://svg.xul.is/badge/Builder?variant=2&icon=sliders-vertical,external-link&anim=default,nudge" /></a>
-    <a href="https://github.com/xulbux/svg-api/blob/main/LICENSE"><img src="https://svg.xul.is/badge/License/MIT*?variant=3&color=neutral&icon=scale" /></a>
-    <a href="https://github.com/xulbux/svg-api/commits"><img src="https://svg.xul.is/badge/gh/xulbux/svg-api/commit?variant=3&color=neutral" /></a>
-    <a href="https://github.com/sponsors/xulbux"><img src="https://svg.xul.is/badge/Sponsor?variant=2&color=rose&icon=heart&anim=pulse" /></a>
+    <a href="https://svg.xul.is"><img alt="svg.xul.is" src="https://svg.xul.is/badge/svg.xul.is?icon=sparkles,external-link&anim=sheen,default,nudge" /></a>
+    <a href="https://svg.xul.is/builder"><img alt="Builder" src="https://svg.xul.is/badge/Builder?variant=2&icon=sliders-vertical,external-link&anim=default,nudge" /></a>
+    <a href="https://github.com/xulbux/svg-api/blob/main/LICENSE"><img alt="License: MIT*" src="https://svg.xul.is/badge/License/MIT*?variant=3&color=neutral&icon=scale" /></a>
+    <a href="https://github.com/xulbux/svg-api/commits"><img alt="Last Commit" src="https://svg.xul.is/badge/gh/xulbux/svg-api/commit?variant=3&color=neutral" /></a>
+    <a href="https://github.com/sponsors/xulbux"><img alt="Sponsor" src="https://svg.xul.is/badge/Sponsor?variant=2&color=rose&icon=heart&anim=pulse" /></a>
   </h1>
   <h3>High-performance, zero-cold-start dynamic SVG engine on Cloudflare Workers.</h3>
   <br><br>

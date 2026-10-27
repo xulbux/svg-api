@@ -2340,7 +2340,7 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
     expect(resolveBuilderTarget('/icon/a/b')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/a/b/c/d')).toBeUndefined();
-    expect(resolveBuilderTarget('/favicon.svg')).toBeUndefined();
+    expect(resolveBuilderTarget('/favicon.png')).toBeUndefined();
     expect(resolveBuilderTarget('/quote/Hi?layout=vertical')?.href).toBe(
       `/builder/quote?path=${encodeURIComponent('/quote/Hi?layout=vertical')}`
     );

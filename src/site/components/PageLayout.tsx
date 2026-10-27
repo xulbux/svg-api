@@ -1,8 +1,7 @@
 /**
- * Page layout component – Shared responsive HTML document shell (`<PageLayout />`) with FOUC-free color-scheme support, view transitions, social/canonical metadata, header, optional sidebar, footer, and SVG favicon.
+ * Page layout component – Shared responsive HTML document shell (`<PageLayout />`) with FOUC-free color-scheme support, view transitions, social/canonical metadata, header, optional sidebar, footer, and PNG favicon.
  */
 
-import brandIconSvg from '@brand/icon.svg';
 import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
 import { getSiteAssetUrl } from '@/site/assets';
 import { Footer } from '@/site/components/Footer';
@@ -68,9 +67,6 @@ let headScriptHtmlCache: string | undefined = undefined;
 /** Memoized `#site-config` JSON element (`undefined` until first rendered). */
 let siteConfigHtmlCache: string | undefined = undefined;
 
-/** Memoized standalone favicon SVG (`undefined` until first rendered). */
-let faviconSvgCache: string | undefined = undefined;
-
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build (once per isolate) the exact JavaScript body inside the `<head>` preference script. */
@@ -115,15 +111,6 @@ function renderSiteConfig(): string {
  */
 export function getHeadScriptBody(): string {
   return buildHeadScriptBody();
-}
-
-/**
- * Return (once per isolate) the canonical standalone SVG favicon sourced from `assets/icon.svg`.
- * @returns Standalone `<svg>` XML string.
- */
-export function renderFaviconSvg(): string {
-  faviconSvgCache ??= brandIconSvg.replaceAll('\r\n', '\n').trim();
-  return faviconSvgCache;
 }
 
 /**
@@ -178,7 +165,6 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
             sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}
             href="/favicon.png"
           />
-          <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />
           <link
             rel="apple-touch-icon"
             sizes={`${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}`}

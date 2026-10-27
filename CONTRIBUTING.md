@@ -119,6 +119,7 @@ Icons resolve from four bundled sets in `src/svg/icons.ts`:
 -   **Edge Bounds:** Defer heavy init until first use, bound user-keyed caches via `createLruCache` (`src/svg/shared.ts`), and sanitize display text with `prepareDisplayText`.
 -   **Worker Entrypoint:** `src/index.ts` must only `export default app;` (extra exports break `workerd`).
 -   **Encoding & CSP:** Literal `+` in route paths must be `%2B` (`+` decodes to a space); Changing `getHeadScriptBody()` (`src/site/components/PageLayout.tsx`) requires updating its `sha256-…` hash in `HTML_SECURITY_HEADERS` (`src/routes/http.ts`).
+-   **Full Architecture & Style Rules:** See [`.agents/AGENTS.md`](.agents/AGENTS.md) for comprehensive coding, performance, and comment conventions.
 
 <br>
 

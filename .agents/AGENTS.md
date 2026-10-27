@@ -27,19 +27,19 @@ This service runs on Cloudflare Workers at the edge with a zero-cold-start targe
     -   **Caches:** In-isolate caches keyed by user input must be bounded by entry count **and** by total size; Use the shared LRU helpers (`createLruCache`, `readLruCache`, `writeLruCache` in `src/svg/shared.ts`) instead of hand-rolled `Map` caches.
     -   **Output Size:** Cap user-controlled lengths and counts before expensive work (text layout, ink measurement, icon bodies), and emit repeated SVG content once in `<defs>` and reference it with `<use>` (with content-addressed IDs, so several SVGs inlined on one page never collide).
     -   **Text:** Route user-supplied display text through `prepareDisplayText` (it replaces control and invisible characters, which Geist would draw as `.notdef` boxes) and sanitize numeric widget values in the renderer, whether they come from the query DSL or from upstream JSON.
--   **Upstream Service Presets:** Only documented, public, token-free `GET` JSON endpoints for developer ecosystems that are verified live (e.g., with `curl`) before writing a transform; Never scrape HTML or rely on undocumented internal web endpoints. Never let a request choose the upstream host (SSRF), build upstream URLs with the encoding URL templates of `createEndpoint()`, and do not add a preset whose correct metrics require multi-megabyte payloads for common targets (parsing them exceeds Worker CPU limits; Bodies above 2 MB are rejected); Prefer a smaller endpoint, or skip the metric, and keep only the needed fields with a `project` projection. See `CONTRIBUTING.md` (Adding a Service Preset) for the registration steps.
+-   **Upstream Service Presets:** Verify candidate endpoints live (e.g., with `curl`) before writing a transform, and follow all preset rules, registration steps, and payload/SSRF constraints defined in `CONTRIBUTING.md` (*Adding a Service Preset* and *Preset Rules*).
 
 ## 4. Validation & Testing
 
-After making any code changes, you must validate them by running the full suite of type checks, linters, formatters, tests, and Wrangler dry-run verification:
+After making any code changes, you must validate them by running the formatter, linter, and full check suite (client bundle, format check, lint, Markdown lint, type-check, tests, and Wrangler dry-run):
 
 ```bash
-pnpm run build:client && pnpm run type-check && pnpm run lint && pnpm run lint:md && pnpm run fmt && pnpm run test && pnpm exec wrangler deploy --dry-run
+pnpm run fmt && pnpm run lint && pnpm run check
 ```
 
 Fix all problems and warnings until they are completely resolved (zero errors, zero warnings, and zero lint issues). Use the `test` skill for testing guidelines and commands, and the `build` skill for local development server previewing, Wrangler verification, and deployment.
 
--   **Drift Guards Over Manual Checklists:** Automated drift tests in `test/` enforce parity across `SVG_ROUTES`, `SERVICES_CONFIG`, `src/site/`, `/builder/:kind`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `.github/`. Keep live showcase previews and builder UI interactions aligned with visual changes, and add a drift assertion whenever introducing a new code-governed list or limit in prose.
+-   **Drift Guards Over Manual Checklists:** Automated drift tests in `test/` enforce parity across `SVG_ROUTES`, `SERVICES_CONFIG`, `src/site/`, `/builder/:kind`, `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, and `.github/`. Keep live showcase previews and builder UI interactions aligned with visual changes, and add a drift assertion whenever introducing a new code-governed list or limit in prose.
 -   **Regression Tests for Bug Fixes:** Every bug fix **must** include a test that reproduces the original bug and verifies the fix before considering the fix complete. This prevents regressions and ensures the same problem never resurfaces.
 
 ## 5. Ask, Don't Assume

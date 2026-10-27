@@ -17,7 +17,7 @@ const TEXT_MODULE_SUFFIX = '.text-module';
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches module IDs bundled as plain text by Wrangler (`rules` in `wrangler.jsonc`). */
-const TEXT_MODULE_RX = /\.(?:css|client\.js|svg)$/;
+const TEXT_MODULE_RX = /\.(?:css|client\.js)$/;
 
 // ----------------------------------------- MAIN ----------------------------------------
 
@@ -64,7 +64,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
-      '@brand': path.resolve(import.meta.dirname, 'assets'),
       '@bundles': path.resolve(import.meta.dirname, 'dist/client'),
       '@scripts': path.resolve(import.meta.dirname, 'scripts'),
     },

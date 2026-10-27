@@ -1,5 +1,5 @@
 /**
- * Client & asset builder – Compiles modular browser TypeScript in `src/site/client/` into self-contained IIFE bundles in `dist/client/*.client.js` and rasterizes `dist/client/favicon.png` + `src/assets/og.png` from `assets/icon.svg` and `renderOgImageSvg()`.
+ * Client & asset builder – Compiles modular browser TypeScript in `src/site/client/` into self-contained IIFE bundles in `dist/client/*.client.js` and builds `dist/client/favicon.png` + `dist/client/og.png` from `assets/icon.png` and `renderOgImageSvg()`.
  */
 
 import path from 'node:path';
@@ -11,7 +11,7 @@ import { buildBrandRasterAssets } from './og/index.ts';
 /** Absolute path of the repository root directory. */
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 
-/** Output directory for generated browser client bundles and rasterized brand favicon (gitignored). */
+/** Output directory for generated browser client bundles and rasterized brand/OpenGraph PNGs (gitignored). */
 const CLIENT_BUNDLE_DIR = 'dist/client';
 
 // ----------------------------------------- MAIN ----------------------------------------

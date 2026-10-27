@@ -118,10 +118,26 @@ export interface GroupSegments {
   segments: Segment2D[];
 }
 
+/** Decoded 8-bit straight RGBA pixel buffer and dimensions of a PNG image. */
+export interface DecodedPng {
+  /** Image height in pixels. */
+  height: number;
+  /** Straight 8-bit RGBA pixels (`width * height * 4` bytes). */
+  pixels: Uint8Array;
+  /** Image width in pixels. */
+  width: number;
+}
+
+/** Brand icon and favicon dimensions evaluated from `src/config/site.ts` at build time. */
+export interface BrandSiteConfig {
+  /** Required square pixel dimension of `assets/icon.png`. */
+  BRAND_ICON_PNG_SIZE: number;
+  /** Square pixel dimension of generated `dist/client/favicon.png`. */
+  FAVICON_PNG_SIZE: number;
+}
+
 /** Exports evaluated from `src/site/seo.ts` at build time. */
 export interface LiveOgModule {
-  /** Square pixel dimension of `/favicon.png`. */
-  FAVICON_PNG_SIZE: number;
   /** OpenGraph card height in pixels. */
   OG_IMAGE_HEIGHT: number;
   /** OpenGraph card width in pixels. */

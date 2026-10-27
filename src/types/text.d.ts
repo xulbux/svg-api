@@ -1,5 +1,5 @@
 /**
- * Text module declarations – Website stylesheets (`*.css`), browser scripts (`*.client.js`), and vector assets (`*.svg`) are bundled as plain text.
+ * Text module declarations – Website stylesheets (`*.css`) and browser scripts (`*.client.js`) are bundled as plain text.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -12,12 +12,6 @@ declare module '*.css' {
 
 declare module '*.client.js' {
   /** Raw browser script source. */
-  const content: string;
-  export default content;
-}
-
-declare module '*.svg' {
-  /** Raw SVG document source. */
   const content: string;
   export default content;
 }

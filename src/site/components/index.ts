@@ -10,7 +10,7 @@ export { DocsPager } from '@/site/components/DocsPager';
 export { Footer } from '@/site/components/Footer';
 export { HeaderNav } from '@/site/components/HeaderNav';
 export { IconPickerPopover } from '@/site/components/IconPickerPopover';
-export { getHeadScriptBody, PageLayout, renderFaviconSvg } from '@/site/components/PageLayout';
+export { getHeadScriptBody, PageLayout } from '@/site/components/PageLayout';
 export { AliasList, ParamTable, renderParamTable } from '@/site/components/ParamTable';
 export { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
 export { CardGrid, ShowcaseCard, splitTrailingParenthetical } from '@/site/components/ShowcaseCard';

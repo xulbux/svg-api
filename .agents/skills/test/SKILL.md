@@ -17,15 +17,15 @@ Tests use **vitest** and are located in the `test/` directory. Pure modules in `
 
 | File                    | Purpose                                                                          |
 | ----------------------- | -------------------------------------------------------------------------------- |
-| `test/helpers.ts`       | Shared test helpers (`TEST_ENV`, `ARIA_LABEL_RX`, `extractAriaLabel`, `requireDefined`, `countOccurrences`, `createEdgeCacheStub`, `installEdgeCacheStub`, `evaluateClientCore`, `evaluateClientDom`, `readClientModuleSources`); Reuse them instead of local copies |
+| `test/helpers.ts`       | Shared test helpers (default `Env`, ARIA label extraction, assertion guards, Tier-2 edge cache stubs, and Node client-bundle evaluators); Reuse them instead of local copies |
 | `test/measure.test.ts`  | Text width calculation, cached and uncached outline rendering (`src/svg/measure.ts`), and the shared count- and size-bounded LRU cache (`src/svg/shared.ts`) |
 | `test/icons.test.ts`    | Bundled icon set resolution, slug normalization and aliases, the size-bounded icon cache, and ink bounds (`src/svg/icons.ts`) |
 | `test/renderer.test.ts` | SSOT SVG rendering across all element renderers, variants, inline widgets, accessible labels, content-addressed IDs, and size/DoS bounds (`src/svg/`) |
 | `test/routes.test.ts`   | Worker entrypoint export guard, Hono routes, the SVG route table and dispatcher (`SVG_ROUTES`), query DSL parsers, HTTP helpers (`src/routes/http.ts`), response headers, normalized edge cache keys, error badges, SEO endpoints, docs pages & route regressions |
 | `test/services.test.ts` | Every service preset transform, endpoint URL templates & projections, request validation, upstream error, size-cap, and rate-limit badges, coalescing, negative edge caching, the memory cache size budget, caching & redirects (`src/services/`) |
-| `test/site.test.ts`     | Documentation website HTML validity, accessibility, head metadata, header tabs, grouped sidebars, pager order, versioned assets, stylesheets, client script guards (theme, preview background toggle), and website/OSS Markdown drift guards (`src/site/`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `.github/`) |
+| `test/site.test.ts`     | Documentation website HTML validity, accessibility, head metadata, header tabs, grouped sidebars, pager order, versioned assets, stylesheets, client script guards (theme, preview background toggle), and website/OSS repository drift guards |
 | `test/builder.test.ts`  | Builder schema drift guards, the builder client core (evaluated from `builder.client.js` without a DOM) round-tripped through the route parser, snippet token parity with the server, icon picker index/assets and slug resolution parity with `resolveIcon`, and "Open in Builder" links that must render identical SVGs |
-| `vitest.config.mts`     | Vitest config with `@/`, `@brand/`, `@bundles/`, and `@scripts/` path aliases, binary/text asset loaders (`wrangler.jsonc` `Data` and `Text` rules), `restoreMocks`, and `unstubGlobals` |
+| `vitest.config.mts`     | Vitest config mirroring `tsconfig.json` path aliases and `wrangler.jsonc` `Data`/`Text` module loaders, with `restoreMocks` and `unstubGlobals` |
 
 ---
 

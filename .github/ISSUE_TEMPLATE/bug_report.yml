@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Check [Encoding Path Segments](https://svg.xul.is/docs#overview) first if `+` or `%` behaved unexpectedly.
+        Check [Encoding Path Segments](https://svg.xul.is/docs#encoding-path-segments) first if `+` or `%` behaved unexpectedly.
 
   - type: input
     id: url

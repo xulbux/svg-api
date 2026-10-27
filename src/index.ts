@@ -3,10 +3,10 @@
  */
 
 import faviconPngBuffer from '@bundles/favicon.png';
+import ogImagePngBuffer from '@bundles/og.png';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import ogImagePngBuffer from '@/assets/og.png';
 import { DEFAULT_ENV } from '@/config/site';
 import {
   buildConditionalBodyResponse,
@@ -34,7 +34,6 @@ import {
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
 import { resolveServiceMetric, resolveServiceRedirectUrl } from '@/services/fetcher';
 import { getSiteAsset } from '@/site/assets';
-import { renderFaviconSvg } from '@/site/components';
 import { buildBuilderPath, DEFAULT_BUILDER_KIND, isBuilderKind } from '@/site/navigation';
 import {
   isDocsSectionSlug,
@@ -83,8 +82,13 @@ const CRAWLER_FILE_CACHE_CONTROL = 'public, max-age=3600, s-maxage=86400';
 /** `Cache-Control` header for static assets requested with their current content version (`?v=`). */
 const IMMUTABLE_ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 
-/** Shared edge cache TTL in seconds for the favicon and social preview SVG. */
+/** Shared edge cache TTL in seconds for the favicon and social preview assets. */
 const FAVICON_TTL_SECONDS = 86_400;
+
+/** Extra headers of `/og.svg` allowing its embedded `data:image/png;base64,…` brand icon to render when opened directly. */
+const OG_SVG_HEADERS: Readonly<Record<string, string>> = {
+  'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+};
 
 /** Extra headers of service preset badge SVGs (the same URL redirects document navigations). */
 const SERVICE_SVG_HEADERS: Readonly<Record<string, string>> = { Vary: SERVICE_VARY_HEADER };
@@ -232,21 +236,6 @@ function buildCrawlerFileResponse(
   });
 }
 
-/** Serve a memoized static SVG asset (e.g., `/favicon.svg` or `/og.svg`) with precomputed `ETag`. */
-function buildMemoizedSvgResponse(
-  context: AppContext,
-  documentId: string,
-  render: () => string
-): Response {
-  const doc = getMemoizedDocument(documentId, render);
-  return buildConditionalBodyResponse(
-    doc.body,
-    doc.etag,
-    context.req.header('If-None-Match'),
-    buildSvgHeaders(FAVICON_TTL_SECONDS, doc.etag)
-  );
-}
-
 /** Safely retrieve the Hono `executionCtx` when running inside Cloudflare Workers. */
 function getSafeExecutionContext(context: AppContext): WaitUntilContext | undefined {
   try {
@@ -390,19 +379,14 @@ function buildBundledPngResponse(
   });
 }
 
-/** Handle `/favicon.svg` with the memoized brand SVG mark. */
-function handleFaviconRoute(context: AppContext): Response {
-  return buildMemoizedSvgResponse(context, 'favicon.svg', renderFaviconSvg);
-}
-
 /** Handle `/favicon.png` with the rasterized RGBA brand icon. */
 function handleFaviconPngRoute(context: AppContext): Response {
   faviconPngEtag ??= `W/"${hashBytes(faviconPngBuffer)}-${faviconPngBuffer.byteLength.toString(36)}"`;
   return buildBundledPngResponse(context, faviconPngBuffer, faviconPngEtag);
 }
 
-/** Permanently redirect `/favicon.ico` to `/favicon.png` with edge caching. */
-function handleFaviconIcoRoute(): Response {
+/** Permanently redirect legacy favicon paths to `/favicon.png` with edge caching. */
+function handleFaviconRedirectRoute(): Response {
   return new Response(undefined, {
     headers: {
       'Cache-Control': `public, max-age=${FAVICON_TTL_SECONDS}, s-maxage=${FAVICON_TTL_SECONDS}`,
@@ -414,7 +398,13 @@ function handleFaviconIcoRoute(): Response {
 
 /** Handle `/og.svg` with the memoized vector OpenGraph social card. */
 function handleOgImageRoute(context: AppContext): Response {
-  return buildMemoizedSvgResponse(context, 'og.svg', renderOgImageSvg);
+  const doc = getMemoizedDocument('og.svg', renderOgImageSvg);
+  return buildConditionalBodyResponse(
+    doc.body,
+    doc.etag,
+    context.req.header('If-None-Match'),
+    buildSvgHeaders(FAVICON_TTL_SECONDS, doc.etag, OG_SVG_HEADERS)
+  );
 }
 
 /** Handle `/og.png` with the bundled raster OpenGraph social card. */
@@ -557,9 +547,9 @@ app.use('*', guardRequestUrlLength);
 
 // [2] Website pages, discovery metadata, and static assets:
 app.get('/', handleRootRoute);
-app.get('/favicon.svg', handleFaviconRoute);
 app.get('/favicon.png', handleFaviconPngRoute);
-app.get('/favicon.ico', handleFaviconIcoRoute);
+app.get('/favicon.ico', handleFaviconRedirectRoute);
+app.get('/favicon.svg', handleFaviconRedirectRoute);
 app.get('/og.png', handleOgImagePngRoute);
 app.get('/og.svg', handleOgImageRoute);
 app.get('/robots.txt', handleRobotsTxtRoute);

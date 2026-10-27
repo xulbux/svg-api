@@ -1,13 +1,15 @@
 /**
- * Vector SVG rasterizer – Paints rounded `<rect>` and `<circle>` SDFs, `4x4` supersampled filled `<path>` outlines, and stroked `<g>` groups onto an RGBA canvas.
+ * Vector SVG rasterizer – Paints rounded `<rect>` and `<circle>` SDFs, `4x4` supersampled filled `<path>` outlines, stroked `<g>` groups, and embedded PNG `<image>` elements onto an RGBA canvas.
  */
 
 import {
   clampRange,
+  decodePngToRgba,
   ditherCanvasToRgb,
   ditherCanvasToRgba,
   encodeRgbaPng,
   encodeRgbPng,
+  resampleRgbaArea,
 } from './png.ts';
 import {
   CURVE_STEPS,
@@ -50,6 +52,9 @@ const SUPERSAMPLE_ROWS = 4;
 /** Horizontal supersampling grid resolution per pixel column for anti-aliased vector fills. */
 const SUPERSAMPLE_COLS = 4;
 
+/** Prefix of inline base64 PNG data URIs on `<image href="…" />` elements. */
+const PNG_DATA_URI_PREFIX = 'data:image/png;base64,';
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches the opening `<svg …>` tag to read `viewBox` or `width` dimensions. */
@@ -58,9 +63,9 @@ const SVG_OPEN_TAG_RX = /<svg\s+(?<attrs>[^>]+)>/;
 /** Matches `<defs>…</defs>` so it can be stripped before walking painted body elements. */
 const DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/;
 
-/** Matches painted top-level SVG body primitives (`<g>…</g>`, `<rect>`, `<circle>`, or `<path>`). */
+/** Matches painted top-level SVG body primitives (`<g>…</g>`, `<rect>`, `<circle>`, `<path>`, or `<image>`). */
 const BODY_PRIMITIVE_RX =
-  /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|circle|path)\s+[^>]*\/>)/g;
+  /<g\s+(?<groupAttrs>[^>]+)>(?<groupBody>[\s\S]*?)<\/g>|(?<selfTag><(?:rect|circle|path|image)\s+[^>]*\/>)/g;
 
 /** Matches `<path … />` and `<circle … />` elements inside a `<g>` group. */
 const INNER_SHAPE_RX = /<(?<tag>path|circle)\s+(?<attrs>[^>]*)\/>/g;
@@ -644,7 +649,44 @@ function paintStrokedGroup(
   }
 }
 
-/** Paint a single matched SVG body primitive (`<g>`, `<rect>`, `<circle>`, or `<path>`) onto `scene`. */
+/** Paint an inline `data:image/png;base64,…` `<image>` element onto `scene`. */
+function paintImageElement(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
+  const href = attrs.href ?? '';
+  if (!href.startsWith(PNG_DATA_URI_PREFIX)) {
+    return;
+  }
+  const imgX = Math.round(Number.parseFloat(attrs.x ?? '0') * scene.rootScale);
+  const imgY = Math.round(Number.parseFloat(attrs.y ?? '0') * scene.rootScale);
+  const imgWidth = Math.round(Number.parseFloat(attrs.width ?? '0') * scene.rootScale);
+  const imgHeight = Math.round(Number.parseFloat(attrs.height ?? '0') * scene.rootScale);
+  if (imgWidth <= 0 || imgHeight <= 0) {
+    return;
+  }
+
+  const pngBytes = Buffer.from(href.slice(PNG_DATA_URI_PREFIX.length), 'base64');
+  const resampled = resampleRgbaArea(decodePngToRgba(pngBytes), imgWidth, imgHeight);
+  for (let localRow = 0; localRow < imgHeight; localRow += 1) {
+    const canvasRow = imgY + localRow;
+    if (canvasRow >= 0 && canvasRow < scene.height) {
+      for (let localCol = 0; localCol < imgWidth; localCol += 1) {
+        const canvasCol = imgX + localCol;
+        if (canvasCol >= 0 && canvasCol < scene.width) {
+          const sampleOffset = (localRow * imgWidth + localCol) * 4;
+          blendPixel(
+            scene.canvas,
+            (canvasRow * scene.width + canvasCol) * 4,
+            resampled[sampleOffset] ?? 0,
+            resampled[sampleOffset + 1] ?? 0,
+            resampled[sampleOffset + 2] ?? 0,
+            resampled[sampleOffset + 3] ?? 0
+          );
+        }
+      }
+    }
+  }
+}
+
+/** Paint a single matched SVG body primitive (`<g>`, `<rect>`, `<circle>`, `<path>`, or `<image>`) onto `scene`. */
 function paintBodyPrimitive(scene: RasterScene, match: RegExpExecArray): void {
   if (match.groups?.groupAttrs !== undefined) {
     paintStrokedGroup(scene, parseXmlAttrs(match.groups.groupAttrs), match.groups.groupBody ?? '');
@@ -658,6 +700,8 @@ function paintBodyPrimitive(scene: RasterScene, match: RegExpExecArray): void {
     paintCircle(scene, attrs);
   } else if (selfTag.startsWith('<path')) {
     paintPathElement(scene, attrs);
+  } else if (selfTag.startsWith('<image')) {
+    paintImageElement(scene, attrs);
   }
 }
 

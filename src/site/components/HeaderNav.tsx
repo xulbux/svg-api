@@ -108,7 +108,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
     <header class="site-header">
       <div class="header-inner">
         <a href="/" class="brand-link" tabindex="0">
-          <img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />
+          <img src="/favicon.png" alt="" width="26" height="26" class="brand-mark" />
           {SITE_NAME}
         </a>
         <div class="header-nav-row">

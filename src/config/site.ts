@@ -27,5 +27,11 @@ export const REPO_GITHUB_URL = `${AUTHOR_GITHUB_URL}/svg-api`;
 /** Fallback redirect destination for invalid service badge routes. */
 export const FALLBACK_REDIRECT_URL = 'https://xul.is';
 
+/** Required square pixel dimension of the canonical `assets/icon.png` brand icon. */
+export const BRAND_ICON_PNG_SIZE = 512;
+
+/** Square pixel dimension of the raster `/favicon.png` (`48px` multiple for Google Search and Apple touch icons). */
+export const FAVICON_PNG_SIZE = 192;
+
 /** Default environment bindings (bare `app.request()` calls and network-free docs previews). */
 export const DEFAULT_ENV: Env = {};

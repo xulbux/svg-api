@@ -7,12 +7,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { inflateSync } from 'node:zlib';
 import siteScript from '@bundles/site.client.js';
+import { decodePngToRgba, encodeRgbaPng } from '@scripts/og/png';
 import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasterizer';
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
 import { describe, expect, it } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
 import {
   AUTHOR_GITHUB_URL,
+  BRAND_ICON_PNG_SIZE,
   REPO_GITHUB_URL,
   SITE_HOST,
   SITE_NAME,
@@ -46,12 +48,7 @@ import {
   SERVICE_ROUTE_PATTERN,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog';
-import {
-  formatInlineMarkupHtml,
-  getHeadScriptBody,
-  renderFaviconSvg,
-  renderParamTable,
-} from '@/site/components';
+import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
 import { formatSpecialExamples, formatVariantTierSummary } from '@/site/glossary';
 import { jsx } from '@/site/jsx/jsx-runtime';
 import { BUILDER_PAGES, buildBuilderPath, buildDocsPath, DOCS_PAGES } from '@/site/navigation';
@@ -135,6 +132,8 @@ interface RepoPackageJson {
   dependencies: Record<string, string>;
   /** Runtime engine constraints. */
   engines: { node: string };
+  /** Canonical project website URL. */
+  homepage: string;
   /** SPDX license identifier. */
   license: string;
   /** Source repository metadata. */
@@ -276,8 +275,9 @@ const MD_PNPM_SCRIPT_RX = /\bpnpm run (?<script>[\w:-]+)/g;
 const MD_REPO_PATH_SPAN_RX =
   /`(?<relPath>(?:assets|src|test|scripts|\.github|\.agents)(?:\/[\w.-]+)+\/?)`/g;
 
-/** Matches SVG `<path>` `d="…"` attributes. */
-const PATH_DATA_ATTRIBUTE_RX = /\bd="(?<d>[^"]+)"/g;
+/** Matches badge `<img … src="https://svg.xul.is/badge/…" />` tags inside the `README.md` hero block. */
+const README_HERO_BADGE_IMG_RX =
+  /<img\s+(?<attrs>[^>]*\bsrc="https:\/\/svg\.xul\.is\/badge\/[^"]+"[^>]*)\/>/g;
 
 /** Matches named `import { … } from '@/…'` statements inside Markdown code examples. */
 const MD_TS_IMPORT_RX = /import\s*\{(?<specifiers>[^}]+)\}\s*from\s*'(?<modulePath>@\/[\w/-]+)';/g;
@@ -645,7 +645,6 @@ function assertContributingDownloadAndPlaceholderSpecs(contributingMd: string): 
 function assertContributingScriptsEngineAndIcons(
   contributingMd: string,
   serviceRequestYml: string,
-  agentsMd: string,
   packageJson: RepoPackageJson
 ): void {
   expect(contributingMd).toContain(`git clone ${REPO_GITHUB_URL}.git`);
@@ -660,7 +659,6 @@ function assertContributingScriptsEngineAndIcons(
   const maxUpstreamMb = `${MAX_UPSTREAM_BYTES / (1024 * 1024)} MB`;
   expect(contributingMd).toContain(`above \`${maxUpstreamMb}\``);
   expect(serviceRequestYml).toContain(`\`<= ${maxUpstreamMb}\``);
-  expect(agentsMd).toContain(`Bodies above ${maxUpstreamMb}`);
   expect(contributingMd).toContain(`\`${SERVICE_ROUTE_PATTERN}\``);
 
   const iconSourceNames: string[] = [];
@@ -803,61 +801,78 @@ async function assertProseModuleExports(contributingMd: string, securityMd: stri
   }
 }
 
-/** Decompress the `IDAT` scanline payload from an encoded PNG buffer. */
+/** Decompress the concatenated `IDAT` scanline payload from an encoded PNG buffer. */
 function inflateIdatScanlines(pngBuffer: Buffer): Buffer {
+  const idatChunks: Buffer[] = [];
   let offset = 8; // Skip 8-byte PNG signature.
   while (offset + 8 <= pngBuffer.length) {
     const chunkLength = pngBuffer.readUInt32BE(offset);
     const chunkType = pngBuffer.subarray(offset + 4, offset + 8).toString('ascii');
     if (chunkType === 'IDAT') {
-      return inflateSync(pngBuffer.subarray(offset + 8, offset + 8 + chunkLength));
+      idatChunks.push(pngBuffer.subarray(offset + 8, offset + 8 + chunkLength));
     }
     offset += 12 + chunkLength;
   }
-  throw new Error('Missing IDAT chunk in PNG buffer');
+  if (idatChunks.length === 0) {
+    throw new Error('Missing IDAT chunk in PNG buffer');
+  }
+  return inflateSync(Buffer.concat(idatChunks));
 }
 
-/** Verify `assets/icon.svg` is the single SSOT brand asset across `LICENSE`, `README.md`, `/favicon.*`, and `/og.*`. */
+/** Verify `assets/icon.png` is the single SSOT brand asset across `LICENSE`, font licenses, `README.md`, `/favicon.*`, and `/og.*`. */
 function assertBrandAssetsAndLicenseParity(
   repoRoot: string,
   readmeMd: string,
   licenseTxt: string
 ): void {
-  expect(readdirSync(path.resolve(repoRoot, 'assets'))).toEqual(['icon.svg']);
+  expect(readdirSync(path.resolve(repoRoot, 'assets'))).toEqual(['icon.png']);
+  expect(existsSync(path.resolve(repoRoot, 'src', 'assets', 'og.png'))).toBe(false);
 
-  const canonicalBrandSvg = readRepoFile(repoRoot, 'assets/icon.svg').trim();
-  expect(renderFaviconSvg()).toBe(canonicalBrandSvg);
+  const brandIconBytes = readFileSync(path.resolve(repoRoot, 'assets', 'icon.png'));
+  const decodedBrandIcon = decodePngToRgba(brandIconBytes);
+  expect(decodedBrandIcon.width).toBe(BRAND_ICON_PNG_SIZE);
+  expect(decodedBrandIcon.height).toBe(BRAND_ICON_PNG_SIZE);
+  expect(decodedBrandIcon.pixels[3]).toBe(0); // Transparent `(0, 0)` squircle corner.
+
+  const faviconPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'favicon.png'));
+  const decodedFavicon = decodePngToRgba(faviconPngBuffer);
+  expect(decodedFavicon.width).toBe(FAVICON_PNG_SIZE);
+  expect(decodedFavicon.height).toBe(FAVICON_PNG_SIZE);
+  expect(decodedFavicon.pixels[3]).toBe(0);
+  const faviconExpectedDigest = createHash('sha256').update(brandIconBytes).digest('hex');
+  expect(faviconPngBuffer.toString('latin1')).toContain(
+    `Comment\0src-sha256=${faviconExpectedDigest}`
+  );
 
   const ogSvg = renderOgImageSvg();
-  const brandGradientIds = collectGroups(canonicalBrandSvg, ID_ATTRIBUTE_RX, 'id');
-  expect(brandGradientIds.length).toBeGreaterThan(0);
-  for (const gradientId of brandGradientIds) {
-    expect(ogSvg, gradientId).toContain(`id="${gradientId}"`);
-  }
-  const brandPathDataList = collectGroups(canonicalBrandSvg, PATH_DATA_ATTRIBUTE_RX, 'd');
-  expect(brandPathDataList.length).toBeGreaterThan(0);
-  for (const pathData of brandPathDataList) {
-    expect(ogSvg, pathData).toContain(`d="${pathData}"`);
-  }
+  expect(ogSvg).toContain(
+    `<image x="88" y="98" width="48" height="48" href="data:image/png;base64,${faviconPngBuffer.toString('base64')}" />`
+  );
 
-  const rawBrandUrl = `https://raw.githubusercontent.com/${REPO_GITHUB_URL.slice('https://github.com/'.length)}/main/assets/icon.svg`;
+  const ogPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'og.png'));
+  const ogExpectedDigest = createHash('sha256').update(ogSvg).digest('hex');
+  expect(ogPngBuffer.toString('latin1')).toContain(`Comment\0src-sha256=${ogExpectedDigest}`);
+
+  const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
+  const rawBrandUrl = `https://raw.githubusercontent.com/${repoSlug}/main/assets/icon.png`;
   expect(readmeMd).toContain(`<img height="96" src="${rawBrandUrl}" />`);
   expect(readmeMd).toContain('/badge/License/MIT*?variant=3&color=neutral&icon=scale');
+
+  const readmeHeroBlock = readmeMd.slice(0, readmeMd.indexOf('</h1>'));
+  const heroBadgeAttrs = collectGroups(readmeHeroBlock, README_HERO_BADGE_IMG_RX, 'attrs');
+  expect(heroBadgeAttrs).toHaveLength(5);
+  for (const attrs of heroBadgeAttrs) {
+    expect(attrs).toMatch(/\balt="[^"]+"/);
+  }
 
   expect(licenseTxt).toContain('MIT License');
   expect(licenseTxt).toContain('Artwork & Branding Notice:');
   expect(licenseTxt).toContain('`assets/`');
 
-  const faviconPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'favicon.png'));
-  const faviconExpectedDigest = createHash('sha256').update(canonicalBrandSvg).digest('hex');
-  expect(faviconPngBuffer.toString('latin1')).toContain(
-    `Comment\0svg-sha256=${faviconExpectedDigest}`
-  );
-  expect(inflateIdatScanlines(faviconPngBuffer)[4]).toBe(0); // Transparent `(0, 0)` squircle corner.
-
-  const ogPngBuffer = readFileSync(path.resolve(repoRoot, 'src', 'assets', 'og.png'));
-  const ogExpectedDigest = createHash('sha256').update(ogSvg).digest('hex');
-  expect(ogPngBuffer.toString('latin1')).toContain(`Comment\0svg-sha256=${ogExpectedDigest}`);
+  const fontLicenseTxt = readRepoFile(repoRoot, 'src/assets/fonts/LICENSE');
+  expect(fontLicenseTxt).toContain('SIL OPEN FONT LICENSE Version 1.1');
+  expect(fontLicenseTxt).toContain('The Geist Project Authors');
+  expect(fontLicenseTxt).toContain('The JetBrains Mono Project Authors');
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -1054,18 +1069,13 @@ describe('documentation pages – head metadata & client script', () => {
         '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
       );
       const pngFaviconTag = `<link rel="icon" type="image/png" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`;
-      const svgFaviconTag =
-        '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg" />';
       expect(page.html, page.path).toContain(pngFaviconTag);
-      expect(page.html, page.path).toContain(svgFaviconTag);
-      expect(page.html.indexOf(pngFaviconTag), page.path).toBeLessThan(
-        page.html.indexOf(svgFaviconTag)
-      );
+      expect(page.html, page.path).not.toContain('/favicon.svg');
       expect(page.html, page.path).toContain(
         `<link rel="apple-touch-icon" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
       );
       expect(page.html, page.path).toContain(
-        `<img src="/favicon.svg" alt="" width="26" height="26" class="brand-mark" />${SITE_NAME}</a>`
+        `<img src="/favicon.png" alt="" width="26" height="26" class="brand-mark" />${SITE_NAME}</a>`
       );
       expect(page.html, page.path).toContain(
         `<meta property="og:site_name" content="${SITE_NAME}" />`
@@ -1936,6 +1946,23 @@ describe('site stylesheet', () => {
     expect(inflateIdatScanlines(centeredCircleRgba)[4]).toBe(0);
     expect(inflateIdatScanlines(cornerCircleRgba)[4]).toBe(255);
 
+    // `rasterizeOgSvgToPng` composites inline `data:image/png;base64,…` `<image>` primitives onto the canvas:
+    const tinyCyanPng = encodeRgbaPng(
+      2,
+      2,
+      new Uint8Array([0, 229, 255, 255, 0, 229, 255, 255, 0, 229, 255, 255, 0, 229, 255, 255]),
+      '00'
+    );
+    const compositedPng = rasterizeOgSvgToPng(
+      `<svg width="8" height="8"><rect width="8" height="8" fill="#000000" /><image x="2" y="2" width="4" height="4" href="data:image/png;base64,${tinyCyanPng.toString('base64')}" /></svg>`,
+      8,
+      8,
+      '00'
+    );
+    const decodedComposited = decodePngToRgba(compositedPng);
+    expect(decodedComposited.pixels[0]).toBe(0);
+    expect(decodedComposited.pixels[(3 * 8 + 3) * 4 + 1]).toBeGreaterThan(200);
+
     // Multi-stop `<linearGradient>` interpolates intermediate stops instead of skipping straight from first to last:
     const gradients = parseGradientDefs(
       '<defs><linearGradient id="g" x1="0" y1="0" x2="100" y2="0"><stop offset="0%" stop-color="#000000" /><stop offset="50%" stop-color="#FF0000" /><stop offset="100%" stop-color="#000000" /></linearGradient></defs>'
@@ -2364,18 +2391,26 @@ describe('repository & OSS Markdown drift guards', () => {
     expect([...showcasedServices].toSorted()).toEqual(Object.keys(SERVICES_CONFIG).toSorted());
   });
 
-  it('keeps README.md, CONTRIBUTING.md, SECURITY.md, .github/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
+  it('keeps README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/*, .vscode/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
     const repoRoot = path.resolve(import.meta.dirname, '..');
     const packageJson = JSON.parse(readRepoFile(repoRoot, 'package.json')) as RepoPackageJson;
     const gitattributesTxt = readRepoFile(repoRoot, '.gitattributes');
     const editorconfigTxt = readRepoFile(repoRoot, '.editorconfig');
     const gitignoreTxt = readRepoFile(repoRoot, '.gitignore');
+    const vscodeSettings = JSON.parse(readRepoFile(repoRoot, '.vscode/settings.json')) as {
+      'editor.defaultFormatter': string;
+    };
+    const vscodeExtensions = JSON.parse(readRepoFile(repoRoot, '.vscode/extensions.json')) as {
+      recommendations: string[];
+    };
     const licenseTxt = readRepoFile(repoRoot, 'LICENSE');
     const readmeMd = readRepoFile(repoRoot, 'README.md');
     const contributingMd = readRepoFile(repoRoot, 'CONTRIBUTING.md');
+    const codeOfConductMd = readRepoFile(repoRoot, 'CODE_OF_CONDUCT.md');
     const securityMd = readRepoFile(repoRoot, 'SECURITY.md');
     const prTemplateMd = readRepoFile(repoRoot, '.github/PULL_REQUEST_TEMPLATE.md');
     const ciYml = readRepoFile(repoRoot, '.github/workflows/ci.yaml');
+    const dependabotYml = readRepoFile(repoRoot, '.github/dependabot.yml');
     const fundingYml = readRepoFile(repoRoot, '.github/FUNDING.yml');
     const codeownersTxt = readRepoFile(repoRoot, '.github/CODEOWNERS');
     const issueConfigYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/config.yml');
@@ -2388,28 +2423,42 @@ describe('repository & OSS Markdown drift guards', () => {
 
     // [1] Repository, editor/git LF hygiene, funding, CODEOWNERS, CI secret & dependency-review scope, and `/llms.txt` metadata parity:
     const authorHandle = AUTHOR_GITHUB_URL.slice('https://github.com/'.length);
+    const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
+    expect(packageJson.homepage).toBe(SITE_ORIGIN);
     expect(packageJson.repository.url).toBe(REPO_GITHUB_URL);
     expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
     expect(packageJson.license).toBe('MIT');
+    expect('maintainers' in packageJson).toBe(false);
     expect(existsSync(path.resolve(repoRoot, 'LICENSE'))).toBe(true);
     expect(gitattributesTxt).toContain('* text=auto eol=lf');
     expect(editorconfigTxt).toContain('end_of_line = lf');
     expect(gitignoreTxt).toContain('/.dev.vars*');
+    expect(vscodeExtensions.recommendations).toContain(vscodeSettings['editor.defaultFormatter']);
     expect(fundingYml.trim()).toBe(`github: [${authorHandle}]`);
     expect(codeownersTxt.trim()).toBe(`* @${authorHandle}`);
     expect(readmeMd).toContain(`https://github.com/sponsors/${authorHandle}`);
     expect(issueConfigYml).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
     expect(securityMd).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(ciYml).toContain('permissions: {}');
+    expect(ciYml).toContain('persist-credentials: false');
     expect(ciYml).toContain('actions/dependency-review-action@');
     expect(ciYml).toContain('!github.event.repository.private');
+    expect(ciYml).toContain(`github.repository == '${repoSlug}'`);
     expect(ciYml).not.toMatch(YAML_IF_SECRETS_RX);
     expect(ciYml.slice(0, ciYml.indexOf('- name: Deploy to Cloudflare Workers'))).not.toContain(
       'CLOUDFLARE_API_TOKEN:'
     );
+    expect(dependabotYml).toContain("package-ecosystem: 'npm'");
+    expect(dependabotYml).toContain("package-ecosystem: 'github-actions'");
+    expect(dependabotYml).toContain('cooldown:');
+    expect(dependabotYml).toContain("'lucide-static'");
+    expect(dependabotYml).toContain("'@iconify-json/*'");
+    expect(agentsMd).toContain('`CONTRIBUTING.md`');
     const llmsTxt = renderLlmsTxt();
     expect(llmsTxt.startsWith(`# ${SITE_NAME}\n`)).toBe(true);
     expect(llmsTxt).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
     expect(contributingMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(codeOfConductMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
     expect(securityMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
     expect(contributingMd).not.toContain(`(${SITE_HOST})`);
     expect(contributingMd).not.toContain(`([**${SITE_HOST}**]`);
@@ -2418,18 +2467,15 @@ describe('repository & OSS Markdown drift guards', () => {
     // [2] Heading icons, anchors, ToC, and `README.md` `## Endpoints` table order, routes, aliases, and widgets:
     const readmeAnchors = new Set(collectIconHeadingAnchors('README.md', readmeMd));
     const contributingAnchors = assertContributingHeadingsAndToc(contributingMd);
+    const codeOfConductAnchors = collectIconHeadingAnchors('CODE_OF_CONDUCT.md', codeOfConductMd);
+    expect(codeOfConductAnchors).toHaveLength((codeOfConductMd.match(MD_H2_LINE_RX) ?? []).length);
     const securityAnchors = collectIconHeadingAnchors('SECURITY.md', securityMd);
     expect(securityAnchors).toHaveLength((securityMd.match(MD_H2_LINE_RX) ?? []).length);
     assertReadmeEndpointsTable(readmeMd);
 
     // [3] `CONTRIBUTING.md` download period keys, URL placeholders, Node engine, scripts, limits, and icon sets:
     assertContributingDownloadAndPlaceholderSpecs(contributingMd);
-    assertContributingScriptsEngineAndIcons(
-      contributingMd,
-      serviceRequestYml,
-      agentsMd,
-      packageJson
-    );
+    assertContributingScriptsEngineAndIcons(contributingMd, serviceRequestYml, packageJson);
 
     // [4] Scripts, concrete file/directory paths, live `svg.xul.is` URLs, and GitHub blob links across all OSS files:
     assertReferencedScriptsAndPathsExist(
@@ -2449,6 +2495,7 @@ describe('repository & OSS Markdown drift guards', () => {
       [
         ['README.md', readmeMd],
         ['CONTRIBUTING.md', contributingMd],
+        ['CODE_OF_CONDUCT.md', codeOfConductMd],
         ['SECURITY.md', securityMd],
         ['.github/ISSUE_TEMPLATE/config.yml', issueConfigYml],
         ['.github/ISSUE_TEMPLATE/bug_report.yml', bugReportYml],
@@ -2456,6 +2503,7 @@ describe('repository & OSS Markdown drift guards', () => {
         ['.github/ISSUE_TEMPLATE/service_request.yml', serviceRequestYml],
       ],
       new Map<string, ReadonlySet<string>>([
+        ['CODE_OF_CONDUCT.md', new Set(codeOfConductAnchors)],
         ['CONTRIBUTING.md', contributingAnchors],
         ['README.md', readmeAnchors],
         ['SECURITY.md', new Set(securityAnchors)],

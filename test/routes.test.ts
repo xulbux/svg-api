@@ -32,7 +32,6 @@ import {
 } from '@/routes/params';
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
-import { renderFaviconSvg } from '@/site/components';
 import { BUILDER_PAGES } from '@/site/navigation';
 import { FAVICON_PNG_SIZE } from '@/site/seo';
 import {
@@ -575,11 +574,15 @@ describe('Hono routes on svg.xul.is', () => {
     expect(ogSvgRes.status).toBe(200);
     expect(ogSvgRes.headers.get('Content-Type')).toContain('image/svg+xml');
     expect(ogSvgRes.headers.get('Content-Security-Policy')).toBe(
-      "default-src 'none'; style-src 'unsafe-inline'"
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
     );
     const ogSvgEtag = ogSvgRes.headers.get('ETag') ?? '';
     expect(ogSvgEtag).toMatch(/^W\/"/);
-    expect(await ogSvgRes.text()).toContain('width="1200" height="630"');
+    const ogSvgBody = await ogSvgRes.text();
+    expect(ogSvgBody).toContain('width="1200" height="630"');
+    expect(ogSvgBody).toContain(
+      '<image x="88" y="98" width="48" height="48" href="data:image/png;base64,'
+    );
     const ogSvgNotModified = await app.request(
       '/og.svg',
       { headers: { 'If-None-Match': ogSvgEtag } },
@@ -651,13 +654,10 @@ describe('Hono routes on svg.xul.is', () => {
     expect(svg).toContain('width="32" height="6" rx="3"');
   });
 
-  it('renders 1-segment 22px badge under /badge/:label, CTA buttons under /button/* and /btn/*, and serves /favicon.svg', async () => {
+  it('renders 1-segment 22px badge under /badge/:label, CTA buttons under /button/* and /btn/*, and 301-redirects /favicon.svg to /favicon.png', async () => {
     const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
-    expect(faviconRes.status).toBe(200);
-    expect(faviconRes.headers.get('Content-Type')).toContain('image/svg+xml');
-    const faviconSvg = await faviconRes.text();
-    expect(faviconSvg).toBe(renderFaviconSvg());
-    expect(faviconSvg).toContain('width="512" height="512"');
+    expect(faviconRes.status).toBe(301);
+    expect(faviconRes.headers.get('Location')).toBe('/favicon.png');
 
     const singleBadgeRes = await app.request(
       '/badge/xulbux?color=indigo&icon=sparkles',
@@ -994,7 +994,7 @@ describe('SVG route table & edge cache keys', () => {
 });
 
 describe('response headers & revalidation', () => {
-  it('adds security headers to HTML pages, 301-redirects /favicon.ico, and sends a restrictive CSP on SVG responses', async () => {
+  it('adds security headers to HTML pages, 301-redirects /favicon.ico and /favicon.svg, and sends a restrictive CSP on SVG responses', async () => {
     const homeRes = await app.request('/', {}, TEST_ENV);
     expect(homeRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(homeRes.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
@@ -1004,13 +1004,14 @@ describe('response headers & revalidation', () => {
       HTML_SECURITY_HEADERS['Content-Security-Policy']
     );
 
-    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
-    expect(faviconRes.headers.get('Content-Security-Policy')).toBe(
-      "default-src 'none'; style-src 'unsafe-inline'"
+    const [faviconIcoRes, faviconSvgRes] = await requestAll(
+      ['/favicon.ico', '/favicon.svg'],
+      TEST_ENV
     );
-    const faviconIcoRes = await app.request('/favicon.ico', {}, TEST_ENV);
-    expect(faviconIcoRes.status).toBe(301);
-    expect(faviconIcoRes.headers.get('Location')).toBe('/favicon.png');
+    expect(faviconIcoRes?.status).toBe(301);
+    expect(faviconIcoRes?.headers.get('Location')).toBe('/favicon.png');
+    expect(faviconSvgRes?.status).toBe(301);
+    expect(faviconSvgRes?.headers.get('Location')).toBe('/favicon.png');
   });
 
   it('sends CORS, CSP, nosniff, and per-route Cache-Control headers on every SVG route kind', async () => {
@@ -1128,11 +1129,11 @@ describe('response headers & revalidation', () => {
     expect(await cachedRevalidatedRes.text()).toBe('');
     expect(stub.storedKeys).toHaveLength(1);
 
-    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
+    const faviconRes = await app.request('/favicon.png', {}, TEST_ENV);
     const faviconEtag = faviconRes.headers.get('ETag') ?? '';
     expect(faviconEtag).toMatch(/^W\/"/);
     const faviconRevalidatedRes = await app.request(
-      '/favicon.svg',
+      '/favicon.png',
       { headers: { 'If-None-Match': faviconEtag } },
       TEST_ENV
     );
