@@ -1,5 +1,5 @@
-# Weekly grouped dependency updates for `pnpm` packages (with 3-day supply-chain cooldown)
-# and GitHub Actions workflows:
+# Weekly grouped dependency updates (with 3-day supply-chain cooldown)
+# for `pnpm` packages and GitHub Actions workflows:
 
 version: 2
 updates:
@@ -27,6 +27,8 @@ updates:
     schedule:
       interval: 'weekly'
       day: 'monday'
+    cooldown:
+      default-days: 3
     groups:
       actions:
         patterns:

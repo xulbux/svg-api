@@ -10,7 +10,7 @@
   },
   "env": { "builtin": true, "serviceworker": true },
   "globals": { "caches": "readonly" },
-  "ignorePatterns": [".wrangler/**", "dist/**", "*.md", "package.json", "wrangler.jsonc"],
+  "ignorePatterns": [".wrangler/**", "dist/**"],
   "plugins": ["eslint", "import", "oxc", "typescript", "unicorn"],
   "rules": {
     "capitalized-comments": "off",

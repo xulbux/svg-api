@@ -2,7 +2,7 @@
  * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers.
  */
 
-import { ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
+import { DARK_CARBON_BOTTOM, ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
 import type { BaseDarkPalette, DotState, RgbTuple, ThemeColorName, ThemePalette } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -380,7 +380,7 @@ function createLazyPaletteMap<T>(
 
 /** Base neutral dark carbon surface tokens. */
 export const BASE_DARK: BaseDarkPalette = {
-  bgBottom: ISOLUX_GRAY[900],
+  bgBottom: DARK_CARBON_BOTTOM,
   bgTop: ISOLUX_GRAY[800],
   borderNeutral: ISOLUX_UI.border.dark,
   textMuted: ISOLUX_UI.foregroundSecondary.dark,

@@ -9,7 +9,7 @@ import nodePath from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_ORIGIN } from '@/config/site';
+import { FALLBACK_REDIRECT_URL, SITE_ORIGIN } from '@/config/site';
 import { isThemeColorName } from '@/config/theme';
 import app from '@/index';
 import { resolveSvgRoute } from '@/routes/svg';
@@ -1710,7 +1710,7 @@ describe('upstream caching & redirects', () => {
     expect(ghRes.headers.get('Location')).toBe('https://github.com/honojs/hono/stargazers');
 
     const missingOwnerRes = await app.request('/badge/gh/hono/stars', documentRequest, TEST_ENV);
-    expect(missingOwnerRes.headers.get('Location')).toBe('https://xul.is');
+    expect(missingOwnerRes.headers.get('Location')).toBe(FALLBACK_REDIRECT_URL);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

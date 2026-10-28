@@ -1,14 +1,15 @@
 /**
- * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing, an in-isolate memory cache, conditional `ETag` revalidation, `stale-if-error` fallback, and Tier-1 JSON edge caching.
+ * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing,
+ * an in-isolate memory cache, conditional `ETag` revalidation, `stale-if-error` fallback, and Tier-1 JSON edge caching.
  *
  * Lookup order per upstream key: in-isolate memory cache -> in-flight request -> Cloudflare edge
- * cache -> conditional or fresh upstream `fetch` (with timeout and a response size cap). Positive
- * projections stay physically retained at the edge beyond their logical TTL so expired entries can
- * revalidate via `If-None-Match` (`304 Not Modified`) and survive transient `429` / `5xx` errors.
+ * cache -> conditional or fresh upstream `fetch` (with timeout and a response size cap).
+ * Positive projections stay physically retained at the edge beyond their logical TTL so expired entries
+ * can revalidate via `If-None-Match` (`304 Not Modified`) and survive transient `429` / `5xx` errors.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { FALLBACK_REDIRECT_URL, SITE_ORIGIN } from '@/config/site';
+import { FALLBACK_REDIRECT_URL, SERVICE_USER_AGENT, SITE_HOST } from '@/config/site';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
 import { isJsonObject } from '@/services/endpoint';
 import {
@@ -211,8 +212,8 @@ const UPSTREAM_TIMEOUT = 8000;
 export const MAX_UPSTREAM_BYTES = 2_097_152;
 
 /**
- * Maximum wire bytes scanned by the streaming JSON key extractor: Unneeded keys are
- * discarded in `O(1)` memory while streaming, while captured values stay capped at `MAX_UPSTREAM_BYTES`.
+ * Maximum wire bytes scanned by the streaming JSON key extractor:
+ * Unneeded keys are discarded in `O(1)` memory while streaming, while captured values stay capped at `MAX_UPSTREAM_BYTES`.
  */
 const MAX_STREAM_SCAN_BYTES = 33_554_432;
 
@@ -226,7 +227,7 @@ const MAX_MEMORY_CACHE_ENTRIES = 256;
 const MAX_MEMORY_CACHE_WEIGHT = 4_000_000;
 
 /** Synthetic origin of Tier-1 JSON edge cache keys (versioned, because entries hold projections). */
-const JSON_CACHE_ORIGIN = 'https://internal-json-cache.xul.is/v3/';
+const JSON_CACHE_ORIGIN = `https://internal-json-cache.${SITE_HOST}/v3/`;
 
 /** Physical edge cache retention in seconds for positive projections, preserving `ETag` and `stale-if-error` data past logical expiry. */
 const POSITIVE_EDGE_RETENTION_SECONDS = 604_800;
@@ -252,7 +253,7 @@ const STATUS_HEADER = 'X-Svg-Api-Status';
 /** Default upstream request headers. */
 const DEFAULT_HEADERS: Readonly<Record<string, string>> = {
   Accept: 'application/json',
-  'User-Agent': `svg-api/1.0 (${SITE_ORIGIN})`,
+  'User-Agent': SERVICE_USER_AGENT,
 };
 
 /** HTTP status of unchanged conditional upstream responses (`If-None-Match` hit). */
@@ -268,8 +269,8 @@ const TOO_LARGE_STATUS = 413;
 const INVALID_DATA_STATUS = 502;
 
 /**
- * Global default metric aliases (alias -> canonical metric); An alias applies to every service that
- * defines the canonical metric, unless the service defines a metric or alias with the same slug.
+ * Global default metric aliases (alias -> canonical metric);
+ * An alias applies to every service that defines the canonical metric, unless the service defines a metric or alias with the same slug.
  */
 export const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
   cov: 'coverage',
@@ -304,8 +305,9 @@ const EXTRACT_KEY_SETS = new WeakMap<readonly string[], ReadonlySet<string>>();
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /**
- * Matches a safe owner or target path segment: Word characters, dots, colons, hyphens, `@`, and `+`,
- * rejecting dot-only (`..` path traversal), colon-only, and bare `@` / `@@…` segments. Slashes never match, so every segment stays atomic.
+ * Matches a safe owner or target path segment:
+ * Word characters, dots, colons, hyphens, `@`, and `+`, rejecting dot-only (`..` path traversal),
+ * colon-only, and bare `@` / `@@…` segments. Slashes never match, so every segment stays atomic.
  */
 const SAFE_SEGMENT_RX = /^(?!\.+$)(?!:+$)(?!@(?:$|@))[\w.:@+-]{1,214}$/;
 
@@ -339,9 +341,9 @@ function buildRouteErrorResult(serviceKey: string, value: string): ResolvedServi
 }
 
 /**
- * Check whether `target` is valid for `service`: Between `route.target.minSegments` and
- * `route.target.maxSegments` (both default `1`) `/`-separated segments, each one matching
- * `SAFE_SEGMENT_RX` and the optional `route.target.pattern`.
+ * Check whether `target` is valid for `service`:
+ * Between `route.target.minSegments` and `route.target.maxSegments` (both default `1`) `/`-separated segments,
+ * each one matching `SAFE_SEGMENT_RX` and the optional `route.target.pattern`.
  */
 function isTargetValid(service: ServiceDefinition, target: string): boolean {
   const { maxSegments = 1, minSegments = 1, pattern } = service.route.target;
@@ -473,9 +475,9 @@ function isRateLimited(response: Response): boolean {
 }
 
 /**
- * Read the seconds until a rate limit resets from `Retry-After` (seconds or HTTP date) or
- * `x-ratelimit-reset` / `ratelimit-reset` (epoch seconds like GitHub, or delta seconds; Values below
- * `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas); `now` is a timestamp in milliseconds.
+ * Read the seconds until a rate limit resets from `Retry-After` (seconds or HTTP date) or `x-ratelimit-reset` / `ratelimit-reset`
+ * (epoch seconds like GitHub, or delta seconds; Values below `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas);
+ * `now` is a timestamp in milliseconds.
  */
 function readRetryAfter(response: Response, now: number): number | undefined {
   const retryAfter = response.headers.get('retry-after')?.trim();
@@ -500,8 +502,8 @@ function readRetryAfter(response: Response, now: number): number | undefined {
 }
 
 /**
- * Compute an extended logical TTL in seconds up to the rate-limit window reset (capped at
- * `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` remaining.
+ * Compute an extended logical TTL in seconds up to the rate-limit window reset
+ * (capped at `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` remaining.
  */
 function readAdaptiveTtlSeconds(response: Response, now: number): number | undefined {
   const rawLimit = (
@@ -563,8 +565,8 @@ function ignoreCancelError(): void {
 }
 
 /**
- * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body (e.g., a
- * cloned cache response) only settles once every branch is cancelled.
+ * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body
+ * (e.g., a cloned cache response) only settles once every branch is cancelled.
  */
 function cancelBody(
   body: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null
@@ -896,8 +898,8 @@ function resolveExtractKeys(endpoint: MetricEndpoint): readonly string[] | undef
 }
 
 /**
- * Stream a response body and extract only `extractKeys` from the top-level JSON object: Unneeded
- * keys are skipped in `O(1)` memory, and the stream is cancelled as soon as all keys are read.
+ * Stream a response body and extract only `extractKeys` from the top-level JSON object:
+ * Unneeded keys are skipped in `O(1)` memory, and the stream is cancelled as soon as all keys are read.
  */
 async function readExtractedResponseBody(
   reader: ReadableStreamDefaultReader<Uint8Array>,
@@ -950,8 +952,9 @@ async function readExtractedResponseBody(
 }
 
 /**
- * Read a response body with a byte cap; With `extractKeys`, skip unneeded keys in `O(1)` memory
- * and stop reading (cancelling the stream) as soon as all target keys are complete.
+ * Read a response body with a byte cap;
+ * With `extractKeys`, skip unneeded keys in `O(1)` memory and stop reading
+ * (cancelling the stream) as soon as all target keys are complete.
  */
 async function readResponseBody(
   response: Response,
@@ -1032,8 +1035,8 @@ function buildFetchErrorBody(error: unknown): UpstreamBody {
 }
 
 /**
- * Fetch an upstream document body, mapping conditional `304` hits, timeouts, network errors, rate
- * limits, oversized bodies, and the endpoint's `missingStatuses` (to `404`) to statuses.
+ * Fetch an upstream document body, mapping conditional `304` hits, timeouts, network errors,
+ * rate limits, oversized bodies, and the endpoint's `missingStatuses` (to `404`) to statuses.
  */
 async function fetchUpstreamBody(
   target: ResolvedFetchTarget,
@@ -1080,7 +1083,8 @@ async function fetchUpstreamBody(
     return { status: 202 };
   }
 
-  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early, so only the streaming byte counter may reject them:
+  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early,
+  // so only the streaming byte counter may reject them:
   const { extractKeys } = target;
   const contentLength = Number(response.headers.get('content-length') ?? '0');
   if (extractKeys === undefined && contentLength > MAX_UPSTREAM_BYTES) {
@@ -1106,8 +1110,8 @@ function buildFailureOutcome(status: number, retryAfter?: number): UpstreamOutco
 }
 
 /**
- * Classify GraphQL-style error payloads (`{ errors: […] }`) so rate-limit and server errors on
- * HTTP `200` responses map to `429` or `502` instead of being misclassified as `404 not found`.
+ * Classify GraphQL-style error payloads (`{ errors: […] }`) so rate-limit and server errors
+ * on HTTP `200` responses map to `429` or `502` instead of being misclassified as `404 not found`.
  */
 function classifyGraphQlErrorStatus(parsed: unknown): number | undefined {
   if (!isJsonObject(parsed) || !Array.isArray(parsed.errors) || parsed.errors.length === 0) {

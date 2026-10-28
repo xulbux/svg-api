@@ -2,7 +2,7 @@
  * Footer component – Shared site footer (`<Footer />`) with GitHub contribution links, MIT license link, and author credit.
  */
 
-import { AUTHOR_GITHUB_URL, AUTHOR_NAME, REPO_GITHUB_URL } from '@/config/site';
+import { AUTHOR_NAME, AUTHOR_WEBSITE_URL, REPO_GITHUB_URL } from '@/config/site';
 import { UiIcon } from '@/site/components/UiIcon';
 import { raw, renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
@@ -58,7 +58,7 @@ function renderFooter(): string {
               <UiIcon slug="sparkles" size={14} extraClass="footer-sparkle" />
               From{' '}
               <a
-                href={AUTHOR_GITHUB_URL}
+                href={AUTHOR_WEBSITE_URL}
                 class="text-link"
                 target="_blank"
                 rel="noopener noreferrer"

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Presets cover developer registries, forges, and platforms with **documented, public, token-free `GET` JSON APIs** (`<= 2 MB`, no HTML scraping) – PRs are also welcome via the [Contributing Guide](https://github.com/xulbux/svg-api/blob/main/CONTRIBUTING.md#adding-a-service-preset)! Need a static badge instead? Any label and value already works via `/badge/:label/:value` or the [Badge Builder](https://svg.xul.is/builder/badge).
+        Presets cover developer registries, forges, and platforms with **documented, public, token-free `GET` JSON APIs** (`<= 2 MB`, no HTML scraping) – PRs are welcome via the [Contributing Guide](https://github.com/xulbux/svg-api/blob/main/CONTRIBUTING.md#adding-a-service-preset)! For static badges, use `/badge/:label/:value` or the [Badge Builder](https://svg.xul.is/builder/badge).
 
   - type: input
     id: service

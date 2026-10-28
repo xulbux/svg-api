@@ -1,13 +1,14 @@
 /**
- * SEO, crawler & AI discoverability – Generates `/robots.txt`, `/sitemap.xml`, `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
+ * SEO, crawler & AI discoverability – Generates `/robots.txt`, `/sitemap.xml`,
+ * `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
  */
 
 import faviconPngBuffer from '@bundles/favicon.png';
 import { BRAND_INDIGO, ISOLUX_GRAY, OG_CARD_SURFACE, WHITE } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
 import {
-  AUTHOR_GITHUB_URL,
   AUTHOR_NAME,
+  AUTHOR_WEBSITE_URL,
   REPO_GITHUB_URL,
   SITE_NAME,
   SITE_ORIGIN,
@@ -135,7 +136,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         inLanguage: 'en',
         name: SITE_NAME,
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-        provider: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_GITHUB_URL },
+        provider: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         url: SITE_ORIGIN,
       },
     ],
@@ -162,7 +163,7 @@ export function buildDocsJsonLd(
     '@graph': [
       {
         '@type': 'TechArticle',
-        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_GITHUB_URL },
+        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
         headline: title,
         image: OG_IMAGE_PNG_URL,
@@ -252,7 +253,8 @@ export function renderSitemapXml(): string {
 }
 
 /**
- * Render (once per isolate) `/llms.txt` documenting endpoints, query parameters, theme colors, and all live service presets for AI assistants.
+ * Render (once per isolate) `/llms.txt` documenting endpoints, query parameters,
+ * theme colors, and all live service presets for AI assistants.
  * @returns Plain-text Markdown `llms.txt` body.
  */
 export function renderLlmsTxt(): string {

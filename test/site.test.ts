@@ -10,12 +10,15 @@ import siteScript from '@bundles/site.client.js';
 import { decodePngToRgba, encodeRgbaPng } from '@scripts/og/png';
 import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasterizer';
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { ISOLUX_GRAY, ISOLUX_SYNTAX, ISOLUX_UI } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
 import {
-  AUTHOR_GITHUB_URL,
+  AUTHOR_WEBSITE_URL,
   BRAND_ICON_PNG_SIZE,
+  FALLBACK_REDIRECT_URL,
   REPO_GITHUB_URL,
+  SERVICE_USER_AGENT,
   SITE_HOST,
   SITE_NAME,
   SITE_ORIGIN,
@@ -136,10 +139,14 @@ interface RepoPackageJson {
   homepage: string;
   /** SPDX license identifier. */
   license: string;
+  /** Package identifier. */
+  name: string;
   /** Source repository metadata. */
   repository: { url: string };
   /** Developer and CI scripts. */
   scripts: Record<string, string>;
+  /** Semantic package version. */
+  version: string;
 }
 
 /** Parsed row of the `## Endpoints` table in `README.md`. */
@@ -336,7 +343,53 @@ const URL_PLACEHOLDER_GROUP_RX = /\(\?<placeholder>(?<names>[^)]+)\)/;
 /** Matches a GitHub Actions `if:` conditional referencing the disallowed `secrets` context. */
 const YAML_IF_SECRETS_RX = /^\s*if:.*\bsecrets\./m;
 
+/** Matches every `uses:` step line in a GitHub Actions workflow. */
+const YAML_USES_LINE_RX = /^\s*-?\s*uses:\s+.+$/gm;
+
+/** Matches a `uses:` step line pinned to an immutable 40-character commit SHA with a version comment. */
+const YAML_SHA_PINNED_USES_RX =
+  /^\s*-?\s*uses:\s+[\w.-]+\/[\w.-]+@[\da-f]{40}\s+#\s+v\d+(?:\.\d+){0,2}$/gm;
+
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Linearize a single 8-bit sRGB channel (`0`–`255`) per WCAG 2.x relative luminance. */
+function linearizeSrgbChannel(channelByte: number): number {
+  const srgb = channelByte / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+/** Compute the WCAG 2.x relative luminance (`0`–`1`) of a `#RRGGBB` hex color. */
+function computeRelativeLuminance(hex: string): number {
+  const red = Number.parseInt(hex.slice(1, 3), 16);
+  const green = Number.parseInt(hex.slice(3, 5), 16);
+  const blue = Number.parseInt(hex.slice(5, 7), 16);
+  return (
+    0.2126 * linearizeSrgbChannel(red) +
+    0.7152 * linearizeSrgbChannel(green) +
+    0.0722 * linearizeSrgbChannel(blue)
+  );
+}
+
+/** Compute the WCAG 2.x contrast ratio (`1`–`21`) between two `#RRGGBB` hex colors. */
+function computeContrastRatio(foregroundHex: string, backgroundHex: string): number {
+  const lumA = computeRelativeLuminance(foregroundHex);
+  const lumB = computeRelativeLuminance(backgroundHex);
+  return (Math.max(lumA, lumB) + 0.05) / (Math.min(lumA, lumB) + 0.05);
+}
+
+/** Collect repeated entries from `items` in encounter order (`O(n)`). */
+function findDuplicateStrings(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const item of items) {
+    if (seen.has(item)) {
+      duplicates.push(item);
+    } else {
+      seen.add(item);
+    }
+  }
+  return duplicates;
+}
 
 /** Memoized rendered site pages across tests in this suite. */
 let renderedPagesCache: RenderedPage[] | undefined = undefined;
@@ -880,11 +933,14 @@ function assertBrandAssetsAndLicenseParity(
 /************************************ HTML validity *************************************/
 
 describe('documentation pages – HTML validity', () => {
+  beforeAll(() => {
+    renderAllPages();
+  });
+
   it('never repeats an element ID on a page (regression: inlined previews duplicated bg-dark, grad-*, sheen-*)', () => {
     for (const page of renderAllPages()) {
       const ids = collectGroups(page.html, ID_ATTRIBUTE_RX, 'id');
-      const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
-      expect(duplicates, page.path).toEqual([]);
+      expect(findDuplicateStrings(ids), page.path).toEqual([]);
       expect(ids.length, page.path).toBeGreaterThan(0);
     }
   });
@@ -1006,10 +1062,51 @@ describe('documentation pages – accessibility', () => {
     expect(badgesHtml).toContain('href="#variant-1-primary-badge-default"');
   });
 
-  it('raises --c-text-3 to WCAG AA contrast and keeps the footer text selectable', () => {
+  it('keeps Isolux website text and error tokens at WCAG AA contrast across dark and light surfaces and keeps footer text selectable', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-text-3: #646464;');
-    expect(css).toContain('--c-text-3: #8A8A8A;');
+    expect(css).toContain(`--c-bg: light-dark(${LIGHT_BG}, ${DARK_BG});`);
+    expect(css).toContain(`--c-bg-soft: light-dark(${ISOLUX_GRAY[50]}, ${ISOLUX_GRAY[950]});`);
+    expect(css).toContain(
+      `--c-bg-elv: light-dark(${ISOLUX_UI.raised.light}, ${ISOLUX_UI.raised.dark});`
+    );
+    expect(css).toContain(
+      `--c-divider: light-dark(${ISOLUX_UI.border.light}, ${ISOLUX_UI.border.dark});`
+    );
+    expect(css).toContain(
+      `--c-border-strong: light-dark(${ISOLUX_UI.borderStrong.light}, ${ISOLUX_UI.borderStrong.dark});`
+    );
+    expect(css).toContain(
+      `--c-switch-bg: light-dark(${ISOLUX_UI.bubble.light}, ${ISOLUX_UI.bubble.dark});`
+    );
+    expect(css).toContain(
+      `--c-danger: light-dark(${ISOLUX_UI.error.light}, ${ISOLUX_UI.error.dark});`
+    );
+    expect(css).toContain(
+      `--c-text-3: light-dark(${ISOLUX_UI.foregroundMuted.light}, ${ISOLUX_UI.foregroundMuted.dark});`
+    );
+
+    const readableTokens = [
+      ISOLUX_UI.foreground,
+      ISOLUX_UI.foregroundSecondary,
+      ISOLUX_UI.foregroundMuted,
+      ISOLUX_UI.error,
+      ...Object.values(ISOLUX_SYNTAX),
+    ];
+    for (const token of readableTokens) {
+      for (const darkSurface of [DARK_BG, ISOLUX_GRAY[950], ISOLUX_UI.raised.dark]) {
+        expect(
+          computeContrastRatio(token.dark, darkSurface),
+          `${token.dark} on ${darkSurface}`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      for (const lightSurface of [LIGHT_BG, ISOLUX_GRAY[50], ISOLUX_UI.raised.light]) {
+        expect(
+          computeContrastRatio(token.light, lightSurface),
+          `${token.light} on ${lightSurface}`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
     expect(css).not.toMatch(/\.site-footer \{[^}]*user-select/);
     expect(css).toMatch(/:where\(a, button, summary, \[tabindex\]\):focus-visible/);
   });
@@ -1144,7 +1241,7 @@ describe('documentation pages – head metadata & client script', () => {
       const ctaLinks = collectGroups(statusHtml, CTA_LINK_RX, 'href');
       expect(ctaLinks).toEqual(['/']);
       const ids = collectGroups(statusHtml, ID_ATTRIBUTE_RX, 'id');
-      expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+      expect(findDuplicateStrings(ids)).toEqual([]);
       for (const anchorMatch of statusHtml.matchAll(/<a\s[^>]*href="[^"]+"[^>]*>/g)) {
         expect(anchorMatch[0]).toContain('tabindex="0"');
       }
@@ -1182,9 +1279,13 @@ describe('documentation pages – head metadata & client script', () => {
 
   it('inverts the checker preview stage and Edit chip relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-preview-inverse-bg: light-dark(#101010, #FFFFFF);');
-    expect(css).toContain('--c-preview-inverse-btn-bg: light-dark(#DCDCDC, #242424);');
-    expect(css).toContain('--c-preview-inverse-btn-text: light-dark(#000000, #FAFAFA);');
+    expect(css).toContain(`--c-preview-inverse-bg: light-dark(${DARK_BG}, ${LIGHT_BG});`);
+    expect(css).toContain(
+      `--c-preview-inverse-btn-bg: light-dark(${ISOLUX_UI.button.dark}, ${ISOLUX_UI.button.light});`
+    );
+    expect(css).toContain(
+      `--c-preview-inverse-btn-text: light-dark(${ISOLUX_UI.buttonForeground.dark}, ${ISOLUX_UI.buttonForeground.light});`
+    );
     expect(css).toContain('--c-preview-inverse-checker: light-dark(');
     expect(css).toMatch(
       /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
@@ -1677,7 +1778,7 @@ describe('website client scripts & markup regressions', () => {
       expect(html).toContain(`href="${REPO_GITHUB_URL}/issues"`);
       expect(html).toContain(`href="${REPO_GITHUB_URL}/pulls"`);
       expect(html).toContain(`href="${REPO_GITHUB_URL}/blob/main/LICENSE"`);
-      expect(html).toContain(`href="${AUTHOR_GITHUB_URL}"`);
+      expect(html).toContain(`href="${AUTHOR_WEBSITE_URL}"`);
       expect(html).not.toContain('mailto:');
     }
 
@@ -1792,11 +1893,21 @@ describe('site stylesheet', () => {
 
   it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-path for syntax highlighting', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-danger: light-dark(#C5002B, #FF6467);');
-    expect(css).toContain('--c-hl-path: light-dark(#4131CE, #BECBFF);');
-    expect(css).toContain('--c-hl-key: light-dark(#2B7676, #7CEEE3);');
-    expect(css).toContain('--c-hl-val: light-dark(#214A4B, #BCFFF7);');
-    expect(css).toContain('--c-hl-href: light-dark(#3D3D3D, #C2C2C2);');
+    expect(css).toContain(
+      `--c-danger: light-dark(${ISOLUX_UI.error.light}, ${ISOLUX_UI.error.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-path: light-dark(${ISOLUX_SYNTAX.stringLifted.light}, ${ISOLUX_SYNTAX.stringLifted.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-key: light-dark(${ISOLUX_SYNTAX.function.light}, ${ISOLUX_SYNTAX.function.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-val: light-dark(${ISOLUX_SYNTAX.property.light}, ${ISOLUX_SYNTAX.property.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-href: light-dark(${ISOLUX_SYNTAX.label.light}, ${ISOLUX_SYNTAX.label.dark});`
+    );
     expect(css).not.toContain('--c-warning');
     expect(css).toMatch(
       /\.copy-btn\.is-failed,\s*\.btn-secondary\.is-failed \{[^}]*color: var\(--c-danger\);/
@@ -2267,7 +2378,7 @@ describe('site stylesheet', () => {
                 previewBgStorageKey: 'preview-bg',
                 previewBgValues: ['auto', 'inverse'],
                 schemeStorageKey: 'color-scheme',
-                themeColors: { dark: '#101010', light: '#FFFFFF' },
+                themeColors: { dark: DARK_BG, light: LIGHT_BG },
               }),
             }
           : undefined,
@@ -2394,6 +2505,7 @@ describe('repository & OSS Markdown drift guards', () => {
   it('keeps README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/*, .vscode/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
     const repoRoot = path.resolve(import.meta.dirname, '..');
     const packageJson = JSON.parse(readRepoFile(repoRoot, 'package.json')) as RepoPackageJson;
+    const pnpmWorkspaceYml = readRepoFile(repoRoot, 'pnpm-workspace.yaml');
     const gitattributesTxt = readRepoFile(repoRoot, '.gitattributes');
     const editorconfigTxt = readRepoFile(repoRoot, '.editorconfig');
     const gitignoreTxt = readRepoFile(repoRoot, '.gitignore');
@@ -2422,13 +2534,16 @@ describe('repository & OSS Markdown drift guards', () => {
     const testSkillMd = readRepoFile(repoRoot, '.agents/skills/test/SKILL.md');
 
     // [1] Repository, editor/git LF hygiene, funding, CODEOWNERS, CI secret & dependency-review scope, and `/llms.txt` metadata parity:
-    const authorHandle = AUTHOR_GITHUB_URL.slice('https://github.com/'.length);
     const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
+    const authorHandle = repoSlug.slice(0, repoSlug.indexOf('/'));
     expect(packageJson.homepage).toBe(SITE_ORIGIN);
     expect(packageJson.repository.url).toBe(REPO_GITHUB_URL);
     expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
     expect(packageJson.license).toBe('MIT');
     expect('maintainers' in packageJson).toBe(false);
+    expect(SERVICE_USER_AGENT).toBe(`${packageJson.name}/${packageJson.version} (${SITE_ORIGIN})`);
+    expect(FALLBACK_REDIRECT_URL).toBe(AUTHOR_WEBSITE_URL);
+    expect(pnpmWorkspaceYml).toContain('engineStrict: true');
     expect(existsSync(path.resolve(repoRoot, 'LICENSE'))).toBe(true);
     expect(gitattributesTxt).toContain('* text=auto eol=lf');
     expect(editorconfigTxt).toContain('end_of_line = lf');
@@ -2445,12 +2560,17 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(ciYml).toContain('!github.event.repository.private');
     expect(ciYml).toContain(`github.repository == '${repoSlug}'`);
     expect(ciYml).not.toMatch(YAML_IF_SECRETS_RX);
+    expect(ciYml).not.toContain('HAS_CLOUDFLARE_TOKEN');
     expect(ciYml.slice(0, ciYml.indexOf('- name: Deploy to Cloudflare Workers'))).not.toContain(
-      'CLOUDFLARE_API_TOKEN:'
+      'CLOUDFLARE_API_TOKEN'
     );
+    const allUsesLines = ciYml.match(YAML_USES_LINE_RX) ?? [];
+    const shaPinnedUsesLines = ciYml.match(YAML_SHA_PINNED_USES_RX) ?? [];
+    expect(allUsesLines.length).toBeGreaterThan(0);
+    expect(shaPinnedUsesLines).toEqual(allUsesLines);
     expect(dependabotYml).toContain("package-ecosystem: 'npm'");
     expect(dependabotYml).toContain("package-ecosystem: 'github-actions'");
-    expect(dependabotYml).toContain('cooldown:');
+    expect(countOccurrences(dependabotYml, 'cooldown:')).toBe(2);
     expect(dependabotYml).toContain("'lucide-static'");
     expect(dependabotYml).toContain("'@iconify-json/*'");
     expect(agentsMd).toContain('`CONTRIBUTING.md`');

@@ -1,9 +1,9 @@
 /**
- * Color palette – The single source of every fixed color: Isolux gray scale, Isolux Pro UI neutrals and syntax colors, brand indigo, and strip widget stage colors.
+ * Color palette – The single source of every fixed color: Isolux gray scale, Isolux Pro UI and syntax colors, brand indigo, carbon SVG surface stop, and strip widget stage colors.
  *
- * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for raw grays, `dist/isolux-pro-*.json` for
- * resolved syntax colors), shared across SVG renderers and website stylesheets. Named Tailwind v4
- * accent scales behind `?color=` are generated from their OKLCH seeds in the theme module.
+ * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for raw grays, `dist/isolux-pro-*.json`
+ * for resolved UI and syntax colors), shared across SVG renderers and website stylesheets.
+ * Named Tailwind v4 accent scales behind `?color=` are generated from their OKLCH seeds in the theme module.
  */
 
 import type { SchemeColor } from '@/types';
@@ -21,61 +21,64 @@ export const ISOLUX_GRAY = {
   600: '#2C2C2C',
   700: '#242424',
   800: '#181818',
-  900: '#101010',
-  950: '#000000',
+  900: '#141414',
+  950: '#080808',
 } as const;
+
+/** Bottom stop of the Kumo 3D dark carbon SVG surface gradient (`BASE_DARK.bgBottom`). */
+export const DARK_CARBON_BOTTOM = '#101010';
 
 /** Pure white (the Isolux light background and the foreground on colored fills). */
 export const WHITE = '#FFFFFF';
 
-/** Isolux Pro UI neutrals (`ui.*` tokens) as dark / light pairs. */
+/** Isolux Pro UI tokens (`ui.*`) as dark / light pairs. */
 export const ISOLUX_UI = {
   /** Default border. */
-  border: { dark: ISOLUX_GRAY[600], light: ISOLUX_GRAY[100] },
+  border: { dark: ISOLUX_GRAY[600], light: '#EBEBEB' },
   /** Strong border (inputs, hovered controls). */
-  borderStrong: { dark: ISOLUX_GRAY[500], light: '#D3D3D3' },
+  borderStrong: { dark: ISOLUX_GRAY[500], light: '#DCDCDC' },
   /** Small bubbles and toggles. */
-  bubble: { dark: ISOLUX_GRAY[700], light: '#F0F0F0' },
+  bubble: { dark: ISOLUX_GRAY[700], light: '#F4F4F4' },
   /** Neutral primary button fill (Isolux uses no accent for buttons). */
   button: { dark: '#DCDCDC', light: ISOLUX_GRAY[700] },
   /** Translucent border of primary buttons. */
-  buttonBorder: { dark: '#FAFAFA26', light: '#0000000D' },
+  buttonBorder: { dark: '#FAFAFA26', light: '#0808080D' },
   /** Text on primary buttons. */
   buttonForeground: { dark: ISOLUX_GRAY[950], light: ISOLUX_GRAY[50] },
   /** Hovered primary button fill. */
   buttonHover: { dark: '#D1D1D1', light: '#2F2F2F' },
+  /** Error status text and invalid control borders (`ui.error`). */
+  error: { dark: '#FF7680', light: '#D01A34' },
   /** Keyboard focus rings and focused input borders. */
   focus: { dark: ISOLUX_GRAY[400], light: '#8E8E8E' },
   /** Primary text. */
   foreground: { dark: ISOLUX_GRAY[100], light: ISOLUX_GRAY[800] },
-  /** Muted text (WCAG AA, at least 4.5:1, on the black, gray `900`, white, and gray `50` backgrounds). */
+  /** Muted text (WCAG AA contrast across dark and light surfaces). */
   foregroundMuted: { dark: ISOLUX_GRAY[300], light: ISOLUX_GRAY[400] },
   /** Secondary text. */
   foregroundSecondary: { dark: ISOLUX_GRAY[200], light: ISOLUX_GRAY[500] },
   /** Translucent fill of hovered list items and ghost buttons. */
-  hover: { dark: '#FAFAFA0D', light: '#0000000D' },
-  /** Raised surfaces (widgets, inputs, inlay hints). */
-  raised: { dark: ISOLUX_GRAY[800], light: '#F2F2F2' },
+  hover: { dark: '#FAFAFA0D', light: '#0808080D' },
+  /** Raised surfaces (widgets, table headers, inlay hints). */
+  raised: { dark: ISOLUX_GRAY[800], light: '#F6F6F6' },
   /** Translucent fill of selected list items, tabs, and options. */
-  selected: { dark: '#FAFAFA1A', light: '#0000000D' },
+  selected: { dark: '#FAFAFA1A', light: '#0808080D' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
 /** Isolux Pro syntax colors (resolved `token.*` colors) as dark / light pairs. */
 export const ISOLUX_SYNTAX = {
-  /** Numbers, enum members, CSS values (`token.string.escape` / `token.string.label`). */
-  constant: { dark: '#BECBFF', light: '#4131CE' },
   /** Functions and methods (`token.function`). */
   function: { dark: '#7CEEE3', light: '#2B7676' },
   /** Markdown link texts, image alts, and titles (`token.annotation` / `token.namespace`). */
   label: { dark: ISOLUX_GRAY[200], light: ISOLUX_GRAY[500] },
-  /** Operators and symbolic markers (`token.operator`). */
-  operator: { dark: '#FFA4AA', light: '#C5002B' },
   /** Properties, fields, and keys (`token.property`). */
   property: { dark: '#BCFFF7', light: '#214A4B' },
   /** Punctuation (`token.punctuation`). */
   punctuation: { dark: ISOLUX_GRAY[300], light: ISOLUX_GRAY[400] },
   /** Strings and URLs (`token.string`). */
   string: { dark: '#909FFF', light: '#4F48EC' },
+  /** Lifted string escapes and path segments (`token.string.escape` / `token.string.label`). */
+  stringLifted: { dark: '#BECBFF', light: '#4131CE' },
 } as const satisfies Readonly<Record<string, SchemeColor>>;
 
 /** Website brand indigo (`indigo-300` to `indigo-600`). */

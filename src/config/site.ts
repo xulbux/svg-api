@@ -15,17 +15,20 @@ export const SITE_HOST = 'svg.xul.is';
 /** Public origin of the deployed Worker. */
 export const SITE_ORIGIN = `https://${SITE_HOST}`;
 
+/** Canonical `User-Agent` header sent on outbound upstream service requests. */
+export const SERVICE_USER_AGENT = `svg-api/1.0.0 (${SITE_ORIGIN})`;
+
 /** Author display name for site credits and structured metadata. */
 export const AUTHOR_NAME = 'XulbuX';
 
-/** Author GitHub profile URL. */
-export const AUTHOR_GITHUB_URL = 'https://github.com/xulbux';
+/** Author primary website URL. */
+export const AUTHOR_WEBSITE_URL = 'https://xulbux.com';
 
 /** Public GitHub repository URL. */
-export const REPO_GITHUB_URL = `${AUTHOR_GITHUB_URL}/svg-api`;
+export const REPO_GITHUB_URL = 'https://github.com/xulbux/svg-api';
 
 /** Fallback redirect destination for invalid service badge routes. */
-export const FALLBACK_REDIRECT_URL = 'https://xul.is';
+export const FALLBACK_REDIRECT_URL = AUTHOR_WEBSITE_URL;
 
 /** Required square pixel dimension of the canonical `assets/icon.png` brand icon. */
 export const BRAND_ICON_PNG_SIZE = 512;

@@ -89,11 +89,11 @@ Presets serve `/badge/:service/[:owner/]:target/:metric` from public upstream AP
 
 ### Preset Rules
 
--   **Public `GET` JSON Only:** Documented, token-free endpoints for developer platforms and registries only (no HTML scraping or undocumented internal web endpoints); Hardcode the upstream host via `createEndpoint()` (`PACKAGE_ROUTE`, `OWNER_REPO_ROUTE`, or `NPM_PACKAGE_ROUTE`) – never accept user-controlled hosts.
--   **Small Payloads:** Bodies above `2 MB` are rejected; Project only needed fields via `pickFields()` or `projectFirstEntry()` (plus `extractKeys` on large objects).
--   **Defensive Transforms:** Accept real-world upstream formats descriptively without over-constraining them, ignore unused fields, and sanitize values with `readText()`, `readFiniteNumber()`, `formatVersion()`, `formatCount()`, and `formatLicense()` (`src/services/metrics.ts`) so missing or malformed data never renders `undefined`, `null`, `NaN`, or `[object Object]`.
--   **Standard Metric Keys:** Use canonical keys (`v` aliased `version`, `license` aliased `l`, `coverage` aliased `cov`, `prs` aliased `pr`/`pulls`/`pull-requests`, `commit` aliased `last-commit`, plus `stars`, `forks`, `issues`, `release`, `updated`, `rating`, `score`, `size`); `DEFAULT_METRIC_ALIASES` (`src/services/fetcher.ts`) wires global aliases automatically.
--   **Download Metric Keys:** `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, aliased as `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (total).
+-   **Public `GET` JSON Only:** Documented, token-free registry/platform APIs only (no HTML scraping); Hardcode hosts via `createEndpoint()` (`PACKAGE_ROUTE`, `OWNER_REPO_ROUTE`, `NPM_PACKAGE_ROUTE`) – never user-controlled hosts.
+-   **Small Payloads:** Bodies above `2 MB` are rejected; Project needed fields via `pickFields()` or `projectFirstEntry()` (plus `extractKeys` on large objects).
+-   **Defensive Transforms:** Keep payload types permissive and sanitize values with `readText()`, `readFiniteNumber()`, `formatVersion()`, `formatCount()`, and `formatLicense()` (`src/services/metrics.ts`) so bad data never renders `undefined`, `null`, `NaN`, or `[object Object]`.
+-   **Standard Metric Keys:** `v` (`version`), `license` (`l`), `coverage` (`cov`), `prs` (`pr`/`pulls`/`pull-requests`), `commit` (`last-commit`), `stars`, `forks`, `issues`, `release`, `updated`, `rating`, `score`, `size` – `DEFAULT_METRIC_ALIASES` (`src/services/fetcher.ts`) wires global aliases automatically.
+-   **Download Metric Keys:** `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, alias `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (total).
 -   **URL Placeholders:** `{owner}` & `{target}` (per-segment), `{scope}` (`owner` without `@`), `{path}` (`[owner/]target`), `{id}` (`/` as `%2F`), `{npm}` & `{npm-id}` (`[@scope/]target`).
 
 <br>
@@ -107,22 +107,22 @@ Icons resolve from four bundled sets in `src/svg/icons.ts`:
 -   **Devicon Plain** (`@iconify-json/devicon-plain`) – Developer tools and language symbols
 -   **File Icons** (`@iconify-json/file-icons`) – File-type and ecosystem glyphs
 
-**Policy:** PRs adding or removing icon libraries are not accepted (request missing icons upstream in [Lucide](https://github.com/lucide-icons/lucide), [Simple Icons](https://github.com/simple-icons/simple-icons), or [Devicon](https://github.com/devicons/devicon)). Shorthand aliases in `ICON_SLUG_ALIASES` (`src/svg/icons.ts`) and curated entries in `STACK_CATEGORIES` (`src/config/stack.ts`) for bundled icons are welcome.
+**Policy:** Icon libraries aren't added or removed (request missing icons upstream in [Lucide](https://github.com/lucide-icons/lucide), [Simple Icons](https://github.com/simple-icons/simple-icons), or [Devicon](https://github.com/devicons/devicon)). Aliases in `ICON_SLUG_ALIASES` (`src/svg/icons.ts`) and entries in `STACK_CATEGORIES` (`src/config/stack.ts`) for bundled icons are welcome.
 
 <br>
 
 ## <a href="#code-style--gotchas"><img src="https://svg.xul.is/icon/shield-check?size=32&stroke=2" align="left" /></a>Code Style & Gotchas
 
 -   **Strict Types:** No `any` (narrow `unknown`) and no `@ts-ignore` (only `@ts-expect-error` with a reason).
--   **Naming & Structure:** Descriptive variable names (no single-letter names except `i`, `j`, `n`), `is`/`has` prefixes for booleans, plain `function` declarations (no classes), sorted object keys, and JSDoc on exports.
+-   **Naming & Structure:** Descriptive variable names (no single-letter names except `i`, `j`, `n`), `is`/`has` boolean prefixes, plain `function` declarations (no classes), sorted keys, and JSDoc on exports.
 -   **Comments & Prose:** Backtick code identifiers in comments, end standalone comments with `:` and inline comments with `.`, and use `–` / `…` instead of em dashes or `...`.
--   **Edge Bounds:** Defer heavy init until first use, bound user-keyed caches via `createLruCache` (`src/svg/shared.ts`), and sanitize display text with `prepareDisplayText`.
+-   **Edge Bounds:** Lazy init on first use, bounded caches via `createLruCache` (`src/svg/shared.ts`), and text sanitized via `prepareDisplayText`.
 -   **Worker Entrypoint:** `src/index.ts` must only `export default app;` (extra exports break `workerd`).
--   **Encoding & CSP:** Literal `+` in route paths must be `%2B` (`+` decodes to a space); Changing `getHeadScriptBody()` (`src/site/components/PageLayout.tsx`) requires updating its `sha256-…` hash in `HTML_SECURITY_HEADERS` (`src/routes/http.ts`).
--   **Full Architecture & Style Rules:** See [`.agents/AGENTS.md`](.agents/AGENTS.md) for comprehensive coding, performance, and comment conventions.
+-   **Encoding & CSP:** Literal `+` in route paths must be `%2B` (`+` decodes to a space); Editing `getHeadScriptBody()` (`src/site/components/PageLayout.tsx`) requires updating its `sha256-…` hash in `HTML_SECURITY_HEADERS` (`src/routes/http.ts`).
+-   **Full Guidelines:** See [`.agents/AGENTS.md`](.agents/AGENTS.md) for all architecture, performance, and comment rules.
 
 <br>
 
 ## <a href="#submitting-a-pull-request"><img src="https://svg.xul.is/icon/git-pull-request?size=32&stroke=2" align="left" /></a>Submitting a Pull Request
 
-Branch from `main`, cover your changes with tests in `test/`, confirm `pnpm run check` passes cleanly, and open a PR with sample paths to preview (PRs are squash-merged into `main`). By contributing, you agree that your code is licensed under the [**MIT License**](LICENSE).
+Branch from `main`, add tests in `test/`, pass `pnpm run check`, and open a PR with sample paths (squash-merged into `main`). Contributions are licensed under the [**MIT License**](LICENSE).

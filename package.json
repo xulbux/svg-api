@@ -11,7 +11,7 @@
   "type": "module",
   "scripts": {
     "build:client": "node scripts/buildClient.ts",
-    "check": "pnpm run build:client && pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && vitest run && pnpm exec wrangler deploy --dry-run",
+    "check": "pnpm run build:client && pnpm run fmt:check && pnpm run lint:check && pnpm run lint:md && pnpm run type-check && vitest run && wrangler deploy --dry-run",
     "deploy": "pnpm run build:client && wrangler deploy",
     "dev": "pnpm run build:client && wrangler dev",
     "fmt": "oxfmt",

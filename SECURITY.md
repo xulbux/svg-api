@@ -7,7 +7,7 @@ Please **do not open public issues** for security vulnerabilities in [**SVG API*
 -   [**GitHub Private Vulnerability Reporting**](https://github.com/xulbux/svg-api/security/advisories/new) (*preferred*)
 -   **Email:** [hi@xul.is](mailto:hi@xul.is)
 
-Include a short description, impact, and minimal reproduction URLs (avoid automated flood testing against the live deployment). Please allow reasonable time to release a fix before public disclosure (as a free open-source project, paid bug bounties are not offered).
+Include impact and minimal reproduction URLs (no automated flood testing against the live service), and allow reasonable time for a fix before disclosure (paid bug bounties aren't offered).
 
 <br>
 
