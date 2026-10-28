@@ -1322,7 +1322,7 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 
-  it('renders highlight cards right below the hero, hides their detail text on narrow screens, and keeps live endpoint previews above the bottom CTA row', () => {
+  it('renders highlight cards right below the hero, displays the brand logo inside the hero on wide screens, hides detail text on narrow screens, and keeps live endpoint previews above the bottom CTA row', () => {
     const html = renderHomeHtml();
     const heroIndex = html.indexOf('<section class="hero">');
     const highlightsIndex = html.indexOf('<section class="feature-grid" aria-label="Highlights">');
@@ -1332,12 +1332,18 @@ describe('documentation pages – navigation & static assets', () => {
     expect(highlightsIndex).toBeGreaterThan(heroIndex);
     expect(endpointsIndex).toBeGreaterThan(highlightsIndex);
     expect(pagerIndex).toBeGreaterThan(endpointsIndex);
+    expect(html.slice(heroIndex, highlightsIndex)).toContain(
+      '<div class="hero-logo-wrap"><img src="/favicon.png" alt="" width="156" height="156" class="hero-logo" /></div>'
+    );
     expect(
       countOccurrences(html, '<h2 class="feature-title"><svg class="ui-icon"')
     ).toBeGreaterThanOrEqual(4);
     expect(html).not.toContain('feature-icon');
     expect(getSiteStylesheet()).toMatch(
-      /@media \(max-width: 640px\) \{[\s\S]*?\.feature-desc \{\s*display: none;\s*\}/
+      /img,\s*\.ui-icon \{\s*user-select: none;\s*-webkit-user-select: none;\s*pointer-events: none;\s*\}/
+    );
+    expect(getSiteStylesheet()).toMatch(
+      /@media \(max-width: 640px\) \{[\s\S]*?\.hero-logo-wrap \{\s*display: none;\s*\}[\s\S]*?\.feature-desc \{\s*display: none;\s*\}/
     );
   });
 

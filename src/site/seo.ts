@@ -4,7 +4,7 @@
  */
 
 import faviconPngBuffer from '@bundles/favicon.png';
-import { BRAND_INDIGO, ISOLUX_GRAY, OG_CARD_SURFACE, WHITE } from '@/config/palette';
+import { ISOLUX_GRAY, ISOLUX_SYNTAX, OG_CARD_SURFACE, WHITE } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
 import {
   AUTHOR_NAME,
@@ -35,7 +35,7 @@ import {
 } from '@/site/navigation';
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START } from '@/site/styles';
 import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
-import { renderTextPathMarkup } from '@/svg/measure';
+import { renderTextPathMarkup, resolveCharGlyph } from '@/svg/measure';
 import { escapeXml } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -43,13 +43,27 @@ import { escapeXml } from '@/svg/shared';
 export { FAVICON_PNG_SIZE } from '@/config/site';
 
 /** Intrinsic width in pixels of the shared OpenGraph social preview card (`/og.png` and `/og.svg`). */
-export const OG_IMAGE_WIDTH = 1200;
+export const OG_IMAGE_WIDTH = 1280;
 
 /** Intrinsic height in pixels of the shared OpenGraph social preview card (`/og.png` and `/og.svg`). */
-export const OG_IMAGE_HEIGHT = 630;
+export const OG_IMAGE_HEIGHT = 640;
 
 /** Absolute URL of the raster OpenGraph social preview card (`/og.png`). */
 export const OG_IMAGE_PNG_URL = `${SITE_ORIGIN}/og.png`;
+
+/** Syntax-highlighted monospace URL segments rendered inside the OpenGraph card's bottom code pill. */
+const OG_URL_TOKENS: readonly (readonly [text: string, fill: string, isBold?: boolean])[] = [
+  ['GET ', ISOLUX_SYNTAX.punctuation.dark, true],
+  [SITE_ORIGIN, ISOLUX_SYNTAX.punctuation.dark],
+  ['/badge', ISOLUX_SYNTAX.string.dark],
+  ['/Status/Operational', ISOLUX_SYNTAX.stringLifted.dark],
+  ['?dot=', ISOLUX_SYNTAX.function.dark],
+  ['green', ISOLUX_SYNTAX.property.dark],
+  ['&color=', ISOLUX_SYNTAX.function.dark],
+  ['emerald', ISOLUX_SYNTAX.property.dark],
+  ['&variant=', ISOLUX_SYNTAX.function.dark],
+  ['2', ISOLUX_SYNTAX.property.dark],
+];
 
 /** Memoized `/robots.txt` document (`undefined` until first requested). */
 let robotsTxtCache: string | undefined = undefined;
@@ -338,7 +352,7 @@ export function renderOgImageSvg(): string {
   if (ogImageSvgCache === undefined) {
     const brandIconHref = `data:image/png;base64,${encodeBytesToBase64(faviconPngBuffer)}`;
     const ogCapabilities = BUILDER_PAGES.map((page) => page.ogLabel).join(' · ');
-    const titleLine1 = renderTextPathMarkup('One Cohesive Edge SVG Engine', {
+    const titleLine1 = renderTextPathMarkup('One Cohesive Dynamic SVG API', {
       align: 'left',
       anchorX: 88,
       baselineY: 274,
@@ -374,22 +388,27 @@ export function renderOgImageSvg(): string {
       isBold: true,
       isUncached: true,
     });
-    const urlSample = renderTextPathMarkup(
-      `GET ${SITE_ORIGIN}/badge/Status/Operational?dot=green&color=emerald&variant=2`,
-      {
-        align: 'left',
-        anchorX: 112,
-        baselineY: 525,
-        fill: BRAND_INDIGO[300],
-        font: 'mono',
-        fontSize: 20,
-        isBold: false,
-        isUncached: true,
-      }
-    );
+    const monoStepAdvance = resolveCharGlyph(' ', 20, false, 'mono').advance;
+    const urlSampleParts: string[] = [];
+    let urlCursorX = 112;
+    for (const [segmentText, segmentFill, isSegmentBold = false] of OG_URL_TOKENS) {
+      urlSampleParts.push(
+        renderTextPathMarkup(segmentText, {
+          align: 'origin',
+          anchorX: urlCursorX,
+          baselineY: 525,
+          fill: segmentFill,
+          font: 'mono',
+          fontSize: 20,
+          isBold: isSegmentBold,
+          isUncached: true,
+        })
+      );
+      urlCursorX += segmentText.length * monoStepAdvance;
+    }
 
     ogImageSvgCache = [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_NAME} – Edge SVG Engine for READMEs and Documentation">`,
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_NAME} – Dynamic SVG API for READMEs and Documentation">`,
       '<defs>',
       '<linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">',
       `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
@@ -409,7 +428,7 @@ export function renderOgImageSvg(): string {
       titleLine2,
       subtitle,
       `<rect x="88" y="488" width="${OG_IMAGE_WIDTH - 176}" height="58" rx="14" fill="${OG_CARD_SURFACE.pillBg}" stroke="${ISOLUX_GRAY[600]}" />`,
-      urlSample,
+      ...urlSampleParts,
       '</svg>',
     ].join('');
   }

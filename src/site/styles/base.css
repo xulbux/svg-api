@@ -225,13 +225,17 @@ input[type='search']::-webkit-search-decoration {
   display: none;
 }
 
+img,
+.ui-icon {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
 .ui-icon {
   display: inline-block;
   flex-shrink: 0;
   vertical-align: middle;
-  user-select: none;
-  -webkit-user-select: none;
-  pointer-events: none;
 }
 
 /* Text Links & Link-Styled Buttons; always show a subtle, semi-transparent underline (no hover on touch screens) that turns solid on hover: */

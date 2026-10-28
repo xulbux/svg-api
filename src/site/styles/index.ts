@@ -168,6 +168,12 @@ function getThemeTokens(): readonly ThemeToken[] {
       light: '0 16px 40px rgb(0 0 0 / 0.22)',
       name: 'shadow-dialog',
     },
+    {
+      dark: 'blur(56px) opacity(0.25)',
+      isColor: false,
+      light: 'blur(12px) brightness(0) opacity(0.1)',
+      name: 'hero-logo-glow',
+    },
     { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
     { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
     { dark: 'inline-flex', isColor: false, light: 'none', name: 'theme-dark-display' },

@@ -33,7 +33,7 @@ import {
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
 import { BUILDER_PAGES } from '@/site/navigation';
-import { FAVICON_PNG_SIZE } from '@/site/seo';
+import { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/site/seo';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
@@ -404,7 +404,8 @@ describe('Hono routes on svg.xul.is', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('text/html');
     const body = await response.text();
-    expect(body).toContain('One Cohesive <span class="hero-accent">Edge SVG Engine</span>');
+    expect(body).toContain('One Cohesive <span class="hero-accent">Dynamic SVG API</span>');
+    expect(body).toContain('class="hero-logo"');
     expect(body).toContain('href="/docs"');
     expect(body).toContain('href="/builder/badge"');
     expect(body).toContain('<details class="code-drawer">');
@@ -522,7 +523,7 @@ describe('Hono routes on svg.xul.is', () => {
     }
   });
 
-  it('serves /og.png (1200x630 RGB PNG), /favicon.png (192x192 RGBA PNG), and /og.svg with ETag revalidation', async () => {
+  it('serves /og.png (1280x640 RGB PNG), /favicon.png (192x192 RGBA PNG), and /og.svg with ETag revalidation', async () => {
     const [rawOgPngRes, rawFaviconPngRes, rawOgSvgRes] = await requestAll(
       ['/og.png', '/favicon.png', '/og.svg'],
       TEST_ENV
@@ -539,8 +540,8 @@ describe('Hono routes on svg.xul.is', () => {
     const ogPngBytes = new Uint8Array(await ogPngRes.arrayBuffer());
     expect([...ogPngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     const ogPngView = new DataView(ogPngBytes.buffer, ogPngBytes.byteOffset, ogPngBytes.byteLength);
-    expect(ogPngView.getUint32(16)).toBe(1200);
-    expect(ogPngView.getUint32(20)).toBe(630);
+    expect(ogPngView.getUint32(16)).toBe(OG_IMAGE_WIDTH);
+    expect(ogPngView.getUint32(20)).toBe(OG_IMAGE_HEIGHT);
     expect(ogPngBytes[25]).toBe(2); // 24-bit RGB color type.
     const ogPngNotModified = await app.request(
       '/og.png',
@@ -579,10 +580,15 @@ describe('Hono routes on svg.xul.is', () => {
     const ogSvgEtag = ogSvgRes.headers.get('ETag') ?? '';
     expect(ogSvgEtag).toMatch(/^W\/"/);
     const ogSvgBody = await ogSvgRes.text();
-    expect(ogSvgBody).toContain('width="1200" height="630"');
+    expect(ogSvgBody).toContain(`width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}"`);
     expect(ogSvgBody).toContain(
       '<image x="88" y="98" width="48" height="48" href="data:image/png;base64,'
     );
+    expect(ogSvgBody).toContain('fill="#8A8A8A"');
+    expect(ogSvgBody).toContain('fill="#909FFF"');
+    expect(ogSvgBody).toContain('fill="#BECBFF"');
+    expect(ogSvgBody).toContain('fill="#7CEEE3"');
+    expect(ogSvgBody).toContain('fill="#BCFFF7"');
     const ogSvgNotModified = await app.request(
       '/og.svg',
       { headers: { 'If-None-Match': ogSvgEtag } },
