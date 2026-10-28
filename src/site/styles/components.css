@@ -337,6 +337,7 @@ button.btn-secondary {
 :root[data-preview-bg='inverse'] .preview-stage {
   --c-btn-bg: var(--c-preview-inverse-btn-bg);
   --c-btn-text: var(--c-preview-inverse-btn-text);
+  --c-text-3: var(--c-preview-inverse-text);
   --stage-bg: var(--c-preview-inverse-bg);
   --stage-checker: var(--c-preview-inverse-checker);
 

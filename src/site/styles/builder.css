@@ -585,10 +585,33 @@
   opacity: 0.55;
 }
 
+.builder-loading,
 .builder-placeholder {
   margin: 0;
   font-size: 0.84rem;
   color: var(--c-text-3);
+}
+
+.builder-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.builder-spinner {
+  flex-shrink: 0;
+  inline-size: 14px;
+  block-size: 14px;
+  border: 1.75px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-block-start-color: currentColor;
+  border-radius: 50%;
+  animation: builder-spin 0.75s linear infinite;
+}
+
+@keyframes builder-spin {
+  to {
+    rotate: 1turn;
+  }
 }
 
 .builder-status {

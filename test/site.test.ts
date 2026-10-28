@@ -1281,6 +1281,9 @@ describe('documentation pages – head metadata & client script', () => {
     const css = getSiteStylesheet();
     expect(css).toContain(`--c-preview-inverse-bg: light-dark(${DARK_BG}, ${LIGHT_BG});`);
     expect(css).toContain(
+      `--c-preview-inverse-text: light-dark(${ISOLUX_UI.foregroundMuted.dark}, ${ISOLUX_UI.foregroundMuted.light});`
+    );
+    expect(css).toContain(
       `--c-preview-inverse-btn-bg: light-dark(${ISOLUX_UI.button.dark}, ${ISOLUX_UI.button.light});`
     );
     expect(css).toContain(
@@ -1288,7 +1291,7 @@ describe('documentation pages – head metadata & client script', () => {
     );
     expect(css).toContain('--c-preview-inverse-checker: light-dark(');
     expect(css).toMatch(
-      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
+      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--c-text-3: var\(--c-preview-inverse-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
     );
     expect(css).not.toMatch(/data-preview-bg=['"]checker['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
@@ -1999,6 +2002,8 @@ describe('site stylesheet', () => {
         );
       const dockHtml = requireDefined(dockMatch?.groups?.dock, `${page.kind} preview dock`);
       expect(dockHtml, page.kind).toContain('id="builder-preview"');
+      expect(dockHtml, page.kind).toContain('id="builder-loading"');
+      expect(dockHtml, page.kind).toContain('class="builder-spinner"');
       expect(dockHtml, page.kind).toContain('id="builder-status"');
       // Keep the visually reordered preview dock free of focusable elements so Tab order stays top-to-bottom:
       expect(dockHtml, page.kind).not.toMatch(/<(?:a|button|input|select|textarea)\b|tabindex=/);

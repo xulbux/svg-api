@@ -356,6 +356,60 @@ function createLineInputStub(): {
   };
 }
 
+/** Build a minimal attribute- and class-tracking box for builder preview stage DOM tests. */
+function createAttributeBox(initialHidden = false): {
+  attributes: Map<string, string>;
+  classList: {
+    contains: (token: string) => boolean;
+    toggle: (token: string, force?: boolean) => boolean;
+  };
+  getAttribute: (name: string) => string | undefined;
+  readonly isHidden: boolean;
+  removeAttribute: (name: string) => void;
+  setAttribute: (name: string, val: string) => void;
+  toggleAttribute: (name: string, force?: boolean) => boolean;
+} {
+  const attributes = new Map<string, string>();
+  if (initialHidden) {
+    attributes.set('hidden', '');
+  }
+  const classSet = new Set<string>();
+  return {
+    attributes,
+    classList: {
+      contains: (token: string) => classSet.has(token),
+      toggle(token: string, force?: boolean) {
+        const shouldHave = force ?? !classSet.has(token);
+        if (shouldHave) {
+          classSet.add(token);
+        } else {
+          classSet.delete(token);
+        }
+        return shouldHave;
+      },
+    },
+    getAttribute: (name: string) => attributes.get(name),
+    get isHidden() {
+      return attributes.has('hidden');
+    },
+    removeAttribute(name: string) {
+      attributes.delete(name);
+    },
+    setAttribute(name: string, val: string) {
+      attributes.set(name, val);
+    },
+    toggleAttribute(name: string, force?: boolean) {
+      const shouldHave = force ?? !attributes.has(name);
+      if (shouldHave) {
+        attributes.set(name, '');
+      } else {
+        attributes.delete(name);
+      }
+      return shouldHave;
+    },
+  };
+}
+
 /** Build and mount a minimal W3C-pointer-capture-compliant DOM harness for `createTypingLinesController`. */
 function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness {
   const documentStub = {
@@ -2839,5 +2893,282 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(activeTracker.activeElement).toBe(opt0);
     dispatchMenuKey('ArrowUp', opt0);
     expect(activeTracker.activeElement).toBe(searchInput);
+  });
+
+  it('shows the empty-stage loading indicator until load when no previous preview is visible, dims existing previews on update, and hides broken images on error (regression: blank builder stage while loading after Clear)', () => {
+    const previewStage = createAttributeBox();
+    const previewImageBox = createAttributeBox(true);
+    const previewListeners = new Map<string, (() => void)[]>();
+    const previewImage = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: () => void) {
+        const list = previewListeners.get(type) ?? [];
+        list.push(listener);
+        previewListeners.set(type, list);
+      },
+      alt: 'Live preview',
+      classList: previewImageBox.classList,
+      closest: (selector: string) => (selector === '.builder-stage' ? previewStage : undefined),
+      dispatch(type: 'error' | 'load') {
+        for (const listener of previewListeners.get(type) ?? []) {
+          listener();
+        }
+      },
+      getAttribute: previewImageBox.getAttribute,
+      removeAttribute: previewImageBox.removeAttribute,
+      toggleAttribute: previewImageBox.toggleAttribute,
+    }) as {
+      addEventListener: (type: string, listener: () => void) => void;
+      alt: string;
+      classList: {
+        contains: (token: string) => boolean;
+        toggle: (token: string, force?: boolean) => boolean;
+      };
+      closest: (selector: string) => unknown;
+      dispatch: (type: 'error' | 'load') => void;
+      getAttribute: (name: string) => string | undefined;
+      removeAttribute: (name: string) => void;
+      src: string;
+      toggleAttribute: (name: string, force?: boolean) => boolean;
+    };
+    Object.defineProperty(previewImage, 'src', {
+      get: () => previewImageBox.attributes.get('src') ?? '',
+      set(val: string) {
+        previewImageBox.attributes.set('src', val);
+      },
+    });
+
+    const previewLoading = createAttributeBox(true);
+    const previewPlaceholderBox = createAttributeBox(false);
+    const previewPlaceholder = {
+      closest: (selector: string) => (selector === '.builder-stage' ? previewStage : undefined),
+      textContent: 'Fill in the required fields to see a preview.',
+      toggleAttribute: previewPlaceholderBox.toggleAttribute,
+    };
+    const statusBox = createAttributeBox();
+    const statusElement = { classList: statusBox.classList, textContent: '' };
+
+    const altListeners: (() => void)[] = [];
+    const altInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'input') {
+          altListeners.push(listener);
+        }
+      },
+      placeholder: '',
+      value: '',
+    });
+
+    const resetListeners: (() => void)[] = [];
+    const resetButton = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'click') {
+          resetListeners.push(listener);
+        }
+      },
+    });
+
+    let labelFieldElement:
+      | {
+          classList: { toggle: () => void };
+          closest: (selector: string) => unknown;
+          getAttribute: (name: string) => string | undefined;
+          querySelector: () => undefined;
+          querySelectorAll: (selector: string) => unknown[];
+        }
+      | undefined = undefined;
+    const labelInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      closest: (selector: string) => (selector === '[data-field]' ? labelFieldElement : undefined),
+      id: 'field-label',
+      removeAttribute: noopDomAction,
+      setAttribute: noopDomAction,
+      value: '',
+    });
+    labelFieldElement = Object.assign(Object.create(FakeElement.prototype) as object, {
+      classList: { toggle: noopDomAction },
+      closest: (selector: string) => (selector === '[data-field]' ? labelFieldElement : undefined),
+      getAttribute: (name: string) => (name === 'data-field' ? 'label' : undefined),
+      querySelector: () => undefined,
+      querySelectorAll: (selector: string) =>
+        selector === '.builder-input:not(.select-trigger)' ? [labelInput] : [],
+    });
+
+    const formListeners = new Map<string, ((event: unknown) => void)[]>();
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = formListeners.get(type) ?? [];
+        list.push(listener);
+        formListeners.set(type, list);
+      },
+      querySelector: (selector: string) =>
+        selector === '[data-field="label"]' ? labelFieldElement : undefined,
+      querySelectorAll: () => [],
+    });
+
+    let pendingTimer: (() => void) | undefined = undefined;
+    function flushDebounce(): void {
+      const callback = pendingTimer;
+      pendingTimer = undefined;
+      callback?.();
+    }
+
+    const schemaJson = JSON.stringify({
+      ...getBuilderSchema('button'),
+      initialState: { label: 'Launch' },
+    });
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      document: {
+        createDocumentFragment: () => ({ append: noopDomAction }),
+        createElement: () => ({ className: '', textContent: '' }),
+        getElementById(id: string) {
+          if (id === 'builder-schema') {
+            return { textContent: schemaJson };
+          }
+          if (id === 'builder-form') {
+            return formStub;
+          }
+          if (id === 'field-label') {
+            return labelInput;
+          }
+          if (id === 'builder-preview') {
+            return previewImage;
+          }
+          if (id === 'builder-loading') {
+            return previewLoading;
+          }
+          if (id === 'builder-placeholder') {
+            return previewPlaceholder;
+          }
+          if (id === 'builder-status') {
+            return statusElement;
+          }
+          if (id === 'builder-alt') {
+            return altInput;
+          }
+          if (id === 'builder-reset') {
+            return resetButton;
+          }
+          return undefined;
+        },
+        querySelector: () => undefined,
+        querySelectorAll: () => [],
+      },
+      globalThis: {
+        clearTimeout() {
+          pendingTimer = undefined;
+        },
+        fetch: () => Promise.resolve(new Response('{}')),
+        location: { href: 'https://svg.xul.is/builder/button' },
+        matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+        setTimeout(callback: () => void) {
+          pendingTimer = callback;
+          return 1;
+        },
+        svgSite: {
+          closePopover: noopDomAction,
+          copyText: noopDomAction,
+          isPopoverOpen: () => false,
+          openPopover: noopDomAction,
+          placePopover: noopDomAction,
+        },
+      },
+      history: { replaceState: noopDomAction, state: undefined },
+    });
+
+    // [1] Cold load before first SVG finishes loading; stage shows `#builder-loading` and keeps `<img>` hidden:
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewLoading.isHidden).toBe(false);
+    expect(previewPlaceholderBox.isHidden).toBe(true);
+    expect(previewStage.getAttribute('aria-busy')).toBe('true');
+
+    flushDebounce();
+    expect(previewImage.src).toContain('/button/');
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewLoading.isHidden).toBe(false);
+
+    // [2] First `load` reveals `#builder-preview` and hides `#builder-loading`:
+    previewImage.dispatch('load');
+    expect(previewImageBox.isHidden).toBe(false);
+    expect(previewImage.classList.contains('is-loading')).toBe(false);
+    expect(previewLoading.isHidden).toBe(true);
+    expect(previewPlaceholderBox.isHidden).toBe(true);
+    expect(previewStage.getAttribute('aria-busy')).toBeUndefined();
+
+    // [3] Updating an already-visible preview dims `#builder-preview` instead of swapping back to `#builder-loading`:
+    labelInput.value = 'Deploy';
+    for (const inputListener of formListeners.get('input') ?? []) {
+      inputListener({ target: labelInput, type: 'input' });
+    }
+    expect(previewImageBox.isHidden).toBe(false);
+    expect(previewImage.classList.contains('is-loading')).toBe(true);
+    expect(previewLoading.isHidden).toBe(true);
+    expect(previewStage.getAttribute('aria-busy')).toBe('true');
+
+    flushDebounce();
+    expect(previewImage.src).toBe('/button/Deploy');
+    previewImage.dispatch('load');
+    expect(previewImage.classList.contains('is-loading')).toBe(false);
+    expect(previewStage.getAttribute('aria-busy')).toBeUndefined();
+
+    // Editing snippet-only alt text does not re-trigger preview loading:
+    altInput.value = 'Custom alt';
+    for (const listener of altListeners) {
+      listener();
+    }
+    expect(previewImage.classList.contains('is-loading')).toBe(false);
+    expect(previewStage.getAttribute('aria-busy')).toBeUndefined();
+
+    // [4] Clicking `Clear` resets the stage immediately; filling `label` again shows `#builder-loading` right away:
+    for (const listener of resetListeners) {
+      listener();
+    }
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewImage.src).toBe('');
+    expect(previewLoading.isHidden).toBe(true);
+    expect(previewPlaceholderBox.isHidden).toBe(false);
+    expect(previewPlaceholder.textContent).toBe('Fill in the required fields to see a preview.');
+    expect(statusElement.textContent).toContain('Required: Label.');
+
+    labelInput.value = 'SlowTarget';
+    for (const inputListener of formListeners.get('input') ?? []) {
+      inputListener({ target: labelInput, type: 'input' });
+    }
+    expect(statusElement.textContent).toBe('');
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewLoading.isHidden).toBe(false);
+    expect(previewPlaceholderBox.isHidden).toBe(true);
+    expect(previewStage.getAttribute('aria-busy')).toBe('true');
+
+    flushDebounce();
+    expect(previewImage.src).toBe('/button/SlowTarget');
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewLoading.isHidden).toBe(false);
+
+    // [5] Network `error` keeps broken `<img>` hidden, shows fallback placeholder + warning status, and recovers on edit:
+    previewImage.dispatch('error');
+    expect(previewImageBox.isHidden).toBe(true);
+    expect(previewImage.src).toBe('');
+    expect(previewLoading.isHidden).toBe(true);
+    expect(previewPlaceholderBox.isHidden).toBe(false);
+    expect(previewPlaceholder.textContent).toBe('Preview unavailable.');
+    expect(statusElement.textContent).toBe(
+      'The preview could not be loaded; Check the route values.'
+    );
+    expect(statusElement.classList.contains('is-warning')).toBe(true);
+    expect(previewStage.getAttribute('aria-busy')).toBeUndefined();
+
+    labelInput.value = 'Recovered';
+    for (const inputListener of formListeners.get('input') ?? []) {
+      inputListener({ target: labelInput, type: 'input' });
+    }
+    expect(statusElement.textContent).toBe('');
+    expect(previewLoading.isHidden).toBe(false);
+    expect(previewPlaceholderBox.isHidden).toBe(true);
   });
 });

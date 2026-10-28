@@ -46,6 +46,8 @@ interface BuilderOutputOptions {
   outputElement: Element | null;
   /** `#builder-preview` live SVG `<img>` element. */
   previewImage: HTMLImageElement | null;
+  /** `#builder-loading` empty-stage loading indicator element. */
+  previewLoading: HTMLElement | null;
   /** `#builder-placeholder` empty preview placeholder element. */
   previewPlaceholder: HTMLElement | null;
   /** `(prefers-reduced-motion: reduce)` media query list. */
@@ -66,10 +68,12 @@ interface BuilderOutputController {
   clearCrossBuilderNotice: () => void;
   /** Copy the shareable builder URL to the clipboard. */
   copyShareLink: () => void;
-  /** Return the active cross-builder prefill notice (`''` when none). */
-  getCrossBuilderNotice: () => string;
   /** Return the most recently requested preview SVG path. */
   getCurrentPreviewPath: () => string;
+  /** Handle `error` events on `#builder-preview`. */
+  handlePreviewError: () => void;
+  /** Handle `load` events on `#builder-preview`. */
+  handlePreviewLoad: () => void;
   /** Handle roving-tabindex arrow/Home/End keys on `.builder-tabs`. */
   handleTabKeydown: (event: KeyboardEvent) => void;
   /** Update the live preview `<img>` source (honoring reduced motion). */
@@ -80,14 +84,21 @@ interface BuilderOutputController {
   selectTab: (tab: HTMLElement) => void;
   /** Set a cross-builder prefill notice string. */
   setCrossBuilderNotice: (notice: string) => void;
-  /** Set `#builder-status` text and warning styling. */
-  setStatus: (message: string, isWarning?: boolean) => void;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Debounce delay in milliseconds before reloading the live SVG preview and updating `history.replaceState`. */
 const PREVIEW_DEBOUNCE_MS = 180;
+
+/** Default `#builder-placeholder` message when required fields are incomplete. */
+const DEFAULT_EMPTY_PLACEHOLDER_TEXT = 'Fill in the required fields to see a preview.';
+
+/** Fallback `#builder-placeholder` message when the live SVG preview fails to load. */
+const ERROR_PLACEHOLDER_TEXT = 'Preview unavailable.';
+
+/** Warning `#builder-status` message when the live SVG preview fails to load. */
+const PREVIEW_ERROR_STATUS = 'The preview could not be loaded; Check the route values.';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -132,6 +143,7 @@ export function createBuilderOutputController(
     openLink,
     outputElement,
     previewImage,
+    previewLoading,
     previewPlaceholder,
     reducedMotionQuery,
     schema,
@@ -140,11 +152,19 @@ export function createBuilderOutputController(
     statusElement,
   } = options;
 
+  const previewStage =
+    previewImage?.closest?.('.builder-stage') ?? previewPlaceholder?.closest?.('.builder-stage');
+  const emptyPlaceholderText =
+    previewPlaceholder?.textContent?.trim() || DEFAULT_EMPTY_PLACEHOLDER_TEXT;
+
   let snippetFormat: keyof SnippetSet = 'markdown';
   let lastPreviewSrc = '';
   let currentPreviewPath = '';
   let crossBuilderNotice = '';
   let previewTimer = 0;
+  let isFetchingPreview = false;
+  let hasVisiblePreview = false;
+  let hasPreviewError = false;
 
   function renderCode(tokens: readonly HighlightToken[]): void {
     if (!codeElement) {
@@ -167,20 +187,90 @@ export function createBuilderOutputController(
     }
   }
 
+  function syncPreviewStage(isLoading: boolean): void {
+    const isShowingLoadingIndicator = !hasVisiblePreview && isLoading;
+    const isShowingTextPlaceholder = !hasVisiblePreview && !isLoading;
+    previewImage?.toggleAttribute('hidden', !hasVisiblePreview);
+    previewImage?.classList.toggle('is-loading', hasVisiblePreview && isLoading);
+    previewLoading?.toggleAttribute('hidden', !isShowingLoadingIndicator);
+    if (previewPlaceholder) {
+      if (isShowingTextPlaceholder) {
+        previewPlaceholder.textContent = hasPreviewError
+          ? ERROR_PLACEHOLDER_TEXT
+          : emptyPlaceholderText;
+      }
+      previewPlaceholder.toggleAttribute('hidden', !isShowingTextPlaceholder);
+    }
+    if (isLoading) {
+      previewStage?.setAttribute('aria-busy', 'true');
+    } else {
+      previewStage?.removeAttribute('aria-busy');
+    }
+  }
+
+  function clearPreview(): void {
+    currentPreviewPath = '';
+    lastPreviewSrc = '';
+    isFetchingPreview = false;
+    hasVisiblePreview = false;
+    hasPreviewError = false;
+    previewImage?.removeAttribute('src');
+    syncPreviewStage(false);
+  }
+
+  function readPendingPreviewSrc(): { isComplete: boolean; pendingSrc: string } {
+    const result = buildPath(schema, getState());
+    const isComplete = result.missing.length === 0;
+    return {
+      isComplete,
+      pendingSrc: isComplete ? buildPreviewPath(result.path, reducedMotionQuery.matches) : '',
+    };
+  }
+
   function loadPreview(path: string): void {
+    if (!path) {
+      clearPreview();
+      return;
+    }
     currentPreviewPath = path;
     const previewSrc = buildPreviewPath(path, reducedMotionQuery.matches);
     if (!previewImage || previewSrc === lastPreviewSrc) {
       return;
     }
     lastPreviewSrc = previewSrc;
-    previewImage.toggleAttribute('hidden', !previewSrc);
-    previewPlaceholder?.toggleAttribute('hidden', Boolean(previewSrc));
-    if (previewSrc) {
-      previewImage.classList.add('is-loading');
-      previewImage.src = previewSrc;
-    } else {
-      previewImage.classList.remove('is-loading');
+    isFetchingPreview = true;
+    hasPreviewError = false;
+    syncPreviewStage(true);
+    previewImage.src = previewSrc;
+  }
+
+  function handlePreviewLoad(): void {
+    if (!currentPreviewPath || !isFetchingPreview) {
+      return;
+    }
+    isFetchingPreview = false;
+    hasVisiblePreview = true;
+    hasPreviewError = false;
+    const { isComplete, pendingSrc } = readPendingPreviewSrc();
+    syncPreviewStage(Boolean(pendingSrc && pendingSrc !== lastPreviewSrc));
+    if (isComplete) {
+      setStatus(crossBuilderNotice, Boolean(crossBuilderNotice));
+    }
+  }
+
+  function handlePreviewError(): void {
+    if (!currentPreviewPath || !isFetchingPreview) {
+      return;
+    }
+    isFetchingPreview = false;
+    hasVisiblePreview = false;
+    previewImage?.removeAttribute('src');
+    const { isComplete, pendingSrc } = readPendingPreviewSrc();
+    const hasPendingRetry = Boolean(pendingSrc && pendingSrc !== lastPreviewSrc);
+    hasPreviewError = !hasPendingRetry;
+    syncPreviewStage(hasPendingRetry);
+    if (isComplete && !hasPendingRetry) {
+      setStatus(PREVIEW_ERROR_STATUS, true);
     }
   }
 
@@ -212,12 +302,16 @@ export function createBuilderOutputController(
       copyButton.disabled = !isComplete;
     }
     outputElement?.classList.toggle('is-incomplete', !isComplete);
-    setStatus(
-      isComplete
-        ? crossBuilderNotice
-        : `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
-      !isComplete || Boolean(crossBuilderNotice)
-    );
+    if (!isComplete) {
+      setStatus(
+        `Required: ${result.missing.join(', ')}. Fill in every required field to preview and copy the snippet.`,
+        true
+      );
+    } else if (hasPreviewError) {
+      setStatus(PREVIEW_ERROR_STATUS, true);
+    } else {
+      setStatus(crossBuilderNotice, Boolean(crossBuilderNotice));
+    }
   }
 
   function readSnippetOptions(): { alt: string; link: string } {
@@ -228,6 +322,19 @@ export function createBuilderOutputController(
     const state = getState();
     const result = buildPath(schema, state);
     const isComplete = result.missing.length === 0;
+    const nextPreviewSrc = isComplete
+      ? buildPreviewPath(result.path, reducedMotionQuery.matches)
+      : '';
+    if (!isComplete) {
+      clearPreview();
+    } else {
+      if (hasPreviewError && nextPreviewSrc !== lastPreviewSrc) {
+        hasPreviewError = false;
+        lastPreviewSrc = '';
+      }
+      syncPreviewStage(isFetchingPreview || nextPreviewSrc !== lastPreviewSrc);
+    }
+
     const absoluteUrl = `${schema.origin}${result.path}`;
     const autoAlt = buildAltText(schema, state);
     const snippetOptions = readSnippetOptions();
@@ -244,7 +351,9 @@ export function createBuilderOutputController(
 
     clearTimeout(previewTimer);
     previewTimer = globalThis.setTimeout(() => {
-      loadPreview(isComplete ? result.path : '');
+      if (isComplete) {
+        loadPreview(result.path);
+      }
       history.replaceState(
         history.state,
         '',
@@ -291,12 +400,11 @@ export function createBuilderOutputController(
       crossBuilderNotice = '';
     },
     copyShareLink,
-    getCrossBuilderNotice() {
-      return crossBuilderNotice;
-    },
     getCurrentPreviewPath() {
       return currentPreviewPath;
     },
+    handlePreviewError,
+    handlePreviewLoad,
     handleTabKeydown,
     loadPreview,
     renderOutputs,
@@ -304,6 +412,5 @@ export function createBuilderOutputController(
     setCrossBuilderNotice(notice: string) {
       crossBuilderNotice = notice;
     },
-    setStatus,
   };
 }

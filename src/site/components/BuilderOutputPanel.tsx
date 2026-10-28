@@ -60,6 +60,15 @@ export function BuilderOutputPanel(): HtmlFragment {
               decoding="async"
               hidden={true}
             />
+            <p
+              class="builder-loading"
+              id="builder-loading"
+              role="status"
+              aria-live="polite"
+              hidden={true}>
+              <span class="builder-spinner" aria-hidden="true"></span>
+              Loading preview…
+            </p>
             <p class="builder-placeholder" id="builder-placeholder">
               Fill in the required fields to see a preview.
             </p>

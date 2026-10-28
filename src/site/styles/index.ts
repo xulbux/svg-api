@@ -137,6 +137,7 @@ function getThemeTokens(): readonly ThemeToken[] {
       light: 'color-mix(in srgb, var(--c-bg) 5%, transparent)',
     }),
     buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
+    buildColorToken('preview-inverse-text', invertScheme(ISOLUX_UI.foregroundMuted)),
     buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
     buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),
     // Isolux Pro Markdown roles; punctuation, path segments (lifted string indigo), alt text and link targets (label),
