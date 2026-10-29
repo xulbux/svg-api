@@ -4,7 +4,7 @@
  * Every page is deterministic, so each one is rendered once per Worker isolate and then served from memory.
  */
 
-import { SITE_HOST } from '@/config/site';
+import { SITE_NAME } from '@/config/site';
 import { DocsPager } from '@/site/components/DocsPager';
 import { PageLayout } from '@/site/components/PageLayout';
 import { renderHtml } from '@/site/jsx';
@@ -55,7 +55,7 @@ function DocsPage(props: DocsPageProps): HtmlFragment {
   const slug = props.slug ?? 'overview';
   const meta = getDocsPageMeta(slug);
   const canonicalPath = buildDocsPath(slug);
-  const pageTitle = `${meta.title} · ${SITE_HOST} Documentation`;
+  const pageTitle = `${meta.title} · ${SITE_NAME} Documentation`;
   const SectionComponent = PAGE_SECTIONS[slug];
   return (
     <PageLayout

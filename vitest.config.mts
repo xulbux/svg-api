@@ -1,5 +1,5 @@
 /**
- * Vitest configuration – Mirrors the Wrangler module rules (`.ttf` and `.png` binaries as `ArrayBuffer`, `*.css` and `*.client.js` as text) and the `@/` path alias for the test suite.
+ * Vitest configuration – Mirrors Wrangler's `Data` and `Text` module rules (`wrangler.jsonc`) and path aliases (`tsconfig.json`) for the test suite.
  */
 
 import { readFileSync } from 'node:fs';
@@ -41,7 +41,7 @@ export default defineConfig({
       name: 'ttf-arraybuffer',
     },
     {
-      // Mirror Wrangler's `Text` module rule; `*.css` and `*.client.js` imports default-export their raw source:
+      // Mirror Wrangler's `Text` module rule (`TEXT_MODULE_RX`) by default-exporting raw UTF-8 source:
       enforce: 'pre',
       load(id) {
         if (!id.startsWith(TEXT_MODULE_PREFIX)) {

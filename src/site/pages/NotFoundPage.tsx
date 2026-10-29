@@ -2,7 +2,7 @@
  * HTTP status error pages – Branded `noindex` HTML error pages for unmatched site paths and unexpected server errors.
  */
 
-import { SITE_HOST } from '@/config/site';
+import { SITE_NAME } from '@/config/site';
 import { PageLayout } from '@/site/components/PageLayout';
 import { UiIcon } from '@/site/components/UiIcon';
 import { renderHtml } from '@/site/jsx';
@@ -40,7 +40,7 @@ function StatusPage(props: StatusPageProps): HtmlFragment {
       activeNav="none"
       description={description}
       isNoIndex={true}
-      title={`${code} ${heading} · ${SITE_HOST}`}>
+      title={`${code} ${heading} · ${SITE_NAME}`}>
       <section class="hero">
         <h1 class="hero-title">
           <span class="hero-accent">{code}</span> {heading}
@@ -67,7 +67,7 @@ export function renderNotFoundHtml(): string {
   notFoundHtmlCache ??= renderHtml(
     <StatusPage
       code={404}
-      description={`The requested page could not be found on ${SITE_HOST}.`}
+      description={`The requested page could not be found on ${SITE_NAME}.`}
       heading="Page Not Found"
       message="The page you requested doesn't exist or may have been moved."
     />
@@ -83,7 +83,7 @@ export function renderServerErrorHtml(): string {
   serverErrorHtmlCache ??= renderHtml(
     <StatusPage
       code={500}
-      description={`An unexpected server error occurred on ${SITE_HOST}.`}
+      description={`An unexpected server error occurred on ${SITE_NAME}.`}
       heading="Internal Server Error"
       message="Something went wrong while loading this page. Please try again in a moment."
     />

@@ -33,6 +33,7 @@ import {
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
 import { BUILDER_PAGES } from '@/site/navigation';
+import { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/site/seo';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
@@ -403,7 +404,8 @@ describe('Hono routes on svg.xul.is', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Content-Type')).toContain('text/html');
     const body = await response.text();
-    expect(body).toContain('One Cohesive <span class="hero-accent">Edge SVG Engine</span>');
+    expect(body).toContain('One Cohesive <span class="hero-accent">Dynamic SVG API</span>');
+    expect(body).toContain('class="hero-logo"');
     expect(body).toContain('href="/docs"');
     expect(body).toContain('href="/builder/badge"');
     expect(body).toContain('<details class="code-drawer">');
@@ -521,9 +523,13 @@ describe('Hono routes on svg.xul.is', () => {
     }
   });
 
-  it('serves /og.png (1200x630 RGB PNG) and /og.svg with ETag revalidation', async () => {
-    const [rawOgPngRes, rawOgSvgRes] = await requestAll(['/og.png', '/og.svg'], TEST_ENV);
+  it('serves /og.png (1280x640 RGB PNG), /favicon.png (192x192 RGBA PNG), and /og.svg with ETag revalidation', async () => {
+    const [rawOgPngRes, rawFaviconPngRes, rawOgSvgRes] = await requestAll(
+      ['/og.png', '/favicon.png', '/og.svg'],
+      TEST_ENV
+    );
     const ogPngRes = requireDefined(rawOgPngRes, '/og.png');
+    const faviconPngRes = requireDefined(rawFaviconPngRes, '/favicon.png');
     const ogSvgRes = requireDefined(rawOgSvgRes, '/og.svg');
 
     expect(ogPngRes.status).toBe(200);
@@ -534,8 +540,9 @@ describe('Hono routes on svg.xul.is', () => {
     const ogPngBytes = new Uint8Array(await ogPngRes.arrayBuffer());
     expect([...ogPngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
     const ogPngView = new DataView(ogPngBytes.buffer, ogPngBytes.byteOffset, ogPngBytes.byteLength);
-    expect(ogPngView.getUint32(16)).toBe(1200);
-    expect(ogPngView.getUint32(20)).toBe(630);
+    expect(ogPngView.getUint32(16)).toBe(OG_IMAGE_WIDTH);
+    expect(ogPngView.getUint32(20)).toBe(OG_IMAGE_HEIGHT);
+    expect(ogPngBytes[25]).toBe(2); // 24-bit RGB color type.
     const ogPngNotModified = await app.request(
       '/og.png',
       { headers: { 'If-None-Match': ogPngEtag } },
@@ -543,14 +550,45 @@ describe('Hono routes on svg.xul.is', () => {
     );
     expect(ogPngNotModified.status).toBe(304);
 
+    expect(faviconPngRes.status).toBe(200);
+    expect(faviconPngRes.headers.get('Content-Type')).toBe('image/png');
+    expect(faviconPngRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    const faviconPngEtag = faviconPngRes.headers.get('ETag') ?? '';
+    expect(faviconPngEtag).toMatch(/^W\/"[\da-z]+-[\da-z]+"$/);
+    const faviconPngBytes = new Uint8Array(await faviconPngRes.arrayBuffer());
+    expect([...faviconPngBytes.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    const faviconPngView = new DataView(
+      faviconPngBytes.buffer,
+      faviconPngBytes.byteOffset,
+      faviconPngBytes.byteLength
+    );
+    expect(faviconPngView.getUint32(16)).toBe(FAVICON_PNG_SIZE);
+    expect(faviconPngView.getUint32(20)).toBe(FAVICON_PNG_SIZE);
+    expect(faviconPngBytes[25]).toBe(6); // 32-bit RGBA color type.
+    const faviconPngNotModified = await app.request(
+      '/favicon.png',
+      { headers: { 'If-None-Match': faviconPngEtag } },
+      TEST_ENV
+    );
+    expect(faviconPngNotModified.status).toBe(304);
+
     expect(ogSvgRes.status).toBe(200);
     expect(ogSvgRes.headers.get('Content-Type')).toContain('image/svg+xml');
     expect(ogSvgRes.headers.get('Content-Security-Policy')).toBe(
-      "default-src 'none'; style-src 'unsafe-inline'"
+      "default-src 'none'; img-src data:; style-src 'unsafe-inline'"
     );
     const ogSvgEtag = ogSvgRes.headers.get('ETag') ?? '';
     expect(ogSvgEtag).toMatch(/^W\/"/);
-    expect(await ogSvgRes.text()).toContain('width="1200" height="630"');
+    const ogSvgBody = await ogSvgRes.text();
+    expect(ogSvgBody).toContain(`width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}"`);
+    expect(ogSvgBody).toContain(
+      '<image x="88" y="98" width="48" height="48" href="data:image/png;base64,'
+    );
+    expect(ogSvgBody).toContain('fill="#8A8A8A"');
+    expect(ogSvgBody).toContain('fill="#909FFF"');
+    expect(ogSvgBody).toContain('fill="#BECBFF"');
+    expect(ogSvgBody).toContain('fill="#7CEEE3"');
+    expect(ogSvgBody).toContain('fill="#BCFFF7"');
     const ogSvgNotModified = await app.request(
       '/og.svg',
       { headers: { 'If-None-Match': ogSvgEtag } },
@@ -622,11 +660,10 @@ describe('Hono routes on svg.xul.is', () => {
     expect(svg).toContain('width="32" height="6" rx="3"');
   });
 
-  it('renders 1-segment 22px badge under /badge/:label, CTA buttons under /button/* and /btn/*, and serves /favicon.svg', async () => {
+  it('renders 1-segment 22px badge under /badge/:label, CTA buttons under /button/* and /btn/*, and 301-redirects /favicon.svg to /favicon.png', async () => {
     const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
-    expect(faviconRes.status).toBe(200);
-    expect(faviconRes.headers.get('Content-Type')).toContain('image/svg+xml');
-    expect(await faviconRes.text()).toContain('width="32" height="32"');
+    expect(faviconRes.status).toBe(301);
+    expect(faviconRes.headers.get('Location')).toBe('/favicon.png');
 
     const singleBadgeRes = await app.request(
       '/badge/xulbux?color=indigo&icon=sparkles',
@@ -963,7 +1000,7 @@ describe('SVG route table & edge cache keys', () => {
 });
 
 describe('response headers & revalidation', () => {
-  it('adds security headers to HTML pages, 301-redirects /favicon.ico, and sends a restrictive CSP on SVG responses', async () => {
+  it('adds security headers to HTML pages, 301-redirects /favicon.ico and /favicon.svg, and sends a restrictive CSP on SVG responses', async () => {
     const homeRes = await app.request('/', {}, TEST_ENV);
     expect(homeRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
     expect(homeRes.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
@@ -973,13 +1010,14 @@ describe('response headers & revalidation', () => {
       HTML_SECURITY_HEADERS['Content-Security-Policy']
     );
 
-    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
-    expect(faviconRes.headers.get('Content-Security-Policy')).toBe(
-      "default-src 'none'; style-src 'unsafe-inline'"
+    const [faviconIcoRes, faviconSvgRes] = await requestAll(
+      ['/favicon.ico', '/favicon.svg'],
+      TEST_ENV
     );
-    const faviconIcoRes = await app.request('/favicon.ico', {}, TEST_ENV);
-    expect(faviconIcoRes.status).toBe(301);
-    expect(faviconIcoRes.headers.get('Location')).toBe('/favicon.svg');
+    expect(faviconIcoRes?.status).toBe(301);
+    expect(faviconIcoRes?.headers.get('Location')).toBe('/favicon.png');
+    expect(faviconSvgRes?.status).toBe(301);
+    expect(faviconSvgRes?.headers.get('Location')).toBe('/favicon.png');
   });
 
   it('sends CORS, CSP, nosniff, and per-route Cache-Control headers on every SVG route kind', async () => {
@@ -1097,11 +1135,11 @@ describe('response headers & revalidation', () => {
     expect(await cachedRevalidatedRes.text()).toBe('');
     expect(stub.storedKeys).toHaveLength(1);
 
-    const faviconRes = await app.request('/favicon.svg', {}, TEST_ENV);
+    const faviconRes = await app.request('/favicon.png', {}, TEST_ENV);
     const faviconEtag = faviconRes.headers.get('ETag') ?? '';
     expect(faviconEtag).toMatch(/^W\/"/);
     const faviconRevalidatedRes = await app.request(
-      '/favicon.svg',
+      '/favicon.png',
       { headers: { 'If-None-Match': faviconEtag } },
       TEST_ENV
     );

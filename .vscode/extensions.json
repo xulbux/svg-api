@@ -1,0 +1,7 @@
+{
+  "recommendations": [
+    "oxc.oxc-vscode",
+    "DavidAnson.vscode-markdownlint",
+    "EditorConfig.EditorConfig"
+  ]
+}

@@ -80,8 +80,8 @@ interface ResolvedFontGlyph {
 /** Options for `renderTextPathMarkup`. */
 interface TextPathOptions {
   /** Horizontal alignment mode (defaults to `'center'`). */
-  align?: 'center' | 'left';
-  /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`). */
+  align?: 'center' | 'left' | 'origin';
+  /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`, baseline `originX` when `align === 'origin'`). */
   anchorX: number;
   /** Target vertical baseline Y coordinate in pixels. */
   baselineY: number;
@@ -507,11 +507,13 @@ export function renderTextPathMarkup(text: string, options: TextPathOptions): st
   if (outline.isEmpty || outline.pathData.length === 0) {
     return '';
   }
-  const originX =
-    align === 'center'
-      ? roundCoord(anchorX - (outline.x1 + outline.x2) / 2)
-      : roundCoord(anchorX - outline.x1);
-  return `<path transform="translate(${originX} ${roundCoord(baselineY)})" d="${outline.pathData}" fill="${fill}" />`;
+  let originX = anchorX;
+  if (align === 'center') {
+    originX -= (outline.x1 + outline.x2) / 2;
+  } else if (align === 'left') {
+    originX -= outline.x1;
+  }
+  return `<path transform="translate(${roundCoord(originX)} ${roundCoord(baselineY)})" d="${outline.pathData}" fill="${fill}" />`;
 }
 
 /**

@@ -3,7 +3,7 @@
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_HOST, SITE_ORIGIN } from '@/config/site';
+import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ENCODED_CHAOS_QUOTE,
@@ -182,7 +182,7 @@ function HomePage(): HtmlFragment {
     );
   }
 
-  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge for ${SITE_HOST}.`;
+  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge.`;
 
   return (
     <PageLayout
@@ -190,25 +190,30 @@ function HomePage(): HtmlFragment {
       canonicalPath="/"
       description={homeDescription}
       jsonLd={buildHomeJsonLd(homeDescription)}
-      title={`${SITE_HOST} · Edge SVG Graphics & Live Telemetry Engine`}>
+      title={`${SITE_NAME} · Dynamic SVG Graphics & Live Telemetry API`}>
       <section class="hero">
-        <h1 class="hero-title">
-          One Cohesive <span class="hero-accent">Edge SVG Engine</span> for READMEs & Docs
-        </h1>
-        <p class="hero-lead">
-          Dynamic badges, live service metrics, and animated SVG cards from plain URLs. Public and
-          100% free for everyone, with no signup, API keys, or rate limits.
-        </p>
-        <div class="hero-cta-row">
-          <a href={builderPath} class="btn-primary" tabindex="0">
-            <UiIcon slug="wand-sparkles" size={16} />
-            Start Building
-            <UiIcon slug="arrow-right" size={16} />
-          </a>
-          <a href={docsPath} class="btn-secondary" tabindex="0">
-            <UiIcon slug="book-open" size={16} />
-            Explore Docs
-          </a>
+        <div class="hero-copy">
+          <h1 class="hero-title">
+            One Cohesive <span class="hero-accent">Dynamic SVG API</span> for READMEs & Docs
+          </h1>
+          <p class="hero-lead">
+            Dynamic badges, live service metrics, and animated SVG cards from plain URLs. Public and
+            100% free for everyone, with no signup, API keys, or rate limits.
+          </p>
+          <div class="hero-cta-row">
+            <a href={builderPath} class="btn-primary" tabindex="0">
+              <UiIcon slug="wand-sparkles" size={16} />
+              Start Building
+              <UiIcon slug="arrow-right" size={16} />
+            </a>
+            <a href={docsPath} class="btn-secondary" tabindex="0">
+              <UiIcon slug="book-open" size={16} />
+              Explore Docs
+            </a>
+          </div>
+        </div>
+        <div class="hero-logo-wrap">
+          <img src="/favicon.png" alt="" width="156" height="156" class="hero-logo" />
         </div>
       </section>
       <section class="feature-grid" aria-label="Highlights">

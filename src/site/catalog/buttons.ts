@@ -1,8 +1,9 @@
 /**
- * Buttons documentation catalog – Variant descriptors, size scale / dual-icon / animation / split-button showcase cards, and parameter reference rows for `/docs/buttons`.
+ * Buttons documentation catalog – Variant descriptors, size scale / dual-icon / animation / split-button showcase cards,
+ * and parameter reference rows for `/docs/buttons`.
  */
 
-import { SITE_ORIGIN } from '@/config/site';
+import { AUTHOR_WEBSITE_URL, SITE_ORIGIN } from '@/config/site';
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import { SIZE_TOKENS } from '@/routes/params';
 import { DEFAULT_BUTTON_VARIANT } from '@/routes/svg';
@@ -78,7 +79,7 @@ export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
       },
       {
         alt: 'Open Website',
-        href: 'https://xul.is',
+        href: AUTHOR_WEBSITE_URL,
         path: '/button/Open+Website?variant=2&color=sky&icon=globe,external-link',
       },
       { alt: 'Continue', path: '/btn/Continue?color=emerald&icon=none,chevron-right' },

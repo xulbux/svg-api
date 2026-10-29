@@ -2,7 +2,7 @@
  * Typing animation documentation catalog – Container layout, variant, cursor, and erase-mode showcase configs and parameter reference rows for `/docs/typing`.
  */
 
-import { SITE_HOST } from '@/config/site';
+import { SITE_HOST, SITE_NAME } from '@/config/site';
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
 import {
   SIZE_TOKENS,
@@ -119,7 +119,7 @@ export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
     items: [
       {
         alt: 'Primary Brand Typing',
-        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Crisp+Vector+Typography?variant=1&color=indigo&title=${SITE_HOST}`,
+        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Crisp+Vector+Typography?variant=1&color=indigo&title=${SITE_NAME.replaceAll(' ', '+')}`,
       },
     ],
     subtitle: 'Primary gradient window with white text and bar cursor.',

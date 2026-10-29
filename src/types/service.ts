@@ -25,6 +25,14 @@ export type RawCount = number | string | null | undefined;
 /** Canonical download period metric keys shared across package registries. */
 export type DownloadMetricKey = 'dd' | 'dl' | 'dq' | 'dt' | 'dw' | 'dy';
 
+/** Badge color and value suffix of a canonical download period (`DOWNLOAD_PERIODS`). */
+export interface DownloadPeriodSpec {
+  /** Default theme color of the period's badges. */
+  color: ThemeColorName;
+  /** Unit suffix appended to the formatted count (e.g., `'/mo'`). */
+  suffix: string;
+}
+
 /**
  * Community count kinds sharing one label and color across services (the service brand icon
  * identifies the platform, e.g., Discord `members`, Bluesky `followers`, Hugging Face `likes`).

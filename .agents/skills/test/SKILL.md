@@ -5,71 +5,44 @@ description: Guidelines and commands for running tests and maintaining the svg-a
 
 # Test
 
-In accordance with the validation policy in `AGENTS.md` Section 4, use this skill to create, organize, run, and maintain tests for `svg-api`.
+Create, organize, run, and maintain the **vitest** suite in `test/` (`AGENTS.md` Section 4).
 
 ---
 
 ## 1. Architecture
 
-Tests use **vitest** and are located in the `test/` directory. Pure modules in `src/` (the `src/svg/` renderers, text measurement, icon and color resolvers, metric formatters, the `src/routes/` parsers and HTTP helpers, the `src/site/` page and SEO renderers, and the builder schemas in `src/routes/schema.ts`) and the Hono application (`app.request()`) can be tested directly without requiring a live Cloudflare account. Upstream APIs are never called; Mock `fetch` with `vi.spyOn(globalThis, 'fetch')` (mocks and stubbed globals are restored automatically via `restoreMocks` and `unstubGlobals`), and call `resetUpstreamCaches()` (`src/services/fetcher.ts`) in `afterEach` so the in-isolate memory cache never leaks between tests. Edge cache paths are tested with `installEdgeCacheStub()` (or `createEdgeCacheStub()`) from `test/helpers.ts`.
+Pure modules in `src/` and the Hono app (`app.request()`) run directly without a live Cloudflare account. Never call live upstream APIs: mock `fetch` via `vi.spyOn(globalThis, 'fetch')` (`restoreMocks` and `unstubGlobals` clean up automatically), call `resetUpstreamCaches()` (`src/services/fetcher.ts`) in `afterEach`, and use `installEdgeCacheStub()` / `createEdgeCacheStub()` (`test/helpers.ts`) for edge cache paths.
 
 ### Key Files
 
 | File                    | Purpose                                                                          |
 | ----------------------- | -------------------------------------------------------------------------------- |
-| `test/helpers.ts`       | Shared test helpers (`TEST_ENV`, `ARIA_LABEL_RX`, `extractAriaLabel`, `requireDefined`, `countOccurrences`, `createEdgeCacheStub`, `installEdgeCacheStub`, `evaluateClientCore`, `evaluateClientDom`, `readClientModuleSources`); Reuse them instead of local copies |
-| `test/measure.test.ts`  | Text width calculation, cached and uncached outline rendering (`src/svg/measure.ts`), and the shared count- and size-bounded LRU cache (`src/svg/shared.ts`) |
-| `test/icons.test.ts`    | Bundled icon set resolution, slug normalization and aliases, the size-bounded icon cache, and ink bounds (`src/svg/icons.ts`) |
-| `test/renderer.test.ts` | SSOT SVG rendering across all element renderers, variants, inline widgets, accessible labels, content-addressed IDs, and size/DoS bounds (`src/svg/`) |
-| `test/routes.test.ts`   | Worker entrypoint export guard, Hono routes, the SVG route table and dispatcher (`SVG_ROUTES`), query DSL parsers, HTTP helpers (`src/routes/http.ts`), response headers, normalized edge cache keys, error badges, SEO endpoints, docs pages & route regressions |
-| `test/services.test.ts` | Every service preset transform, endpoint URL templates & projections, request validation, upstream error, size-cap, and rate-limit badges, coalescing, negative edge caching, the memory cache size budget, caching & redirects (`src/services/`) |
-| `test/site.test.ts`     | Documentation website HTML validity, accessibility, head metadata, header tabs, grouped sidebars, pager order, versioned assets, stylesheets, client script guards (theme, preview background toggle), and docs drift guards (`src/site/`) |
-| `test/builder.test.ts`  | Builder schema drift guards, the builder client core (evaluated from `builder.client.js` without a DOM) round-tripped through the route parser, snippet token parity with the server, icon picker index/assets and slug resolution parity with `resolveIcon`, and "Open in Builder" links that must render identical SVGs |
-| `vitest.config.mts`     | Vitest config with `@/`, `@bundles/`, and `@scripts/` path aliases, binary/text asset loaders (`.ttf`, `.png`, `.css`, `.client.js`), `restoreMocks`, and `unstubGlobals` |
+| `test/helpers.ts`       | Shared helpers (`TEST_ENV`, ARIA extraction, guards, edge cache stubs, client-bundle evaluators) |
+| `test/measure.test.ts`  | Text measurement, outline rendering (`src/svg/measure.ts`), and bounded LRU cache (`src/svg/shared.ts`) |
+| `test/icons.test.ts`    | Bundled icon resolution, aliases, size-bounded cache, and ink bounds (`src/svg/icons.ts`) |
+| `test/renderer.test.ts` | SSOT SVG rendering across elements, variants, widgets, ARIA labels, IDs, and DoS bounds (`src/svg/`) |
+| `test/routes.test.ts`   | Entrypoint guard, Hono routes, `SVG_ROUTES`, query parsers, HTTP/cache headers, SEO & regressions |
+| `test/services.test.ts` | Preset transforms, endpoint projections, error/rate-limit badges, coalescing, caching & redirects (`src/services/`) |
+| `test/site.test.ts`     | Site HTML/a11y, metadata, navigation, versioned assets, client scripts, and OSS/docs drift guards |
+| `test/builder.test.ts`  | Builder schema drift, client core parser round-trips, snippet parity, icon picker & builder links |
+| `vitest.config.mts`     | Vitest config mirroring `tsconfig.json` aliases and `wrangler.jsonc` `Data`/`Text` loaders |
 
 ---
 
 ## 2. Test Organization
 
-1.  **One File per Module Area:** Group tests by module area using `describe()` blocks.
-2.  **Same Code Style:** Test files follow the code style and comment conventions in `AGENTS.md` Section 6 (module header, descriptive variable names, no single-letter variables except `i`/`j`/`n`, standalone `:` vs. inline `.` comments).
-3.  **Descriptive Names:** `describe()` the function or route, `it()` the specific behavior being verified:
-    -   ✅ `'returns 302 redirect when Sec-Fetch-Dest is document'`
-    -   ❌ `'test redirect'`
-4.  **Both Positive and Negative Assertions:** Test both valid inputs and fallback/error handling (e.g., unknown colors, missing owners, invalid icons, XML escaping).
-5.  **Regression Tests:** Required for every bug fix (see `AGENTS.md` Section 4). Name the original bug in the title (`'… (regression: <bug>)'`). For performance and DoS fixes, assert deterministic bounds (output size, identical output for over-long vs. capped input, number of `fetch` calls) instead of wall-clock timings, which are flaky in CI.
-6.  **Shared Helpers:** Repeated setup goes into hoisted `function` helpers in the file's `INTERNALS` section (e.g., `mockUpstream`, `requestBadge`), not into arrow functions inside `it()` blocks.
+1.  **One File per Area:** Group by module area with `describe()`, follow `AGENTS.md` Section 6 style/comments, and put repeated setup in hoisted `function` helpers under `INTERNALS`.
+2.  **Descriptive Titles:** `describe()` the unit/route and `it()` the exact behavior (e.g., `'returns 302 redirect when Sec-Fetch-Dest is document'`).
+3.  **Positive & Negative Paths:** Cover valid inputs alongside fallbacks, errors, and escaping.
+4.  **Regression Tests:** Name the bug (`'… (regression: <bug>)'`) and assert deterministic bounds (output size, capped-input parity, `fetch` count) rather than flaky wall-clock timings.
+5.  **Test Lint Overrides:** Keep file-level disables minimal (e.g., `/* oxlint-disable typescript/no-non-null-assertion */`).
 
 ---
 
-## 3. Running Tests
-
-### Single Run
+## 3. Commands
 
 ```bash
-pnpm run test
+pnpm run test         # Single run
+pnpm run test:watch   # Watch mode
+pnpm run check        # Full validation + tests
 ```
-
-### Watch Mode (re-runs on file save)
-
-```bash
-pnpm run test:watch
-```
-
-### Full Validation + Tests
-
-```bash
-pnpm run check
-```
-
----
-
-## 4. Lint Rules in Test Files
-
-Test files may legitimately use patterns that are disallowed in production code. Use file-level oxlint disable comments when necessary:
-
-```typescript
-/* oxlint-disable typescript/no-non-null-assertion */
-```
-
-Keep these to the minimum necessary set of rules.

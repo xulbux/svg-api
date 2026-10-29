@@ -23,6 +23,7 @@ import type {
   BadgeSpecialMap,
   CommunityMetricKind,
   DownloadMetricKey,
+  DownloadPeriodSpec,
   MetricEndpoint,
   MetricPresentation,
   MetricResult,
@@ -37,14 +38,6 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Badge color and value suffix of a download period. */
-interface DownloadPeriodSpec {
-  /** Default theme color of the period's badges. */
-  color: ThemeColorName;
-  /** Unit suffix appended to the formatted count (e.g., `'/mo'`). */
-  suffix: string;
-}
 
 /** Projected coverage payload of `createCoverageService` endpoints. */
 interface CoveragePayload {
@@ -158,7 +151,7 @@ const CURRENCY_CENTS_THRESHOLD = 1000;
  * Download period table (single source of truth for every download metric): Short periods are
  * sky, recent periods emerald, and long periods indigo.
  */
-const DOWNLOAD_PERIODS: Readonly<Record<DownloadMetricKey, DownloadPeriodSpec>> = {
+export const DOWNLOAD_PERIODS: Readonly<Record<DownloadMetricKey, DownloadPeriodSpec>> = {
   dd: { color: 'sky', suffix: '/day' },
   dl: { color: 'emerald', suffix: '/mo' },
   dq: { color: 'emerald', suffix: '/90d' },

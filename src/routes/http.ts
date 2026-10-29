@@ -15,11 +15,11 @@ export const NOSNIFF_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * `Content-Security-Policy` for HTML documentation and builder responses: Self-hosted assets, inline
- * style attributes, `data:` images, and the SHA-256 hash of the head theme script.
+ * `Content-Security-Policy` for HTML documentation and builder responses:
+ * Self-hosted assets, inline style attributes, `data:` images, and the SHA-256 hash of the head theme script.
  */
 const HTML_CONTENT_SECURITY_POLICY =
-  "default-src 'self'; script-src 'self' 'sha256-/IDNHTLeii71yYb2OfLrAGLXbAnBMN+jobzvfEklCYE='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+  "default-src 'self'; script-src 'self' 'sha256-Pz/SIIcjOe8SrIdxZBwGPhr6Pp2zVCiFgAGUtA6zDMo='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
 
 /** Security headers attached to every HTML documentation response. */
 export const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
@@ -31,9 +31,8 @@ export const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
- * Restrictive `Content-Security-Policy` for SVG responses (defense in depth against SVG XSS when a
- * badge is opened directly): No scripts or external resources; Inline style attributes and SMIL
- * animations keep working.
+ * Restrictive `Content-Security-Policy` for SVG responses (defense in depth against SVG XSS when a badge is opened directly):
+ * No scripts or external resources; Inline style attributes and SMIL animations keep working.
  */
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'";
 
@@ -84,8 +83,8 @@ function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Determine whether an incoming HTTP request is a top-level browser document navigation
- * rather than an embedded `<img src="…">` request.
+ * Determine whether an incoming HTTP request is a top-level browser
+ * document navigation rather than an embedded `<img src="…">` request.
  * @param request   Incoming Fetch API `Request`.
  * @returns `true` when the request should trigger a `302` redirect if a destination URL exists.
  */

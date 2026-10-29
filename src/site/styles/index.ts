@@ -5,14 +5,7 @@
  * dark, explicit override, and `light-dark()` bindings ahead of the static `.css` modules.
  */
 
-import {
-  BRAND_INDIGO,
-  ISOLUX_GRAY,
-  ISOLUX_SYNTAX,
-  ISOLUX_UI,
-  STRIP_DARK_COLORS,
-  WHITE,
-} from '@/config/palette';
+import { BRAND_INDIGO, ISOLUX_GRAY, ISOLUX_SYNTAX, ISOLUX_UI, WHITE } from '@/config/palette';
 import type { SchemeColor } from '@/types';
 import baseCss from '@/site/styles/base.css';
 import builderCss from '@/site/styles/builder.css';
@@ -42,7 +35,7 @@ export const LIGHT_BG = WHITE;
 /** Page background in the dark color scheme (Isolux gray `900`, also the dark `theme-color`). */
 export const { 900: DARK_BG } = ISOLUX_GRAY;
 
-/** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand gradient (navbar brand mark and favicon). */
+/** Start (`indigo-400`) and end (`indigo-600`) color of the indigo brand accent. */
 export const { 400: BRAND_GRADIENT_START, 600: BRAND_GRADIENT_END } = BRAND_INDIGO;
 
 /** Viewport width in pixels at and below which the left sidebar collapses into a popover drawer. */
@@ -58,15 +51,6 @@ const MONO_FONT_STACK =
 
 /** Recessed surfaces (cards, tables, code drawers) below the page background. */
 const SOFT_SURFACE: SchemeColor = { dark: ISOLUX_GRAY[950], light: ISOLUX_GRAY[50] };
-
-/**
- * Error and validation status color: The red strip tick (`#FF6467`, at least 6.6:1 on the dark surfaces)
- * and the Isolux operator red (`#C5002B`, at least 5.8:1 on white and gray `50`) in the light scheme.
- */
-const DANGER_COLOR: SchemeColor = {
-  dark: STRIP_DARK_COLORS[1],
-  light: ISOLUX_SYNTAX.operator.light,
-};
 
 /** Static stylesheets in cascade order. */
 const STATIC_STYLESHEETS: readonly string[] = [
@@ -91,8 +75,8 @@ function buildColorToken(name: string, color: SchemeColor): ThemeToken {
 }
 
 /**
- * Build a scheme-independent color token derived from other `--c-*` tokens; It is emitted once, and
- * its `var()` references resolve against whichever scheme bindings are active on `:root`.
+ * Build a scheme-independent color token derived from other `--c-*` tokens; It is emitted once,
+ * and its `var()` references resolve against whichever scheme bindings are active on `:root`.
  */
 function buildDerivedToken(name: string, expression: string): ThemeToken {
   return { dark: expression, isColor: true, light: expression, name };
@@ -125,7 +109,7 @@ function getThemeTokens(): readonly ThemeToken[] {
     buildDerivedToken('brand-soft', 'color-mix(in srgb, var(--c-brand-1) 12%, transparent)'),
     buildDerivedToken('brand-border', 'color-mix(in srgb, var(--c-brand-1) 36%, transparent)'),
     // Error status color (WCAG AA for small text and invalid input borders on both `bg` and `bg-soft`):
-    buildColorToken('danger', DANGER_COLOR),
+    buildColorToken('danger', ISOLUX_UI.error),
     buildColorToken('nav-bg', {
       dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
       light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
@@ -153,11 +137,13 @@ function getThemeTokens(): readonly ThemeToken[] {
       light: 'color-mix(in srgb, var(--c-bg) 5%, transparent)',
     }),
     buildColorToken('preview-inverse-border', invertScheme(ISOLUX_UI.border)),
+    buildColorToken('preview-inverse-text', invertScheme(ISOLUX_UI.foregroundMuted)),
     buildColorToken('preview-inverse-btn-bg', invertScheme(ISOLUX_UI.button)),
     buildColorToken('preview-inverse-btn-text', invertScheme(ISOLUX_UI.buttonForeground)),
-    // Isolux Pro Markdown roles; punctuation, path segments (lifted string indigo), alt text and link targets (label), URLs (string), query keys (function cyan), and query values (property cyan):
+    // Isolux Pro Markdown roles; punctuation, path segments (lifted string indigo), alt text and link targets (label),
+    // URLs (string), query keys (function cyan), and query values (property cyan):
     buildColorToken('hl-p', ISOLUX_SYNTAX.punctuation),
-    buildColorToken('hl-path', ISOLUX_SYNTAX.constant),
+    buildColorToken('hl-path', ISOLUX_SYNTAX.stringLifted),
     buildColorToken('hl-alt', ISOLUX_SYNTAX.label),
     buildColorToken('hl-url', ISOLUX_SYNTAX.string),
     buildColorToken('hl-key', ISOLUX_SYNTAX.function),
@@ -181,6 +167,12 @@ function getThemeTokens(): readonly ThemeToken[] {
       isColor: false,
       light: '0 16px 40px rgb(0 0 0 / 0.22)',
       name: 'shadow-dialog',
+    },
+    {
+      dark: 'blur(56px) opacity(0.25)',
+      isColor: false,
+      light: 'blur(12px) brightness(0) opacity(0.1)',
+      name: 'hero-logo-glow',
     },
     { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
     { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
@@ -240,8 +232,6 @@ function renderTokenCss(): string {
   const lightOverrideSelector = buildSchemeOverrideSelector('light');
   return `/* Generated Design Tokens */
 :root {
-  --brand-gradient-start: ${BRAND_GRADIENT_START};
-  --brand-gradient-end: ${BRAND_GRADIENT_END};
   --font-sans: ${SANS_FONT_STACK};
   --font-mono: ${MONO_FONT_STACK};
 ${renderBaseTokenBindings('light', true)}}

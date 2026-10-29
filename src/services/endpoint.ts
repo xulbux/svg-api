@@ -50,7 +50,7 @@ interface EndpointOptions<P> {
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a URL template placeholder (captured, so `split` keeps the placeholder names). */
-const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|scope|target|path|id|npm-id|npm)\}/;
+export const URL_PLACEHOLDER_RX = /\{(?<placeholder>owner|scope|target|path|id|npm-id|npm)\}/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 

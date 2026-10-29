@@ -2,22 +2,53 @@
  * Documentation website tests – HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards, and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/site/`).
  */
 
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
+import { inflateSync } from 'node:zlib';
 import siteScript from '@bundles/site.client.js';
-import { rasterizeOgSvgToPng } from '@scripts/og/rasterizer';
+import { decodePngToRgba, encodeRgbaPng } from '@scripts/og/png';
+import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasterizer';
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { ISOLUX_GRAY, ISOLUX_SYNTAX, ISOLUX_UI } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_ORIGIN } from '@/config/site';
+import {
+  AUTHOR_WEBSITE_URL,
+  BRAND_ICON_PNG_SIZE,
+  FALLBACK_REDIRECT_URL,
+  REPO_GITHUB_URL,
+  SERVICE_USER_AGENT,
+  SITE_HOST,
+  SITE_NAME,
+  SITE_ORIGIN,
+} from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
+import app from '@/index';
 import { HTML_SECURITY_HEADERS } from '@/routes/http';
-import { ICON_MOTION_TOKENS, SIZE_TOKENS } from '@/routes/params';
-import { resolveSvgRequest } from '@/routes/svg';
-import { listServiceMetricAliases } from '@/services/fetcher';
+import {
+  ICON_MOTION_TOKENS,
+  QUOTE_LAYOUT_TOKENS,
+  SIZE_TOKENS,
+  SPECIAL_ELEMENT_KINDS,
+  VARIANT_TOKENS,
+} from '@/routes/params';
+import { findSvgRoute, renderSvgPath, resolveSvgRequest, SVG_ROUTES } from '@/routes/svg';
+import { URL_PLACEHOLDER_RX } from '@/services/endpoint';
+import {
+  DEFAULT_METRIC_ALIASES,
+  listServiceMetricAliases,
+  MAX_UPSTREAM_BYTES,
+} from '@/services/fetcher';
+import { DOWNLOAD_PERIODS } from '@/services/metrics';
 import { getSiteAsset, getSiteAssetUrl } from '@/site/assets';
 import {
+  buildServicePresetCards,
   formatCountLowerBound,
   getEndpointRoutes,
   getIconSetCounts,
+  listRouteAliases,
+  SERVICE_ROUTE_PATTERN,
   STACK_EXAMPLE_GROUPS,
 } from '@/site/catalog';
 import { formatInlineMarkupHtml, getHeadScriptBody, renderParamTable } from '@/site/components';
@@ -31,9 +62,14 @@ import {
   renderNotFoundHtml,
   renderServerErrorHtml,
 } from '@/site/pages';
-import { renderLlmsTxt } from '@/site/seo';
+import { FAVICON_PNG_SIZE, renderLlmsTxt, renderOgImageSvg } from '@/site/seo';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
-import { FALLBACK_ICON_SLUG, ICON_SLUG_ALIASES } from '@/svg/icons';
+import {
+  ALL_ICON_SOURCE_NAMES,
+  FALLBACK_ICON_SLUG,
+  ICON_SLUG_ALIASES,
+  resolveIcon,
+} from '@/svg/icons';
 import {
   ICON_SIZE_RANGE,
   ICON_STROKE_RANGE,
@@ -48,13 +84,19 @@ import {
   TYPING_PAUSE_RANGE,
   TYPING_WIDTH_RANGE,
 } from '@/svg/typing';
-import type { PopoverPlacementOptions, SiteClientCore } from '@/types';
+import type {
+  DocsPageSlug,
+  DownloadMetricKey,
+  PopoverPlacementOptions,
+  SiteClientCore,
+} from '@/types';
 import {
   countOccurrences,
   evaluateClientCore,
   evaluateClientDom,
   readClientModuleSources,
   requireDefined,
+  TEST_ENV,
 } from './helpers';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -84,6 +126,98 @@ interface FakeSwitchElement {
   /** Set an attribute value. */
   setAttribute: (name: string, value: string) => void;
 }
+
+/** Subset of `package.json` verified against repository documentation and templates. */
+interface RepoPackageJson {
+  /** Issue tracker metadata. */
+  bugs: { url: string };
+  /** Production dependencies. */
+  dependencies: Record<string, string>;
+  /** Runtime engine constraints. */
+  engines: { node: string };
+  /** Canonical project website URL. */
+  homepage: string;
+  /** SPDX license identifier. */
+  license: string;
+  /** Package identifier. */
+  name: string;
+  /** Source repository metadata. */
+  repository: { url: string };
+  /** Developer and CI scripts. */
+  scripts: Record<string, string>;
+  /** Semantic package version. */
+  version: string;
+}
+
+/** Parsed row of the `## Endpoints` table in `README.md`. */
+interface ReadmeEndpointRow {
+  /** Description cell text. */
+  description: string;
+  /** Linked documentation URL. */
+  docsUrl: string;
+  /** Bold endpoint label. */
+  label: string;
+  /** Route pattern cell code text. */
+  route: string;
+}
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Canonical documentation page slugs mapped from each non-alias `SVG_ROUTES` prefix. */
+const ROUTE_PREFIX_DOCS_SLUGS: Readonly<Record<string, readonly DocsPageSlug[]>> = {
+  badge: ['badges', 'services'],
+  button: ['buttons'],
+  icon: ['icons'],
+  quote: ['quotes'],
+  stack: ['stack'],
+  typing: ['typing'],
+};
+
+/** Exported module identifiers referenced in prose inside `CONTRIBUTING.md` and `SECURITY.md`. */
+const PROSE_REFERENCED_EXPORTS: readonly {
+  readonly doc: 'contributing' | 'security';
+  readonly modulePath: string;
+  readonly symbols: readonly string[];
+}[] = [
+  { doc: 'contributing', modulePath: '@/config/services', symbols: ['SERVICES_CONFIG'] },
+  { doc: 'contributing', modulePath: '@/config/stack', symbols: ['STACK_CATEGORIES'] },
+  { doc: 'contributing', modulePath: '@/routes/http', symbols: ['HTML_SECURITY_HEADERS'] },
+  { doc: 'security', modulePath: '@/routes/http', symbols: ['sanitizeRedirectUrl'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/services/endpoint',
+    symbols: [
+      'NPM_PACKAGE_ROUTE',
+      'OWNER_REPO_ROUTE',
+      'PACKAGE_ROUTE',
+      'createEndpoint',
+      'pickFields',
+      'projectFirstEntry',
+    ],
+  },
+  { doc: 'contributing', modulePath: '@/services/fetcher', symbols: ['DEFAULT_METRIC_ALIASES'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/services/metrics',
+    symbols: ['formatCount', 'formatLicense', 'formatVersion', 'readFiniteNumber', 'readText'],
+  },
+  {
+    doc: 'contributing',
+    modulePath: '@/site/catalog/services',
+    symbols: ['buildServicePresetCards'],
+  },
+  {
+    doc: 'contributing',
+    modulePath: '@/site/components/PageLayout',
+    symbols: ['getHeadScriptBody'],
+  },
+  { doc: 'contributing', modulePath: '@/svg/icons', symbols: ['ICON_SLUG_ALIASES'] },
+  {
+    doc: 'contributing',
+    modulePath: '@/svg/shared',
+    symbols: ['createLruCache', 'prepareDisplayText'],
+  },
+];
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -131,7 +265,131 @@ const COLOR_TOKEN_DEFINITION_RX = /(?<name>--c-[\w-]+):/g;
 const INLINE_SVG_ROUTE_CODE_RX =
   /<code[^>]*>(?<path>\/(?:badge|btn|button|icon|quote|stack|type|typing)\/[^<\s]+)<\/code>/g;
 
+/** Matches level-2 Markdown headings carrying an anchored `svg.xul.is/icon/<slug>` image. */
+const MD_H2_ICON_HEADING_RX =
+  /^## <a href="#(?<anchor>[\w-]+)"><img src="https:\/\/svg\.xul\.is\/icon\/(?<icon>[\w-]+)\?[^"]*" align="left" \/><\/a>(?<title>.+)$/gm;
+
+/** Matches every level-2 Markdown heading line. */
+const MD_H2_LINE_RX = /^## .+$/gm;
+
+/** Matches in-document anchor links inside a Markdown Table of Contents bullet list. */
+const MD_TOC_ANCHOR_RX = /^- {3}\[[^\]]+\]\(#(?<anchor>[\w-]+)\)$/gm;
+
+/** Matches `pnpm run <script>` invocations inside Markdown and YAML files. */
+const MD_PNPM_SCRIPT_RX = /\bpnpm run (?<script>[\w:-]+)/g;
+
+/** Matches concrete repository file or directory paths inside backtick code spans. */
+const MD_REPO_PATH_SPAN_RX =
+  /`(?<relPath>(?:assets|src|test|scripts|\.github|\.agents)(?:\/[\w.-]+)+\/?)`/g;
+
+/** Matches badge `<img … src="https://svg.xul.is/badge/…" />` tags inside the `README.md` hero block. */
+const README_HERO_BADGE_IMG_RX =
+  /<img\s+(?<attrs>[^>]*\bsrc="https:\/\/svg\.xul\.is\/badge\/[^"]+"[^>]*)\/>/g;
+
+/** Matches named `import { … } from '@/…'` statements inside Markdown code examples. */
+const MD_TS_IMPORT_RX = /import\s*\{(?<specifiers>[^}]+)\}\s*from\s*'(?<modulePath>@\/[\w/-]+)';/g;
+
+/** Matches punctuation stripped when GitHub generates a heading anchor slug. */
+const HEADING_PUNCT_RX = /[^\w\s-]/g;
+
+/** Matches an `as` alias separator inside a named import specifier (`foo as bar`). */
+const IMPORT_ALIAS_SPLIT_RX = /\s+as\s+/;
+
+/** Matches every route pattern rendered inside a documentation header `<RoutePills />` strip. */
+const ROUTE_PILL_PATTERN_RX =
+  /<code class="route-pill"><span class="route-method">GET<\/span>(?<pattern>[^<]+)<\/code>/g;
+
+/** Matches a colon-prefixed route segment placeholder (`/:label`, `/[:owner/]`). */
+const PATH_PARAM_PLACEHOLDER_RX = /\/\[?:[a-z]/;
+
+/** Matches every parameter table `<th scope="row" role="rowheader">` cell. */
+const ROW_HEADER_CELL_RX = /<th scope="row" role="rowheader">(?<cell>[\s\S]*?)<\/th>/g;
+
+/** Matches every `?<param>=` query parameter token inside a parameter table header cell. */
+const QUERY_PARAM_TOKEN_RX = /\?(?<param>[a-z][\w-]*)=/g;
+
+/** Matches a data row inside the `## Endpoints` Markdown table of `README.md`. */
+const MD_ENDPOINT_ROW_RX =
+  /^\| \[\*\*(?<label>[^*]+)\*\*\]\((?<docsUrl>https:\/\/[^)]+)\) \| `(?<route>\/[^`]+)` \| (?<description>[^|]+) \|$/gm;
+
+/** Matches a backticked `/<alias>/*` wildcard route alias inside Markdown prose. */
+const MD_ROUTE_ALIAS_WILDCARD_RX = /`(?<wildcard>\/[\w-]+\/\*)`/g;
+
+/** Matches backticked identifier tokens inside a Markdown table cell. */
+const MD_INLINE_CODE_TOKEN_RX = /`(?<token>[\w-]+)`/g;
+
+/** Matches every `https://svg.xul.is` URL across Markdown and YAML files. */
+const MD_SITE_URL_RX = /(?<url>https:\/\/svg\.xul\.is[^\s"')<>]*)/g;
+
+/** Matches `blob/main/<path>[#<anchor>]` repository file URLs. */
+const MD_REPO_BLOB_URL_RX =
+  /https:\/\/github\.com\/xulbux\/svg-api\/blob\/main\/(?<relPath>[\w./-]+)(?:#(?<anchor>[\w-]+))?/g;
+
+/** Matches the `**Node.js:**` version constraint line in `CONTRIBUTING.md`. */
+const MD_NODE_PREREQ_RX = /^- {3}\*\*Node\.js:\*\* `(?<engine>[^`]+)`$/m;
+
+/** Matches inline download metric period items (`` `dd` (`/day`) ``) in `CONTRIBUTING.md`. */
+const MD_DOWNLOAD_KEY_ITEM_RX = /`(?<key>[\w-]+)` \((?<detail>[^)]+)\)/g;
+
+/** Matches backticked `{placeholder}` tokens in `CONTRIBUTING.md`. */
+const MD_PLACEHOLDER_TOKEN_RX = /`\{(?<name>[\w-]+)\}`/g;
+
+/** Matches bundled icon library bullets (`-   **Name** (\`pkg\`) – …`) in `CONTRIBUTING.md`. */
+const MD_ICON_SOURCE_BULLET_RX = /^- {3}\*\*(?<name>[^*]+)\*\* \(`(?<pkg>[^`]+)`\) – /gm;
+
+/** Matches the named placeholder alternation inside `URL_PLACEHOLDER_RX.source`. */
+const URL_PLACEHOLDER_GROUP_RX = /\(\?<placeholder>(?<names>[^)]+)\)/;
+
+/** Matches a GitHub Actions `if:` conditional referencing the disallowed `secrets` context. */
+const YAML_IF_SECRETS_RX = /^\s*if:.*\bsecrets\./m;
+
+/** Matches every `uses:` step line in a GitHub Actions workflow. */
+const YAML_USES_LINE_RX = /^\s*-?\s*uses:\s+.+$/gm;
+
+/** Matches a `uses:` step line pinned to an immutable 40-character commit SHA with a version comment. */
+const YAML_SHA_PINNED_USES_RX =
+  /^\s*-?\s*uses:\s+[\w.-]+\/[\w.-]+@[\da-f]{40}\s+#\s+v\d+(?:\.\d+){0,2}$/gm;
+
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Linearize a single 8-bit sRGB channel (`0`–`255`) per WCAG 2.x relative luminance. */
+function linearizeSrgbChannel(channelByte: number): number {
+  const srgb = channelByte / 255;
+  return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+}
+
+/** Compute the WCAG 2.x relative luminance (`0`–`1`) of a `#RRGGBB` hex color. */
+function computeRelativeLuminance(hex: string): number {
+  const red = Number.parseInt(hex.slice(1, 3), 16);
+  const green = Number.parseInt(hex.slice(3, 5), 16);
+  const blue = Number.parseInt(hex.slice(5, 7), 16);
+  return (
+    0.2126 * linearizeSrgbChannel(red) +
+    0.7152 * linearizeSrgbChannel(green) +
+    0.0722 * linearizeSrgbChannel(blue)
+  );
+}
+
+/** Compute the WCAG 2.x contrast ratio (`1`–`21`) between two `#RRGGBB` hex colors. */
+function computeContrastRatio(foregroundHex: string, backgroundHex: string): number {
+  const lumA = computeRelativeLuminance(foregroundHex);
+  const lumB = computeRelativeLuminance(backgroundHex);
+  return (Math.max(lumA, lumB) + 0.05) / (Math.min(lumA, lumB) + 0.05);
+}
+
+/** Collect repeated entries from `items` in encounter order (`O(n)`). */
+function findDuplicateStrings(items: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const duplicates: string[] = [];
+  for (const item of items) {
+    if (seen.has(item)) {
+      duplicates.push(item);
+    } else {
+      seen.add(item);
+    }
+  }
+  return duplicates;
+}
 
 /** Memoized rendered site pages across tests in this suite. */
 let renderedPagesCache: RenderedPage[] | undefined = undefined;
@@ -246,16 +504,443 @@ function FakeHtmlElement(): undefined {
 }
 FakeHtmlElement.prototype = Object.create(FakeElement.prototype);
 
+/** Read a UTF-8 text file relative to the repository root. */
+function readRepoFile(repoRoot: string, relPath: string): string {
+  return readFileSync(path.resolve(repoRoot, relPath), 'utf8');
+}
+
+/** Convert a Markdown heading title into GitHub's generated anchor slug. */
+function toGitHubHeadingSlug(title: string): string {
+  return title.toLowerCase().replace(HEADING_PUNCT_RX, '').trim().replaceAll(' ', '-');
+}
+
+/** Verify every icon-bearing `##` heading in `markdown` resolves its icon and matches GitHub's anchor slug. */
+function collectIconHeadingAnchors(docName: string, markdown: string): string[] {
+  const iconHeadings = [...markdown.matchAll(MD_H2_ICON_HEADING_RX)];
+  expect(iconHeadings.length, docName).toBeGreaterThan(0);
+  const headingAnchors: string[] = [];
+  for (const match of iconHeadings) {
+    const anchor = match.groups?.anchor ?? '';
+    const iconSlug = match.groups?.icon ?? '';
+    const title = (match.groups?.title ?? '').trim();
+    expect(anchor, `${docName}: ${title}`).toBe(toGitHubHeadingSlug(title));
+    expect(resolveIcon(iconSlug), `${docName} icon: ${iconSlug}`).toBeDefined();
+    headingAnchors.push(anchor);
+  }
+  return headingAnchors;
+}
+
+/** Verify every `##` heading in `CONTRIBUTING.md` carries a valid icon, matches GitHub's anchor slug, and aligns with the ToC. */
+function assertContributingHeadingsAndToc(contributingMd: string): ReadonlySet<string> {
+  const allH2Lines = contributingMd.match(MD_H2_LINE_RX) ?? [];
+  const headingAnchors = collectIconHeadingAnchors('CONTRIBUTING.md', contributingMd);
+  expect(headingAnchors).toHaveLength(allH2Lines.length);
+  const tocAnchors = collectGroups(contributingMd, MD_TOC_ANCHOR_RX, 'anchor');
+  expect(tocAnchors).toEqual(headingAnchors.slice(1));
+  return new Set(headingAnchors);
+}
+
+/** Derive the compact bracketed route pattern of an endpoint directly from its `/docs/:slug` `<RoutePills />`. */
+function deriveCompactEndpointRoute(slug: DocsPageSlug, aliasSet: ReadonlySet<string>): string {
+  const rawPills = collectGroups(renderDocsHtml(slug), ROUTE_PILL_PATTERN_RX, 'pattern');
+  const canonicalPatterns = rawPills.filter(
+    (pattern) =>
+      !pattern.includes('?') &&
+      !pattern.includes('//') &&
+      PATH_PARAM_PLACEHOLDER_RX.test(pattern) &&
+      !aliasSet.has(pattern.split('/')[1] ?? '')
+  );
+  if (canonicalPatterns.length === 1) {
+    return requireDefined(canonicalPatterns[0], `${slug} single route`);
+  }
+  expect(canonicalPatterns, slug).toHaveLength(2);
+  const [shortPattern = '', longPattern = ''] = canonicalPatterns.toSorted(
+    (left, right) => left.length - right.length
+  );
+  const [prefix = '', singleSegment = ''] = shortPattern.slice(1).split('/');
+  const [, firstSegment = '', secondSegment = ''] = longPattern.slice(1).split('/');
+  return singleSegment === firstSegment
+    ? `/${prefix}/${firstSegment}[/${secondSegment}]`
+    : `/${prefix}/[${firstSegment}/]${secondSegment}`;
+}
+
+/** Parse the `## Endpoints` Markdown table rows from `README.md`. */
+function parseReadmeEndpointRows(readmeMd: string): ReadmeEndpointRow[] {
+  const rows: ReadmeEndpointRow[] = [];
+  for (const match of readmeMd.matchAll(MD_ENDPOINT_ROW_RX)) {
+    const groups = requireDefined(match.groups, 'README endpoint row');
+    rows.push({
+      description: requireDefined(groups.description, 'description'),
+      docsUrl: requireDefined(groups.docsUrl, 'docsUrl'),
+      label: requireDefined(groups.label, 'label'),
+      route: requireDefined(groups.route, 'route'),
+    });
+  }
+  return rows;
+}
+
+/** Verify the `## Endpoints` table in `README.md` matches canonical order, routes, aliases, and widget tokens. */
+function assertReadmeEndpointsTable(readmeMd: string): void {
+  const endpointDocsPages = DOCS_PAGES.filter(
+    (page) => page.group === 'badges' || page.group === 'elements'
+  );
+  expect(BUILDER_PAGES.map((page) => page.docsSlug)).toEqual(
+    endpointDocsPages.map((page) => page.slug)
+  );
+
+  const rows = parseReadmeEndpointRows(readmeMd);
+  expect(rows).toHaveLength(endpointDocsPages.length);
+
+  const aliasSet = new Set(
+    SVG_ROUTES.filter((route) => route.aliasOf !== undefined).map((route) => route.prefix)
+  );
+  const seenPrefixes = new Set<string>();
+
+  for (let i = 0; i < endpointDocsPages.length; i += 1) {
+    const docsPage = requireDefined(endpointDocsPages[i], `docsPage ${i}`);
+    const builderPage = requireDefined(BUILDER_PAGES[i], `builderPage ${i}`);
+    const row = requireDefined(rows[i], `README row ${i}`);
+
+    expect(row.docsUrl, docsPage.slug).toBe(`${SITE_ORIGIN}${buildDocsPath(docsPage.slug)}`);
+    expect([docsPage.navLabel, builderPage.ogLabel], docsPage.slug).toContain(row.label);
+    expect(row.route, docsPage.slug).toBe(deriveCompactEndpointRoute(docsPage.slug, aliasSet));
+
+    const canonicalPrefix = requireDefined(row.route.split('/')[1], `${docsPage.slug} prefix`);
+    seenPrefixes.add(canonicalPrefix);
+
+    const expectedAliases =
+      docsPage.slug === 'services'
+        ? []
+        : listRouteAliases(canonicalPrefix).map((alias) => `/${alias}/*`);
+    const actualAliases = collectGroups(row.description, MD_ROUTE_ALIAS_WILDCARD_RX, 'wildcard');
+    expect(actualAliases, `${docsPage.slug} aliases`).toEqual(expectedAliases);
+  }
+
+  expect([...seenPrefixes].toSorted()).toEqual(
+    getEndpointRoutes()
+      .map((pattern) => pattern.split('/')[1] ?? '')
+      .toSorted()
+  );
+  expect(rows[1]?.route).toBe(SERVICE_ROUTE_PATTERN);
+
+  const badgeRow = requireDefined(rows[0], 'badges row');
+  expect(collectGroups(badgeRow.description, MD_INLINE_CODE_TOKEN_RX, 'token')).toEqual([
+    ...SPECIAL_ELEMENT_KINDS,
+  ]);
+  expect(VARIANT_TOKENS).toHaveLength(3);
+  expect(rows[2]?.description).toContain('three hierarchy variants');
+  expect(rows[6]?.description).toContain(`${QUOTE_LAYOUT_TOKENS.join(' and ')} layouts`);
+}
+
+/** Collect every sorted `?<param>=` query parameter documented across `slugs` parameter tables. */
+function collectDocumentedQueryParams(slugs: readonly DocsPageSlug[]): string[] {
+  const params = new Set<string>();
+  for (const slug of slugs) {
+    for (const rawCell of collectGroups(renderDocsHtml(slug), ROW_HEADER_CELL_RX, 'cell')) {
+      const plainCell = rawCell.replace(HTML_TAG_RX, '');
+      for (const param of collectGroups(plainCell, QUERY_PARAM_TOKEN_RX, 'param')) {
+        params.add(param);
+      }
+    }
+  }
+  return [...params].toSorted();
+}
+
+/** Verify `CONTRIBUTING.md` standard & download metric keys, global aliases, and `createEndpoint()` placeholders. */
+function assertContributingDownloadAndPlaceholderSpecs(contributingMd: string): void {
+  const standardKeysStart = contributingMd.indexOf('-   **Standard Metric Keys:**');
+  const downloadsStart = contributingMd.indexOf('-   **Download Metric Keys:**');
+  const placeholdersStart = contributingMd.indexOf('-   **URL Placeholders:**');
+  const iconsSectionStart = contributingMd.indexOf('<br>', placeholdersStart);
+  expect(standardKeysStart).toBeGreaterThan(-1);
+  expect(downloadsStart).toBeGreaterThan(standardKeysStart);
+  expect(placeholdersStart).toBeGreaterThan(downloadsStart);
+  expect(iconsSectionStart).toBeGreaterThan(placeholdersStart);
+
+  const standardKeysLine = contributingMd.slice(standardKeysStart, downloadsStart);
+  const downloadsLine = contributingMd.slice(downloadsStart, placeholdersStart);
+  const documentedItems = new Map<string, string>();
+  for (const match of downloadsLine.matchAll(MD_DOWNLOAD_KEY_ITEM_RX)) {
+    const groups = requireDefined(match.groups, 'download item');
+    documentedItems.set(
+      requireDefined(groups.key, 'download key'),
+      requireDefined(groups.detail, 'download detail')
+    );
+  }
+  expect([...documentedItems.keys()].toSorted()).toEqual(Object.keys(DOWNLOAD_PERIODS).toSorted());
+
+  for (const [key, detail] of documentedItems) {
+    const spec = DOWNLOAD_PERIODS[key as DownloadMetricKey];
+    if (spec.suffix.length > 0) {
+      expect(detail, key).toContain(`\`${spec.suffix}\``);
+    } else {
+      expect(detail, key).not.toMatch(/`\/\w+`/);
+    }
+  }
+  for (const [alias, canonical] of Object.entries(DEFAULT_METRIC_ALIASES)) {
+    if (Object.hasOwn(DOWNLOAD_PERIODS, canonical)) {
+      expect(documentedItems.get(canonical), `${alias} -> ${canonical}`).toContain(`\`${alias}\``);
+    } else {
+      expect(standardKeysLine, `${alias} -> ${canonical}`).toContain(`\`${canonical}\``);
+      expect(standardKeysLine, `${alias} -> ${canonical}`).toContain(`\`${alias}\``);
+    }
+  }
+
+  const placeholdersBlock = contributingMd.slice(placeholdersStart, iconsSectionStart);
+  const documentedPlaceholders = collectGroups(placeholdersBlock, MD_PLACEHOLDER_TOKEN_RX, 'name');
+  const expectedPlaceholders = (
+    URL_PLACEHOLDER_GROUP_RX.exec(URL_PLACEHOLDER_RX.source)?.groups?.names ?? ''
+  ).split('|');
+  expect([...new Set(documentedPlaceholders)].toSorted()).toEqual(expectedPlaceholders.toSorted());
+}
+
+/** Verify `CONTRIBUTING.md` clone URL, Node engine, core commands, payload cap, and icon libraries. */
+function assertContributingScriptsEngineAndIcons(
+  contributingMd: string,
+  serviceRequestYml: string,
+  packageJson: RepoPackageJson
+): void {
+  expect(contributingMd).toContain(`git clone ${REPO_GITHUB_URL}.git`);
+  expect(contributingMd).toContain('pnpm run dev');
+  expect(contributingMd).toContain('pnpm run check');
+
+  const documentedNodeEngine = MD_NODE_PREREQ_RX.exec(contributingMd)?.groups?.engine ?? '';
+  expect(documentedNodeEngine.replaceAll(' ', '')).toBe(
+    packageJson.engines.node.replaceAll(' ', '')
+  );
+
+  const maxUpstreamMb = `${MAX_UPSTREAM_BYTES / (1024 * 1024)} MB`;
+  expect(contributingMd).toContain(`above \`${maxUpstreamMb}\``);
+  expect(serviceRequestYml).toContain(`\`<= ${maxUpstreamMb}\``);
+  expect(contributingMd).toContain(`\`${SERVICE_ROUTE_PATTERN}\``);
+
+  const iconSourceNames: string[] = [];
+  const iconPackages: string[] = [];
+  for (const match of contributingMd.matchAll(MD_ICON_SOURCE_BULLET_RX)) {
+    const groups = requireDefined(match.groups, 'icon source bullet');
+    iconSourceNames.push(requireDefined(groups.name, 'icon source name'));
+    iconPackages.push(requireDefined(groups.pkg, 'icon package'));
+  }
+  expect(iconSourceNames).toEqual([...ALL_ICON_SOURCE_NAMES]);
+  const expectedIconPackages = Object.keys(packageJson.dependencies)
+    .filter((dep) => dep === 'lucide-static' || dep.startsWith('@iconify-json/'))
+    .toSorted();
+  expect(iconPackages.toSorted()).toEqual(expectedIconPackages);
+}
+
+/** Verify every `pnpm run <script>` and concrete repository path across docs, workflows, and agent rules exists. */
+function assertReferencedScriptsAndPathsExist(
+  repoRoot: string,
+  docsWithNames: readonly (readonly [name: string, text: string])[],
+  packageScripts: Readonly<Record<string, string>>
+): void {
+  let checkedScripts = 0;
+  let checkedPaths = 0;
+  for (const [docName, docText] of docsWithNames) {
+    for (const scriptName of collectGroups(docText, MD_PNPM_SCRIPT_RX, 'script')) {
+      checkedScripts += 1;
+      expect(Object.hasOwn(packageScripts, scriptName), `${docName} script: ${scriptName}`).toBe(
+        true
+      );
+    }
+    for (const relPath of collectGroups(docText, MD_REPO_PATH_SPAN_RX, 'relPath')) {
+      checkedPaths += 1;
+      expect(existsSync(path.resolve(repoRoot, relPath)), `${docName} path: ${relPath}`).toBe(true);
+    }
+  }
+  expect(checkedScripts).toBeGreaterThan(0);
+  expect(checkedPaths).toBeGreaterThan(0);
+}
+
+/** Request a `https://svg.xul.is` non-SVG page URL, following a single `301` canonical redirect when present. */
+async function resolveSitePageResponse(
+  rawUrl: string
+): Promise<{ fragment: string; html: string; rawUrl: string; status: number }> {
+  const parsedUrl = new URL(rawUrl);
+  let response = await app.request(`${parsedUrl.pathname}${parsedUrl.search}`, {}, TEST_ENV);
+  if (response.status === 301) {
+    const redirectLocation = requireDefined(
+      response.headers.get('Location') ?? undefined,
+      `${rawUrl} 301 Location`
+    );
+    response = await app.request(redirectLocation, {}, TEST_ENV);
+  }
+  return {
+    fragment: parsedUrl.hash.slice(1),
+    html: await response.text(),
+    rawUrl,
+    status: response.status,
+  };
+}
+
+/** Verify every `https://svg.xul.is` SVG/page URL and `${REPO_GITHUB_URL}/blob/main/…` link resolves cleanly. */
+async function assertSiteAndRepoUrlsResolve(
+  repoRoot: string,
+  docsWithNames: readonly (readonly [name: string, text: string])[],
+  anchorsByFile: ReadonlyMap<string, ReadonlySet<string>>
+): Promise<void> {
+  const uniquePageUrls = new Set<string>();
+  for (const [docName, docText] of docsWithNames) {
+    for (const rawUrl of collectGroups(docText, MD_SITE_URL_RX, 'url')) {
+      if (!rawUrl.includes('...')) {
+        const parsedUrl = new URL(rawUrl);
+        if (resolveSvgRequest(parsedUrl)) {
+          const svgMarkup = renderSvgPath(`${parsedUrl.pathname}${parsedUrl.search}`, 'MIT');
+          expect(svgMarkup, `${docName}: ${rawUrl}`).toContain('<svg ');
+          if (parsedUrl.pathname.startsWith('/icon/')) {
+            const iconSlug = decodeURIComponent(parsedUrl.pathname.slice('/icon/'.length));
+            expect(resolveIcon(iconSlug), `${docName} icon: ${iconSlug}`).toBeDefined();
+          }
+        } else {
+          uniquePageUrls.add(rawUrl);
+        }
+      }
+    }
+    for (const match of docText.matchAll(MD_REPO_BLOB_URL_RX)) {
+      const relPath = match.groups?.relPath ?? '';
+      const anchor = match.groups?.anchor;
+      expect(existsSync(path.resolve(repoRoot, relPath)), `${docName} blob: ${relPath}`).toBe(true);
+      if (anchor) {
+        expect(anchorsByFile.get(relPath)?.has(anchor), `${docName} #${anchor}`).toBe(true);
+      }
+    }
+  }
+
+  expect(uniquePageUrls.size).toBeGreaterThan(0);
+  const pageResponses = await Promise.all([...uniquePageUrls].map(resolveSitePageResponse));
+  for (const { fragment, html, rawUrl, status } of pageResponses) {
+    expect(status, rawUrl).toBe(200);
+    if (fragment.length > 0) {
+      expect(html, `${rawUrl} #${fragment}`).toContain(`id="${fragment}"`);
+    }
+  }
+}
+
+/** Verify every `import { … } from '@/…'` inside a Markdown code block imports real module exports. */
+async function assertMarkdownModuleImports(markdown: string): Promise<void> {
+  const importMatches = [...markdown.matchAll(MD_TS_IMPORT_RX)];
+  expect(importMatches.length).toBeGreaterThan(0);
+  const loadedModules = await Promise.all(
+    importMatches.map(async (match) => {
+      const modulePath = match.groups?.modulePath ?? '';
+      const importedModule = (await import(modulePath)) as Record<string, unknown>;
+      return { importedModule, modulePath, rawSpecifiers: match.groups?.specifiers ?? '' };
+    })
+  );
+  for (const { importedModule, modulePath, rawSpecifiers } of loadedModules) {
+    for (const rawSpecifier of rawSpecifiers.split(',')) {
+      const bindingName = rawSpecifier.trim().split(IMPORT_ALIAS_SPLIT_RX)[0]?.trim() ?? '';
+      if (bindingName.length > 0) {
+        expect(importedModule[bindingName], `${modulePath} export: ${bindingName}`).toBeDefined();
+      }
+    }
+  }
+}
+
+/** Verify prose-referenced exported identifiers in `CONTRIBUTING.md` and `SECURITY.md` exist on their modules. */
+async function assertProseModuleExports(contributingMd: string, securityMd: string): Promise<void> {
+  const loadedEntries = await Promise.all(
+    PROSE_REFERENCED_EXPORTS.map(async (entry) => ({
+      entry,
+      importedModule: (await import(entry.modulePath)) as Record<string, unknown>,
+    }))
+  );
+  for (const { entry, importedModule } of loadedEntries) {
+    const markdown = entry.doc === 'contributing' ? contributingMd : securityMd;
+    for (const symbolName of entry.symbols) {
+      expect(markdown, `${entry.doc} mentions ${symbolName}`).toContain(`\`${symbolName}`);
+      expect(importedModule[symbolName], `${entry.modulePath} export: ${symbolName}`).toBeDefined();
+    }
+  }
+}
+
+/** Decompress the concatenated `IDAT` scanline payload from an encoded PNG buffer. */
+function inflateIdatScanlines(pngBuffer: Buffer): Buffer {
+  const idatChunks: Buffer[] = [];
+  let offset = 8; // Skip 8-byte PNG signature.
+  while (offset + 8 <= pngBuffer.length) {
+    const chunkLength = pngBuffer.readUInt32BE(offset);
+    const chunkType = pngBuffer.subarray(offset + 4, offset + 8).toString('ascii');
+    if (chunkType === 'IDAT') {
+      idatChunks.push(pngBuffer.subarray(offset + 8, offset + 8 + chunkLength));
+    }
+    offset += 12 + chunkLength;
+  }
+  if (idatChunks.length === 0) {
+    throw new Error('Missing IDAT chunk in PNG buffer');
+  }
+  return inflateSync(Buffer.concat(idatChunks));
+}
+
+/** Verify `assets/icon.png` is the single SSOT brand asset across `LICENSE`, font licenses, `README.md`, `/favicon.*`, and `/og.*`. */
+function assertBrandAssetsAndLicenseParity(
+  repoRoot: string,
+  readmeMd: string,
+  licenseTxt: string
+): void {
+  expect(readdirSync(path.resolve(repoRoot, 'assets'))).toEqual(['icon.png']);
+  expect(existsSync(path.resolve(repoRoot, 'src', 'assets', 'og.png'))).toBe(false);
+
+  const brandIconBytes = readFileSync(path.resolve(repoRoot, 'assets', 'icon.png'));
+  const decodedBrandIcon = decodePngToRgba(brandIconBytes);
+  expect(decodedBrandIcon.width).toBe(BRAND_ICON_PNG_SIZE);
+  expect(decodedBrandIcon.height).toBe(BRAND_ICON_PNG_SIZE);
+  expect(decodedBrandIcon.pixels[3]).toBe(0); // Transparent `(0, 0)` squircle corner.
+
+  const faviconPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'favicon.png'));
+  const decodedFavicon = decodePngToRgba(faviconPngBuffer);
+  expect(decodedFavicon.width).toBe(FAVICON_PNG_SIZE);
+  expect(decodedFavicon.height).toBe(FAVICON_PNG_SIZE);
+  expect(decodedFavicon.pixels[3]).toBe(0);
+  const faviconExpectedDigest = createHash('sha256').update(brandIconBytes).digest('hex');
+  expect(faviconPngBuffer.toString('latin1')).toContain(
+    `Comment\0src-sha256=${faviconExpectedDigest}`
+  );
+
+  const ogSvg = renderOgImageSvg();
+  expect(ogSvg).toContain(
+    `<image x="88" y="98" width="48" height="48" href="data:image/png;base64,${faviconPngBuffer.toString('base64')}" />`
+  );
+
+  const ogPngBuffer = readFileSync(path.resolve(repoRoot, 'dist', 'client', 'og.png'));
+  const ogExpectedDigest = createHash('sha256').update(ogSvg).digest('hex');
+  expect(ogPngBuffer.toString('latin1')).toContain(`Comment\0src-sha256=${ogExpectedDigest}`);
+
+  const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
+  const rawBrandUrl = `https://raw.githubusercontent.com/${repoSlug}/main/assets/icon.png`;
+  expect(readmeMd).toContain(`<img height="96" src="${rawBrandUrl}" />`);
+  expect(readmeMd).toContain('/badge/License/MIT*?variant=3&color=neutral&icon=scale');
+
+  const readmeHeroBlock = readmeMd.slice(0, readmeMd.indexOf('</h1>'));
+  const heroBadgeAttrs = collectGroups(readmeHeroBlock, README_HERO_BADGE_IMG_RX, 'attrs');
+  expect(heroBadgeAttrs).toHaveLength(5);
+  for (const attrs of heroBadgeAttrs) {
+    expect(attrs).toMatch(/\balt="[^"]+"/);
+  }
+
+  expect(licenseTxt).toContain('MIT License');
+  expect(licenseTxt).toContain('Artwork & Branding Notice:');
+  expect(licenseTxt).toContain('`assets/`');
+
+  const fontLicenseTxt = readRepoFile(repoRoot, 'src/assets/fonts/LICENSE');
+  expect(fontLicenseTxt).toContain('SIL OPEN FONT LICENSE Version 1.1');
+  expect(fontLicenseTxt).toContain('The Geist Project Authors');
+  expect(fontLicenseTxt).toContain('The JetBrains Mono Project Authors');
+}
+
 // ----------------------------------------- MAIN ----------------------------------------
 
 /************************************ HTML validity *************************************/
 
 describe('documentation pages – HTML validity', () => {
+  beforeAll(() => {
+    renderAllPages();
+  });
+
   it('never repeats an element ID on a page (regression: inlined previews duplicated bg-dark, grad-*, sheen-*)', () => {
     for (const page of renderAllPages()) {
       const ids = collectGroups(page.html, ID_ATTRIBUTE_RX, 'id');
-      const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
-      expect(duplicates, page.path).toEqual([]);
+      expect(findDuplicateStrings(ids), page.path).toEqual([]);
       expect(ids.length, page.path).toBeGreaterThan(0);
     }
   });
@@ -377,10 +1062,51 @@ describe('documentation pages – accessibility', () => {
     expect(badgesHtml).toContain('href="#variant-1-primary-badge-default"');
   });
 
-  it('raises --c-text-3 to WCAG AA contrast and keeps the footer text selectable', () => {
+  it('keeps Isolux website text and error tokens at WCAG AA contrast across dark and light surfaces and keeps footer text selectable', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-text-3: #646464;');
-    expect(css).toContain('--c-text-3: #8A8A8A;');
+    expect(css).toContain(`--c-bg: light-dark(${LIGHT_BG}, ${DARK_BG});`);
+    expect(css).toContain(`--c-bg-soft: light-dark(${ISOLUX_GRAY[50]}, ${ISOLUX_GRAY[950]});`);
+    expect(css).toContain(
+      `--c-bg-elv: light-dark(${ISOLUX_UI.raised.light}, ${ISOLUX_UI.raised.dark});`
+    );
+    expect(css).toContain(
+      `--c-divider: light-dark(${ISOLUX_UI.border.light}, ${ISOLUX_UI.border.dark});`
+    );
+    expect(css).toContain(
+      `--c-border-strong: light-dark(${ISOLUX_UI.borderStrong.light}, ${ISOLUX_UI.borderStrong.dark});`
+    );
+    expect(css).toContain(
+      `--c-switch-bg: light-dark(${ISOLUX_UI.bubble.light}, ${ISOLUX_UI.bubble.dark});`
+    );
+    expect(css).toContain(
+      `--c-danger: light-dark(${ISOLUX_UI.error.light}, ${ISOLUX_UI.error.dark});`
+    );
+    expect(css).toContain(
+      `--c-text-3: light-dark(${ISOLUX_UI.foregroundMuted.light}, ${ISOLUX_UI.foregroundMuted.dark});`
+    );
+
+    const readableTokens = [
+      ISOLUX_UI.foreground,
+      ISOLUX_UI.foregroundSecondary,
+      ISOLUX_UI.foregroundMuted,
+      ISOLUX_UI.error,
+      ...Object.values(ISOLUX_SYNTAX),
+    ];
+    for (const token of readableTokens) {
+      for (const darkSurface of [DARK_BG, ISOLUX_GRAY[950], ISOLUX_UI.raised.dark]) {
+        expect(
+          computeContrastRatio(token.dark, darkSurface),
+          `${token.dark} on ${darkSurface}`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+      for (const lightSurface of [LIGHT_BG, ISOLUX_GRAY[50], ISOLUX_UI.raised.light]) {
+        expect(
+          computeContrastRatio(token.light, lightSurface),
+          `${token.light} on ${lightSurface}`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+
     expect(css).not.toMatch(/\.site-footer \{[^}]*user-select/);
     expect(css).toMatch(/:where\(a, button, summary, \[tabindex\]\):focus-visible/);
   });
@@ -439,6 +1165,21 @@ describe('documentation pages – head metadata & client script', () => {
       expect(page.html, page.path).toContain(
         '<link rel="sitemap" type="application/xml" href="/sitemap.xml" />'
       );
+      const pngFaviconTag = `<link rel="icon" type="image/png" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`;
+      expect(page.html, page.path).toContain(pngFaviconTag);
+      expect(page.html, page.path).not.toContain('/favicon.svg');
+      expect(page.html, page.path).toContain(
+        `<link rel="apple-touch-icon" sizes="${FAVICON_PNG_SIZE}x${FAVICON_PNG_SIZE}" href="/favicon.png" />`
+      );
+      expect(page.html, page.path).toContain(
+        `<img src="/favicon.png" alt="" width="26" height="26" class="brand-mark" />${SITE_NAME}</a>`
+      );
+      expect(page.html, page.path).toContain(
+        `<meta property="og:site_name" content="${SITE_NAME}" />`
+      );
+      const pageTitle = /<title>(?<title>[^<]+)<\/title>/.exec(page.html)?.groups?.title ?? '';
+      expect(pageTitle, page.path).toContain(SITE_NAME);
+      expect(pageTitle, page.path).not.toContain(SITE_HOST);
       expect(page.html, page.path).toContain(
         `<link rel="preload" href="${getSiteAssetUrl('Geist-Regular.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
@@ -500,7 +1241,7 @@ describe('documentation pages – head metadata & client script', () => {
       const ctaLinks = collectGroups(statusHtml, CTA_LINK_RX, 'href');
       expect(ctaLinks).toEqual(['/']);
       const ids = collectGroups(statusHtml, ID_ATTRIBUTE_RX, 'id');
-      expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+      expect(findDuplicateStrings(ids)).toEqual([]);
       for (const anchorMatch of statusHtml.matchAll(/<a\s[^>]*href="[^"]+"[^>]*>/g)) {
         expect(anchorMatch[0]).toContain('tabindex="0"');
       }
@@ -538,12 +1279,19 @@ describe('documentation pages – head metadata & client script', () => {
 
   it('inverts the checker preview stage and Edit chip relative to the page scheme instead of offering redundant fixed dark/light stages', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-preview-inverse-bg: light-dark(#101010, #FFFFFF);');
-    expect(css).toContain('--c-preview-inverse-btn-bg: light-dark(#DCDCDC, #242424);');
-    expect(css).toContain('--c-preview-inverse-btn-text: light-dark(#000000, #FAFAFA);');
+    expect(css).toContain(`--c-preview-inverse-bg: light-dark(${DARK_BG}, ${LIGHT_BG});`);
+    expect(css).toContain(
+      `--c-preview-inverse-text: light-dark(${ISOLUX_UI.foregroundMuted.dark}, ${ISOLUX_UI.foregroundMuted.light});`
+    );
+    expect(css).toContain(
+      `--c-preview-inverse-btn-bg: light-dark(${ISOLUX_UI.button.dark}, ${ISOLUX_UI.button.light});`
+    );
+    expect(css).toContain(
+      `--c-preview-inverse-btn-text: light-dark(${ISOLUX_UI.buttonForeground.dark}, ${ISOLUX_UI.buttonForeground.light});`
+    );
     expect(css).toContain('--c-preview-inverse-checker: light-dark(');
     expect(css).toMatch(
-      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
+      /:root\[data-preview-bg=['"]inverse['"]\] \.preview-stage \{\s*--c-btn-bg: var\(--c-preview-inverse-btn-bg\);\s*--c-btn-text: var\(--c-preview-inverse-btn-text\);\s*--c-text-3: var\(--c-preview-inverse-text\);\s*--stage-bg: var\(--c-preview-inverse-bg\);\s*--stage-checker: var\(--c-preview-inverse-checker\);/
     );
     expect(css).not.toMatch(/data-preview-bg=['"]checker['"]/);
     expect(css).not.toMatch(/data-preview-bg=['"]dark['"]/);
@@ -574,7 +1322,7 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 
-  it('renders highlight cards right below the hero, hides their detail text on narrow screens, and keeps live endpoint previews above the bottom CTA row', () => {
+  it('renders highlight cards right below the hero, displays the brand logo inside the hero on wide screens, hides detail text on narrow screens, and keeps live endpoint previews above the bottom CTA row', () => {
     const html = renderHomeHtml();
     const heroIndex = html.indexOf('<section class="hero">');
     const highlightsIndex = html.indexOf('<section class="feature-grid" aria-label="Highlights">');
@@ -584,12 +1332,18 @@ describe('documentation pages – navigation & static assets', () => {
     expect(highlightsIndex).toBeGreaterThan(heroIndex);
     expect(endpointsIndex).toBeGreaterThan(highlightsIndex);
     expect(pagerIndex).toBeGreaterThan(endpointsIndex);
+    expect(html.slice(heroIndex, highlightsIndex)).toContain(
+      '<div class="hero-logo-wrap"><img src="/favicon.png" alt="" width="156" height="156" class="hero-logo" /></div>'
+    );
     expect(
       countOccurrences(html, '<h2 class="feature-title"><svg class="ui-icon"')
     ).toBeGreaterThanOrEqual(4);
     expect(html).not.toContain('feature-icon');
     expect(getSiteStylesheet()).toMatch(
-      /@media \(max-width: 640px\) \{[\s\S]*?\.feature-desc \{\s*display: none;\s*\}/
+      /img,\s*\.ui-icon \{\s*user-select: none;\s*-webkit-user-select: none;\s*pointer-events: none;\s*\}/
+    );
+    expect(getSiteStylesheet()).toMatch(
+      /@media \(max-width: 640px\) \{[\s\S]*?\.hero-logo-wrap \{\s*display: none;\s*\}[\s\S]*?\.feature-desc \{\s*display: none;\s*\}/
     );
   });
 
@@ -688,7 +1442,8 @@ describe('documentation pages – navigation & static assets', () => {
       expect(page.html, page.path).not.toContain('<style>');
     }
     expect(css?.body).not.toContain('${');
-    expect(css?.body).toContain('--brand-gradient-start: #818CF8;');
+    expect(css?.body).toContain('.brand-mark {');
+    expect(css?.body).not.toContain('--brand-gradient-start');
     expect(getSiteAsset('__proto__')).toBeUndefined();
   });
 
@@ -1025,7 +1780,15 @@ describe('website client scripts & markup regressions', () => {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).not.toContain('<span>');
       expect(html).toContain('<svg xmlns="http://www.w3.org/2000/svg"');
-      expect(html).toContain('Missing a service, icon, or SVG element?');
+      expect(html).toContain(
+        'Found a bug, have a suggestion, or missing a service preset? Open an'
+      );
+      expect(html).toContain(`href="${REPO_GITHUB_URL}"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/issues"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/pulls"`);
+      expect(html).toContain(`href="${REPO_GITHUB_URL}/blob/main/LICENSE"`);
+      expect(html).toContain(`href="${AUTHOR_WEBSITE_URL}"`);
+      expect(html).not.toContain('mailto:');
     }
 
     expect(docsBySlug.get('badges')).toContain(
@@ -1093,18 +1856,22 @@ describe('site stylesheet', () => {
       (name) => !defined.has(name)
     );
     expect(undefinedTokens).toEqual([]);
-    expect(css).toMatch(/\.brand-mark \{[^}]*color: var\(--c-on-brand\);/);
+    expect(css).toMatch(/\.brand-mark \{[^}]*inline-size: 26px;[^}]*block-size: 26px;/);
     expect(css).not.toContain('--c-btn-brand-text');
   });
 
-  it('drops the removed tokens and uses the renamed brand gradient stops', () => {
+  it('drops the removed tokens and unused legacy brand gradient stops', () => {
     const css = getSiteStylesheet();
-    for (const removed of ['--c-bg-alt', '--c-brand-3', '--base-brand', '--c-border-subtle']) {
+    for (const removed of [
+      '--c-bg-alt',
+      '--c-brand-3',
+      '--base-brand',
+      '--c-border-subtle',
+      '--brand-gradient-start',
+      '--brand-gradient-end',
+    ]) {
       expect(css, removed).not.toContain(removed);
     }
-    expect(css).toContain('--brand-gradient-end: #4F46E5;');
-    expect(css).toContain('var(--brand-gradient-start) 0%');
-    expect(css).toContain('var(--brand-gradient-end) 100%');
   });
 
   it('hides [hidden] elements with exactly one global rule', () => {
@@ -1135,11 +1902,21 @@ describe('site stylesheet', () => {
 
   it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-path for syntax highlighting', () => {
     const css = getSiteStylesheet();
-    expect(css).toContain('--c-danger: light-dark(#C5002B, #FF6467);');
-    expect(css).toContain('--c-hl-path: light-dark(#4131CE, #BECBFF);');
-    expect(css).toContain('--c-hl-key: light-dark(#2B7676, #7CEEE3);');
-    expect(css).toContain('--c-hl-val: light-dark(#214A4B, #BCFFF7);');
-    expect(css).toContain('--c-hl-href: light-dark(#3D3D3D, #C2C2C2);');
+    expect(css).toContain(
+      `--c-danger: light-dark(${ISOLUX_UI.error.light}, ${ISOLUX_UI.error.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-path: light-dark(${ISOLUX_SYNTAX.stringLifted.light}, ${ISOLUX_SYNTAX.stringLifted.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-key: light-dark(${ISOLUX_SYNTAX.function.light}, ${ISOLUX_SYNTAX.function.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-val: light-dark(${ISOLUX_SYNTAX.property.light}, ${ISOLUX_SYNTAX.property.dark});`
+    );
+    expect(css).toContain(
+      `--c-hl-href: light-dark(${ISOLUX_SYNTAX.label.light}, ${ISOLUX_SYNTAX.label.dark});`
+    );
     expect(css).not.toContain('--c-warning');
     expect(css).toMatch(
       /\.copy-btn\.is-failed,\s*\.btn-secondary\.is-failed \{[^}]*color: var\(--c-danger\);/
@@ -1231,6 +2008,8 @@ describe('site stylesheet', () => {
         );
       const dockHtml = requireDefined(dockMatch?.groups?.dock, `${page.kind} preview dock`);
       expect(dockHtml, page.kind).toContain('id="builder-preview"');
+      expect(dockHtml, page.kind).toContain('id="builder-loading"');
+      expect(dockHtml, page.kind).toContain('class="builder-spinner"');
       expect(dockHtml, page.kind).toContain('id="builder-status"');
       // Keep the visually reordered preview dock free of focusable elements so Tab order stays top-to-bottom:
       expect(dockHtml, page.kind).not.toMatch(/<(?:a|button|input|select|textarea)\b|tabindex=/);
@@ -1271,6 +2050,40 @@ describe('site stylesheet', () => {
       '00'
     );
     expect(circleGroupPng.equals(emptyGroupPng)).toBe(false);
+
+    // `rasterizeSvgToRgbaPng` preserves alpha transparency outside painted shapes while painting opaque fills:
+    const centeredCircleRgba = rasterizeSvgToRgbaPng(
+      '<svg width="16" height="16" viewBox="0 0 32 32"><circle cx="16" cy="16" r="8" fill="#00E5FF" /></svg>',
+      16,
+      16,
+      '00'
+    );
+    const cornerCircleRgba = rasterizeSvgToRgbaPng(
+      '<svg width="16" height="16" viewBox="0 0 32 32"><circle cx="0" cy="0" r="8" fill="#00E5FF" /></svg>',
+      16,
+      16,
+      '00'
+    );
+    expect(centeredCircleRgba[25]).toBe(6); // RGBA color type.
+    expect(inflateIdatScanlines(centeredCircleRgba)[4]).toBe(0);
+    expect(inflateIdatScanlines(cornerCircleRgba)[4]).toBe(255);
+
+    // `rasterizeOgSvgToPng` composites inline `data:image/png;base64,…` `<image>` primitives onto the canvas:
+    const tinyCyanPng = encodeRgbaPng(
+      2,
+      2,
+      new Uint8Array([0, 229, 255, 255, 0, 229, 255, 255, 0, 229, 255, 255, 0, 229, 255, 255]),
+      '00'
+    );
+    const compositedPng = rasterizeOgSvgToPng(
+      `<svg width="8" height="8"><rect width="8" height="8" fill="#000000" /><image x="2" y="2" width="4" height="4" href="data:image/png;base64,${tinyCyanPng.toString('base64')}" /></svg>`,
+      8,
+      8,
+      '00'
+    );
+    const decodedComposited = decodePngToRgba(compositedPng);
+    expect(decodedComposited.pixels[0]).toBe(0);
+    expect(decodedComposited.pixels[(3 * 8 + 3) * 4 + 1]).toBeGreaterThan(200);
 
     // Multi-stop `<linearGradient>` interpolates intermediate stops instead of skipping straight from first to last:
     const gradients = parseGradientDefs(
@@ -1576,7 +2389,7 @@ describe('site stylesheet', () => {
                 previewBgStorageKey: 'preview-bg',
                 previewBgValues: ['auto', 'inverse'],
                 schemeStorageKey: 'color-scheme',
-                themeColors: { dark: '#101010', light: '#FFFFFF' },
+                themeColors: { dark: DARK_BG, light: LIGHT_BG },
               }),
             }
           : undefined,
@@ -1667,5 +2480,169 @@ describe('site stylesheet', () => {
     }
     expect(isCopyPrevented).toBe(false);
     expect(copiedText).toBeUndefined();
+  });
+});
+
+/******************************* Repository drift guards ********************************/
+
+describe('repository & OSS Markdown drift guards', () => {
+  it('keeps SVG_ROUTES query parameters and SERVICES_CONFIG showcase cards in bidirectional parity with documentation pages (drift guard)', () => {
+    const canonicalPrefixes: string[] = [];
+    for (const route of SVG_ROUTES) {
+      if (route.aliasOf !== undefined) {
+        expect(route.queryParams, route.prefix).toEqual(findSvgRoute(route.aliasOf)?.queryParams);
+      } else {
+        canonicalPrefixes.push(route.prefix);
+        const docsSlugs = requireDefined(ROUTE_PREFIX_DOCS_SLUGS[route.prefix], route.prefix);
+        expect([...route.queryParams], route.prefix).toEqual(
+          collectDocumentedQueryParams(docsSlugs)
+        );
+      }
+    }
+    expect(canonicalPrefixes).toEqual(Object.keys(ROUTE_PREFIX_DOCS_SLUGS).toSorted());
+
+    const showcasedServices = new Set<string>();
+    for (const card of buildServicePresetCards()) {
+      for (const item of card.items) {
+        const [, serviceKey] = item.path.slice(1).split('/');
+        if (serviceKey) {
+          showcasedServices.add(serviceKey);
+        }
+      }
+    }
+    expect([...showcasedServices].toSorted()).toEqual(Object.keys(SERVICES_CONFIG).toSorted());
+  });
+
+  it('keeps README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/*, .vscode/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
+    const repoRoot = path.resolve(import.meta.dirname, '..');
+    const packageJson = JSON.parse(readRepoFile(repoRoot, 'package.json')) as RepoPackageJson;
+    const pnpmWorkspaceYml = readRepoFile(repoRoot, 'pnpm-workspace.yaml');
+    const gitattributesTxt = readRepoFile(repoRoot, '.gitattributes');
+    const editorconfigTxt = readRepoFile(repoRoot, '.editorconfig');
+    const gitignoreTxt = readRepoFile(repoRoot, '.gitignore');
+    const vscodeSettings = JSON.parse(readRepoFile(repoRoot, '.vscode/settings.json')) as {
+      'editor.defaultFormatter': string;
+    };
+    const vscodeExtensions = JSON.parse(readRepoFile(repoRoot, '.vscode/extensions.json')) as {
+      recommendations: string[];
+    };
+    const licenseTxt = readRepoFile(repoRoot, 'LICENSE');
+    const readmeMd = readRepoFile(repoRoot, 'README.md');
+    const contributingMd = readRepoFile(repoRoot, 'CONTRIBUTING.md');
+    const codeOfConductMd = readRepoFile(repoRoot, 'CODE_OF_CONDUCT.md');
+    const securityMd = readRepoFile(repoRoot, 'SECURITY.md');
+    const prTemplateMd = readRepoFile(repoRoot, '.github/PULL_REQUEST_TEMPLATE.md');
+    const ciYml = readRepoFile(repoRoot, '.github/workflows/ci.yaml');
+    const dependabotYml = readRepoFile(repoRoot, '.github/dependabot.yml');
+    const fundingYml = readRepoFile(repoRoot, '.github/FUNDING.yml');
+    const codeownersTxt = readRepoFile(repoRoot, '.github/CODEOWNERS');
+    const issueConfigYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/config.yml');
+    const bugReportYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/bug_report.yml');
+    const featureRequestYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/feature_request.yml');
+    const serviceRequestYml = readRepoFile(repoRoot, '.github/ISSUE_TEMPLATE/service_request.yml');
+    const agentsMd = readRepoFile(repoRoot, '.agents/AGENTS.md');
+    const buildSkillMd = readRepoFile(repoRoot, '.agents/skills/build/SKILL.md');
+    const testSkillMd = readRepoFile(repoRoot, '.agents/skills/test/SKILL.md');
+
+    // [1] Repository, editor/git LF hygiene, funding, CODEOWNERS, CI secret & dependency-review scope, and `/llms.txt` metadata parity:
+    const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
+    const authorHandle = repoSlug.slice(0, repoSlug.indexOf('/'));
+    expect(packageJson.homepage).toBe(SITE_ORIGIN);
+    expect(packageJson.repository.url).toBe(REPO_GITHUB_URL);
+    expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
+    expect(packageJson.license).toBe('MIT');
+    expect('maintainers' in packageJson).toBe(false);
+    expect(SERVICE_USER_AGENT).toBe(`${packageJson.name}/${packageJson.version} (${SITE_ORIGIN})`);
+    expect(FALLBACK_REDIRECT_URL).toBe(AUTHOR_WEBSITE_URL);
+    expect(pnpmWorkspaceYml).toContain('engineStrict: true');
+    expect(existsSync(path.resolve(repoRoot, 'LICENSE'))).toBe(true);
+    expect(gitattributesTxt).toContain('* text=auto eol=lf');
+    expect(editorconfigTxt).toContain('end_of_line = lf');
+    expect(gitignoreTxt).toContain('/.dev.vars*');
+    expect(vscodeExtensions.recommendations).toContain(vscodeSettings['editor.defaultFormatter']);
+    expect(fundingYml.trim()).toBe(`github: [${authorHandle}]`);
+    expect(codeownersTxt.trim()).toBe(`* @${authorHandle}`);
+    expect(readmeMd).toContain(`https://github.com/sponsors/${authorHandle}`);
+    expect(issueConfigYml).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(securityMd).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(ciYml).toContain('permissions: {}');
+    expect(ciYml).toContain('persist-credentials: false');
+    expect(ciYml).toContain('actions/dependency-review-action@');
+    expect(ciYml).toContain('!github.event.repository.private');
+    expect(ciYml).toContain(`github.repository == '${repoSlug}'`);
+    expect(ciYml).not.toMatch(YAML_IF_SECRETS_RX);
+    expect(ciYml).not.toContain('HAS_CLOUDFLARE_TOKEN');
+    expect(ciYml.slice(0, ciYml.indexOf('- name: Deploy to Cloudflare Workers'))).not.toContain(
+      'CLOUDFLARE_API_TOKEN'
+    );
+    const allUsesLines = ciYml.match(YAML_USES_LINE_RX) ?? [];
+    const shaPinnedUsesLines = ciYml.match(YAML_SHA_PINNED_USES_RX) ?? [];
+    expect(allUsesLines.length).toBeGreaterThan(0);
+    expect(shaPinnedUsesLines).toEqual(allUsesLines);
+    expect(dependabotYml).toContain("package-ecosystem: 'npm'");
+    expect(dependabotYml).toContain("package-ecosystem: 'github-actions'");
+    expect(countOccurrences(dependabotYml, 'cooldown:')).toBe(2);
+    expect(dependabotYml).toContain("'lucide-static'");
+    expect(dependabotYml).toContain("'@iconify-json/*'");
+    expect(agentsMd).toContain('`CONTRIBUTING.md`');
+    const llmsTxt = renderLlmsTxt();
+    expect(llmsTxt.startsWith(`# ${SITE_NAME}\n`)).toBe(true);
+    expect(llmsTxt).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
+    expect(contributingMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(codeOfConductMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(securityMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
+    expect(contributingMd).not.toContain(`(${SITE_HOST})`);
+    expect(contributingMd).not.toContain(`([**${SITE_HOST}**]`);
+    assertBrandAssetsAndLicenseParity(repoRoot, readmeMd, licenseTxt);
+
+    // [2] Heading icons, anchors, ToC, and `README.md` `## Endpoints` table order, routes, aliases, and widgets:
+    const readmeAnchors = new Set(collectIconHeadingAnchors('README.md', readmeMd));
+    const contributingAnchors = assertContributingHeadingsAndToc(contributingMd);
+    const codeOfConductAnchors = collectIconHeadingAnchors('CODE_OF_CONDUCT.md', codeOfConductMd);
+    expect(codeOfConductAnchors).toHaveLength((codeOfConductMd.match(MD_H2_LINE_RX) ?? []).length);
+    const securityAnchors = collectIconHeadingAnchors('SECURITY.md', securityMd);
+    expect(securityAnchors).toHaveLength((securityMd.match(MD_H2_LINE_RX) ?? []).length);
+    assertReadmeEndpointsTable(readmeMd);
+
+    // [3] `CONTRIBUTING.md` download period keys, URL placeholders, Node engine, scripts, limits, and icon sets:
+    assertContributingDownloadAndPlaceholderSpecs(contributingMd);
+    assertContributingScriptsEngineAndIcons(contributingMd, serviceRequestYml, packageJson);
+
+    // [4] Scripts, concrete file/directory paths, live `svg.xul.is` URLs, and GitHub blob links across all OSS files:
+    assertReferencedScriptsAndPathsExist(
+      repoRoot,
+      [
+        ['CONTRIBUTING.md', contributingMd],
+        ['.github/PULL_REQUEST_TEMPLATE.md', prTemplateMd],
+        ['.github/workflows/ci.yaml', ciYml],
+        ['.agents/AGENTS.md', agentsMd],
+        ['.agents/skills/build/SKILL.md', buildSkillMd],
+        ['.agents/skills/test/SKILL.md', testSkillMd],
+      ],
+      packageJson.scripts
+    );
+    await assertSiteAndRepoUrlsResolve(
+      repoRoot,
+      [
+        ['README.md', readmeMd],
+        ['CONTRIBUTING.md', contributingMd],
+        ['CODE_OF_CONDUCT.md', codeOfConductMd],
+        ['SECURITY.md', securityMd],
+        ['.github/ISSUE_TEMPLATE/config.yml', issueConfigYml],
+        ['.github/ISSUE_TEMPLATE/bug_report.yml', bugReportYml],
+        ['.github/ISSUE_TEMPLATE/feature_request.yml', featureRequestYml],
+        ['.github/ISSUE_TEMPLATE/service_request.yml', serviceRequestYml],
+      ],
+      new Map<string, ReadonlySet<string>>([
+        ['CODE_OF_CONDUCT.md', new Set(codeOfConductAnchors)],
+        ['CONTRIBUTING.md', contributingAnchors],
+        ['README.md', readmeAnchors],
+        ['SECURITY.md', new Set(securityAnchors)],
+      ])
+    );
+
+    // [5] Code example imports and prose-referenced module exports:
+    await assertMarkdownModuleImports(contributingMd);
+    await assertProseModuleExports(contributingMd, securityMd);
   });
 });

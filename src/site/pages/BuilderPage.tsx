@@ -2,7 +2,7 @@
  * Builder page – Renders the `/builder/:kind` URL builder pages.
  */
 
-import { SITE_HOST } from '@/config/site';
+import { SITE_NAME } from '@/config/site';
 import { getBuilderSchema } from '@/routes/schema';
 import { getSiteAssetUrl } from '@/site/assets';
 import { BuilderFieldView } from '@/site/components/BuilderControls';
@@ -48,7 +48,7 @@ function BuilderPage(props: BuilderPageProps): HtmlFragment {
   }
   const docsHref = buildDocsPath(meta.docsSlug);
   const canonicalPath = buildBuilderPath(kind);
-  const pageTitle = `${meta.title} · ${SITE_HOST}`;
+  const pageTitle = `${meta.title} · ${SITE_NAME}`;
   const referenceAction = (
     <a class="section-action" href={docsHref} tabindex="0">
       <UiIcon slug="book-open" size={14} />

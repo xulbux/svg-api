@@ -2,7 +2,7 @@
  * Site navigation – Single source of truth for the header tabs, the grouped documentation and builder sidebars, page titles, meta descriptions, and the docs pager order.
  */
 
-import { SITE_HOST } from '@/config/site';
+import { SITE_NAME } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import type {
   BuilderKind,
@@ -32,7 +32,7 @@ const SIDEBAR_GROUPS: readonly SidebarGroupMeta[] = [
  */
 export const DOCS_PAGES: readonly [DocsSectionMeta, ...DocsSectionMeta[]] = [
   {
-    description: `Getting started with ${SITE_HOST}: URL anatomy, path encoding, shared parameters, Markdown embeds, and edge caching.`,
+    description: `Getting started with ${SITE_NAME}: URL anatomy, path encoding, shared parameters, Markdown embeds, and edge caching.`,
     group: 'start',
     navLabel: 'Overview',
     pagerLabel: 'Getting Started',

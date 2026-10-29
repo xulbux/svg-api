@@ -1,0 +1,35 @@
+# Weekly grouped dependency updates (with 3-day supply-chain cooldown)
+# for `pnpm` packages and GitHub Actions workflows:
+
+version: 2
+updates:
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    cooldown:
+      default-days: 3
+    groups:
+      icons:
+        patterns:
+          - 'lucide-static'
+          - '@iconify-json/*'
+      dependencies:
+        patterns:
+          - '*'
+        exclude-patterns:
+          - 'lucide-static'
+          - '@iconify-json/*'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns:
+          - '*'

@@ -2,13 +2,7 @@
  * URL builder client entry point – Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
  */
 
-import {
-  bindPopoverFocusDismiss,
-  buildPath,
-  core,
-  findService,
-  parsePath,
-} from '@/site/client/builder/core';
+import { bindPopoverFocusDismiss, core, findService, parsePath } from '@/site/client/builder/core';
 import { createBuilderFieldsController } from '@/site/client/builder/fields';
 import { createIconPickerController } from '@/site/client/builder/iconPicker';
 import { createKindSyncController } from '@/site/client/builder/kindSync';
@@ -42,6 +36,7 @@ function initBuilderDom(): void {
   const schema = parsedSchema;
   const hasPresetIcon = schema.fields.some((field) => field.hasPresetValue === true);
   const previewImage = document.getElementById('builder-preview') as HTMLImageElement | null;
+  const previewLoading = document.getElementById('builder-loading');
   const previewPlaceholder = document.getElementById('builder-placeholder');
   const statusElement = document.getElementById('builder-status');
   const outputElement = document.querySelector('.builder-output');
@@ -114,6 +109,7 @@ function initBuilderDom(): void {
     openLink,
     outputElement,
     previewImage,
+    previewLoading,
     previewPlaceholder,
     reducedMotionQuery,
     schema,
@@ -285,26 +281,14 @@ function initBuilderDom(): void {
       linkInput.placeholder = 'Upstream page of the service';
     }
 
-    previewImage?.addEventListener('load', () => {
-      previewImage.classList.remove('is-loading');
-      if (!outputController.getCurrentPreviewPath()) {
-        return;
-      }
-      if (buildPath(schema, state).missing.length === 0) {
-        const notice = outputController.getCrossBuilderNotice();
-        outputController.setStatus(notice, Boolean(notice));
+    previewImage?.addEventListener('load', outputController.handlePreviewLoad);
+    previewImage?.addEventListener('error', outputController.handlePreviewError);
+    reducedMotionQuery.addEventListener('change', () => {
+      const activePath = outputController.getCurrentPreviewPath();
+      if (activePath) {
+        outputController.loadPreview(activePath);
       }
     });
-    previewImage?.addEventListener('error', () => {
-      previewImage.classList.remove('is-loading');
-      if (!outputController.getCurrentPreviewPath()) {
-        return;
-      }
-      outputController.setStatus('The preview could not be loaded; Check the route values.', true);
-    });
-    reducedMotionQuery.addEventListener('change', () =>
-      outputController.loadPreview(outputController.getCurrentPreviewPath())
-    );
 
     const tabList = outputElement?.querySelector('.builder-tabs');
     tabList?.addEventListener('click', (event) => {

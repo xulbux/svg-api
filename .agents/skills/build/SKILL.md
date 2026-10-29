@@ -5,37 +5,33 @@ description: Runs the local Wrangler dev server for live previewing, verifies th
 
 # Build & Deploy
 
-Use this skill to preview `svg.xul.is` locally via Wrangler, verify the Cloudflare Worker bundle, or deploy to production.
+Preview `SVG API` locally, verify the Worker bundle, or deploy to Cloudflare.
 
 ## 1. Prerequisites
 
-Before building or deploying, always run the full validation suite (see `AGENTS.md` Section 4) and ensure the output is completely clean:
+Run the full validation suite (`AGENTS.md` Section 4) and confirm zero errors or warnings:
 
 ```bash
 pnpm run check
 ```
 
-## 2. Local Preview & Documentation Server (`localhost:8787`)
+## 2. Local Preview Server (`localhost:8787`)
 
-In accordance with `AGENTS.md` Section 4, keep `src/site/` and the builder schemas synchronized with all routes, parameters, variants, and Markdown snippets. Start the local Wrangler dev server to preview the website, documentation (`DOCS_PAGES`), interactive builders (`BUILDER_PAGES`), static assets, and all live SVG routes (`SVG_ROUTES` in `src/routes/svg.ts`) exactly as hosted on `svg.xul.is`:
+Preview the site, docs (`DOCS_PAGES`), builders (`BUILDER_PAGES`), static assets, and live SVG routes (`SVG_ROUTES` in `src/routes/svg.ts`):
 
 ```bash
 pnpm run dev
 ```
 
-Open <http://localhost:8787/> (or <http://localhost:8787/docs>) in a browser to inspect the homepage, parameter tables, expandable Markdown code drawers, and all variants. Check previews in both color schemes (header theme switch), on both preview stage backgrounds (header preview background toggle), and on narrow screens (sidebar drawer). On `/builder/:kind`, edit fields, open the icon picker, and click a docs preview to verify it opens prefilled in its builder.
+Inspect <http://localhost:8787/> and <http://localhost:8787/docs> across both color schemes, both preview stage backgrounds, and narrow viewports (sidebar drawer). On `/builder/:kind`, verify controls, the icon picker, and prefilled "Open in Builder" links from docs previews.
 
 ## 3. Verify Worker Bundle (Dry Run)
-
-Verify that Wrangler can bundle the Worker cleanly without deploying:
 
 ```bash
 pnpm exec wrangler deploy --dry-run
 ```
 
 ## 4. Deploy to Cloudflare
-
-Authenticate Wrangler (if needed), configure secrets, and deploy to `svg.xul.is`:
 
 ```bash
 pnpm exec wrangler secret put GITHUB_TOKEN
