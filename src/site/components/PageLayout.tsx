@@ -10,7 +10,13 @@ import { Sidebar } from '@/site/components/Sidebar';
 import { serializeInlineJson, UiSprite } from '@/site/components/UiIcon';
 import { raw } from '@/site/jsx';
 import type { HtmlFragment, JsxChild } from '@/site/jsx';
-import { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_PNG_URL, OG_IMAGE_WIDTH } from '@/site/seo';
+import {
+  FAVICON_PNG_SIZE,
+  getOgImagePngUrl,
+  OG_IMAGE_ALT,
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+} from '@/site/seo';
 import { DARK_BG, DRAWER_BREAKPOINT_PX, LIGHT_BG } from '@/site/styles';
 import type { NavPageId, PageSidebar, SiteClientConfig } from '@/types';
 
@@ -54,9 +60,6 @@ const THEME_COLORS: SiteClientConfig['themeColors'] = { dark: DARK_BG, light: LI
 
 /** Allowed preview stage background values (`'auto'` follows the page theme and removes `data-preview-bg`). */
 const PREVIEW_BG_VALUES: SiteClientConfig['previewBgValues'] = ['auto', 'inverse'];
-
-/** Accessible description of the OpenGraph social preview card. */
-const OG_IMAGE_ALT = `${SITE_NAME} – Dynamic SVG graphics and live repository telemetry at the edge.`;
 
 /** Memoized inline `<head>` script body (`undefined` until first accessed). */
 let headScriptBodyCache: string | undefined = undefined;
@@ -121,6 +124,7 @@ export function getHeadScriptBody(): string {
 export function PageLayout(props: PageLayoutProps): HtmlFragment {
   const canonicalUrl =
     props.canonicalPath && !props.isNoIndex ? `${SITE_ORIGIN}${props.canonicalPath}` : undefined;
+  const ogImageUrl = getOgImagePngUrl();
   return (
     <>
       {raw('<!DOCTYPE html>\n')}
@@ -178,7 +182,7 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <meta property="og:title" content={props.title} />
           <meta property="og:description" content={props.description} />
           {canonicalUrl ? <meta property="og:url" content={canonicalUrl} /> : undefined}
-          <meta property="og:image" content={OG_IMAGE_PNG_URL} />
+          <meta property="og:image" content={ogImageUrl} />
           <meta property="og:image:type" content="image/png" />
           <meta property="og:image:width" content={String(OG_IMAGE_WIDTH)} />
           <meta property="og:image:height" content={String(OG_IMAGE_HEIGHT)} />
@@ -186,7 +190,7 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:title" content={props.title} />
           <meta name="twitter:description" content={props.description} />
-          <meta name="twitter:image" content={OG_IMAGE_PNG_URL} />
+          <meta name="twitter:image" content={ogImageUrl} />
           <meta name="twitter:image:alt" content={OG_IMAGE_ALT} />
           {props.jsonLd ? (
             <script type="application/ld+json">{raw(serializeInlineJson(props.jsonLd))}</script>

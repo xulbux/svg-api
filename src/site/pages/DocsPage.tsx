@@ -55,7 +55,7 @@ function DocsPage(props: DocsPageProps): HtmlFragment {
   const slug = props.slug ?? 'overview';
   const meta = getDocsPageMeta(slug);
   const canonicalPath = buildDocsPath(slug);
-  const pageTitle = `${meta.title} · ${SITE_NAME} Documentation`;
+  const pageTitle = `${meta.title} · ${SITE_NAME}`;
   const SectionComponent = PAGE_SECTIONS[slug];
   return (
     <PageLayout

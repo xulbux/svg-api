@@ -9,6 +9,10 @@ import type { Env } from '@/types';
 /** Official display name of the service and documentation site. */
 export const SITE_NAME = 'SVG API';
 
+/** Canonical project description shared across `package.json`, `README.md`, and site metadata. */
+export const SITE_DESCRIPTION =
+  'High-performance, zero-cold-start dynamic SVG engine on Cloudflare Workers.';
+
 /** Public hostname of the deployed Worker. */
 export const SITE_HOST = 'svg.xul.is';
 

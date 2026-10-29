@@ -45,7 +45,13 @@ import {
   renderNotFoundHtml,
   renderServerErrorHtml,
 } from '@/site/pages';
-import { renderLlmsTxt, renderOgImageSvg, renderRobotsTxt, renderSitemapXml } from '@/site/seo';
+import {
+  getOgImageVersion,
+  renderLlmsTxt,
+  renderOgImageSvg,
+  renderRobotsTxt,
+  renderSitemapXml,
+} from '@/site/seo';
 import { buildShareUrl, resolvePathBuilderKind } from '@/site/shared';
 import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
 
@@ -459,12 +465,13 @@ function handleSvgRoute(context: AppContext): Response | Promise<Response> {
 function buildBundledPngResponse(
   context: AppContext,
   pngBuffer: ArrayBuffer,
-  etag: string
+  etag: string,
+  cacheControl: string = buildSvgCacheControl(FAVICON_TTL_SECONDS)
 ): Response {
   return buildConditionalBodyResponse(pngBuffer, etag, context.req.header('If-None-Match'), {
     ...NOSNIFF_HEADERS,
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control': buildSvgCacheControl(FAVICON_TTL_SECONDS),
+    'Cache-Control': cacheControl,
     'Content-Security-Policy': "default-src 'none'",
     'Content-Type': 'image/png',
     'Cross-Origin-Resource-Policy': 'cross-origin',
@@ -496,10 +503,14 @@ function handleOgImageRoute(context: AppContext): Response {
   );
 }
 
-/** Handle `/og.png` with the bundled raster OpenGraph social card. */
+/** Handle `/og.png` with the bundled raster OpenGraph social card (immutable when `?v=` matches the live version). */
 function handleOgImagePngRoute(context: AppContext): Response {
   ogImagePngEtag ??= computeBytesEtag(ogImagePngBuffer);
-  return buildBundledPngResponse(context, ogImagePngBuffer, ogImagePngEtag);
+  const cacheControl =
+    context.req.query('v') === getOgImageVersion()
+      ? IMMUTABLE_ASSET_CACHE_CONTROL
+      : buildSvgCacheControl(FAVICON_TTL_SECONDS);
+  return buildBundledPngResponse(context, ogImagePngBuffer, ogImagePngEtag, cacheControl);
 }
 
 /** Handle `/robots.txt` crawler directives. */

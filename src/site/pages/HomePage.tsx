@@ -3,7 +3,7 @@
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
-import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
+import { SITE_DESCRIPTION, SITE_ORIGIN } from '@/config/site';
 import { THEME_COLOR_NAMES } from '@/config/theme';
 import {
   ENCODED_CHAOS_QUOTE,
@@ -19,7 +19,7 @@ import { UiIcon } from '@/site/components/UiIcon';
 import { renderHtml } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { buildBuilderPath, buildDocsPath, DEFAULT_BUILDER_KIND } from '@/site/navigation';
-import { buildHomeJsonLd } from '@/site/seo';
+import { buildHomeJsonLd, SITE_HEADLINE } from '@/site/seo';
 import type { ShowcaseCardConfig } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -182,15 +182,13 @@ function HomePage(): HtmlFragment {
     );
   }
 
-  const homeDescription = `Zero-cold-start dynamic SVG graphics and live repository telemetry engine at the edge.`;
-
   return (
     <PageLayout
       activeNav="home"
       canonicalPath="/"
-      description={homeDescription}
-      jsonLd={buildHomeJsonLd(homeDescription)}
-      title={`${SITE_NAME} · Dynamic SVG Graphics & Live Telemetry API`}>
+      description={SITE_DESCRIPTION}
+      jsonLd={buildHomeJsonLd(SITE_DESCRIPTION)}
+      title={SITE_HEADLINE}>
       <section class="hero">
         <div class="hero-copy">
           <h1 class="hero-title">

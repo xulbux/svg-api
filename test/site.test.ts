@@ -19,6 +19,7 @@ import {
   FALLBACK_REDIRECT_URL,
   REPO_GITHUB_URL,
   SERVICE_USER_AGENT,
+  SITE_DESCRIPTION,
   SITE_HOST,
   SITE_NAME,
   SITE_ORIGIN,
@@ -58,7 +59,14 @@ import {
   renderNotFoundHtml,
   renderServerErrorHtml,
 } from '@/site/pages';
-import { FAVICON_PNG_SIZE, renderLlmsTxt, renderOgImageSvg } from '@/site/seo';
+import {
+  FAVICON_PNG_SIZE,
+  getOgImagePngUrl,
+  OG_IMAGE_ALT,
+  renderLlmsTxt,
+  renderOgImageSvg,
+  SITE_HEADLINE,
+} from '@/site/seo';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
 import {
   ALL_ICON_SOURCE_NAMES,
@@ -129,6 +137,8 @@ interface RepoPackageJson {
   bugs: { url: string };
   /** Production dependencies. */
   dependencies: Record<string, string>;
+  /** Canonical package description. */
+  description: string;
   /** Runtime engine constraints. */
   engines: { node: string };
   /** Canonical project website URL. */
@@ -1186,25 +1196,30 @@ describe('documentation pages – head metadata & client script', () => {
         `<meta property="og:url" content="${SITE_ORIGIN}${page.path}" />`
       );
       expect(page.html, page.path).toContain('<meta property="og:locale" content="en_US" />');
-      expect(page.html, page.path).toContain('<meta property="og:title" content="');
+      expect(page.html, page.path).toContain(`<meta property="og:title" content="${pageTitle}" />`);
       expect(page.html, page.path).toContain(
-        `<meta property="og:image" content="${SITE_ORIGIN}/og.png" />`
+        `<meta property="og:image" content="${getOgImagePngUrl()}" />`
       );
       expect(page.html, page.path).toContain(
         '<meta property="og:image:type" content="image/png" />'
       );
       expect(page.html, page.path).toContain(
-        `<meta name="twitter:image" content="${SITE_ORIGIN}/og.png" />`
+        `<meta property="og:image:alt" content="${OG_IMAGE_ALT.replaceAll('&', '&amp;')}" />`
+      );
+      expect(page.html, page.path).toContain(
+        `<meta name="twitter:image" content="${getOgImagePngUrl()}" />`
       );
       expect(page.html, page.path).toContain(
         '<meta name="twitter:card" content="summary_large_image" />'
       );
+      expect(page.html, page.path).not.toMatch(/\btelemetry\b/i);
       expect(page.html, page.path).toContain('media="(prefers-color-scheme: dark)"');
       const jsonLd =
         /<script type="application\/ld\+json">(?<json>[^<]+)<\/script>/.exec(page.html)?.groups
           ?.json ?? '';
       expect(jsonLd, page.path).toContain('"@context":"https://schema.org"');
       if (page.path !== '/') {
+        expect(pageTitle, page.path).toMatch(new RegExp(` · ${SITE_NAME}$`));
         expect(jsonLd, page.path).toContain('"@type":"BreadcrumbList"');
       }
       expect(() => JSON.parse(jsonLd) as unknown, page.path).not.toThrow();
@@ -1214,6 +1229,9 @@ describe('documentation pages – head metadata & client script', () => {
       descriptions.add(description ?? '');
     }
     expect(descriptions.size).toBe(DOCS_PAGES.length + BUILDER_PAGES.length + 1);
+    const homeHtml = renderHomeHtml();
+    expect(homeHtml).toContain(`<title>${SITE_HEADLINE.replaceAll('&', '&amp;')}</title>`);
+    expect(homeHtml).toContain(`<meta name="description" content="${SITE_DESCRIPTION}" />`);
     expect(renderDocsHtml('badges')).not.toContain('Interactive SVG preview studio');
   });
 
@@ -2762,6 +2780,8 @@ describe('repository & OSS Markdown drift guards', () => {
     // [1] Repository, editor/git LF hygiene, funding, CODEOWNERS, CI secret & dependency-review scope, and `/llms.txt` metadata parity:
     const repoSlug = REPO_GITHUB_URL.slice('https://github.com/'.length);
     const authorHandle = repoSlug.slice(0, repoSlug.indexOf('/'));
+    expect(packageJson.description).toBe(SITE_DESCRIPTION);
+    expect(readmeMd).toContain(`<h3>${SITE_DESCRIPTION}</h3>`);
     expect(packageJson.homepage).toBe(SITE_ORIGIN);
     expect(packageJson.repository.url).toBe(REPO_GITHUB_URL);
     expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
@@ -2810,6 +2830,7 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(agentsMd).toContain('`CONTRIBUTING.md`');
     const llmsTxt = renderLlmsTxt();
     expect(llmsTxt.startsWith(`# ${SITE_NAME}\n`)).toBe(true);
+    expect(llmsTxt).toContain(`> ${SITE_DESCRIPTION}`);
     expect(llmsTxt).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
     expect(contributingMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
     expect(codeOfConductMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);

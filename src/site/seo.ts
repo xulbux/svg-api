@@ -10,6 +10,7 @@ import {
   AUTHOR_NAME,
   AUTHOR_WEBSITE_URL,
   REPO_GITHUB_URL,
+  SITE_DESCRIPTION,
   SITE_NAME,
   SITE_ORIGIN,
 } from '@/config/site';
@@ -36,7 +37,7 @@ import {
 import { BRAND_GRADIENT_END, BRAND_GRADIENT_START } from '@/site/styles';
 import { ALL_ICON_SOURCE_NAMES } from '@/svg/icons';
 import { renderTextPathMarkup, resolveCharGlyph } from '@/svg/measure';
-import { escapeXml } from '@/svg/shared';
+import { escapeXml, hashText } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -48,8 +49,17 @@ export const OG_IMAGE_WIDTH = 1280;
 /** Intrinsic height in pixels of the shared OpenGraph social preview card (`/og.png` and `/og.svg`). */
 export const OG_IMAGE_HEIGHT = 640;
 
-/** Absolute URL of the raster OpenGraph social preview card (`/og.png`). */
-export const OG_IMAGE_PNG_URL = `${SITE_ORIGIN}/og.png`;
+/** First headline line rendered on the OpenGraph social preview card. */
+const OG_HEADLINE_LINE_1 = 'One Cohesive Dynamic SVG API';
+
+/** Second headline line rendered on the OpenGraph social preview card. */
+const OG_HEADLINE_LINE_2 = 'for READMEs & Documentation';
+
+/** Canonical primary headline shared by the homepage `<title>` / `og:title` and the OpenGraph card. */
+export const SITE_HEADLINE = `${OG_HEADLINE_LINE_1} ${OG_HEADLINE_LINE_2}`;
+
+/** Accessible description of the OpenGraph social preview card (`/og.png` and `/og.svg`). */
+export const OG_IMAGE_ALT = `${SITE_NAME} – ${SITE_HEADLINE}`;
 
 /** Canonical Schema.org `@id` of the root `WebSite` entity. */
 const WEBSITE_JSON_LD_ID = `${SITE_ORIGIN}/#website`;
@@ -83,6 +93,12 @@ let llmsTxtCache: string | undefined = undefined;
 /** Memoized `/og.svg` image (`undefined` until first requested). */
 let ogImageSvgCache: string | undefined = undefined;
 
+/** Memoized content version of `/og.png` (`undefined` until first requested). */
+let ogImageVersionCache: string | undefined = undefined;
+
+/** Memoized versioned absolute URL of `/og.png` (`undefined` until first requested). */
+let ogImagePngUrlCache: string | undefined = undefined;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Encode a binary `ArrayBuffer` into a standard Base64 string. */
@@ -114,11 +130,126 @@ function buildBreadcrumbListJsonLd(
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
+ * Render (once per isolate) the vector OpenGraph social preview image served at `/og.svg`.
+ * Uses pre-converted vector path outlines so text renders identically without external fonts.
+ * @returns Standalone `<svg>` XML string.
+ */
+export function renderOgImageSvg(): string {
+  if (ogImageSvgCache === undefined) {
+    const brandIconHref = `data:image/png;base64,${encodeBytesToBase64(faviconPngBuffer)}`;
+    const ogLabels: string[] = [];
+    for (const page of BUILDER_PAGES) {
+      ogLabels.push(page.ogLabel);
+    }
+    const ogCapabilities = ogLabels.join(' · ');
+    const titleLine1 = renderTextPathMarkup(OG_HEADLINE_LINE_1, {
+      align: 'left',
+      anchorX: 88,
+      baselineY: 274,
+      fill: WHITE,
+      fontSize: 58,
+      isBold: true,
+      isUncached: true,
+    });
+    const titleLine2 = renderTextPathMarkup(OG_HEADLINE_LINE_2, {
+      align: 'left',
+      anchorX: 88,
+      baselineY: 346,
+      fill: BRAND_GRADIENT_START,
+      fontSize: 58,
+      isBold: true,
+      isUncached: true,
+    });
+    const subtitle = renderTextPathMarkup(ogCapabilities, {
+      align: 'left',
+      anchorX: 88,
+      baselineY: 418,
+      fill: ISOLUX_GRAY[200],
+      fontSize: 25,
+      isBold: false,
+      isUncached: true,
+    });
+    const brandTitle = renderTextPathMarkup(SITE_NAME, {
+      align: 'left',
+      anchorX: 152,
+      baselineY: 136,
+      fill: WHITE,
+      fontSize: 30,
+      isBold: true,
+      isUncached: true,
+    });
+    const monoStepAdvance = resolveCharGlyph(' ', 20, false, 'mono').advance;
+    const urlSampleParts: string[] = [];
+    let urlCursorX = 112;
+    for (const [segmentText, segmentFill, isSegmentBold = false] of OG_URL_TOKENS) {
+      urlSampleParts.push(
+        renderTextPathMarkup(segmentText, {
+          align: 'origin',
+          anchorX: urlCursorX,
+          baselineY: 525,
+          fill: segmentFill,
+          font: 'mono',
+          fontSize: 20,
+          isBold: isSegmentBold,
+          isUncached: true,
+        })
+      );
+      urlCursorX += segmentText.length * monoStepAdvance;
+    }
+
+    ogImageSvgCache = [
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${escapeXml(OG_IMAGE_ALT)}">`,
+      '<defs>',
+      '<linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">',
+      `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
+      `<stop offset="100%" stop-color="${OG_CARD_SURFACE.bgEnd}" />`,
+      '</linearGradient>',
+      '<radialGradient id="og-glow" cx="85%" cy="18%" r="65%">',
+      `<stop offset="0%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0.28" />`,
+      `<stop offset="100%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0" />`,
+      '</radialGradient>',
+      '</defs>',
+      `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-bg)" />`,
+      `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-glow)" />`,
+      `<rect x="40.5" y="40.5" width="${OG_IMAGE_WIDTH - 81}" height="${OG_IMAGE_HEIGHT - 81}" rx="28" fill="none" stroke="${ISOLUX_GRAY[600]}" />`,
+      `<image x="88" y="98" width="48" height="48" href="${brandIconHref}" />`,
+      brandTitle,
+      titleLine1,
+      titleLine2,
+      subtitle,
+      `<rect x="88" y="488" width="${OG_IMAGE_WIDTH - 176}" height="58" rx="14" fill="${OG_CARD_SURFACE.pillBg}" stroke="${ISOLUX_GRAY[600]}" />`,
+      ...urlSampleParts,
+      '</svg>',
+    ].join('');
+  }
+  return ogImageSvgCache;
+}
+
+/**
+ * Return (once per isolate) the content-hash version token of the OpenGraph social preview card.
+ * @returns Base-36 content hash derived from `renderOgImageSvg()`.
+ */
+export function getOgImageVersion(): string {
+  ogImageVersionCache ??= hashText(renderOgImageSvg());
+  return ogImageVersionCache;
+}
+
+/**
+ * Return (once per isolate) the versioned absolute URL of the raster OpenGraph social preview card (`/og.png?v=<hash>`).
+ * @returns Versioned absolute `/og.png` URL for OpenGraph/Twitter tags and Schema.org JSON-LD.
+ */
+export function getOgImagePngUrl(): string {
+  ogImagePngUrlCache ??= `${SITE_ORIGIN}/og.png?v=${getOgImageVersion()}`;
+  return ogImagePngUrlCache;
+}
+
+/**
  * Build the Schema.org JSON-LD graph (`WebSite`, `WebAPI`, and `WebApplication`) for the `/` homepage.
  * @param description   Homepage meta description.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
 export function buildHomeJsonLd(description: string): Readonly<Record<string, unknown>> {
+  const ogImageUrl = getOgImagePngUrl();
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -126,7 +257,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         '@id': WEBSITE_JSON_LD_ID,
         '@type': 'WebSite',
         description,
-        image: OG_IMAGE_PNG_URL,
+        image: ogImageUrl,
         inLanguage: 'en',
         name: SITE_NAME,
         sameAs: [REPO_GITHUB_URL],
@@ -136,7 +267,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         '@type': 'WebAPI',
         description,
         documentation: `${SITE_ORIGIN}/docs`,
-        image: OG_IMAGE_PNG_URL,
+        image: ogImageUrl,
         inLanguage: 'en',
         name: SITE_NAME,
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
@@ -148,7 +279,7 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         applicationCategory: 'DeveloperApplication',
         author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
-        image: OG_IMAGE_PNG_URL,
+        image: ogImageUrl,
         inLanguage: 'en',
         isPartOf: { '@id': WEBSITE_JSON_LD_ID },
         name: `${SITE_NAME} URL Builder`,
@@ -193,7 +324,7 @@ export function buildDocsJsonLd(
         author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
         headline,
-        image: OG_IMAGE_PNG_URL,
+        image: getOgImagePngUrl(),
         inLanguage: 'en',
         isPartOf: {
           '@id': WEBSITE_JSON_LD_ID,
@@ -230,7 +361,7 @@ export function buildBuilderJsonLd(
         applicationCategory: 'DeveloperApplication',
         author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
-        image: OG_IMAGE_PNG_URL,
+        image: getOgImagePngUrl(),
         inLanguage: 'en',
         isPartOf: {
           '@id': WEBSITE_JSON_LD_ID,
@@ -330,7 +461,7 @@ export function renderLlmsTxt(): string {
     llmsTxtCache = [
       `# ${SITE_NAME}`,
       '',
-      '> Zero-cold-start edge SVG API for READMEs and documentation: dynamic status badges, live package/forge service metrics, and customizable vector elements. 100% free, no API keys, no signup.',
+      `> ${SITE_DESCRIPTION} 100% free, no API keys, no signup.`,
       '',
       '## Endpoints',
       '',
@@ -363,100 +494,4 @@ export function renderLlmsTxt(): string {
     ].join('\n');
   }
   return llmsTxtCache;
-}
-
-/**
- * Render (once per isolate) the vector OpenGraph social preview image served at `/og.svg`.
- * Uses pre-converted vector path outlines so text renders identically without external fonts.
- * @returns Standalone `<svg>` XML string.
- */
-export function renderOgImageSvg(): string {
-  if (ogImageSvgCache === undefined) {
-    const brandIconHref = `data:image/png;base64,${encodeBytesToBase64(faviconPngBuffer)}`;
-    const ogLabels: string[] = [];
-    for (const page of BUILDER_PAGES) {
-      ogLabels.push(page.ogLabel);
-    }
-    const ogCapabilities = ogLabels.join(' · ');
-    const titleLine1 = renderTextPathMarkup('One Cohesive Dynamic SVG API', {
-      align: 'left',
-      anchorX: 88,
-      baselineY: 274,
-      fill: WHITE,
-      fontSize: 58,
-      isBold: true,
-      isUncached: true,
-    });
-    const titleLine2 = renderTextPathMarkup('for READMEs & Documentation', {
-      align: 'left',
-      anchorX: 88,
-      baselineY: 346,
-      fill: BRAND_GRADIENT_START,
-      fontSize: 58,
-      isBold: true,
-      isUncached: true,
-    });
-    const subtitle = renderTextPathMarkup(ogCapabilities, {
-      align: 'left',
-      anchorX: 88,
-      baselineY: 418,
-      fill: ISOLUX_GRAY[200],
-      fontSize: 25,
-      isBold: false,
-      isUncached: true,
-    });
-    const brandTitle = renderTextPathMarkup(SITE_NAME, {
-      align: 'left',
-      anchorX: 152,
-      baselineY: 136,
-      fill: WHITE,
-      fontSize: 30,
-      isBold: true,
-      isUncached: true,
-    });
-    const monoStepAdvance = resolveCharGlyph(' ', 20, false, 'mono').advance;
-    const urlSampleParts: string[] = [];
-    let urlCursorX = 112;
-    for (const [segmentText, segmentFill, isSegmentBold = false] of OG_URL_TOKENS) {
-      urlSampleParts.push(
-        renderTextPathMarkup(segmentText, {
-          align: 'origin',
-          anchorX: urlCursorX,
-          baselineY: 525,
-          fill: segmentFill,
-          font: 'mono',
-          fontSize: 20,
-          isBold: isSegmentBold,
-          isUncached: true,
-        })
-      );
-      urlCursorX += segmentText.length * monoStepAdvance;
-    }
-
-    ogImageSvgCache = [
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" viewBox="0 0 ${OG_IMAGE_WIDTH} ${OG_IMAGE_HEIGHT}" role="img" aria-label="${SITE_NAME} – Dynamic SVG API for READMEs and Documentation">`,
-      '<defs>',
-      '<linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">',
-      `<stop offset="0%" stop-color="${OG_CARD_SURFACE.bgStart}" />`,
-      `<stop offset="100%" stop-color="${OG_CARD_SURFACE.bgEnd}" />`,
-      '</linearGradient>',
-      '<radialGradient id="og-glow" cx="85%" cy="18%" r="65%">',
-      `<stop offset="0%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0.28" />`,
-      `<stop offset="100%" stop-color="${BRAND_GRADIENT_END}" stop-opacity="0" />`,
-      '</radialGradient>',
-      '</defs>',
-      `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-bg)" />`,
-      `<rect width="${OG_IMAGE_WIDTH}" height="${OG_IMAGE_HEIGHT}" fill="url(#og-glow)" />`,
-      `<rect x="40.5" y="40.5" width="${OG_IMAGE_WIDTH - 81}" height="${OG_IMAGE_HEIGHT - 81}" rx="28" fill="none" stroke="${ISOLUX_GRAY[600]}" />`,
-      `<image x="88" y="98" width="48" height="48" href="${brandIconHref}" />`,
-      brandTitle,
-      titleLine1,
-      titleLine2,
-      subtitle,
-      `<rect x="88" y="488" width="${OG_IMAGE_WIDTH - 176}" height="58" rx="14" fill="${OG_CARD_SURFACE.pillBg}" stroke="${ISOLUX_GRAY[600]}" />`,
-      ...urlSampleParts,
-      '</svg>',
-    ].join('');
-  }
-  return ogImageSvgCache;
 }

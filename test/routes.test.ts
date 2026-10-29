@@ -33,7 +33,7 @@ import {
 import { renderSvgPath, resolveSvgRequest, resolveSvgRoute, SVG_ROUTES } from '@/routes/svg';
 import { resetUpstreamCaches } from '@/services/fetcher';
 import { BUILDER_PAGES } from '@/site/navigation';
-import { FAVICON_PNG_SIZE, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/site/seo';
+import { FAVICON_PNG_SIZE, getOgImageVersion, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/site/seo';
 import {
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
@@ -588,6 +588,12 @@ describe('Hono routes on svg.xul.is', () => {
     expect(ogPngRes.status).toBe(200);
     expect(ogPngRes.headers.get('Content-Type')).toBe('image/png');
     expect(ogPngRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(ogPngRes.headers.get('Cache-Control')).not.toContain('immutable');
+    const versionedOgPngRes = await app.request(`/og.png?v=${getOgImageVersion()}`, {}, TEST_ENV);
+    expect(versionedOgPngRes.status).toBe(200);
+    expect(versionedOgPngRes.headers.get('Cache-Control')).toBe(
+      'public, max-age=31536000, immutable'
+    );
     const ogPngEtag = ogPngRes.headers.get('ETag') ?? '';
     expect(ogPngEtag).toMatch(/^W\/"[\da-z]+-[\da-z]+"$/);
     const ogPngBytes = new Uint8Array(await ogPngRes.arrayBuffer());
