@@ -15,6 +15,8 @@ import {
 } from '@/services/endpoint';
 import {
   buildRatioSpecials,
+  computeProgressPercent,
+  computeScaledSteps,
   createCoverageMetric,
   formatCompactNumber,
   formatCount,
@@ -208,11 +210,7 @@ function buildQualityGateSpecials(detailsJson: string | undefined): BadgeSpecial
     return undefined;
   }
   const stepTotal = Math.min(MAX_STEPS_COUNT, totalCount);
-  const rawStepDone =
-    totalCount <= MAX_STEPS_COUNT
-      ? passedCount
-      : Math.round((passedCount / totalCount) * stepTotal);
-  const stepDone = passedCount < totalCount ? Math.min(stepTotal - 1, rawStepDone) : stepTotal;
+  const stepDone = computeScaledSteps(passedCount, totalCount, stepTotal);
   const ratio = buildRatioSpecials(passedCount, totalCount);
   return {
     ...ratio,
@@ -350,7 +348,7 @@ export const SONARCLOUD_SERVICE = defineService({
         if (percent === undefined) {
           return { value: 'n/a' };
         }
-        const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+        const clamped = computeProgressPercent(percent, 100);
         const delta = formatPointDelta(
           readMeasureDiff(measures, 'new_duplicated_lines_density', 'duplicated_lines_density')
         );

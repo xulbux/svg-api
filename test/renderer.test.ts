@@ -12,6 +12,7 @@ import {
   ACTIVE_ICON_MOTION_TOKENS,
   escapeXml,
   prepareDisplayText,
+  roundCoord,
   sliceAtCodePoint,
 } from '@/svg/shared';
 import { resolveStackIconColor, renderStack } from '@/svg/stack';
@@ -425,7 +426,7 @@ describe('renderBadge & renderButton', () => {
     expect(barSvg).toContain(
       `width="32" height="6" rx="3" fill="${THEMES.emerald.accentText}" fill-opacity="0.20"`
     );
-    expect(barSvg).toContain('width="30.4" height="6" rx="3" fill="url(#bar-shimmer-');
+    expect(barSvg).toContain('width="29.6" height="6" rx="3" fill="url(#bar-shimmer-');
 
     const staticBarSvg = renderBadge({
       color: 'emerald',
@@ -444,7 +445,7 @@ describe('renderBadge & renderButton', () => {
       variant: '2',
     });
     expect(ringSvg).toContain(`stroke="${THEMES.sky.accentText}" stroke-opacity="0.24"`);
-    expect(ringSvg).toContain('stroke-dasharray="21.2 28.27"');
+    expect(ringSvg).toContain('stroke-dasharray="19.21 28.27"');
     expect(ringSvg).not.toContain('values="1;0.45;1"');
 
     const pulsingRingSvg = renderBadge({
@@ -2076,5 +2077,100 @@ describe('cross-renderer regressions', () => {
     expect(valueOnlyButton).not.toContain('fill="url(#bg-dark)"');
     expect(valueOnlyButton).not.toContain('M 25 0 H');
     expect(extractAriaLabel(valueOnlyButton)).toBe('v2.0');
+  });
+
+  it('renders a 3-stop sparkline filler gradient and keeps incomplete ring and bar gauges visibly open until 100% (regressions: faint linear sparkline area fill, round-cap overhang closed rings at >=93%, subpixel bar tips looked full at 98%)', () => {
+    const primarySparkSvg = renderBadge({
+      color: 'emerald',
+      icon: 'activity',
+      label: 'Commits',
+      special: { type: 'sparkline', values: [2, 6, 4, 9, 7, 13, 11, 16] },
+      value: '195/8w',
+      variant: '1',
+    });
+    expect(primarySparkSvg).toContain(
+      '<linearGradient id="spark-fill-white" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55" /><stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.27" /><stop offset="100%" stop-color="#FFFFFF" stop-opacity="0" /></linearGradient>'
+    );
+
+    const darkSparkSvg = renderBadge({
+      color: 'emerald',
+      icon: 'activity',
+      label: 'Commits',
+      special: { type: 'sparkline', values: [2, 6, 4, 9, 7, 13, 11, 16] },
+      value: '195/8w',
+      variant: '2',
+    });
+    const emeraldAccent = THEMES.emerald.accentText;
+    expect(darkSparkSvg).toContain(
+      `<linearGradient id="spark-fill-emerald" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${emeraldAccent}" stop-opacity="0.52" /><stop offset="60%" stop-color="${emeraldAccent}" stop-opacity="0.25" /><stop offset="100%" stop-color="${emeraldAccent}" stop-opacity="0" /></linearGradient>`
+    );
+
+    // Incomplete rings (`94%`, `98%`, `99.9%`) preserve at least `1.6px` of clear track between the `2px` round endcaps, while `100%` closes seamlessly:
+    for (const incompletePct of [94, 98, 99.9]) {
+      const incompleteRing = renderBadge({
+        color: 'emerald',
+        label: 'Score',
+        special: { type: 'ring', value: incompletePct },
+        value: `${incompletePct}%`,
+        variant: '1',
+      });
+      const dashMatch = /stroke-dasharray="(?<dash>[\d.]+) (?<circ>[\d.]+)"/.exec(incompleteRing);
+      expect(dashMatch, String(incompletePct)).not.toBeNull();
+      const dashLength = Number(dashMatch?.groups?.dash);
+      const circumference = Number(dashMatch?.groups?.circ);
+      expect(
+        roundCoord(circumference - 2 - dashLength),
+        String(incompletePct)
+      ).toBeGreaterThanOrEqual(1.6);
+    }
+
+    const completeRing = renderBadge({
+      color: 'emerald',
+      label: 'Score',
+      special: { hasPulse: true, type: 'ring', value: 100 },
+      value: '100%',
+      variant: '1',
+    });
+    expect(completeRing).not.toContain('stroke-dasharray=');
+    expect(completeRing).toContain('values="1;0.45;1"');
+
+    // Incomplete bars (`98%`, `99.9%`) keep `2.4px` of exposed track on the right, `50%` lands on exact `16px` midpoint, and `100%` fills `32px`:
+    const primaryBarActiveFill = 'fill="rgba(255,255,255,0.85)"';
+    const midpointBar = renderBadge({
+      anim: 'none',
+      color: 'emerald',
+      label: 'Score',
+      special: { type: 'bar', value: 50 },
+      value: '50%',
+      variant: '1',
+    });
+    expect(midpointBar).toContain(`width="16" height="6" rx="3" ${primaryBarActiveFill}`);
+
+    for (const incompleteBarPct of [98, 99.9]) {
+      const incompleteBar = renderBadge({
+        anim: 'none',
+        color: 'emerald',
+        label: 'Score',
+        special: { type: 'bar', value: incompleteBarPct },
+        value: `${incompleteBarPct}%`,
+        variant: '1',
+      });
+      const activeWidth = Number(
+        /width="(?<fill>[\d.]+)" height="6" rx="3" fill="rgba\(255,255,255,0\.85\)"/.exec(
+          incompleteBar
+        )?.groups?.fill
+      );
+      expect(activeWidth, String(incompleteBarPct)).toBe(29.6);
+    }
+
+    const completeBar = renderBadge({
+      anim: 'none',
+      color: 'emerald',
+      label: 'Score',
+      special: { type: 'bar', value: 100 },
+      value: '100%',
+      variant: '1',
+    });
+    expect(completeBar).toContain(`width="32" height="6" rx="3" ${primaryBarActiveFill}`);
   });
 });

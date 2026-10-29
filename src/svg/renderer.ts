@@ -34,7 +34,6 @@ import {
   renderSurfaceGradientDefs,
   renderSvgDocument,
   renderSweepAnimation,
-  renderVerticalGradientDef,
   renderWhiteBandStops,
   resolveForegroundColor,
   resolveForegroundPaint,
@@ -217,6 +216,8 @@ interface BarWidgetGeometry {
   height: number;
   /** Minimum width in pixels of a non-empty fill. */
   minFillWidth: number;
+  /** Minimum unfilled track width in pixels preserved when `percentValue < 100`. */
+  minIncompleteGap: number;
   /** Track width in pixels. */
   width: number;
 }
@@ -235,6 +236,10 @@ interface BarsWidgetGeometry {
 
 /** Geometry of the `ring:` gauge widget. */
 interface RingWidgetGeometry {
+  /** Minimum dash length in pixels of a non-empty arc (`percentValue > 0`). */
+  minArcLength: number;
+  /** Minimum clear track gap in pixels between round endcaps when `percentValue < 100`. */
+  minIncompleteGap: number;
   /** Ring radius in pixels. */
   radius: number;
   /** Square box size in pixels. */
@@ -470,14 +475,20 @@ const BADGE_METRICS: VariantMetrics = {
 
 /** Geometry of every right-compartment special widget (single source for measurement and rendering). */
 const SPECIAL_WIDGET_GEOMETRY: Readonly<SpecialWidgetGeometry> = {
-  bar: { height: 6, minFillWidth: 4, width: 32 },
+  bar: { height: 6, minFillWidth: 4, minIncompleteGap: 2.4, width: 32 },
   bars: { barGap: 1.5, barWidth: 2.5, maxHeight: 11, minHeight: 2 },
   delta: { arrowSize: 10, arrowStrokeWidth: 1.6, fontSizeReduction: 0.5, textOffset: 13 },
-  ring: { radius: 4.5, size: 12, strokeWidth: 2 },
+  ring: { minArcLength: 0.2, minIncompleteGap: 1.6, radius: 4.5, size: 12, strokeWidth: 2 },
   sparkline: { height: 11, strokeWidth: 1.5, width: 36 },
   steps: { pillGap: 2, pillHeight: 6, pillWidth: 5 },
   strip: { tickGap: 2, tickHeight: 10, tickWidth: 2.5 },
 };
+
+/** `[topOpacity, midOpacity]` of the 3-stop sparkline area-fill gradient (fading to `0` at `100%`). */
+const SPARKLINE_FILL_OPACITIES = { dark: [0.52, 0.25], primary: [0.55, 0.27] } as const;
+
+/** Vertical offset of the intermediate stop in the sparkline area-fill `<linearGradient>`. */
+const SPARKLINE_MID_STOP_OFFSET = '60%';
 
 /** Stroke width of stroked icons inside badges and buttons in `24x24` icon units. */
 const CAPSULE_ICON_STROKE_WIDTH = DEFAULT_ICON_STROKE_WIDTH;
@@ -1155,18 +1166,22 @@ function renderBarWidget(
   context: SpecialElementContext
 ): SpecialElementMarkup {
   const { isOnPrimary, specialWidth, specialX } = context;
-  const { height: barHeight, minFillWidth } = SPECIAL_WIDGET_GEOMETRY.bar;
+  const { height: barHeight, minFillWidth, minIncompleteGap } = SPECIAL_WIDGET_GEOMETRY.bar;
   const barY = (context.height - barHeight) / 2;
   const barRadius = barHeight / 2;
   const paint = resolveGaugePaint('fill', '0.20', context);
   const trackRect = `<rect x="${specialX}" y="${barY}" width="${specialWidth}" height="${barHeight}" rx="${barRadius}" ${paint.trackAttrs} />`;
-  const fillWidth =
-    percentValue <= 0
-      ? 0
-      : Math.max(minFillWidth, roundTenths((percentValue / 100) * specialWidth));
-  if (fillWidth <= 0) {
+  if (percentValue <= 0) {
     return { defs: '', markup: trackRect };
   }
+  const maxIncompleteWidth = specialWidth - minIncompleteGap;
+  const fillWidth =
+    percentValue >= 100
+      ? specialWidth
+      : Math.min(
+          maxIncompleteWidth,
+          Math.max(minFillWidth, roundTenths((percentValue / 100) * specialWidth))
+        );
 
   const fillGeometry = `x="${specialX}" y="${barY}" width="${fillWidth}" height="${barHeight}" rx="${barRadius}"`;
   const filledRect = `<rect ${fillGeometry} fill="${paint.activeColor}" />`;
@@ -1242,25 +1257,33 @@ function renderStepsWidgetMarkup(
   return pillsMarkup;
 }
 
-/** Render an inline circular ring/donut gauge from a sanitized percentage with a dark translucent accent track and optional pulse. */
+/** Render an inline circular ring/donut gauge from a sanitized percentage, reserving a visible track gap below `100%`. */
 function renderRingWidgetMarkup(
   percentValue: number,
   hasPulse: boolean,
   context: SpecialElementContext
 ): string {
-  const { radius, size, strokeWidth } = SPECIAL_WIDGET_GEOMETRY.ring;
+  const { minArcLength, minIncompleteGap, radius, size, strokeWidth } =
+    SPECIAL_WIDGET_GEOMETRY.ring;
   const ringCx = roundCoord(context.specialX + size / 2);
   const ringCy = context.height / 2;
-  const circumference = roundCoord(2 * Math.PI * radius);
-  const arcLength = roundCoord((percentValue / 100) * circumference);
   const paint = resolveGaugePaint('stroke', '0.24', context);
   const circleGeometry = `cx="${ringCx}" cy="${ringCy}" r="${radius}"`;
   const trackCircle = `<circle ${circleGeometry} ${paint.trackAttrs} stroke-width="${strokeWidth}" />`;
-  if (arcLength <= 0) {
+  if (percentValue <= 0) {
     // A zero-length dash with a round line cap would still draw a dot:
     return trackCircle;
   }
   const pulseAnim = hasPulse ? renderSoftPulseAnimate('1;0.45;1') : '';
+  if (percentValue >= 100) {
+    return `${trackCircle}<circle ${circleGeometry} stroke="${paint.activeColor}" stroke-width="${strokeWidth}">${pulseAnim}</circle>`;
+  }
+  // Subtract `strokeWidth` for the two round endcaps and clamp at `minIncompleteGap` so `< 100%` stays open:
+  const rawCircumference = 2 * Math.PI * radius;
+  const circumference = roundCoord(rawCircumference);
+  const maxArcLength = rawCircumference - strokeWidth - minIncompleteGap;
+  const rawArcLength = (percentValue / 100) * rawCircumference - strokeWidth;
+  const arcLength = roundCoord(Math.min(maxArcLength, Math.max(minArcLength, rawArcLength)));
   return `${trackCircle}<circle ${circleGeometry} stroke="${paint.activeColor}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-dasharray="${arcLength} ${circumference}" transform="rotate(-90 ${ringCx} ${ringCy})">${pulseAnim}</circle>`;
 }
 
@@ -1336,19 +1359,16 @@ function resolveSparklineGradientId(isOnPrimary: boolean, color: ThemeColorName)
   return isOnPrimary ? 'spark-fill-white' : `spark-fill-${color}`;
 }
 
-/** Render (memoized per gradient ID) the `<linearGradient>` definition for the sparkline area fill. */
+/** Render (memoized per gradient ID) the 3-stop `<linearGradient>` definition for the sparkline area fill. */
 function renderSparklineGradientDef(isOnPrimary: boolean, color: ThemeColorName): string {
   const gradientId = resolveSparklineGradientId(isOnPrimary, color);
   let gradientDef = SPARKLINE_GRADIENT_DEF_CACHE[gradientId];
   if (gradientDef === undefined) {
     const stopColor = isOnPrimary ? WHITE : THEMES[color].accentText;
-    gradientDef = renderVerticalGradientDef(
-      gradientId,
-      stopColor,
-      stopColor,
-      isOnPrimary ? 0.32 : 0.38,
-      0
-    );
+    const [topOpacity, midOpacity] = isOnPrimary
+      ? SPARKLINE_FILL_OPACITIES.primary
+      : SPARKLINE_FILL_OPACITIES.dark;
+    gradientDef = `<linearGradient id="${gradientId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${stopColor}" stop-opacity="${topOpacity}" /><stop offset="${SPARKLINE_MID_STOP_OFFSET}" stop-color="${stopColor}" stop-opacity="${midOpacity}" /><stop offset="100%" stop-color="${stopColor}" stop-opacity="0" /></linearGradient>`;
     SPARKLINE_GRADIENT_DEF_CACHE[gradientId] = gradientDef;
   }
   return gradientDef;

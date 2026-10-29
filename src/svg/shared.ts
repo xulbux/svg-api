@@ -289,25 +289,9 @@ function buildThemeGradientId(color: ThemeColorName): string {
   return `grad-${color}`;
 }
 
-/**
- * Render a top-to-bottom two-stop `<linearGradient>` definition.
- * @param id              Gradient element ID.
- * @param topColor        Color of the top (`0%`) stop.
- * @param bottomColor     Color of the bottom (`100%`) stop.
- * @param topOpacity      Optional `stop-opacity` of the top stop (omitted when `undefined`).
- * @param bottomOpacity   Optional `stop-opacity` of the bottom stop (omitted when `undefined`).
- * @returns `<linearGradient>` SVG string.
- */
-function renderVerticalGradientDef(
-  id: string,
-  topColor: string,
-  bottomColor: string,
-  topOpacity?: number,
-  bottomOpacity?: number
-): string {
-  const topOpacityAttr = topOpacity === undefined ? '' : ` stop-opacity="${topOpacity}"`;
-  const bottomOpacityAttr = bottomOpacity === undefined ? '' : ` stop-opacity="${bottomOpacity}"`;
-  return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${topColor}"${topOpacityAttr} /><stop offset="100%" stop-color="${bottomColor}"${bottomOpacityAttr} /></linearGradient>`;
+/** Render a solid top-to-bottom two-stop `<linearGradient>` definition. */
+function renderVerticalGradientDef(id: string, topColor: string, bottomColor: string): string {
+  return `<linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${topColor}" /><stop offset="100%" stop-color="${bottomColor}" /></linearGradient>`;
 }
 
 /** Render the shared `<linearGradient id="bg-dark">` definition for dark-slate surfaces (built once per isolate). */
@@ -407,7 +391,7 @@ function buildRightCapsulePath(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { buildThemeGradientId, renderVerticalGradientDef, roundCoord, roundScale, roundTenths };
+export { buildThemeGradientId, roundCoord, roundScale, roundTenths };
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,

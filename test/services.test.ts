@@ -33,8 +33,11 @@ import {
 import {
   bucketSeries,
   buildPackageVersion,
+  buildRatioSpecials,
   buildTrailingSeriesSpecials,
   compareTrailingWindows,
+  computeProgressPercent,
+  computeScaledSteps,
   createRatingMetric,
   createScorecardMetric,
   createScoreMetric,
@@ -1145,7 +1148,7 @@ describe('forge, registry & CDN presets (AUR, Codeberg, GitLab, Hex.pm, pub.dev,
     expect(await requestAriaLabel('/badge/pub/http/likes')).toBe('Likes: 8.5k');
     const pointsBadge = await requestBadge('/badge/pub/http/points');
     expect(pointsBadge.ariaLabel).toBe('Pub Points: 94% 150/160');
-    expect(pointsBadge.svg).toContain('stroke-dasharray="26.57 28.27"');
+    expect(pointsBadge.svg).toContain('stroke-dasharray="24.58 28.27"');
     expect(await requestAriaLabel('/badge/gem/rails/v')).toBe('Gem: v8.1.4');
     expect(await requestAriaLabel('/badge/gem/rails/dt')).toBe('Downloads: 802.6M');
     expect(await requestAriaLabel('/badge/gem/rails/updated')).toBe('Updated: today');
@@ -1185,7 +1188,7 @@ describe('forge, registry & CDN presets (AUR, Codeberg, GitLab, Hex.pm, pub.dev,
     expect(await requestAriaLabel('/badge/jsr/@std/path/v')).toBe('JSR: v1.1.6');
     const scoreBadge = await requestBadge('/badge/jsr/std/path/score');
     expect(scoreBadge.ariaLabel).toBe('JSR Score: 94%');
-    expect(scoreBadge.svg).toContain('stroke-dasharray="26.57 28.27"');
+    expect(scoreBadge.svg).toContain('stroke-dasharray="24.58 28.27"');
     expect(await requestAriaLabel('/badge/jsdelivr/jquery/hits')).toBe('jsDelivr: 1.6B/mo');
     expect(requestedUrls).toHaveLength(2);
   });
@@ -2006,6 +2009,21 @@ describe('metric formatting helpers', () => {
       { owner: '', target: 'pkg' }
     );
     expect(perfectResult?.specials?.steps).toEqual({ done: 10, total: 10, type: 'steps' });
+
+    // Partial progress (`0 < achieved < maximum`) never rounds down to `0` or up to `100` / `total`:
+    expect(computeProgressPercent(0, 200)).toBe(0);
+    expect(computeProgressPercent(1, 500)).toBe(1);
+    expect(computeProgressPercent(199, 200)).toBe(99);
+    expect(computeProgressPercent(200, 200)).toBe(100);
+    expect(computeScaledSteps(0, 100, 10)).toBe(0);
+    expect(computeScaledSteps(3, 100, 10)).toBe(1);
+    expect(computeScaledSteps(98, 100, 10)).toBe(9);
+    expect(computeScaledSteps(100, 100, 10)).toBe(10);
+    expect(buildRatioSpecials(199, 200, true)).toEqual({
+      bar: { type: 'bar', value: 99 },
+      ring: { type: 'ring', value: 99 },
+      steps: { done: 9, total: 10, type: 'steps' },
+    });
   });
 
   it('prefixes numeric versions with v exactly once and reports missing values', () => {
@@ -3600,7 +3618,7 @@ describe('inline widget & preset regressions', () => {
 
     const wpRating = await resolvePathMetric('/badge/wp/akismet/rating');
     expect(wpRating.result.specials?.bars).toEqual({ type: 'bars', values: [5, 10, 15, 30, 90] });
-    expect(wpRating.result.specials?.steps).toEqual({ done: 5, total: 5, type: 'steps' });
+    expect(wpRating.result.specials?.steps).toEqual({ done: 4, total: 5, type: 'steps' });
 
     const jbRating = await resolvePathMetric('/badge/jetbrains/8182/rating');
     expect(jbRating.result.specials?.bars).toEqual({ type: 'bars', values: [2, 3, 10, 25, 60] });

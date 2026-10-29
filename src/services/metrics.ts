@@ -441,10 +441,50 @@ function readLicenseNameAtDepth(rawLicense: unknown, depth: number): string | un
   return readText(rawLicense.type) ?? readText(rawLicense.id) ?? readText(rawLicense.name);
 }
 
+/**
+ * Compute an integer progress percentage (`0`–`100`) from `achieved / maximum`, keeping partial
+ * progress (`0 < achieved < maximum`) strictly inside `[1, 99]` so non-zero progress never renders
+ * empty and incomplete progress never closes to `100%`.
+ * @param achieved   Numerator or achieved score (`>= 0`).
+ * @param maximum    Denominator or maximum score (`> 0`).
+ * @returns Bounded integer percentage in `0`–`100`.
+ */
+function computeProgressPercent(achieved: number, maximum: number): number {
+  if (achieved <= 0 || maximum <= 0) {
+    return 0;
+  }
+  if (achieved >= maximum) {
+    return MAX_PERCENT;
+  }
+  return Math.min(MAX_PERCENT - 1, Math.max(1, Math.round((achieved / maximum) * MAX_PERCENT)));
+}
+
+/**
+ * Scale `achieved / maximum` onto `0`–`stepTotal` discrete steps while keeping partial progress
+ * (`0 < achieved < maximum`) strictly inside `[1, stepTotal - 1]` when `stepTotal >= 2`.
+ * @param achieved    Numerator or achieved count (`>= 0`).
+ * @param maximum     Denominator or maximum count (`> 0`).
+ * @param stepTotal   Total number of discrete step pills (`>= 1`).
+ * @returns Completed step count in `0`–`stepTotal`.
+ */
+function computeScaledSteps(achieved: number, maximum: number, stepTotal: number): number {
+  if (achieved <= 0 || maximum <= 0 || stepTotal <= 0) {
+    return 0;
+  }
+  if (achieved >= maximum) {
+    return stepTotal;
+  }
+  if (stepTotal === 1) {
+    return 0;
+  }
+  const rawDone = Math.round((achieved / maximum) * stepTotal);
+  return Math.min(stepTotal - 1, Math.max(1, rawDone));
+}
+
 /** Build a discrete `steps` widget scaled from `percent` (`0`–`100`). */
 function buildPercentStepsSpecial(percent: number): BadgeSpecialElement {
   return {
-    done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
+    done: computeScaledSteps(percent, MAX_PERCENT, MAX_STEPS_COUNT),
     total: MAX_STEPS_COUNT,
     type: 'steps',
   };
@@ -462,7 +502,9 @@ function buildScoreResult(
   if (achieved === undefined || achieved < 0 || maximum === undefined || maximum <= 0) {
     return { value: MISSING_VALUE };
   }
-  const percent = Math.min(MAX_PERCENT, Math.round((achieved / maximum) * 100));
+  const value = format(achieved, maximum);
+  const isDisplayedFull = value === `${MAX_PERCENT}%` || value === `${maximum}/${maximum}`;
+  const percent = isDisplayedFull ? MAX_PERCENT : computeProgressPercent(achieved, maximum);
   const ring = { type: 'ring' as const, value: percent };
   return {
     color: thresholds ? resolveThresholdColor(percent, thresholds) : undefined,
@@ -472,13 +514,13 @@ function buildScoreResult(
       ring,
       steps: buildPercentStepsSpecial(percent),
     },
-    value: format(achieved, maximum),
+    value,
   };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { SCORE_SPECIALS, readFiniteNumber, readText };
+export { SCORE_SPECIALS, computeProgressPercent, computeScaledSteps, readFiniteNumber, readText };
 
 /**
  * Convert a numeric or numeric-string upstream value into a finite number.
@@ -879,7 +921,7 @@ export function buildRatioSpecials(
   if (partValue === undefined || partValue < 0 || wholeValue === undefined || wholeValue <= 0) {
     return undefined;
   }
-  const percent = Math.min(MAX_PERCENT, Math.round((partValue / wholeValue) * 100));
+  const percent = computeProgressPercent(partValue, wholeValue);
   return hasSteps
     ? {
         bar: { type: 'bar', value: percent },
@@ -1136,18 +1178,24 @@ export function createRatingMetric<P>(
       return { value: 'unrated' };
     }
     const scaled = Math.min(5, Math.max(0, (rating / maximum) * 5));
-    const percent = Math.min(MAX_PERCENT, Math.round((rating / maximum) * 100));
+    const scaledText = scaled.toFixed(1);
+    const isDisplayedFull = scaledText === '5.0';
+    const percent = isDisplayedFull ? MAX_PERCENT : computeProgressPercent(rating, maximum);
     const specials: BadgeSpecialMap = {
       bar: { type: 'bar', value: percent },
       ring: { type: 'ring', value: percent },
-      steps: { done: Math.min(5, Math.max(0, Math.round(scaled))), total: 5, type: 'steps' },
+      steps: {
+        done: isDisplayedFull ? 5 : computeScaledSteps(rating, maximum, 5),
+        total: 5,
+        type: 'steps',
+      },
     };
     const histogram = readHistogram?.(payload);
     if (histogram && histogram.length >= MIN_SERIES_POINTS && sumSeries(histogram) > 0) {
       specials.bars = { type: 'bars', values: histogram.slice(0, MAX_BARS_POINTS) };
       specials.sparkline = { type: 'sparkline', values: histogram.slice(0, MAX_SPARKLINE_POINTS) };
     }
-    return { specials, value: `${scaled.toFixed(1)}/5` };
+    return { specials, value: `${scaledText}/5` };
   });
 }
 
@@ -1312,9 +1360,7 @@ export function createScorecardMetric<P>(
       }
     }
     const stepTotal = Math.min(MAX_STEPS_COUNT, checks.length);
-    const rawStepDone = Math.round((passedChecks / checks.length) * stepTotal);
-    const stepDone =
-      passedChecks < checks.length ? Math.min(stepTotal - 1, rawStepDone) : stepTotal;
+    const stepDone = computeScaledSteps(passedChecks, checks.length, stepTotal);
     return {
       ...base,
       specials: {
