@@ -50,7 +50,6 @@ export const OPEN_VSX_SERVICE = defineService({
     description: 'Extension version, total downloads, average star rating, and license.',
     title: 'Open VSX',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(OPEN_VSX_ENDPOINT, 'dt', (extension) => extension.downloadCount, {
       defaultColor: 'violet',

@@ -84,7 +84,6 @@ export const ZENODO_SERVICE = defineService({
       'Record version, license, all-version downloads (dt), unique downloads, views, and DOI.',
     title: 'Zenodo',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     doi: createTextMetric(
       ZENODO_ENDPOINT,

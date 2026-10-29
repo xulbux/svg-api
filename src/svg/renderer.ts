@@ -2,7 +2,7 @@
  * SVG renderer – Single Source of Truth generator for badges, micro-buttons, and standalone icons.
  */
 
-import { ROSE_200, STRIP_DARK_COLORS, STRIP_SOLID_COLORS, WHITE } from '@/config/palette';
+import { STRIP_DARK_COLORS, STRIP_SOLID_COLORS, WHITE } from '@/config/palette';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import {
   DEFAULT_ICON_SLUG,
@@ -87,8 +87,6 @@ interface CapsuleLayoutInput {
   labelWidth: number;
   /** Measured leading icon width in pixels. */
   leftIconWidth: number;
-  /** Minimum left compartment width in pixels (`0` lets an empty left compartment collapse). */
-  minLeftWidth: number;
   /** Horizontal edge padding of each compartment in pixels. */
   padX: number;
   /** Measured trailing icon width in pixels. */
@@ -163,7 +161,9 @@ interface IconMarkupOptions {
   iconSize: number;
   /** Top Y coordinate of the icon box. */
   iconY: number;
-  /** Whether the icon sits on a vivid primary (`variant=1`) surface. */
+  /** Optional `<use>` reference overriding `slot.data.innerSvg` when deduplicating repeated ID-bearing icon bodies. */
+  innerSvgOverride?: string;
+  /** Whether the icon sits on a vivid primary surface. */
   isOnPrimary: boolean;
   /** Micro-animation applied to the icon. */
   motion: IconMotionMode;
@@ -355,6 +355,14 @@ interface CapsuleBodyOptions {
   valueText: string;
   /** Visual variant. */
   variant: BadgeVariant;
+}
+
+/** Rendered capsule foreground body and any shared icon `<defs>`. */
+interface CapsuleBodyMarkup {
+  /** Visible foreground SVG markup. */
+  body: string;
+  /** Shared `<defs>` markup when left and right slots reuse an icon body containing XML `id`s (`''` otherwise). */
+  defs: string;
 }
 
 /** Visible texts and fallbacks that make up the accessible name of a badge or button. */
@@ -613,14 +621,17 @@ const SINE_WAVE_TIMING =
 const SMOOTH_BREATH_SPLINES =
   'calcMode="spline" keyTimes="0;0.5;1" keySplines="0.45 0 0.55 1;0.45 0 0.55 1"';
 
+/** Padded `viewBox` of standalone icons so rotation, scale, and translation micro-animations never clip. */
+const STANDALONE_ICON_VIEWBOX = '-3 -3 30 30';
+
 /** Lazily built bar shimmer `<linearGradient>` definitions (one per surface kind). */
 const BAR_SHIMMER_DEFS: BarShimmerDefCache = {};
 
-/** Memoized standalone icon sheen `<linearGradient>` definitions by icon coordinate scale (one entry per icon set scale). */
-const ICON_SHEEN_DEF_CACHE = new Map<number, string>();
+/** Memoized standalone icon sheen `<linearGradient>` definitions by icon coordinate scale. */
+const ICON_SHEEN_DEF_CACHE: Partial<Record<string, string>> = {};
 
-/** Memoized sparkline area `<linearGradient>` definitions by gradient ID (white plus one per theme color). */
-const SPARKLINE_GRADIENT_DEF_CACHE = new Map<string, string>();
+/** Memoized sparkline area `<linearGradient>` definitions by gradient ID. */
+const SPARKLINE_GRADIENT_DEF_CACHE: Partial<Record<string, string>> = {};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -634,7 +645,7 @@ const UNICODE_MINUS_RX = /\u2212/g;
 
 /** Compute the rounded pixel span of `n` repeated segments of `itemWidth` separated by `gap`. */
 function measureSegmentedSpan(n: number, itemWidth: number, gap: number): number {
-  return n <= 0 ? 0 : Math.ceil(n * itemWidth + (n - 1) * gap);
+  return n <= 0 ? 0 : roundCoord(n * itemWidth + (n - 1) * gap);
 }
 
 /** Compute the minimum, maximum, and span of a non-empty numeric series. */
@@ -940,7 +951,7 @@ function resolveIconAnimationPair(
 
 /** Resolve a single requested icon slug into an icon slot (empty slugs become `'none'`, unknown slugs render the red placeholder icon). */
 function resolveIconSlot(rawSlug: string): IconSlot {
-  const slug = rawSlug.trim() || 'none';
+  const slug = rawSlug.trim().toLowerCase() || 'none';
   if (slug === 'none') {
     return EMPTY_ICON_SLOT;
   }
@@ -980,9 +991,11 @@ function renderIconMarkup(options: IconMarkupOptions): string {
   const scaleNum = options.iconSize / 24;
   const scale = roundScale(scaleNum);
   const translateX = computeIconTranslateX(options.visualStartX, iconData, scaleNum);
+  const innerSvg = options.innerSvgOverride ?? iconData.innerSvg;
   return renderIconGroup({
     color: options.paint.color,
-    innerSvg: wrapIconWithAnimation(iconData.innerSvg, options.slot.key, options.motion),
+    hasCurrentColor: iconData.hasCurrentColor,
+    innerSvg: wrapIconWithAnimation(innerSvg, options.slot.key, options.motion),
     isFallback: options.slot.isFallback === true,
     isOnPrimary: options.isOnPrimary,
     opacity: options.paint.opacity,
@@ -1185,7 +1198,7 @@ function renderBarsWidgetMarkup(values: readonly number[], context: SpecialEleme
       normalized = (value - minValue) / range;
     }
     const barHeight = roundTenths(minHeight + normalized * (maxHeight - minHeight));
-    const barX = (context.specialX + i * (barWidth + barGap)).toFixed(1);
+    const barX = roundCoord(context.specialX + i * (barWidth + barGap));
     const barY = roundTenths(bottomY - barHeight);
     const isLastBar = i === values.length - 1;
     const opacityAttr = isLastBar ? '' : ' fill-opacity="0.72"';
@@ -1213,7 +1226,7 @@ function renderStepsWidgetMarkup(
   let pillsMarkup = '';
 
   for (let i = 0; i < total; i += 1) {
-    const pillX = (context.specialX + i * (pillWidth + pillGap)).toFixed(1);
+    const pillX = roundCoord(context.specialX + i * (pillWidth + pillGap));
     const isFilled = i < done;
     const pillGeometry = `x="${pillX}" y="${pillY}" width="${pillWidth}" height="${pillHeight}" rx="${pillRadius}"`;
     if (isFilled) {
@@ -1236,7 +1249,7 @@ function renderRingWidgetMarkup(
   context: SpecialElementContext
 ): string {
   const { radius, size, strokeWidth } = SPECIAL_WIDGET_GEOMETRY.ring;
-  const ringCx = context.specialX + size / 2;
+  const ringCx = roundCoord(context.specialX + size / 2);
   const ringCy = context.height / 2;
   const circumference = roundCoord(2 * Math.PI * radius);
   const arcLength = roundCoord((percentValue / 100) * circumference);
@@ -1268,7 +1281,7 @@ function renderStripWidgetMarkup(
   const isAnimated = !isAnimationDisabled(context.animMode);
   let ticksMarkup = '';
   for (const [i, state] of states.entries()) {
-    const tickX = (context.specialX + i * (tickWidth + tickGap)).toFixed(1);
+    const tickX = roundCoord(context.specialX + i * (tickWidth + tickGap));
     const tickColor = resolveStripTickColor(state, context.isOnPrimary);
     const isAnimatedLast = isAnimated && i === states.length - 1;
     ticksMarkup += isAnimatedLast
@@ -1296,7 +1309,7 @@ function renderDeltaWidgetMarkup(deltaText: string, context: SpecialElementConte
   let trendColor = isOnPrimary ? WHITE : THEMES.emerald.accentText;
   let arrowPath = 'M2.5 7.5L7.5 2.5M4 2.5H7.5V6';
   if (isNegative) {
-    trendColor = isOnPrimary ? ROSE_200 : THEMES.rose.accentText;
+    trendColor = isOnPrimary ? WHITE : THEMES.rose.accentText;
     arrowPath = 'M2.5 2.5L7.5 7.5M4 7.5H7.5V4';
   } else if (isFlat) {
     trendColor = isOnPrimary ? WHITE : BASE_DARK.textMuted;
@@ -1326,7 +1339,7 @@ function resolveSparklineGradientId(isOnPrimary: boolean, color: ThemeColorName)
 /** Render (memoized per gradient ID) the `<linearGradient>` definition for the sparkline area fill. */
 function renderSparklineGradientDef(isOnPrimary: boolean, color: ThemeColorName): string {
   const gradientId = resolveSparklineGradientId(isOnPrimary, color);
-  let gradientDef = SPARKLINE_GRADIENT_DEF_CACHE.get(gradientId);
+  let gradientDef = SPARKLINE_GRADIENT_DEF_CACHE[gradientId];
   if (gradientDef === undefined) {
     const stopColor = isOnPrimary ? WHITE : THEMES[color].accentText;
     gradientDef = renderVerticalGradientDef(
@@ -1336,7 +1349,7 @@ function renderSparklineGradientDef(isOnPrimary: boolean, color: ThemeColorName)
       isOnPrimary ? 0.32 : 0.38,
       0
     );
-    SPARKLINE_GRADIENT_DEF_CACHE.set(gradientId, gradientDef);
+    SPARKLINE_GRADIENT_DEF_CACHE[gradientId] = gradientDef;
   }
   return gradientDef;
 }
@@ -1543,7 +1556,7 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
   const [dotX = 0, leftIconX = 0, labelX = 0, trailingIconX = 0] = leftPack.offsets;
   const [specialOffsetX = 0, valueOffsetX = 0, rightIconOffsetX = 0] = rightPack.offsets;
 
-  const leftWidth = leftPack.width > 0 ? leftPack.width : input.minLeftWidth;
+  const leftWidth = leftPack.width;
   const rightWidth = rightPack.width;
   return {
     dotCx: roundCoord(dotX + DOT_SLOT_WIDTH / 2),
@@ -1561,17 +1574,30 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
 }
 
 /** Render the dot, icons, label, special element, and value of a badge or button in paint order. */
-function renderCapsuleBody(options: CapsuleBodyOptions): string {
+function renderCapsuleBody(options: CapsuleBodyOptions): CapsuleBodyMarkup {
   const { animMode, icons, layout, metrics, palette } = options;
   const { fontSize, height, iconSize } = metrics;
   const textY = computeCenteredBaselineY(height, fontSize);
   const iconY = roundCoord((height - iconSize) / 2);
   const { leftMotion, rightMotion } = resolveIconAnimationPair(animMode, icons);
 
+  let iconDefs = '';
+  let sharedIconUse: string | undefined = undefined;
+  if (
+    icons.left.data !== undefined &&
+    icons.left.data === icons.right.data &&
+    icons.left.data.innerSvg.includes('id="')
+  ) {
+    const bodyId = buildIconBodyId(icons.left.data, ICON_BODY_ID_PREFIX);
+    iconDefs = `<g id="${bodyId}">${icons.left.data.innerSvg}</g>`;
+    sharedIconUse = `<use href="#${bodyId}" />`;
+  }
+
   const dotMarkup = renderDotMarkup(options.dot, layout.dotCx, height / 2, animMode);
   const leftIconMarkup = renderIconMarkup({
     iconSize,
     iconY,
+    innerSvgOverride: sharedIconUse,
     isOnPrimary: options.isLeftOnPrimary,
     motion: leftMotion,
     paint: resolveForegroundPaint(options.isLeftOnPrimary, palette.iconColor),
@@ -1581,6 +1607,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
   const rightIconMarkup = renderIconMarkup({
     iconSize,
     iconY,
+    innerSvgOverride: sharedIconUse,
     isOnPrimary: options.isRightOnPrimary,
     motion: rightMotion,
     paint: resolveForegroundPaint(options.isRightOnPrimary, palette.iconColor),
@@ -1601,7 +1628,10 @@ function renderCapsuleBody(options: CapsuleBodyOptions): string {
     fontSize,
     isBold: true,
   });
-  return `${dotMarkup}${leftIconMarkup}${labelMarkup}${options.specialMarkup}${valueMarkup}${rightIconMarkup}`;
+  return {
+    body: `${dotMarkup}${leftIconMarkup}${labelMarkup}${options.specialMarkup}${valueMarkup}${rightIconMarkup}`,
+    defs: iconDefs,
+  };
 }
 
 /**
@@ -1623,10 +1653,14 @@ function buildAriaLabel(parts: AriaLabelParts): string {
     return labelText || rightText;
   }
   if (parts.icons.left.data) {
-    return parts.icons.left.slug;
+    return parts.icons.left.isFallback
+      ? prepareDisplayText(`unknown icon: ${parts.icons.left.slug}`, MAX_LABEL_LENGTH)
+      : parts.icons.left.slug;
   }
   if (parts.icons.right.data) {
-    return parts.icons.right.slug;
+    return parts.icons.right.isFallback
+      ? prepareDisplayText(`unknown icon: ${parts.icons.right.slug}`, MAX_LABEL_LENGTH)
+      : parts.icons.right.slug;
   }
   return parts.dot ?? parts.fallbackName;
 }
@@ -1642,7 +1676,8 @@ function buildIconSheenId(coordScale: number): string {
  * coordinate space get an inverse `gradientTransform` to sweep the full `24x24` box.
  */
 function renderIconSheenGradientDef(coordScale: number): string {
-  let gradientDef = ICON_SHEEN_DEF_CACHE.get(coordScale);
+  const scaleKey = String(coordScale);
+  let gradientDef = ICON_SHEEN_DEF_CACHE[scaleKey];
   if (gradientDef === undefined) {
     const transformAttr =
       coordScale === 1 ? '' : ` gradientTransform="scale(${roundScale(1 / coordScale)})"`;
@@ -1661,7 +1696,7 @@ function renderIconSheenGradientDef(coordScale: number): string {
       ICON_SHEEN_SWEEP_TIMING
     );
     gradientDef = `<linearGradient id="${buildIconSheenId(coordScale)}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"${transformAttr}>${renderWhiteBandStops(ICON_SHEEN_BAND_STOPS)}${sweepX1}${sweepX2}</linearGradient>`;
-    ICON_SHEEN_DEF_CACHE.set(coordScale, gradientDef);
+    ICON_SHEEN_DEF_CACHE[scaleKey] = gradientDef;
   }
   return gradientDef;
 }
@@ -1693,7 +1728,6 @@ export function renderBadge(options: BadgeRenderOptions): string {
     isDotAloneInLeftCap: variant === '1',
     labelWidth: measureTextWidth(labelText, fontSize, false),
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
-    minLeftWidth: 0,
     padX,
     rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
     specialWidth,
@@ -1713,7 +1747,7 @@ export function renderBadge(options: BadgeRenderOptions): string {
     specialWidth,
     specialX: layout.specialX,
   });
-  const body = renderCapsuleBody({
+  const capsule = renderCapsuleBody({
     animMode,
     dot: validDot,
     icons,
@@ -1745,8 +1779,8 @@ export function renderBadge(options: BadgeRenderOptions): string {
       specialText: special && specialWidth > 0 ? describeSpecialElement(special, valueText) : '',
       valueText,
     }),
-    body: `${surface}${body}${sheen.overlay}`,
-    defs: `${surfaceDefs}${specialElement.defs}${sheen.clipDef}`,
+    body: `${surface}${capsule.body}${sheen.overlay}`,
+    defs: `${surfaceDefs}${specialElement.defs}${capsule.defs}${sheen.clipDef}`,
     height,
     width: layout.totalWidth,
   });
@@ -1773,7 +1807,6 @@ export function renderButton(options: ButtonRenderOptions): string {
     hasDot: false,
     labelWidth: measureTextWidth(labelText, fontSize, true),
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
-    minLeftWidth: padX * 2,
     padX,
     rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
     specialWidth: 0,
@@ -1781,7 +1814,7 @@ export function renderButton(options: ButtonRenderOptions): string {
   });
 
   const isPrimary = variant === '1';
-  const body = renderCapsuleBody({
+  const capsule = renderCapsuleBody({
     animMode,
     dot: undefined,
     icons,
@@ -1821,8 +1854,8 @@ export function renderButton(options: ButtonRenderOptions): string {
       specialText: '',
       valueText,
     }),
-    body: `${surface}${body}${sheen.overlay}`,
-    defs: `${surfaceDefs}${sheen.clipDef}`,
+    body: `${surface}${capsule.body}${sheen.overlay}`,
+    defs: `${surfaceDefs}${capsule.defs}${sheen.clipDef}`,
     height,
     width: layout.totalWidth,
   });
@@ -1830,7 +1863,7 @@ export function renderButton(options: ButtonRenderOptions): string {
 
 /**
  * Render a standalone SVG icon string.
- * Uses a padded `-3 -3 30 30` viewBox so rotation, scale, and translation micro-animations never clip.
+ * Uses a padded `viewBox` so rotation, scale, and translation micro-animations never clip.
  * Unknown slugs draw the placeholder icon and are labeled `unknown icon: <slug>`.
  * @param options   Standalone icon rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
@@ -1866,8 +1899,13 @@ export function renderIcon(options: IconRenderOptions): string {
     body: wrapIconWithAnimation(body, slot.key, leftMotion),
     defs: sheenDef,
     height: size,
-    paintAttrs: renderIconPaintAttrs(iconData.type, iconColor, strokeWidth),
-    viewBox: '-3 -3 30 30',
+    paintAttrs: renderIconPaintAttrs(
+      iconData.type,
+      iconColor,
+      strokeWidth,
+      iconData.hasCurrentColor
+    ),
+    viewBox: STANDALONE_ICON_VIEWBOX,
     width: size,
   });
 }

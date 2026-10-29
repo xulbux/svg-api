@@ -13,7 +13,7 @@ body:
     attributes:
       label: Affected URL
       description: Paste the SVG or page URL reproducing the issue.
-      placeholder: https://svg.xul.is/badge/...
+      placeholder: https://svg.xul.is/badge/…
     validations:
       required: true
 

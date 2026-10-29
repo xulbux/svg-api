@@ -217,7 +217,7 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
     return brandByClean.get(normalized);
   }
 
-  function lookup(slug: string, isBrandFirst: boolean): IconMatch | 'none' | undefined {
+  function findIconMatch(slug: string, isBrandFirst: boolean): IconMatch | 'none' | undefined {
     const rawSlug = slug.trim().toLowerCase();
     if (!rawSlug || rawSlug === 'none') {
       return 'none';
@@ -243,7 +243,7 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
 
   return {
     locate(slug: string, isBrandFirst: boolean) {
-      const found = lookup(slug, isBrandFirst);
+      const found = findIconMatch(slug, isBrandFirst);
       if (!found || found === 'none') {
         return undefined;
       }
@@ -252,7 +252,7 @@ export function createIconResolver(index: IconPickerIndex, maxSlugLength: number
       return { page: Math.floor(position / index.pageSize), set: found.set, slug: found.slug };
     },
     resolve(slug: string, isBrandFirst: boolean) {
-      const found = lookup(slug, isBrandFirst);
+      const found = findIconMatch(slug, isBrandFirst);
       return found === 'none' || found === undefined ? found : found.set;
     },
   };

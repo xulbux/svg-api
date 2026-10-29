@@ -6,10 +6,10 @@ import { SITE_ORIGIN } from '@/config/site';
 import { resolveBuilderTarget } from '@/routes/schema';
 import { renderSvgPath, resolveSvgPathRedirectUrl } from '@/routes/svg';
 import { AnchorLink, CopyButton, slugifyText, UiIcon } from '@/site/components/UiIcon';
-import { raw, renderHtml } from '@/site/jsx';
+import { raw } from '@/site/jsx';
 import type { HtmlFragment } from '@/site/jsx';
 import { buildMarkdownSnippetTokens } from '@/site/shared/snippets';
-import { hashText } from '@/svg/shared';
+import { escapeXml, hashText } from '@/svg/shared';
 import type { HighlightToken, ShowcaseCardConfig, TrailingParenthetical } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -40,13 +40,13 @@ function scopeSvgIds(svg: string, scope: string): string {
   return svg.replace(SVG_ID_REFERENCE_RX, `$<prefix>${scope}-$<name>`);
 }
 
-/** Render highlight tokens as `<span class="hl-*">` JSX fragments (their text content is the exact snippet). */
-function renderHighlightTokenLine(tokens: readonly HighlightToken[]): HtmlFragment {
-  const spans: HtmlFragment[] = [];
+/** Serialize highlight tokens into `<span class="hl-*">` HTML (their text content is the exact snippet). */
+function serializeHighlightTokenLine(tokens: readonly HighlightToken[]): string {
+  let html = '';
   for (const [className, text] of tokens) {
-    spans.push(<span class={className}>{text}</span>);
+    html += `<span class="${className}">${escapeXml(text)}</span>`;
   }
-  return <>{spans}</>;
+  return html;
 }
 
 /**
@@ -144,6 +144,7 @@ export function ShowcaseCard(card: ShowcaseCardConfig): HtmlFragment {
           <a
             class="preview-link"
             href={builderTarget.href}
+            rel="nofollow"
             aria-label={`Open “${item.alt}” in the Builder`}
             title="Open in Builder"
             tabindex="0">
@@ -160,7 +161,7 @@ export function ShowcaseCard(card: ShowcaseCardConfig): HtmlFragment {
     );
     const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
     const snippetTokens = buildMarkdownSnippetTokens(`${SITE_ORIGIN}${item.path}`, item.alt, href);
-    markdownLines.push(renderHtml(renderHighlightTokenLine(snippetTokens)));
+    markdownLines.push(serializeHighlightTokenLine(snippetTokens));
   }
 
   const stageClass = card.isCentered ? 'preview-stage is-centered' : 'preview-stage';

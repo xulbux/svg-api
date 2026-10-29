@@ -71,7 +71,6 @@ export const CLOJARS_SERVICE = defineService({
       'Latest release, total downloads, and license (omit the group when it equals the artifact).',
     title: 'Clojars',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(
       CLOJARS_ENDPOINT,

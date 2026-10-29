@@ -48,7 +48,7 @@ interface SheenOverlayOptions {
   clipContent?: string;
   /** Total SVG height in pixels. */
   height: number;
-  /** Prefix for the `<clipPath>` and `<linearGradient>` IDs (defaults to `'sheen'`). */
+  /** Prefix for the `<clipPath>` and `<linearGradient>` IDs. */
   idPrefix?: string;
   /** Outer corner radius in pixels (used when `clipContent` is omitted). */
   radius: number;
@@ -58,9 +58,9 @@ interface SheenOverlayOptions {
 
 /** Options for `renderKumoBoxSurface`. */
 interface KumoSurfaceOptions {
-  /** Left X coordinate in pixels (defaults to `0`). */
+  /** Left X coordinate in pixels. */
   boxX?: number;
-  /** Top Y coordinate in pixels (defaults to `0`). */
+  /** Top Y coordinate in pixels. */
   boxY?: number;
   /** Theme color token whose palette and `grad-<color>` gradient paint the surface. */
   color: ThemeColorName;
@@ -70,7 +70,7 @@ interface KumoSurfaceOptions {
   radius: number;
   /**
    * Optional X coordinate in pixels where the accented right capsule of a split badge starts; The
-   * `variant = '2'` tint and 3D top crescent then cover only that capsule (defaults to the full box).
+   * secondary tint and 3D top crescent then cover only that capsule (defaults to the full box).
    */
   rightCapsuleStartX?: number;
   /** Optional X coordinate in pixels of an internal vertical divider (split micro-buttons and badges). */
@@ -83,17 +83,19 @@ interface KumoSurfaceOptions {
 
 /** Options for `renderIconGroup`. */
 interface IconGroupOptions {
-  /** Stroke (Lucide) or fill (brand icon) color. */
+  /** Stroke or fill color. */
   color: string;
+  /** Whether the icon body contains `currentColor` sub-elements requiring a CSS `color` attribute. */
+  hasCurrentColor?: boolean;
   /** Inner SVG markup of the icon (optionally wrapped in animation groups). */
   innerSvg: string;
   /** Whether the icon is a placeholder fallback for an unknown slug (painted in red, with a dark disc backdrop on primary surfaces). */
   isFallback?: boolean;
-  /** Whether the icon sits on a vivid primary (`variant=1`) surface (adds a dark disc backdrop behind fallback icons). */
+  /** Whether the icon sits on a vivid primary surface (adds a dark disc backdrop behind fallback icons). */
   isOnPrimary?: boolean;
   /** Optional group opacity (`0`–`1`; Omitted when `>= 1` or when `isFallback` is `true`). */
   opacity?: number;
-  /** Stroke width in `24x24` icon units (Lucide icons only). */
+  /** Stroke width in `24x24` icon units (stroked icons only). */
   strokeWidth: number;
   /** SVG `transform` attribute value positioning and scaling the `24x24` icon box. */
   transform: string;
@@ -111,11 +113,11 @@ interface SvgDocumentOptions {
   defs?: string;
   /** Rendered height in pixels. */
   height: number;
-  /** Root paint attributes (defaults to `fill="none"`). */
+  /** Root paint attributes. */
   paintAttrs?: string;
   /** Optional SMIL resting timestamp in seconds (`data-rest-time`), used to pause reduced-motion previews on a readable frame. */
   restTime?: number;
-  /** Root `viewBox` (defaults to `0 0 <width> <height>`). */
+  /** Root `viewBox` attribute value. */
   viewBox?: string;
   /** Rendered width in pixels. */
   width: number;
@@ -225,7 +227,7 @@ const HASH_MODULUS = 4_294_967_291;
 const LAZY_MARKUP: LazyMarkupCache = {};
 
 /** Memoized `<linearGradient id="grad-<color>">` definitions by theme color. */
-const THEME_GRADIENT_DEF_CACHE = new Map<ThemeColorName, string>();
+const THEME_GRADIENT_DEF_CACHE: Partial<Record<ThemeColorName, string>> = {};
 
 /** Memoized content hashes of icon bodies (released together with the resolved icon). */
 const ICON_BODY_HASH_CACHE = new WeakMap<ResolvedIcon, string>();
@@ -320,7 +322,7 @@ function renderDarkBgGradientDef(): string {
 
 /** Render the vertical theme `<linearGradient id="grad-<color>">` definition (from `gradStart` to `gradEnd`), memoized per color. */
 function renderThemeGradientDef(color: ThemeColorName): string {
-  let gradientDef = THEME_GRADIENT_DEF_CACHE.get(color);
+  let gradientDef = THEME_GRADIENT_DEF_CACHE[color];
   if (gradientDef === undefined) {
     const palette = THEMES[color];
     gradientDef = renderVerticalGradientDef(
@@ -328,7 +330,7 @@ function renderThemeGradientDef(color: ThemeColorName): string {
       palette.gradStart,
       palette.gradEnd
     );
-    THEME_GRADIENT_DEF_CACHE.set(color, gradientDef);
+    THEME_GRADIENT_DEF_CACHE[color] = gradientDef;
   }
   return gradientDef;
 }
@@ -692,7 +694,9 @@ export function sliceAtCodePoint(text: string, end: number): string {
  * @returns Renderable display text.
  */
 export function prepareDisplayText(text: string, maxLength: number): string {
-  const cleaned = text.replace(INVISIBLE_CHARS_RX, ' ');
+  const scanLimit = Math.max(256, maxLength * 8);
+  const bounded = text.length > scanLimit ? sliceAtCodePoint(text, scanLimit) : text;
+  const cleaned = bounded.replace(INVISIBLE_CHARS_RX, ' ');
   return cleaned.length <= maxLength
     ? cleaned
     : `${sliceAtCodePoint(cleaned, maxLength - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
@@ -865,16 +869,46 @@ export function renderSweepAnimation(
 }
 
 /**
+ * Render a `1px`-stroked rounded `<rect>` inset by `0.5px` inside `(boxX, boxY, width, height)` so its
+ * stroke stays crisp inside the outer pixel bounds without clipping.
+ * @param boxX          Left X coordinate of the outer box in pixels.
+ * @param boxY          Top Y coordinate of the outer box in pixels.
+ * @param width         Outer box width in pixels.
+ * @param height        Outer box height in pixels.
+ * @param radius        Outer corner radius in pixels.
+ * @param strokeAttrs   Stroke presentation attributes (e.g., `'stroke="#3D3D3D"'`).
+ * @returns `<rect>` SVG element string.
+ */
+export function renderInsetRingRect(
+  boxX: number,
+  boxY: number,
+  width: number,
+  height: number,
+  radius: number,
+  strokeAttrs: string
+): string {
+  return `<rect x="${roundCoord(boxX + 0.5)}" y="${roundCoord(boxY + 0.5)}" width="${roundCoord(width - 1)}" height="${roundCoord(height - 1)}" rx="${roundCoord(radius - 0.5)}" ${strokeAttrs} stroke-width="1" />`;
+}
+
+/**
  * Render the paint attributes for an icon: Round-capped strokes for stroked icons, a solid fill for brand icons.
- * @param type          Icon source type.
- * @param color         Stroke or fill color.
- * @param strokeWidth   Stroke width in `24x24` icon units (stroked icons only).
+ * Appends `color` when `hasCurrentColor` is set so embedded `currentColor` sub-elements inherit the resolved paint.
+ * @param type              Icon source type.
+ * @param color             Stroke or fill color.
+ * @param strokeWidth       Stroke width in `24x24` icon units (stroked icons only).
+ * @param hasCurrentColor   Whether the icon body contains `currentColor` sub-elements.
  * @returns Space-separated SVG presentation attributes.
  */
-export function renderIconPaintAttrs(type: IconType, color: string, strokeWidth: number): string {
+export function renderIconPaintAttrs(
+  type: IconType,
+  color: string,
+  strokeWidth: number,
+  hasCurrentColor = false
+): string {
+  const colorAttr = hasCurrentColor && !color.startsWith('url(') ? ` color="${color}"` : '';
   return type === 'lucide'
-    ? `fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"`
-    : `fill="${color}"`;
+    ? `fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${colorAttr}`
+    : `fill="${color}"${colorAttr}`;
 }
 
 /**
@@ -888,7 +922,12 @@ export function renderIconGroup(options: IconGroupOptions): string {
   const effectiveOpacity = isFallback ? undefined : options.opacity;
   const opacityAttr =
     effectiveOpacity !== undefined && effectiveOpacity < 1 ? ` opacity="${effectiveOpacity}"` : '';
-  const paintAttrs = renderIconPaintAttrs(options.type, color, options.strokeWidth);
+  const paintAttrs = renderIconPaintAttrs(
+    options.type,
+    color,
+    options.strokeWidth,
+    options.hasCurrentColor
+  );
   const innerSvg =
     isFallback && options.isOnPrimary
       ? `<circle cx="12" cy="12" r="10" fill="${BASE_DARK.bgBottom}" stroke="none" />${options.innerSvg}`
@@ -912,61 +951,69 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
   const height = roundCoord(options.height);
   const radius = roundCoord(options.radius);
   const palette = THEMES[options.color];
-  const positionAttrs = boxX === 0 && boxY === 0 ? '' : `x="${boxX}" y="${boxY}" `;
-  const ringGeometry = `x="${roundCoord(boxX + 0.5)}" y="${roundCoord(boxY + 0.5)}" width="${roundCoord(width - 1)}" height="${roundCoord(height - 1)}" rx="${roundCoord(radius - 0.5)}"`;
   const rightEdgeX = roundCoord(boxX + width);
-  const crescentPath = buildTopCrescentPath(boxX, rightEdgeX, radius, true, boxY);
-  const bottomY = roundCoord(boxY + height);
   const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
 
+  if (variant === '1' && isRightCapsuleOnly) {
+    const innerRadius = roundCoord(radius - 0.5);
+    const leftFillPath = buildLeftCapsulePath(boxX, rightCapsuleStartX, height, radius, boxY);
+    const leftBorderPath = buildLeftCapsulePath(
+      boxX + 0.5,
+      rightCapsuleStartX,
+      height - 1,
+      innerRadius,
+      boxY + 0.5,
+      false
+    );
+    const rightFillPath = buildRightCapsulePath(
+      rightCapsuleStartX,
+      rightEdgeX,
+      height,
+      radius,
+      boxY
+    );
+    const rightCrescentPath = buildTopCrescentPath(
+      rightCapsuleStartX,
+      rightEdgeX,
+      radius,
+      false,
+      boxY
+    );
+    const rightRingPath = buildRightCapsulePath(
+      rightCapsuleStartX + 0.5,
+      rightEdgeX - 0.5,
+      height - 1,
+      innerRadius,
+      boxY + 0.5
+    );
+    return (
+      `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
+      `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
+      `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(options.color)})" />` +
+      `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
+      `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
+    );
+  }
+
+  const positionAttrs = boxX === 0 && boxY === 0 ? '' : `x="${boxX}" y="${boxY}" `;
+  const crescentPath = buildTopCrescentPath(boxX, rightEdgeX, radius, true, boxY);
+  const bottomY = roundCoord(boxY + height);
+
   if (variant === '1') {
-    if (isRightCapsuleOnly) {
-      const innerRadius = roundCoord(radius - 0.5);
-      const leftFillPath = buildLeftCapsulePath(boxX, rightCapsuleStartX, height, radius, boxY);
-      const leftBorderPath = buildLeftCapsulePath(
-        boxX + 0.5,
-        rightCapsuleStartX,
-        height - 1,
-        innerRadius,
-        boxY + 0.5,
-        false
-      );
-      const rightFillPath = buildRightCapsulePath(
-        rightCapsuleStartX,
-        rightEdgeX,
-        height,
-        radius,
-        boxY
-      );
-      const rightCrescentPath = buildTopCrescentPath(
-        rightCapsuleStartX,
-        rightEdgeX,
-        radius,
-        false,
-        boxY
-      );
-      const rightRingPath = buildRightCapsulePath(
-        rightCapsuleStartX + 0.5,
-        rightEdgeX - 0.5,
-        height - 1,
-        innerRadius,
-        boxY + 0.5
-      );
-      return (
-        `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
-        `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
-        `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(options.color)})" />` +
-        `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
-        `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
-      );
-    }
     const gradientBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${buildThemeGradientId(options.color)})" />`;
     const topCrescent = `<path d="${crescentPath}" fill="${palette.emphasisBg}" />`;
     const splitDivider =
       splitLineX === undefined
         ? ''
         : renderDividerLine(splitLineX, boxY + 5, bottomY - 5, PRIMARY_DIVIDER_COLOR);
-    const outerRing = `<rect ${ringGeometry} stroke="${palette.emphasisRing}" stroke-width="1" />`;
+    const outerRing = renderInsetRingRect(
+      boxX,
+      boxY,
+      width,
+      height,
+      radius,
+      `stroke="${palette.emphasisRing}"`
+    );
     return `${gradientBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
@@ -984,7 +1031,14 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
       splitLineX === undefined
         ? ''
         : renderDividerLine(splitLineX, boxY + 1, bottomY - 1, palette.borderColor);
-    const outerRing = `<rect ${ringGeometry} stroke="${palette.borderColor}" stroke-width="1" />`;
+    const outerRing = renderInsetRingRect(
+      boxX,
+      boxY,
+      width,
+      height,
+      radius,
+      `stroke="${palette.borderColor}"`
+    );
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
@@ -993,7 +1047,14 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     splitLineX === undefined
       ? ''
       : renderDividerLine(splitLineX, boxY + 4, bottomY - 4, BASE_DARK.borderNeutral);
-  const outerRing = `<rect ${ringGeometry} stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />`;
+  const outerRing = renderInsetRingRect(
+    boxX,
+    boxY,
+    width,
+    height,
+    radius,
+    `stroke="${BASE_DARK.borderNeutral}"`
+  );
   return `${darkBody}${topCrescent}${splitDivider}${outerRing}`;
 }
 

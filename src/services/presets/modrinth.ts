@@ -82,7 +82,7 @@ export const MODRINTH_SERVICE = defineService({
     description: 'Project downloads, followers, latest supported game release, and license.',
     title: 'Modrinth',
   },
-  metricAliases: { dl: 'dt', mc: 'game', minecraft: 'game' },
+  metricAliases: { mc: 'game', minecraft: 'game' },
   metrics: {
     dt: createDownloadsMetric(MODRINTH_ENDPOINT, 'dt', (project) => project.downloads, {
       defaultColor: 'emerald',

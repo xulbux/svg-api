@@ -84,7 +84,6 @@ export const NUGET_SERVICE = defineService({
     description: 'Latest stable version and all-time downloads of any .NET package.',
     title: 'NuGet',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(
       NUGET_ENDPOINT,

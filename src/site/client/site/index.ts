@@ -11,17 +11,54 @@ import { initCodeDrawers, updateScrollButtons } from '@/site/client/site/drawers
 import { computePopoverPlacement } from '@/site/client/site/popover';
 import { initSidebarDrawer } from '@/site/client/site/sidebar';
 import { initThemeAndMotion } from '@/site/client/site/theme';
-import type {
-  ActivePopoverState,
-  PopoverPlacementOptions,
-  SiteClientConfig,
-} from '@/site/client/site/types';
+import type { PopoverPlacementOptions, SiteClientConfig } from '@/site/client/site/types';
+
+// ---------------------------------------- TYPES ----------------------------------------
+
+/** Currently open fallback-positioned popover tracked for scroll and resize repositioning. */
+interface ActivePopoverState {
+  /** Trigger or anchor element. */
+  anchor: Element;
+  /** Placement options used when opening the popover. */
+  options: PopoverPlacementOptions;
+  /** Open popover element. */
+  popover: HTMLElement;
+}
 
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Dispatch a synthetic `toggle` event for non-Popover-API fallback listeners. */
 function dispatchFallbackToggle(popover: HTMLElement, newState: 'closed' | 'open'): void {
   popover.dispatchEvent(Object.assign(new Event('toggle'), { newState }));
+}
+
+/** Parse and normalize `#site-config` JSON into a complete `SiteClientConfig` with safe defaults. */
+function readSiteClientConfig(): SiteClientConfig {
+  let parsed: Partial<SiteClientConfig> = {};
+  try {
+    const raw: unknown = JSON.parse(document.getElementById('site-config')?.textContent ?? '{}');
+    if (raw && typeof raw === 'object') {
+      parsed = raw as Partial<SiteClientConfig>;
+    }
+  } catch {
+    // Malformed inline JSON falls back to safe defaults.
+  }
+  return {
+    drawerMediaQuery:
+      typeof parsed.drawerMediaQuery === 'string' ? parsed.drawerMediaQuery : '(max-width: 960px)',
+    previewBgStorageKey:
+      typeof parsed.previewBgStorageKey === 'string' ? parsed.previewBgStorageKey : 'preview-bg',
+    previewBgValues:
+      Array.isArray(parsed.previewBgValues) && parsed.previewBgValues.length > 0
+        ? parsed.previewBgValues
+        : ['auto', 'inverse'],
+    schemeStorageKey:
+      typeof parsed.schemeStorageKey === 'string' ? parsed.schemeStorageKey : 'color-scheme',
+    themeColors:
+      parsed.themeColors && typeof parsed.themeColors === 'object'
+        ? parsed.themeColors
+        : { dark: '#000000', light: '#ffffff' },
+  };
 }
 
 // ----------------------------------------- MAIN ----------------------------------------
@@ -33,14 +70,7 @@ function initSiteClient(): void {
     return;
   }
 
-  let siteConfig = {} as SiteClientConfig;
-  try {
-    siteConfig = JSON.parse(
-      document.getElementById('site-config')?.textContent ?? '{}'
-    ) as SiteClientConfig;
-  } catch {
-    // Malformed inline JSON falls back to safe empty defaults.
-  }
+  const siteConfig = readSiteClientConfig();
   const rootElement = document.documentElement;
   const reducedMotionQuery = globalThis.matchMedia('(prefers-reduced-motion: reduce)');
   const drawerQuery = globalThis.matchMedia(siteConfig.drawerMediaQuery);
@@ -149,22 +179,6 @@ function initSiteClient(): void {
   initThemeAndMotion(siteConfig, rootElement, reducedMotionQuery);
 
   document.addEventListener(
-    'click',
-    (event) => {
-      const trigger =
-        event.target instanceof Element
-          ? event.target.closest('[popovertarget]:not([popovertargetaction="hide"])')
-          : undefined;
-      const targetId = trigger?.getAttribute('popovertarget');
-      const popover = targetId ? document.getElementById(targetId) : undefined;
-      if (trigger && popover instanceof HTMLElement) {
-        rememberPopoverTrigger(popover, trigger);
-      }
-    },
-    true
-  );
-
-  document.addEventListener(
     'toggle',
     (event) => {
       const popover = event.target;
@@ -180,11 +194,58 @@ function initSiteClient(): void {
   );
 
   // Popovers (mobile sidebar drawer, builder menus); native popovers with a class-toggle fallback:
-  if (!hasPopoverApi) {
+  if (hasPopoverApi) {
+    document.addEventListener(
+      'click',
+      (event) => {
+        const trigger =
+          event.target instanceof Element
+            ? event.target.closest('[popovertarget]:not([popovertargetaction="hide"])')
+            : undefined;
+        const targetId = trigger?.getAttribute('popovertarget');
+        const popover = targetId ? document.getElementById(targetId) : undefined;
+        if (trigger && popover instanceof HTMLElement) {
+          rememberPopoverTrigger(popover, trigger);
+        }
+      },
+      true
+    );
+  } else {
     for (const trigger of document.querySelectorAll(
       '[popovertarget]:not([popovertargetaction="hide"])'
     )) {
       trigger.setAttribute('aria-expanded', 'false');
+    }
+    function handleFallbackTriggerClick(
+      popover: HTMLElement,
+      trigger: Element,
+      action: string | undefined
+    ): void {
+      if (action === 'hide') {
+        closePopover(popover);
+        return;
+      }
+      const previousTrigger = activeTriggers.get(popover);
+      const isOpen = isPopoverOpen(popover);
+      if (action === 'show') {
+        rememberPopoverTrigger(popover, trigger);
+        if (isOpen) {
+          syncPopoverExpanded(popover, true);
+          dispatchFallbackToggle(popover, 'open');
+        } else {
+          openPopover(popover);
+        }
+      } else if (isOpen && (!previousTrigger || previousTrigger === trigger)) {
+        closePopover(popover);
+      } else {
+        rememberPopoverTrigger(popover, trigger);
+        if (isOpen) {
+          syncPopoverExpanded(popover, true);
+          dispatchFallbackToggle(popover, 'open');
+        } else {
+          openPopover(popover);
+        }
+      }
     }
     document.addEventListener('click', (event) => {
       if (event.defaultPrevented) {
@@ -192,20 +253,11 @@ function initSiteClient(): void {
       }
       const { target } = event;
       const trigger = target instanceof Element ? target.closest('[popovertarget]') : undefined;
-      const action = trigger?.getAttribute('popovertargetaction');
+      const action = trigger?.getAttribute('popovertargetaction') ?? undefined;
       for (const popover of document.querySelectorAll('[popover]')) {
         if (popover instanceof HTMLElement) {
-          const isOwnTrigger = trigger?.getAttribute('popovertarget') === popover.id;
-          if (isOwnTrigger) {
-            if (action === 'hide') {
-              closePopover(popover);
-            } else if (action === 'show') {
-              openPopover(popover);
-            } else if (isPopoverOpen(popover)) {
-              closePopover(popover);
-            } else {
-              openPopover(popover);
-            }
+          if (trigger && trigger.getAttribute('popovertarget') === popover.id) {
+            handleFallbackTriggerClick(popover, trigger, action);
           } else if (!(target instanceof Node && popover.contains(target))) {
             closePopover(popover);
           }

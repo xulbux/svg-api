@@ -1991,4 +1991,90 @@ describe('cross-renderer regressions', () => {
     expect(controlTileStack).not.toContain('\u0007');
     expect(extractAriaLabel(controlTileStack)).toBe('tech stack: Bad slug name');
   });
+
+  it('passes CSS color to currentColor icons without emitting invalid url() color on sheen, deduplicates dual icons with internal IDs, honors uppercase ?icon=NONE, labels unknown icon-only elements, keeps negative delta readable on variant=1, and collapses empty /button//value left caps (regressions: missing color on stop-color/stroke currentColor icons, invalid color="url(#sheen-fg)", duplicate SVG IDs on dual icons, case-sensitive icon=NONE, opaque fallback icon aria-label, dark rose delta on variant=1, phantom 25px empty left cap on /button//v2.0)', () => {
+    // [1] `currentColor` bundled icons inherit `color="..."` on solid fills, but never receive invalid `color="url(#...)"` paint servers on `/icon/*?anim=sheen`:
+    const keyRoundBadge = renderBadge({
+      color: 'amber',
+      icon: 'key-round',
+      label: 'auth',
+      variant: '2',
+    });
+    expect(keyRoundBadge).toContain(` color="${THEMES.amber.iconColor}"`);
+
+    const sheenCurrentColorIcon = renderIcon({ anim: 'sheen', color: 'indigo', icon: 'key-round' });
+    expect(sheenCurrentColorIcon).not.toContain(' color="url(');
+
+    // [2] Identical left + right icons containing internal `id="..."` attributes deduplicate into `<defs>` + `<use>` without duplicate SVG `id` values:
+    for (const dualSvg of [
+      renderBadge({
+        color: 'indigo',
+        icon: 'ceylon-wordmark,ceylon-wordmark',
+        label: 'lang',
+        value: 'jvm',
+        variant: '2',
+      }),
+      renderButton({
+        color: 'indigo',
+        icon: 'ceylon-wordmark,ceylon-wordmark',
+        label: 'Deploy',
+        variant: '1',
+      }),
+    ]) {
+      const seenIds = new Set<string>();
+      for (const match of dualSvg.matchAll(/\sid="(?<id>[^"]+)"/g)) {
+        const attrId = match.groups?.id ?? '';
+        expect(seenIds.has(attrId), `duplicate SVG id="${attrId}"`).toBe(false);
+        seenIds.add(attrId);
+      }
+      expect(collectUseIds(dualSvg).size).toBeGreaterThan(0);
+    }
+
+    // [3] Uppercase `?icon=NONE` hides default/preset icons just like lowercase `?icon=none`, and unknown icon-only elements announce `unknown icon: <slug>`:
+    expect(renderSvgPath('/badge/status/ok?icon=NONE')).toBe(
+      renderSvgPath('/badge/status/ok?icon=none')
+    );
+    expect(renderBadge({ color: 'indigo', icon: 'NONE,sparkles', label: 'A', variant: '1' })).toBe(
+      renderBadge({ color: 'indigo', icon: 'none,sparkles', label: 'A', variant: '1' })
+    );
+    expect(
+      extractAriaLabel(
+        renderBadge({ color: 'indigo', icon: 'totally-missing-glyph', label: '', variant: '2' })
+      )
+    ).toBe('unknown icon: totally-missing-glyph');
+    expect(extractAriaLabel(renderIcon({ color: 'indigo', icon: 'totally-missing-glyph' }))).toBe(
+      'unknown icon: totally-missing-glyph'
+    );
+
+    // [4] Negative `delta:` uses crisp `#FFFFFF` on `variant=1` primary fills and `THEMES.rose.accentText` on dark `variant=2`/`3` fills:
+    const negativePrimaryDelta = renderBadge({
+      color: 'emerald',
+      label: 'perf',
+      special: { type: 'delta', value: '-12%' },
+      value: '88ms',
+      variant: '1',
+    });
+    expect(negativePrimaryDelta).not.toContain(`fill="${THEMES.rose.accentText}"`);
+    expect(negativePrimaryDelta).not.toContain(`stroke="${THEMES.rose.accentText}"`);
+
+    const negativeSecondaryDelta = renderBadge({
+      color: 'emerald',
+      label: 'perf',
+      special: { type: 'delta', value: '-12%' },
+      value: '88ms',
+      variant: '2',
+    });
+    expect(negativeSecondaryDelta).toContain(`fill="${THEMES.rose.accentText}"`);
+
+    // [5] `/button//v2.0` (empty label, non-empty value, no left icon/dot) collapses the empty left compartment instead of emitting a `25px` empty dark cap:
+    const valueOnlyButton = renderButton({
+      color: 'indigo',
+      label: '',
+      value: 'v2.0',
+      variant: '1',
+    });
+    expect(valueOnlyButton).not.toContain('fill="url(#bg-dark)"');
+    expect(valueOnlyButton).not.toContain('M 25 0 H');
+    expect(extractAriaLabel(valueOnlyButton)).toBe('v2.0');
+  });
 });

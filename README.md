@@ -58,4 +58,4 @@ Consider leaving a [![star](https://svg.xul.is/icon/star?size=20&anim=shake)](ht
 
 ---
 
-[![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com) Always creating more cool stuff for you! [![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com)&emsp;–&numsp;[**XulbuX**](https://xulbux.com)
+[![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com) Always creating more cool stuff for you! [![](https://svg.xul.is/icon/sparkles?size=20)](https://xulbux.com)&emsp;—&numsp;[**XulbuX**](https://xulbux.com)

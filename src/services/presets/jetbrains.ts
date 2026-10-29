@@ -71,7 +71,6 @@ export const JETBRAINS_SERVICE = defineService({
     description: 'IDE plugin version, total downloads, and average rating by numeric plugin ID.',
     title: 'JetBrains Marketplace',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(PLUGIN_ENDPOINT, 'dt', (plugin) => plugin.downloads),
     rating: createRatingMetric(

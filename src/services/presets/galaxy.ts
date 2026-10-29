@@ -38,7 +38,6 @@ export const GALAXY_SERVICE = defineService({
     description: 'Highest published collection version and total downloads.',
     title: 'Ansible Galaxy',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(GALAXY_ENDPOINT, 'dt', (collection) => collection.download_count),
     v: createVersionMetric(

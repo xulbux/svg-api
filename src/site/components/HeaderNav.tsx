@@ -68,6 +68,7 @@ function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
       class="sidebar-toggle"
       popovertarget="sidebar-drawer"
       aria-expanded="false"
+      aria-controls="sidebar-drawer"
       aria-label={openLabel}
       title={openLabel}>
       <UiIcon slug="panel-left" size={16} />

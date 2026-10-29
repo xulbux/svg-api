@@ -47,6 +47,14 @@ interface EndpointOptions<P> {
   ttl?: number;
 }
 
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Upstream request timeout in milliseconds. */
+export const UPSTREAM_TIMEOUT = 8000;
+
+/** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
+export const MAX_UPSTREAM_BYTES = 2_097_152;
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a URL template placeholder (captured, so `split` keeps the placeholder names). */
@@ -143,7 +151,59 @@ function withPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoi
   return { ...endpoint, buildPageUrl: toUrlBuilder(page) };
 }
 
+/** Ignore a stream cancellation failure (the stream is discarded either way). */
+function ignoreCancelError(): void {
+  // Intentionally empty.
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body
+ * (e.g., a cloned cache response) only settles once every branch is cancelled.
+ * @param body   Readable stream or stream reader to cancel.
+ */
+export function cancelBody(
+  body: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null
+): void {
+  body?.cancel().catch(ignoreCancelError);
+}
+
+/**
+ * Read a full response body as UTF-8 text up to `MAX_UPSTREAM_BYTES` (`undefined` when exceeded).
+ * @param response   Upstream `Response` whose body has not yet been consumed.
+ * @returns Decoded response text, or `undefined` when the body exceeds `MAX_UPSTREAM_BYTES`.
+ */
+export async function readBoundedResponseText(response: Response): Promise<string | undefined> {
+  const contentLength = Number(response.headers.get('content-length') ?? '0');
+  if (contentLength > MAX_UPSTREAM_BYTES) {
+    cancelBody(response.body);
+    return undefined;
+  }
+  const { body } = response;
+  if (!body) {
+    const text = await response.text();
+    return text.length > MAX_UPSTREAM_BYTES ? undefined : text;
+  }
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let byteCount = 0;
+  for (;;) {
+    // oxlint-disable-next-line no-await-in-loop -- Stream chunks can only be read sequentially.
+    const chunk = await reader.read();
+    if (chunk.done) {
+      break;
+    }
+    byteCount += chunk.value.byteLength;
+    if (byteCount > MAX_UPSTREAM_BYTES) {
+      cancelBody(reader);
+      return undefined;
+    }
+    buffer += decoder.decode(chunk.value, { stream: true });
+  }
+  return buffer + decoder.decode();
+}
 
 /** Tier-1 JSON cache TTL presets in seconds for normal, rate-limited, and daily-refreshed upstreams. */
 export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const satisfies Readonly<

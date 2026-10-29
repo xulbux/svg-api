@@ -34,7 +34,6 @@ export const THUNDERSTORE_SERVICE = defineService({
     description: 'Mod all-time downloads, rating score (thumbs up), and latest version.',
     title: 'Thunderstore',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(THUNDERSTORE_ENDPOINT, 'dt', (metrics) => metrics.downloads),
     rating: createCountMetric(

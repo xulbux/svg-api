@@ -249,7 +249,13 @@ function handleSelectKeydown(
     if (item instanceof HTMLElement && item.dataset.value !== undefined) {
       chooseSelectOption(wrapper, item.dataset.value, site);
     }
-  } else if (!isSearch && event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
+  } else if (
+    !isSearch &&
+    event.key.length === 1 &&
+    !event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey
+  ) {
     focusTypeaheadOption(wrapper, event.key.toLowerCase());
   }
 }

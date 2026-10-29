@@ -60,7 +60,7 @@ const ARCH_ENDPOINT = createEndpoint({
 function transformArchVersion(info: Partial<ArchPackageInfo>): Partial<MetricResult> {
   return buildFlaggedVersionResult(
     buildPackageVersion(info.epoch, info.pkgver, info.pkgrel),
-    typeof info.flag_date === 'string'
+    typeof info.flag_date === 'string' && info.flag_date.trim() !== ''
   );
 }
 

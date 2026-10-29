@@ -27,6 +27,8 @@ export interface IconBody {
 
 /** Resolved SVG icon markup, horizontal visual bounds in `24x24` space, and source type. */
 export interface ResolvedIcon extends IconBody {
+  /** Whether `innerSvg` contains `currentColor` sub-elements requiring a CSS `color` presentation attribute. */
+  hasCurrentColor?: boolean;
   /** Rightmost visible horizontal coordinate in `24x24` icon space for optical spacing. */
   maxX: number;
   /** Leftmost visible horizontal coordinate in `24x24` icon space for optical spacing. */

@@ -39,7 +39,7 @@ import {
   findSvgRoute,
   resolveSvgRoute,
 } from '@/routes/svg';
-import { listServiceMetricAliases, resolveServiceMetricConfig } from '@/services/fetcher';
+import { isValidServiceRequest, listServiceMetricAliases } from '@/services/fetcher';
 import {
   capitalizeWord,
   collectAliasesForTarget,
@@ -67,7 +67,6 @@ import {
   ICON_STROKE_RANGE,
   MAX_LABEL_LENGTH,
 } from '@/svg/renderer';
-import { getOwnValue } from '@/svg/shared';
 import {
   STACK_GAP_RANGE,
   STACK_GROUP_GAP_RANGE,
@@ -105,7 +104,6 @@ import type {
   NumericRange,
   ServiceDefinition,
   ServiceMetricConfig,
-  ServiceRequest,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -164,8 +162,8 @@ const BUILDER_SCHEMA_CACHE = new Map<BuilderKind, BuilderSchema>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches owner and target segments the derived redirect templates are verified for (word characters, `.`, `-`). */
-const REDIRECT_SAFE_VALUE_RX = /^[\w.-]+$/;
+/** Matches owner and target segments the derived redirect templates are verified for (word characters, `.`, `-`, excluding dot-only segments). */
+const REDIRECT_SAFE_VALUE_RX = /^(?!\.+$)[\w.-]{1,214}$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -529,31 +527,6 @@ function buildServiceOptions(): BuilderServiceOption[] {
   }
 
   return services;
-}
-
-/** Check whether a parsed service request matches a known service, metric (or alias), owner mode, and target segment arity. */
-function isEditableServiceRequest(request: ServiceRequest): boolean {
-  const service = getOwnValue(SERVICES_CONFIG, request.service.toLowerCase());
-  if (!service || !request.target || !resolveServiceMetricConfig(service, request.metric)) {
-    return false;
-  }
-  const { maxSegments = 1, minSegments = 1 } = service.route.target;
-  const targetSegments = request.target.split('/');
-  if (
-    targetSegments.length < minSegments ||
-    targetSegments.length > maxSegments ||
-    targetSegments.includes('')
-  ) {
-    return false;
-  }
-  const ownerMode = resolveServiceOwnerMode(service);
-  if (ownerMode === 'none') {
-    return request.owner === undefined;
-  }
-  if (ownerMode === 'required') {
-    return Boolean(request.owner);
-  }
-  return true;
 }
 
 /** Build the badge builder fields. */
@@ -1001,7 +974,7 @@ export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
   }
   let kind: BuilderKind | undefined = undefined;
   if (match.kind === 'service') {
-    if (isEditableServiceRequest(match.request)) {
+    if (isValidServiceRequest(match.request)) {
       kind = 'service';
     }
   } else {

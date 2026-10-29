@@ -388,11 +388,6 @@ function parseSpecialKindAndPayload(
   }
 }
 
-/** Check whether `candidate` is a valid `BadgeVariant` token. */
-function isBadgeVariant(candidate: string): candidate is BadgeVariant {
-  return (VARIANT_TOKENS as readonly string[]).includes(candidate);
-}
-
 /** Check whether `candidate` is a valid `BadgeSpecialKind` token. */
 function isSpecialElementKind(candidate: string): candidate is BadgeSpecialKind {
   return (SPECIAL_ELEMENT_KINDS as readonly string[]).includes(candidate);
@@ -520,6 +515,24 @@ export function parseSpecialParam(
 }
 
 /**
+ * Check whether a raw `?special=` query parameter is `'none'`, a valid manual `<kind>:<payload>`,
+ * or a valid automatic `<kind>[:<modifier>]` request (unrecognized values fall back to the default).
+ * @param specialRaw   Raw `?special=` query parameter value.
+ * @returns `true` when `specialRaw` changes or selects a special widget.
+ */
+export function isRecognizedSpecialParam(specialRaw: string | null | undefined): boolean {
+  const trimmed = (specialRaw ?? '').trim();
+  if (!trimmed) {
+    return false;
+  }
+  return (
+    trimmed.toLowerCase() === 'none' ||
+    parseSpecialParam(trimmed) !== undefined ||
+    parseAutoSpecialRequest(trimmed) !== undefined
+  );
+}
+
+/**
  * Resolve `?special=` query overrides, supporting manual `<kind>:<payload>` values, `'none'` to hide a
  * preset widget, and bare `<kind>` (or `<kind>:static` / `<kind>:pulse`) to select automatic upstream
  * widget data from a service preset.
@@ -564,6 +577,15 @@ export function resolveSpecialParam(
 }
 
 /**
+ * Check whether `candidate` is a valid `BadgeVariant` token.
+ * @param candidate   Trimmed `?variant=` query parameter value.
+ * @returns `true` when `candidate` is a valid `BadgeVariant`.
+ */
+export function isBadgeVariant(candidate: string): candidate is BadgeVariant {
+  return (VARIANT_TOKENS as readonly string[]).includes(candidate);
+}
+
+/**
  * Resolve the requested `?variant=` query parameter to a valid `BadgeVariant`.
  * @param input      Raw `?variant=` query parameter value.
  * @param fallback   Default variant when `input` is omitted or invalid.
@@ -604,6 +626,19 @@ export function resolveStackAnimationMode(
 }
 
 /**
+ * Normalize a raw `?dot=` query parameter to `'none'` or a canonical theme color token.
+ * @param input   Raw `?dot=` query parameter value.
+ * @returns Canonical dot token, or `undefined` when missing or unrecognized.
+ */
+export function normalizeDotParam(input: string | null | undefined): DotState | 'none' | undefined {
+  const clean = normalizeQueryToken(input);
+  if (clean === 'none') {
+    return 'none';
+  }
+  return isThemeColorName(clean) ? clean : undefined;
+}
+
+/**
  * Resolve a raw `?dot=` query parameter to a valid theme color name (`'none'` removes a preset dot).
  * @param input      Raw `?dot=` query parameter value.
  * @param fallback   Default dot state when `input` is omitted or unknown.
@@ -613,14 +648,11 @@ export function resolveDotState(
   input: string | null | undefined,
   fallback?: DotState
 ): DotState | undefined {
-  const clean = normalizeQueryToken(input);
-  if (!clean) {
+  const normalized = normalizeDotParam(input);
+  if (normalized === undefined) {
     return fallback;
   }
-  if (clean === 'none') {
-    return undefined;
-  }
-  return isThemeColorName(clean) ? clean : fallback;
+  return normalized === 'none' ? undefined : normalized;
 }
 
 /**

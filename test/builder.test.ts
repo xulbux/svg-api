@@ -184,11 +184,15 @@ interface FakeDomFragment {
 
 /** Mounted fake `/builder/typing` line-editor harness and global cleanup callback. */
 interface TypingLinesDomHarness {
+  /** `#typing-line-add` button element. */
+  addButton: FakeDomNode;
   /** Simulated `document` object tracking `activeElement`. */
   documentStub: {
     activeElement: FakeDomNode | undefined;
     createDocumentFragment: () => FakeDomFragment;
   };
+  /** Enclosing `.builder-field` container element. */
+  fieldElement: FakeDomNode;
   /** Install an atomic `moveBefore` hook on `listElement` and return a call-count reader. */
   enableAtomicMoveBefore: () => () => number;
   /** Count of fallback (`before` / `append`) relocations of already-mounted rows. */
@@ -713,12 +717,16 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
   vi.stubGlobal('HTMLButtonElement', FakeHTMLButtonElement);
   vi.stubGlobal('document', documentStub);
 
+  const fieldElement = createFakeNode('div');
+  fieldElement.classList.add('builder-field');
   const editorElement = createFakeNode('div');
   editorElement.dataset.maxLines = '12';
   editorElement.dataset.maxLength = '80';
+  fieldElement.append(editorElement);
   const hiddenInput = createFakeNode('input');
   const addButton = createFakeNode('button');
   const listElement = createFakeNode('div');
+  editorElement.append(listElement);
 
   const templateRow = createFakeNode('div');
   templateRow.dataset.typingLineRow = '';
@@ -745,6 +753,7 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
   fallbackMoveCount = 0;
 
   return {
+    addButton,
     documentStub,
     enableAtomicMoveBefore() {
       let moveBeforeCallCount = 0;
@@ -754,6 +763,7 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
       };
       return () => moveBeforeCallCount;
     },
+    fieldElement,
     getFallbackMoveCount: () => fallbackMoveCount,
     hiddenInput,
     listElement,
@@ -3188,5 +3198,206 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(statusElement.textContent).toBe('');
     expect(previewLoading.isHidden).toBe(false);
     expect(previewPlaceholderBox.isHidden).toBe(true);
+  });
+
+  it('keeps /builder/:kind URLs clean on initial load and Clear, syncs ?path= after user edits, copies full share links, rejects dot-segment service links, and keeps typing aria-invalid on row 0 (regressions: initial load dirtied /builder/:kind URL bar, Clear left stale ?path=, REDIRECT_SAFE_VALUE_RX accepted ./.., typingLines marked added rows aria-invalid)', () => {
+    // [1] `resolveBuilderTarget` and `core.buildDefaultLinkTarget` reject invalid segments, empty explicit owners, and non-matching `targetPattern` targets:
+    expect(resolveBuilderTarget('/badge/gh/.../repo/stars')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/gh//repo/stars')).toBeUndefined();
+    expect(resolveBuilderTarget('/badge/steam/not-numeric/players')).toBeUndefined();
+
+    const serviceSchema = getBuilderSchema('service');
+    expect(
+      core.buildDefaultLinkTarget(
+        serviceSchema,
+        { metric: 'stars', owner: '..', service: 'gh', target: 'svg-api' },
+        'https://svg.xul.is/badge/gh/../svg-api/stars?color=rose'
+      )
+    ).toBe('https://svg.xul.is/badge/gh/../svg-api/stars');
+    expect(
+      core.buildDefaultLinkTarget(
+        serviceSchema,
+        { metric: 'v', owner: '', service: 'npm', target: '.' },
+        'https://svg.xul.is/badge/npm/./v?color=rose'
+      )
+    ).toBe('https://svg.xul.is/badge/npm/./v');
+
+    // [2] `typingLines` marks only row `0` `aria-invalid="true"` when `.is-missing` adds a second row:
+    const typingHarness = mountTypingLinesDomHarness('');
+    try {
+      typingHarness.fieldElement.classList.add('is-missing');
+      typingHarness.addButton.dispatchEvent({
+        bubbles: true,
+        preventDefault: noopDomAction,
+        target: typingHarness.addButton,
+        type: 'click',
+      });
+      const lineInputs = typingHarness.listElement.querySelectorAll('.typing-line-input');
+      expect(lineInputs).toHaveLength(2);
+      expect(lineInputs[0]?.getAttribute('aria-invalid')).toBe('true');
+      expect(lineInputs[1]?.getAttribute('aria-invalid')).toBeUndefined();
+    } finally {
+      typingHarness.teardown();
+    }
+
+    // [3] Clean URL bar lifecycle on `/builder/button`:
+    const replacedUrls: string[] = [];
+    const copiedTexts: string[] = [];
+    const locationState = { href: 'https://svg.xul.is/builder/button' };
+    const shareListeners: (() => void)[] = [];
+    const resetListeners: (() => void)[] = [];
+    const shareButton = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'click') {
+          shareListeners.push(listener);
+        }
+      },
+    });
+    const resetButton = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+      addEventListener(type: string, listener: () => void) {
+        if (type === 'click') {
+          resetListeners.push(listener);
+        }
+      },
+    });
+
+    let labelFieldElement:
+      | {
+          classList: { toggle: () => void };
+          closest: (selector: string) => unknown;
+          getAttribute: (name: string) => string | undefined;
+          querySelector: () => undefined;
+          querySelectorAll: (selector: string) => unknown[];
+        }
+      | undefined = undefined;
+    const labelInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      closest: (selector: string) => (selector === '[data-field]' ? labelFieldElement : undefined),
+      id: 'field-label',
+      removeAttribute: noopDomAction,
+      setAttribute: noopDomAction,
+      value: 'Launch',
+    });
+    labelFieldElement = Object.assign(Object.create(FakeElement.prototype) as object, {
+      classList: { toggle: noopDomAction },
+      closest: (selector: string) => (selector === '[data-field]' ? labelFieldElement : undefined),
+      getAttribute: (name: string) => (name === 'data-field' ? 'label' : undefined),
+      querySelector: () => undefined,
+      querySelectorAll: (selector: string) =>
+        selector === '.builder-input:not(.select-trigger)' ? [labelInput] : [],
+    });
+
+    const formListeners = new Map<string, ((event: unknown) => void)[]>();
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = formListeners.get(type) ?? [];
+        list.push(listener);
+        formListeners.set(type, list);
+      },
+      querySelector: (selector: string) =>
+        selector === '[data-field="label"]' ? labelFieldElement : undefined,
+      querySelectorAll: () => [],
+    });
+
+    let pendingTimer: (() => void) | undefined = undefined;
+    function flushDebounce(): void {
+      const callback = pendingTimer;
+      pendingTimer = undefined;
+      callback?.();
+    }
+
+    const schemaJson = JSON.stringify({
+      ...getBuilderSchema('button'),
+      initialState: { label: 'Launch' },
+    });
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      document: {
+        createDocumentFragment: () => ({ append: noopDomAction }),
+        createElement: () => ({ className: '', textContent: '' }),
+        getElementById(id: string) {
+          if (id === 'builder-schema') {
+            return { textContent: schemaJson };
+          }
+          if (id === 'builder-form') {
+            return formStub;
+          }
+          if (id === 'field-label') {
+            return labelInput;
+          }
+          if (id === 'builder-share') {
+            return shareButton;
+          }
+          if (id === 'builder-reset') {
+            return resetButton;
+          }
+          return undefined;
+        },
+        querySelector: () => undefined,
+        querySelectorAll: () => [],
+      },
+      globalThis: {
+        clearTimeout() {
+          pendingTimer = undefined;
+        },
+        fetch: () => Promise.resolve(new Response('{}')),
+        location: locationState,
+        matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+        setTimeout(callback: () => void) {
+          pendingTimer = callback;
+          return 1;
+        },
+        svgSite: {
+          closePopover: noopDomAction,
+          copyText(text: string) {
+            copiedTexts.push(text);
+          },
+          isPopoverOpen: () => false,
+          openPopover: noopDomAction,
+          placePopover: noopDomAction,
+        },
+      },
+      history: {
+        replaceState(_data: unknown, _unused: string, nextUrl?: string | URL) {
+          if (nextUrl !== undefined) {
+            const serialized = String(nextUrl);
+            replacedUrls.push(serialized);
+            locationState.href = new URL(serialized, locationState.href).href;
+          }
+        },
+        state: undefined,
+      },
+    });
+
+    // Initial load leaves `/builder/button` untouched, while `Copy builder link` still copies the full `?path=` URL:
+    flushDebounce();
+    expect(replacedUrls).toEqual([]);
+    for (const listener of shareListeners) {
+      listener();
+    }
+    expect(copiedTexts).toEqual(['https://svg.xul.is/builder/button?path=%2Fbutton%2FLaunch']);
+
+    // Editing a control enables URL sync and updates the address bar on debounce:
+    labelInput.value = 'Deploy';
+    for (const inputListener of formListeners.get('input') ?? []) {
+      inputListener({ target: labelInput, type: 'input' });
+    }
+    flushDebounce();
+    expect(replacedUrls).toEqual(['https://svg.xul.is/builder/button?path=%2Fbutton%2FDeploy']);
+
+    // Clicking `Clear` immediately restores the clean `/builder/button` pathname and keeps it clean after debounce:
+    for (const listener of resetListeners) {
+      listener();
+    }
+    expect(replacedUrls.at(-1)).toBe('/builder/button');
+    expect(locationState.href).toBe('https://svg.xul.is/builder/button');
+    flushDebounce();
+    expect(replacedUrls.at(-1)).toBe('/builder/button');
+    expect(locationState.href).toBe('https://svg.xul.is/builder/button');
   });
 });

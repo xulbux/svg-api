@@ -1,5 +1,5 @@
 /**
- * Brand & OpenGraph raster asset builder – Downsamples `assets/icon.png` into `dist/client/favicon.png` and rasterizes `renderOgImageSvg()` into `dist/client/og.png` when their source digests change.
+ * Brand & OpenGraph raster asset builder – Rebuilds the rasterized favicon and OpenGraph card when their source digests change.
  */
 
 import { createHash } from 'node:crypto';

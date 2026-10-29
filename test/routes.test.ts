@@ -1341,4 +1341,94 @@ describe('route & query parameter regressions', () => {
     expect(extractAriaLabel(renderSvgPath('/typing?lines=%20%20&text=Ship+It'))).toBe('❯ Ship It');
     expect(extractAriaLabel(renderSvgPath('/typing/Ship?prefix=%20%20&prompt=%24'))).toBe('$ Ship');
   });
+
+  it('canonicalizes recognized query parameters, folds element query aliases, drops default/invalid cache-busting values, and caps overlong free-text params in Tier-2 cache keys (regression: uncanonicalized query params fragmented Tier-2 edge cache)', () => {
+    expect(
+      resolveSvgRequest(
+        new URL(
+          '/badge/build/pass?color=EMERALD&anim=default&variant=invalid&special=bogus&utm_source=x',
+          SITE_ORIGIN
+        )
+      )?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/build/pass?color=emerald`);
+
+    expect(
+      resolveSvgRequest(new URL('/quote?quote=Stay+hungry&type=vertical&center=1', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/quote?layout=vertical&text=Stay+hungry`);
+
+    expect(
+      resolveSvgRequest(
+        new URL('/quote/Ada/Code?author=Ignored&text=Ignored&layout=horizontal', SITE_ORIGIN)
+      )?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/quote/Ada/Code`);
+
+    expect(
+      resolveSvgRequest(new URL('/stack?i=ts,rust&ggap=16&anim=default&perline=4,0,2', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/stack?groupgap=16&groups=ts%2Crust&perline=4%2C0%2C2`);
+
+    expect(
+      resolveSvgRequest(
+        new URL(
+          '/typing?text=Hello&prompt=%24&center=1&delete=fade&frame=prompt&cursor=bar&typo=0',
+          SITE_ORIGIN
+        )
+      )?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/typing?align=center&erase=fade&layout=prompt&lines=Hello&prefix=%24`);
+
+    const overlongLabel = 'A'.repeat(1200);
+    const cappedKey = requireDefined(
+      resolveSvgRequest(new URL(`/badge/npm/hono/v?label=${overlongLabel}`, SITE_ORIGIN))?.cacheKey,
+      'capped badge cache key'
+    );
+    expect(new URL(cappedKey).searchParams.get('label')?.length).toBe(1024);
+  });
+
+  it('coalesces concurrent static SVG cache misses and attaches hardened Permissions-Policy, CORP, X-Robots-Tag, nosniff, ETag, and Vary headers across HTML, asset, redirect, and error responses (regressions: uncoalesced cold-cache SVG stampede, missing security/noindex/Vary headers)', async () => {
+    // [1] Concurrent identical cold-cache SVG requests share one render and write to the Tier-2 edge cache once:
+    const stub = installEdgeCacheStub();
+    const [firstSvgRes, secondSvgRes] = await Promise.all([
+      app.request('/badge/concurrent/coalesce?color=emerald', {}, TEST_ENV),
+      app.request('/badge/concurrent/coalesce?color=EMERALD&utm=burst', {}, TEST_ENV),
+    ]);
+    expect(firstSvgRes.status).toBe(200);
+    expect(secondSvgRes.status).toBe(200);
+    expect(firstSvgRes.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+    expect(firstSvgRes.headers.get('ETag')).toBe(secondSvgRes.headers.get('ETag'));
+    expect(await firstSvgRes.text()).toBe(await secondSvgRes.text());
+    expect(stub.storedKeys).toEqual(['http://localhost/badge/concurrent/coalesce?color=emerald']);
+
+    // [2] HTML, PNG, asset, 404, 301, 302, and `/badge/*` `onError` responses emit hardened security and `noindex` headers:
+    const [homeRes, ogPngRes, assetRes, notFoundRes, permRedirectRes, serviceRedirectRes] =
+      await Promise.all([
+        app.request('/', {}, TEST_ENV),
+        app.request('/og.png', {}, TEST_ENV),
+        app.request('/assets/site.css', {}, TEST_ENV),
+        app.request('/unknown-page', {}, TEST_ENV),
+        app.request('/builder', {}, TEST_ENV),
+        app.request('/badge/npm/hono/v', { headers: { 'Sec-Fetch-Dest': 'document' } }, TEST_ENV),
+      ]);
+
+    expect(homeRes.headers.get('Permissions-Policy')).toContain('camera=()');
+    expect(ogPngRes.headers.get('Cross-Origin-Resource-Policy')).toBe('cross-origin');
+    expect(assetRes.headers.get('X-Robots-Tag')).toBe('noindex');
+    expect(notFoundRes.status).toBe(404);
+    expect(notFoundRes.headers.get('X-Robots-Tag')).toBe('noindex');
+    expect(notFoundRes.headers.get('ETag')).toMatch(/^W\/"/);
+    expect(permRedirectRes.status).toBe(301);
+    expect(permRedirectRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(serviceRedirectRes.status).toBe(302);
+    expect(serviceRedirectRes.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(serviceRedirectRes.headers.get('Referrer-Policy')).toBe(
+      'strict-origin-when-cross-origin'
+    );
+
+    // [3] Unexpected errors on `/badge/:service/...` include `Vary: Sec-Fetch-Dest, Accept` and `X-Robots-Tag: noindex`:
+    muteConsoleError();
+    vi.spyOn(stub.cache, 'match').mockRejectedValue(new Error('edge cache down'));
+    const serviceErrorSvgRes = await app.request('/badge/npm/hono/v', {}, TEST_ENV);
+    expect(serviceErrorSvgRes.headers.get('Vary')).toBe('Sec-Fetch-Dest, Accept');
+    expect(serviceErrorSvgRes.headers.get('X-Robots-Tag')).toBe('noindex');
+  });
 });

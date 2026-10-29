@@ -171,6 +171,7 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
             href="/favicon.png"
           />
           <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+          <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM documentation" />
           <meta property="og:type" content="website" />
           <meta property="og:locale" content="en_US" />
           <meta property="og:site_name" content={SITE_NAME} />

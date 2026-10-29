@@ -74,7 +74,7 @@ const SITE_FONT_CACHE = new Map<SiteFontName, SiteAsset<ArrayBuffer>>();
 /** Matches bundled font URLs inside `@font-face` declarations (`/assets/<name>.ttf`). */
 const FONT_ASSET_URL_RX = /\/assets\/(?<name>[\w-]+\.ttf)/g;
 
-/** Matches icon picker page file names (`icons-lucide-0.json`, `icons-brands-12.json`). */
+/** Matches icon picker page file names (`icons-<set>-<page>.json`). */
 const ICON_PAGE_NAME_RX = /^icons-(?<set>brands|lucide)-(?<page>0|[1-9]\d{0,2})\.json$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
@@ -128,7 +128,7 @@ function buildIconPageAsset(setId: IconPickerSetId, page: number): SiteAsset | u
 
 /**
  * Resolve a website asset by its public file name.
- * @param name   Raw file name after `/assets/` (e.g., `'site.css'`, `'Geist-Regular.ttf'`, `'icons-lucide-0.json'`).
+ * @param name   Raw file name after `/assets/`.
  * @returns The built asset, or `undefined` for unknown names and out-of-range icon pages.
  */
 export function getSiteAsset(name: SiteAssetName): SiteAsset;

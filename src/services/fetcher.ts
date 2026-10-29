@@ -11,7 +11,13 @@
 import { SERVICES_CONFIG } from '@/config/services';
 import { FALLBACK_REDIRECT_URL, SERVICE_USER_AGENT, SITE_HOST } from '@/config/site';
 import { getEdgeCache, putInEdgeCache } from '@/services/edgeCache';
-import { isJsonObject } from '@/services/endpoint';
+import {
+  MAX_UPSTREAM_BYTES,
+  UPSTREAM_TIMEOUT,
+  cancelBody,
+  isJsonObject,
+  readBoundedResponseText,
+} from '@/services/endpoint';
 import {
   clearLruCache,
   createLruCache,
@@ -205,12 +211,6 @@ const MAX_IN_FLIGHT_LOADS = 64;
 /** Minimum remaining memory cache lifetime in milliseconds of an edge cache hit. */
 const MIN_MEMORY_LIFETIME = 1000;
 
-/** Upstream request timeout in milliseconds. */
-const UPSTREAM_TIMEOUT = 8000;
-
-/** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
-export const MAX_UPSTREAM_BYTES = 2_097_152;
-
 /**
  * Maximum wire bytes scanned by the streaming JSON key extractor:
  * Unneeded keys are discarded in `O(1)` memory while streaming, while captured values stay capped at `MAX_UPSTREAM_BYTES`.
@@ -274,6 +274,7 @@ const INVALID_DATA_STATUS = 502;
  */
 export const DEFAULT_METRIC_ALIASES: Readonly<Record<string, string>> = {
   cov: 'coverage',
+  dl: 'dt',
   dm: 'dl',
   l: 'license',
   'last-commit': 'commit',
@@ -413,7 +414,7 @@ function resolveServiceContext(
   }
 
   const isOwnerValid =
-    owner === '' ||
+    (request.owner === undefined && owner === '') ||
     (SAFE_SEGMENT_RX.test(owner) &&
       (ownerSegment?.pattern === undefined || ownerSegment.pattern.test(owner)));
   if (!isOwnerValid || !isTargetValid(service, request.target)) {
@@ -557,21 +558,6 @@ function isEdgeCacheableFailure(outcome: UpstreamOutcome): boolean {
       status === RATE_LIMITED_STATUS ||
       status >= 500)
   );
-}
-
-/** Ignore a stream cancellation failure (the stream is discarded either way). */
-function ignoreCancelError(): void {
-  // Intentionally empty.
-}
-
-/**
- * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body
- * (e.g., a cloned cache response) only settles once every branch is cancelled.
- */
-function cancelBody(
-  body: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null
-): void {
-  body?.cancel().catch(ignoreCancelError);
 }
 
 /** Check whether a character is RFC 8259 JSON whitespace. */
@@ -960,31 +946,15 @@ async function readResponseBody(
   response: Response,
   extractKeys: readonly string[] | undefined
 ): Promise<UpstreamBody> {
-  const { body } = response;
-  if (!body) {
-    return { status: response.status, text: await response.text() };
-  }
-  const reader = body.getReader();
   if (extractKeys !== undefined) {
-    return readExtractedResponseBody(reader, response.status, extractKeys);
-  }
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let byteCount = 0;
-  for (;;) {
-    // oxlint-disable-next-line no-await-in-loop -- Stream chunks can only be read sequentially.
-    const chunk = await reader.read();
-    if (chunk.done) {
-      break;
+    const { body } = response;
+    if (!body) {
+      return { status: response.status, text: await response.text() };
     }
-    byteCount += chunk.value.byteLength;
-    if (byteCount > MAX_UPSTREAM_BYTES) {
-      cancelBody(reader);
-      return { status: TOO_LARGE_STATUS };
-    }
-    buffer += decoder.decode(chunk.value, { stream: true });
+    return readExtractedResponseBody(body.getReader(), response.status, extractKeys);
   }
-  return { status: response.status, text: buffer + decoder.decode() };
+  const text = await readBoundedResponseText(response);
+  return text === undefined ? { status: TOO_LARGE_STATUS } : { status: response.status, text };
 }
 
 /** Read a bounded `ETag` validator from an upstream or cached `Response`. */
@@ -1063,6 +1033,10 @@ async function fetchUpstreamBody(
     return buildFetchErrorBody(error);
   }
 
+  if (response.url && !response.url.startsWith('https:')) {
+    cancelBody(response.body);
+    return { status: 502 };
+  }
   if (response.status === NOT_MODIFIED_STATUS) {
     cancelBody(response.body);
     return {
@@ -1083,21 +1057,12 @@ async function fetchUpstreamBody(
     return { status: 202 };
   }
 
-  // Streaming key extractions (`extractKeys`) skip unneeded keys and stop early,
-  // so only the streaming byte counter may reject them:
-  const { extractKeys } = target;
-  const contentLength = Number(response.headers.get('content-length') ?? '0');
-  if (extractKeys === undefined && contentLength > MAX_UPSTREAM_BYTES) {
-    cancelBody(response.body);
-    return { status: TOO_LARGE_STATUS };
-  }
-
   const now = Date.now();
   const adaptiveTtl = readAdaptiveTtlSeconds(response, now);
   const etag = readBoundedEtag(response, 'etag');
   const retryAfter = readRetryAfter(response, now);
   try {
-    const body = await readResponseBody(response, extractKeys);
+    const body = await readResponseBody(response, target.extractKeys);
     return { ...body, adaptiveTtl, etag, retryAfter };
   } catch (error) {
     return buildFetchErrorBody(error);
@@ -1496,7 +1461,15 @@ function resolveTransformedMetric(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { resolveServiceMetricConfig };
+/**
+ * Check whether a parsed service preset request matches a registered service, metric (or alias),
+ * owner segment rule, and target segment pattern.
+ * @param request   Parsed service preset route.
+ * @returns `true` when `request` passes route and segment validation.
+ */
+export function isValidServiceRequest(request: ServiceRequest): boolean {
+  return !isResolvedError(resolveServiceContext(request));
+}
 
 /**
  * Clear the in-isolate memory cache and the in-flight request registry.

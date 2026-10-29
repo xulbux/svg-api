@@ -138,9 +138,10 @@ export function buildStackVariantCards(): ShowcaseCardConfig[] {
  * @returns Parameter table rows.
  */
 export function buildStackParamRows(): ParamTableRow[] {
-  const motionSummaries = ACTIVE_STACK_MOTION_TOKENS.map(
-    (token) => `${token} [${formatStackMotionAliases(token)}]`
-  );
+  const motionSummaries: string[] = [];
+  for (const token of ACTIVE_STACK_MOTION_TOKENS) {
+    motionSummaries.push(`${token} [${formatStackMotionAliases(token)}]`);
+  }
   return [
     {
       defaultVal: '~required',

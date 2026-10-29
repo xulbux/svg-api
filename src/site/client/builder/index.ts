@@ -193,11 +193,17 @@ function initBuilderDom(): void {
     const pageParams = new URL(globalThis.location.href).searchParams;
     const sharedPath = pageParams.get('path');
     const parsedState = sharedPath ? parsePath(schema, sharedPath) : undefined;
+    const hasCustomMeta = Boolean(pageParams.get('alt') || pageParams.get('link'));
     if (altInput) {
       altInput.value = pageParams.get('alt') ?? '';
     }
     if (linkInput) {
       linkInput.value = pageParams.get('link') ?? '';
+    }
+    if (parsedState || hasCustomMeta) {
+      outputController.enableUrlSync();
+    } else if (sharedPath) {
+      outputController.resetUrlToClean();
     }
     outputController.setCrossBuilderNotice(
       sharedPath && !parsedState
@@ -246,6 +252,7 @@ function initBuilderDom(): void {
       return;
     }
     outputController.clearCrossBuilderNotice();
+    outputController.enableUrlSync();
     fieldsController.syncControlPartsOnInput(field, fieldElement, target);
     state[field.id] = fieldsController.readFieldValue(field, fieldElement);
     stackCatalogController?.syncStackFieldChange(field);
@@ -271,10 +278,12 @@ function initBuilderDom(): void {
     form.addEventListener('submit', (event) => event.preventDefault());
     altInput?.addEventListener('input', () => {
       outputController.clearCrossBuilderNotice();
+      outputController.enableUrlSync();
       outputController.renderOutputs();
     });
     linkInput?.addEventListener('input', () => {
       outputController.clearCrossBuilderNotice();
+      outputController.enableUrlSync();
       outputController.renderOutputs();
     });
     if (linkInput && schema.kind === 'service') {
@@ -323,6 +332,7 @@ function initBuilderDom(): void {
 
     resetButton?.addEventListener('click', () => {
       outputController.clearCrossBuilderNotice();
+      outputController.resetUrlToClean();
       if (altInput) {
         altInput.value = '';
       }

@@ -118,7 +118,6 @@ export const SPIGOT_SERVICE = defineService({
     description: 'Resource downloads, rating, likes, and latest version by numeric resource ID.',
     title: 'SpigotMC',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(SPIGET_RESOURCE_ENDPOINT, 'dt', (resource) => resource.downloads),
     likes: createCommunityMetric(
@@ -143,7 +142,6 @@ export const SPIGOT_SERVICE = defineService({
 /** Hangar (PaperMC) service preset (`hangar`). */
 export const HANGAR_SERVICE = defineService({
   docs: { description: 'Paper plugin downloads, stars, watchers, and license.', title: 'Hangar' },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(HANGAR_PROJECT_ENDPOINT, 'dt', (project) => project.downloads),
     license: createLicenseMetric(HANGAR_PROJECT_ENDPOINT, (project) => project.license),

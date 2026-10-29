@@ -187,17 +187,15 @@ export function resolveTriggerEffectiveSlug(
   rawSlug: string,
   hasDynamicFallback: boolean
 ): string {
-  const trimmed = rawSlug.trim();
-  if (trimmed.toLowerCase() === 'none') {
+  if (trigger?.dataset.presetDynamic === 'true' && !hasDynamicFallback && !rawSlug.trim()) {
     return '';
   }
-  if (trimmed) {
-    return trimmed;
-  }
-  if (!trigger || (trigger.dataset.presetDynamic === 'true' && !hasDynamicFallback)) {
-    return '';
-  }
-  return trigger.dataset.presetIcon?.trim() ?? '';
+  return resolvePureIconSelectDisplay(
+    rawSlug,
+    '',
+    trigger?.dataset.presetIcon,
+    trigger?.dataset.presetDynamic === 'true'
+  ).glyphSlug;
 }
 
 /**

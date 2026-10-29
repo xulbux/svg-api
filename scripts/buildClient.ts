@@ -1,5 +1,5 @@
 /**
- * Client & asset builder – Compiles modular browser TypeScript in `src/site/client/` into self-contained IIFE bundles in `dist/client/*.client.js` and builds `dist/client/favicon.png` + `dist/client/og.png` from `assets/icon.png` and `renderOgImageSvg()`.
+ * Client & asset builder – Bundles browser TypeScript entrypoints and rebuilds rasterized brand/OpenGraph PNG assets.
  */
 
 import path from 'node:path';

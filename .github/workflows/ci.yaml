@@ -1,5 +1,5 @@
-# Validate `svg-api` on every push and PR via `pnpm run check` (inheriting Node.js and `pnpm`
-# versions from `package.json`), then deploy to Cloudflare Workers on `main`:
+# Validate `svg-api` on every push and PR via `pnpm run check` (inheriting Node.js and
+# `pnpm` versions from `package.json`), then deploy to Cloudflare Workers on `main`:
 
 name: CI
 permissions: {}

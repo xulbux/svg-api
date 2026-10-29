@@ -93,7 +93,7 @@ Presets serve `/badge/:service/[:owner/]:target/:metric` from public upstream AP
 -   **Small Payloads:** Bodies above `2 MB` are rejected; Project needed fields via `pickFields()` or `projectFirstEntry()` (plus `extractKeys` on large objects).
 -   **Defensive Transforms:** Keep payload types permissive and sanitize values with `readText()`, `readFiniteNumber()`, `formatVersion()`, `formatCount()`, and `formatLicense()` (`src/services/metrics.ts`) so bad data never renders `undefined`, `null`, `NaN`, or `[object Object]`.
 -   **Standard Metric Keys:** `v` (`version`), `license` (`l`), `coverage` (`cov`), `prs` (`pr`/`pulls`/`pull-requests`), `commit` (`last-commit`), `stars`, `forks`, `issues`, `release`, `updated`, `rating`, `score`, `size` – `DEFAULT_METRIC_ALIASES` (`src/services/fetcher.ts`) wires global aliases automatically.
--   **Download Metric Keys:** `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, alias `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (total).
+-   **Download Metric Keys:** `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, alias `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (total, fallback alias `dl`).
 -   **URL Placeholders:** `{owner}` & `{target}` (per-segment), `{scope}` (`owner` without `@`), `{path}` (`[owner/]target`), `{id}` (`/` as `%2F`), `{npm}` & `{npm-id}` (`[@scope/]target`).
 
 <br>

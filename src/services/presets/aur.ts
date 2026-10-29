@@ -51,7 +51,10 @@ const AUR_ENDPOINT = createEndpoint({
 
 /** Transform an AUR package into a version metric, highlighting out-of-date flags in amber. */
 function transformAurVersion(info: Partial<AurPackageInfo>): Partial<MetricResult> {
-  return buildFlaggedVersionResult(info.Version, typeof info.OutOfDate === 'number');
+  return buildFlaggedVersionResult(
+    info.Version,
+    typeof info.OutOfDate === 'number' && Number.isFinite(info.OutOfDate) && info.OutOfDate > 0
+  );
 }
 
 /** Transform an AUR package into a popularity score metric. */

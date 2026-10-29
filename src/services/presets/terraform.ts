@@ -135,7 +135,6 @@ function createModuleService(): ServiceDefinition {
       description: 'Module all-time downloads and latest version (:namespace/:name/:provider).',
       title: 'Terraform Modules',
     },
-    metricAliases: { dl: 'dt' },
     metrics: {
       dt: createDownloadsMetric(
         moduleDownloadsEndpoint,
@@ -173,7 +172,6 @@ function createProviderService(): ServiceDefinition {
       description: 'Provider all-time downloads and latest version.',
       title: 'Terraform Providers',
     },
-    metricAliases: { dl: 'dt' },
     metrics: {
       dt: createDownloadsMetric(
         providerEndpoint,

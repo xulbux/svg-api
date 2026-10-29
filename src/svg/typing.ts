@@ -1357,13 +1357,6 @@ function renderTimelineAnimate(
     keyTimesList.push(String(keyTime));
   }
 
-  if (keyTimesList[keyTimesList.length - 1] !== '1') {
-    const lastValue = valuesList[valuesList.length - 1] ?? '0';
-    valuesList.push(lastValue);
-    keyTimesList.push('1');
-    keySplinesList.push('0 0 1 1');
-  }
-
   return `<animate attributeName="${attributeName}" values="${valuesList.join(';')}" keyTimes="${keyTimesList.join(';')}" calcMode="spline" keySplines="${keySplinesList.join(';')}" dur="${cycleDurAttr}" repeatCount="indefinite" />`;
 }
 
@@ -1635,6 +1628,7 @@ function renderPositionedIconSlot(options: PositionedIconSlotOptions): RenderedI
   const iconOffsetX = computeIconTranslateX(visualStartX, resolvedIcon, scaleNum);
   const markup = renderIconGroup({
     color,
+    hasCurrentColor: resolvedIcon.hasCurrentColor,
     innerSvg: resolvedIcon.innerSvg,
     isFallback: iconSlot.isFallback,
     isOnPrimary,
@@ -2372,7 +2366,7 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
   }
 
   if (prefixText.length > 0) {
-    const prefixLayout = layoutTextGlyphs(prefixText, fontSize, true, fontFamily);
+    const prefixWidth = measureTextWidth(prefixText, fontSize, true, false, fontFamily);
     markup += renderTextPathMarkup(prefixText, {
       align: 'left',
       anchorX: currentX,
@@ -2382,7 +2376,7 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
       fontSize,
       isBold: true,
     });
-    currentX = roundCoord(currentX + prefixLayout.totalAdvance + Math.round(9 * scale));
+    currentX = roundCoord(currentX + prefixWidth + Math.round(9 * scale));
   }
 
   return { markup, textStartX: currentX };
@@ -2540,9 +2534,9 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
   for (const flash of timelineState.selectionFlashes) {
     const flashAnim = renderOpacityWindowAnimate(
       flash.startMs,
-      flash.startMs + totalCycleMs * 0.002,
+      flash.startMs + CHAR_FAST_FADE_OUT_MS,
       flash.endMs,
-      flash.endMs + totalCycleMs * 0.002,
+      flash.endMs + CHAR_FAST_FADE_OUT_MS,
       totalCycleMs,
       cycleDurAttr
     );

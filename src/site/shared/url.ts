@@ -518,8 +518,9 @@ export function buildDefaultLinkTarget(
  * @returns Shareable builder URL string.
  */
 export function buildShareUrl(href: string, path: string, alt: string, link: string): string {
-  const shareUrl = new URL(href);
-  shareUrl.searchParams.set('path', path);
+  const parsed = new URL(href);
+  const shareUrl = new URL(parsed.pathname, parsed.origin);
+  setOptionalSearchParam(shareUrl.searchParams, 'path', path);
   setOptionalSearchParam(shareUrl.searchParams, 'alt', alt);
   setOptionalSearchParam(shareUrl.searchParams, 'link', link);
   return shareUrl.href;

@@ -62,7 +62,7 @@ export type GradientDef = LinearGradientDef | RadialGradientDef;
 
 /** Flattened polyline subpath extracted from an SVG `<path>` `d` attribute. */
 export interface FlattenedSubpath {
-  /** Whether the subpath ended with a `Z` / `z` closepath command. */
+  /** Whether the subpath ended with an explicit `Z` / `z` close command. */
   isClosed: boolean;
   /** Ordered polyline vertices in canvas pixels. */
   points: Point2D[];

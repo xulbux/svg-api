@@ -71,7 +71,7 @@ function BuilderPage(props: BuilderPageProps): HtmlFragment {
       canonicalPath={canonicalPath}
       description={meta.description}
       extraBody={extraBody}
-      jsonLd={buildBuilderJsonLd(pageTitle, meta.description, canonicalPath, meta.title)}
+      jsonLd={buildBuilderJsonLd(meta.title, meta.description, canonicalPath)}
       sidebar={buildBuilderSidebar(kind)}
       title={pageTitle}>
       <section class="doc-section builder" id="builder" data-builder-kind={kind}>

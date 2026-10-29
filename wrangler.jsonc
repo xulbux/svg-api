@@ -5,6 +5,7 @@
   "compatibility_date": "2026-10-15",
   "upload_source_maps": true,
   "workers_dev": false,
+  "limits": { "cpu_ms": 50 },
   "observability": { "enabled": true },
   "rules": [
     { "type": "Data", "globs": ["**/*.ttf", "**/*.png"], "fallthrough": true },

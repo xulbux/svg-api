@@ -51,6 +51,12 @@ export const OG_IMAGE_HEIGHT = 640;
 /** Absolute URL of the raster OpenGraph social preview card (`/og.png`). */
 export const OG_IMAGE_PNG_URL = `${SITE_ORIGIN}/og.png`;
 
+/** Canonical Schema.org `@id` of the root `WebSite` entity. */
+const WEBSITE_JSON_LD_ID = `${SITE_ORIGIN}/#website`;
+
+/** Byte slice size used when converting binary buffers into Base64 strings. */
+const BASE64_CHUNK_SIZE = 8192;
+
 /** Syntax-highlighted monospace URL segments rendered inside the OpenGraph card's bottom code pill. */
 const OG_URL_TOKENS: readonly (readonly [text: string, fill: string, isBold?: boolean])[] = [
   ['GET ', ISOLUX_SYNTAX.punctuation.dark, true],
@@ -81,30 +87,12 @@ let ogImageSvgCache: string | undefined = undefined;
 
 /** Encode a binary `ArrayBuffer` into a standard Base64 string. */
 function encodeBytesToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
   let binary = '';
-  for (const byte of new Uint8Array(buffer)) {
-    binary += String.fromCharCode(byte);
+  for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK_SIZE) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK_SIZE));
   }
   return btoa(binary);
-}
-
-/** Build `[name, path]` breadcrumb tuples for a root section page or one of its subpages. */
-function buildSectionBreadcrumbs(
-  canonicalPath: string,
-  sectionPath: string,
-  sectionLabel: string,
-  pageLabel: string
-): (readonly [string, string])[] {
-  return canonicalPath === sectionPath
-    ? [
-        ['Home', '/'],
-        [pageLabel, canonicalPath],
-      ]
-    : [
-        ['Home', '/'],
-        [sectionLabel, sectionPath],
-        [pageLabel, canonicalPath],
-      ];
 }
 
 /** Build a Schema.org `BreadcrumbList` node from ordered `[name, path]` pairs. */
@@ -126,7 +114,7 @@ function buildBreadcrumbListJsonLd(
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Build the Schema.org JSON-LD graph (`WebSite` and `WebAPI`) for the `/` homepage.
+ * Build the Schema.org JSON-LD graph (`WebSite`, `WebAPI`, and `WebApplication`) for the `/` homepage.
  * @param description   Homepage meta description.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
@@ -135,11 +123,13 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
     '@context': 'https://schema.org',
     '@graph': [
       {
+        '@id': WEBSITE_JSON_LD_ID,
         '@type': 'WebSite',
         description,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
         name: SITE_NAME,
+        sameAs: [REPO_GITHUB_URL],
         url: SITE_ORIGIN,
       },
       {
@@ -153,25 +143,48 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         provider: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         url: SITE_ORIGIN,
       },
+      {
+        '@type': 'WebApplication',
+        applicationCategory: 'DeveloperApplication',
+        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
+        description,
+        image: OG_IMAGE_PNG_URL,
+        inLanguage: 'en',
+        isPartOf: { '@id': WEBSITE_JSON_LD_ID },
+        name: `${SITE_NAME} URL Builder`,
+        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        operatingSystem: 'Any',
+        url: `${SITE_ORIGIN}${buildBuilderPath(DEFAULT_BUILDER_KIND)}`,
+      },
     ],
   };
 }
 
 /**
  * Build the Schema.org JSON-LD graph (`TechArticle` and `BreadcrumbList`) for a `/docs` or `/docs/:section` page.
- * @param title             Page `<title>` string.
+ * @param headline          Clean article headline.
  * @param description       Page meta description.
  * @param canonicalPath     Root-relative canonical path.
  * @param breadcrumbLabel   Short page title for the trailing breadcrumb item.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
 export function buildDocsJsonLd(
-  title: string,
+  headline: string,
   description: string,
   canonicalPath: string,
-  breadcrumbLabel = title
+  breadcrumbLabel = headline
 ): Readonly<Record<string, unknown>> {
-  const breadcrumbs = buildSectionBreadcrumbs(canonicalPath, '/docs', 'Docs', breadcrumbLabel);
+  const breadcrumbs: readonly (readonly [string, string])[] =
+    canonicalPath === '/docs'
+      ? [
+          ['Home', '/'],
+          [breadcrumbLabel, canonicalPath],
+        ]
+      : [
+          ['Home', '/'],
+          ['Docs', '/docs'],
+          [breadcrumbLabel, canonicalPath],
+        ];
   return {
     '@context': 'https://schema.org',
     '@graph': [
@@ -179,10 +192,15 @@ export function buildDocsJsonLd(
         '@type': 'TechArticle',
         author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
-        headline: title,
+        headline,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
-        isPartOf: { '@type': 'WebSite', name: SITE_NAME, url: SITE_ORIGIN },
+        isPartOf: {
+          '@id': WEBSITE_JSON_LD_ID,
+          '@type': 'WebSite',
+          name: SITE_NAME,
+          url: SITE_ORIGIN,
+        },
         url: `${SITE_ORIGIN}${canonicalPath}`,
       },
       buildBreadcrumbListJsonLd(breadcrumbs),
@@ -192,39 +210,43 @@ export function buildDocsJsonLd(
 
 /**
  * Build the Schema.org JSON-LD graph (`WebApplication` and `BreadcrumbList`) for a `/builder/:kind` page.
- * @param title             Builder page `<title>` string.
+ * @param name              Clean builder application name.
  * @param description       Builder meta description.
  * @param canonicalPath     Root-relative canonical path.
  * @param breadcrumbLabel   Short builder title for the trailing breadcrumb item.
  * @returns JSON-LD object ready for `<script type="application/ld+json">`.
  */
 export function buildBuilderJsonLd(
-  title: string,
+  name: string,
   description: string,
   canonicalPath: string,
-  breadcrumbLabel = title
+  breadcrumbLabel = name
 ): Readonly<Record<string, unknown>> {
-  const breadcrumbs = buildSectionBreadcrumbs(
-    canonicalPath,
-    buildBuilderPath(DEFAULT_BUILDER_KIND),
-    'Builder',
-    breadcrumbLabel
-  );
   return {
     '@context': 'https://schema.org',
     '@graph': [
       {
         '@type': 'WebApplication',
         applicationCategory: 'DeveloperApplication',
+        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
         description,
         image: OG_IMAGE_PNG_URL,
         inLanguage: 'en',
-        name: title,
+        isPartOf: {
+          '@id': WEBSITE_JSON_LD_ID,
+          '@type': 'WebSite',
+          name: SITE_NAME,
+          url: SITE_ORIGIN,
+        },
+        name,
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
         operatingSystem: 'Any',
         url: `${SITE_ORIGIN}${canonicalPath}`,
       },
-      buildBreadcrumbListJsonLd(breadcrumbs),
+      buildBreadcrumbListJsonLd([
+        ['Home', '/'],
+        [breadcrumbLabel, canonicalPath],
+      ]),
     ],
   };
 }
@@ -351,7 +373,11 @@ export function renderLlmsTxt(): string {
 export function renderOgImageSvg(): string {
   if (ogImageSvgCache === undefined) {
     const brandIconHref = `data:image/png;base64,${encodeBytesToBase64(faviconPngBuffer)}`;
-    const ogCapabilities = BUILDER_PAGES.map((page) => page.ogLabel).join(' · ');
+    const ogLabels: string[] = [];
+    for (const page of BUILDER_PAGES) {
+      ogLabels.push(page.ogLabel);
+    }
+    const ogCapabilities = ogLabels.join(' · ');
     const titleLine1 = renderTextPathMarkup('One Cohesive Dynamic SVG API', {
       align: 'left',
       anchorX: 88,

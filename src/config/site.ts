@@ -33,7 +33,7 @@ export const FALLBACK_REDIRECT_URL = AUTHOR_WEBSITE_URL;
 /** Required square pixel dimension of the canonical `assets/icon.png` brand icon. */
 export const BRAND_ICON_PNG_SIZE = 512;
 
-/** Square pixel dimension of the raster `/favicon.png` (`48px` multiple for Google Search and Apple touch icons). */
+/** Square pixel dimension of the raster `/favicon.png` (sized for search engines and touch icons). */
 export const FAVICON_PNG_SIZE = 192;
 
 /** Default environment bindings (bare `app.request()` calls and network-free docs previews). */

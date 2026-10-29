@@ -32,8 +32,6 @@ function resolveAnimOptionToken(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { LIST_SEPARATOR_RX } from '@/site/shared/encoding';
-
 /**
  * Compose an `?icon=` value from its left and right slugs (`none,right` or the `,right` preset shorthand).
  * @param left            Left slug (`''` for none).

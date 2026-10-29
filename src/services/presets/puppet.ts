@@ -77,7 +77,6 @@ export const PUPPET_SERVICE = defineService({
     description: 'Latest version, total downloads, license, and feedback score (ring gauge).',
     title: 'Puppet Forge',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(MODULE_ENDPOINT, 'dt', (module) => module.downloads),
     license: createLicenseMetric(RELEASE_ENDPOINT, (release) => release.license),

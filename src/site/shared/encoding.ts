@@ -141,8 +141,12 @@ export function findService(
   schema: BuilderSchema,
   key: string | undefined
 ): BuilderServiceOption | undefined {
+  const cleanKey = key?.trim();
+  if (!cleanKey) {
+    return undefined;
+  }
   for (const service of schema.services ?? []) {
-    if (service.key === key) {
+    if (service.key === cleanKey) {
       return service;
     }
   }

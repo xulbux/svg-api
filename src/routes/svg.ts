@@ -9,7 +9,10 @@ import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
 import { resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
+  isBadgeVariant,
+  isRecognizedSpecialParam,
   isTruthyFlagParam,
+  normalizeDotParam,
   parseOptionalNumber,
   parsePerLineList,
   resolveAnimationMode,
@@ -28,15 +31,25 @@ import {
 } from '@/routes/params';
 import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
 import { decodeRouteSegments } from '@/site/shared/encoding';
-import { DEFAULT_QUOTE_VARIANT as QUOTE_DEFAULT_VARIANT, renderQuote } from '@/svg/quote';
+import {
+  DEFAULT_QUOTE_LAYOUT,
+  DEFAULT_QUOTE_VARIANT as QUOTE_DEFAULT_VARIANT,
+  renderQuote,
+} from '@/svg/quote';
 import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
-import { getOwnValue } from '@/svg/shared';
+import { getOwnValue, sliceAtCodePoint } from '@/svg/shared';
 import {
   DEFAULT_STACK_VARIANT as STACK_DEFAULT_VARIANT,
   parseStackGroups,
   renderStack,
 } from '@/svg/stack';
-import { DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT, renderTyping } from '@/svg/typing';
+import {
+  DEFAULT_TYPING_CURSOR,
+  DEFAULT_TYPING_ERASE,
+  DEFAULT_TYPING_LAYOUT,
+  DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT,
+  renderTyping,
+} from '@/svg/typing';
 import type {
   BadgeSpecialElement,
   BadgeSpecialMap,
@@ -52,6 +65,9 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
+
+/** Normalizer mapping a raw single query parameter value onto its canonical cache-key string (`undefined` omits it). */
+type QueryParamNormalizer = (rawValue: string, canonicalPrefix: string) => string | undefined;
 
 /** Default values for a badge route before applying URL query overrides. */
 interface RouteBadgeDefaults {
@@ -98,6 +114,12 @@ export const DEFAULT_STACK_VARIANT: BadgeVariant = STACK_DEFAULT_VARIANT;
 
 /** Default visual hierarchy variant for animated typing banners. */
 export const DEFAULT_TYPING_VARIANT: BadgeVariant = TYPING_DEFAULT_VARIANT;
+
+/** Maximum length in code points kept for `?icon=` query values in normalized cache keys. */
+const MAX_ICON_QUERY_LENGTH = 160;
+
+/** Maximum length in code points kept for free-text/DSL query values in normalized cache keys. */
+const MAX_TEXT_QUERY_LENGTH = 1024;
 
 /** Recognized query parameters for badge routes, sorted. */
 const BADGE_QUERY_PARAMS: readonly string[] = [
@@ -206,16 +228,238 @@ function buildStaticMatch(
   return { kind: 'static', render, ttl };
 }
 
-/** Copy only the first value of each recognized query parameter (already sorted by name) into a fresh query. */
-function pickQueryParams(query: URLSearchParams, names: readonly string[]): URLSearchParams {
+/** Serialize a parsed `?perline=` list (`undefined` holes become `'0'` to preserve group positions). */
+function serializePerLineList(
+  list: readonly (number | undefined)[] | undefined
+): string | undefined {
+  if (!list) {
+    return undefined;
+  }
+  let serialized = '';
+  for (let i = 0; i < list.length; i += 1) {
+    if (i > 0) {
+      serialized += ',';
+    }
+    serialized += String(list[i] ?? 0);
+  }
+  return serialized;
+}
+
+/** Cap a non-empty free-text query parameter value for cache-key storage (`undefined` when unset). */
+function capOptionalTextQuery(value: string | undefined): string | undefined {
+  return value ? sliceAtCodePoint(value, MAX_TEXT_QUERY_LENGTH) : undefined;
+}
+
+/** Canonicalize a finite numeric query parameter (`undefined` when invalid). */
+function normalizeNumericParam(rawValue: string): string | undefined {
+  const parsed = parseOptionalNumber(rawValue);
+  return parsed === undefined ? undefined : String(parsed);
+}
+
+/** Canonicalize `?anim=` across stack and badge/quote/typing elements (`undefined` for `'default'`). */
+function normalizeAnimParam(rawValue: string, canonicalPrefix: string): string | undefined {
+  const mode =
+    canonicalPrefix === 'stack'
+      ? resolveStackAnimationMode(rawValue)
+      : resolveAnimationMode(rawValue);
+  return mode === 'default' ? undefined : mode;
+}
+
+/** Canonicalize `?cursor=` (`undefined` for `DEFAULT_TYPING_CURSOR`). */
+function normalizeCursorParam(rawValue: string): string | undefined {
+  const cursor = resolveTypingCursor(rawValue);
+  return cursor === DEFAULT_TYPING_CURSOR ? undefined : cursor;
+}
+
+/** Canonicalize `?icon=` with whitespace trimmed and code-point length capped. */
+function normalizeIconParam(rawValue: string): string | undefined {
+  const trimmed = rawValue.trim();
+  return trimmed ? sliceAtCodePoint(trimmed, MAX_ICON_QUERY_LENGTH) : undefined;
+}
+
+/** Canonicalize `?size=` across numeric (`icon`/`stack`) and preset-token (`badge`/`quote`/`typing`) routes. */
+function normalizeSizeParam(rawValue: string, canonicalPrefix: string): string | undefined {
+  const resolved =
+    canonicalPrefix === 'icon' || canonicalPrefix === 'stack'
+      ? parseOptionalNumber(rawValue)
+      : resolveSizeToken(rawValue);
+  return resolved === undefined ? undefined : String(resolved);
+}
+
+/** Canonicalize `?special=` (`undefined` when unrecognized). */
+function normalizeSpecialParam(rawValue: string): string | undefined {
+  return isRecognizedSpecialParam(rawValue) ? rawValue.trim() : undefined;
+}
+
+/** Canonicalize `?typo=` (`'true'` when enabled, `undefined` otherwise). */
+function normalizeTypoParam(rawValue: string): string | undefined {
+  return isTruthyFlagParam(rawValue) ? 'true' : undefined;
+}
+
+/** Canonicalize `?variant=` (`undefined` when unrecognized). */
+function normalizeVariantParam(rawValue: string): string | undefined {
+  const trimmed = rawValue.trim();
+  return isBadgeVariant(trimmed) ? trimmed : undefined;
+}
+
+/** Canonicalizers keyed by single-parameter query key (free-text keys fall back to `capOptionalTextQuery`). */
+const PARAM_NORMALIZERS: Readonly<Record<string, QueryParamNormalizer>> = {
+  anim: normalizeAnimParam,
+  color: (rawValue) => resolveOptionalColor(rawValue),
+  cursor: normalizeCursorParam,
+  dot: (rawValue) => normalizeDotParam(rawValue),
+  duration: normalizeNumericParam,
+  font: (rawValue) => resolveTypingFont(rawValue),
+  gap: normalizeNumericParam,
+  icon: normalizeIconParam,
+  pause: normalizeNumericParam,
+  perline: (rawValue) => serializePerLineList(parsePerLineList(rawValue)),
+  size: normalizeSizeParam,
+  special: normalizeSpecialParam,
+  stroke: normalizeNumericParam,
+  typo: normalizeTypoParam,
+  variant: normalizeVariantParam,
+  width: normalizeNumericParam,
+};
+
+/** Canonicalize a single non-aliased query parameter value (`undefined` drops invalid/default values). */
+function normalizeSingleQueryParam(
+  name: string,
+  rawValue: string,
+  canonicalPrefix: string
+): string | undefined {
+  const normalizer = getOwnValue(PARAM_NORMALIZERS, name);
+  return normalizer ? normalizer(rawValue, canonicalPrefix) : capOptionalTextQuery(rawValue);
+}
+
+/** Resolve quote route query aliases (`quote`, `layout`/`type`/`center`, and path-shadowed `author`/`text`). */
+function resolveQuoteAliasOverrides(
+  rawQuery: URLSearchParams,
+  segments: readonly string[]
+): Record<string, string | undefined> {
+  const hasAuthorSegment = segments.length === 2;
+  const pathText = hasAuthorSegment ? segments[1] : segments[0];
+  const hasPathText = Boolean(pathText && pathText.trim().length > 0);
+  const text = hasPathText
+    ? undefined
+    : pickNonBlank(rawQuery.get('text'), rawQuery.get('quote')) || undefined;
+  const rawAuthor = hasAuthorSegment ? undefined : (rawQuery.get('author') ?? undefined);
+  const layout = resolveQuoteLayout(
+    rawQuery.get('layout'),
+    rawQuery.get('type'),
+    rawQuery.get('center')
+  );
+  return {
+    author: capOptionalTextQuery(rawAuthor),
+    center: undefined,
+    layout: layout === DEFAULT_QUOTE_LAYOUT ? undefined : layout,
+    quote: undefined,
+    text: capOptionalTextQuery(text),
+    type: undefined,
+  };
+}
+
+/** Resolve stack route query aliases (`groups`/`icons`/`i` and `groupgap`/`ggap`). */
+function resolveStackAliasOverrides(
+  rawQuery: URLSearchParams,
+  segments: readonly string[]
+): Record<string, string | undefined> {
+  const hasPathGroups = Boolean(segments[0] && segments[0].trim().length > 0);
+  const groups = hasPathGroups
+    ? undefined
+    : pickNonBlank(rawQuery.get('groups'), rawQuery.get('icons'), rawQuery.get('i')) || undefined;
+  const groupGap = normalizeNumericParam(
+    pickNonBlank(rawQuery.get('groupgap'), rawQuery.get('ggap'))
+  );
+  return {
+    ggap: undefined,
+    groupgap: groupGap,
+    groups: capOptionalTextQuery(groups),
+    i: undefined,
+    icons: undefined,
+  };
+}
+
+/** Resolve typing route query aliases (`lines`/`text`, `prefix`/`prompt`, `align`/`center`, `erase`/`delete`, `layout`/`frame`/`type`). */
+function resolveTypingAliasOverrides(
+  rawQuery: URLSearchParams,
+  segments: readonly string[]
+): Record<string, string | undefined> {
+  const hasPrefixSegment = segments.length === 2;
+  const pathLines = hasPrefixSegment ? segments[1] : segments[0];
+  const hasPathLines = Boolean(pathLines && pathLines.trim().length > 0);
+  const lines = hasPathLines
+    ? undefined
+    : pickNonBlank(rawQuery.get('lines'), rawQuery.get('text')) || undefined;
+  const prefix = hasPrefixSegment
+    ? undefined
+    : pickNonBlank(rawQuery.get('prefix'), rawQuery.get('prompt')) || undefined;
+  const align = resolveTypingAlign(rawQuery.get('align'), rawQuery.get('center'));
+  const erase = resolveTypingEraseMode(rawQuery.get('erase'), rawQuery.get('delete'));
+  const layout = resolveTypingLayout(
+    rawQuery.get('layout'),
+    rawQuery.get('frame'),
+    rawQuery.get('type')
+  );
+  return {
+    align,
+    center: undefined,
+    delete: undefined,
+    erase: erase === DEFAULT_TYPING_ERASE ? undefined : erase,
+    frame: undefined,
+    layout: layout === DEFAULT_TYPING_LAYOUT ? undefined : layout,
+    lines: capOptionalTextQuery(lines),
+    prefix: capOptionalTextQuery(prefix),
+    prompt: undefined,
+    text: undefined,
+    type: undefined,
+  };
+}
+
+/** Resolve multi-parameter query alias groups onto their canonical query keys (`undefined` omits the key). */
+function resolveQueryAliasOverrides(
+  rawQuery: URLSearchParams,
+  canonicalPrefix: string,
+  segments: readonly string[]
+): Record<string, string | undefined> | undefined {
+  if (canonicalPrefix === 'quote') {
+    return resolveQuoteAliasOverrides(rawQuery, segments);
+  }
+  if (canonicalPrefix === 'stack') {
+    return resolveStackAliasOverrides(rawQuery, segments);
+  }
+  if (canonicalPrefix === 'typing') {
+    return resolveTypingAliasOverrides(rawQuery, segments);
+  }
+  return undefined;
+}
+
+/** Build a normalized query containing only canonicalized recognized parameters in sorted order. */
+function pickQueryParams(
+  query: URLSearchParams,
+  route: SvgRouteDefinition,
+  segments: readonly string[]
+): URLSearchParams {
   const picked = new URLSearchParams();
   if (query.size === 0) {
     return picked;
   }
-  for (const name of names) {
-    const value = query.get(name);
-    if (value !== null) {
-      picked.append(name, value);
+  const canonicalPrefix = route.aliasOf ?? route.prefix;
+  const aliasOverrides = resolveQueryAliasOverrides(query, canonicalPrefix, segments);
+  for (const name of route.queryParams) {
+    if (aliasOverrides && Object.hasOwn(aliasOverrides, name)) {
+      const override = aliasOverrides[name];
+      if (override !== undefined) {
+        picked.append(name, override);
+      }
+    } else {
+      const rawValue = query.get(name);
+      if (rawValue !== null) {
+        const normalized = normalizeSingleQueryParam(name, rawValue, canonicalPrefix);
+        if (normalized !== undefined) {
+          picked.append(name, normalized);
+        }
+      }
     }
   }
   return picked;
@@ -495,7 +739,7 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
   if (route.maxSegments !== undefined && segments.length > route.maxSegments) {
     return undefined;
   }
-  const query = pickQueryParams(url.searchParams, route.queryParams);
+  const query = pickQueryParams(url.searchParams, route, segments);
   const match = route.resolve(segments, query);
   if (!match) {
     return undefined;

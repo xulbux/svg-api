@@ -19,6 +19,7 @@ import {
 } from '@/svg/renderer';
 import { getOwnValue, sliceAtCodePoint } from '@/svg/shared';
 import type {
+  BadgeSpecialElement,
   BadgeSpecialKind,
   BadgeSpecialMap,
   CommunityMetricKind,
@@ -228,6 +229,100 @@ const RELEASE: MetricPresentation = {
   defaultLabel: 'Release',
 };
 
+/** Automatic inline widget kinds supported by time-series metrics with period-over-period delta. */
+export const SERIES_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars', 'delta'];
+
+/** Automatic inline widget kinds supported by period-over-period delta metrics. */
+export const DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['delta'];
+
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics. */
+export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
+
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps. */
+export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
+
+/** Default presentation for repository fork metrics (`forks`). */
+export const FORKS: MetricPresentation = {
+  defaultColor: 'sky',
+  defaultIcon: 'git-fork',
+  defaultLabel: 'Forks',
+};
+
+/** Presentation override for download metrics labeled `Installs` (`createDownloadsMetric(…, INSTALLS_LABEL)`). */
+export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'Installs' };
+
+/** Default presentation for open issue metrics (`issues`). */
+export const ISSUES: MetricPresentation = {
+  defaultColor: 'rose',
+  defaultIcon: 'circle-dot',
+  defaultLabel: 'Issues',
+};
+
+/** Default presentation for last commit / activity metrics (`commit`). */
+export const LAST_COMMIT: MetricPresentation = {
+  defaultColor: 'rose',
+  defaultIcon: 'git-commit-horizontal',
+  defaultLabel: 'Last Commit',
+};
+
+/** Default presentation for license metrics (`license`). */
+export const LICENSE: MetricPresentation = {
+  defaultColor: 'slate',
+  defaultIcon: 'scale',
+  defaultLabel: 'License',
+};
+
+/** Default presentation for open pull request metrics (`prs`). */
+export const PULL_REQUESTS: MetricPresentation = {
+  defaultColor: 'violet',
+  defaultIcon: 'git-pull-request',
+  defaultLabel: 'Pull Requests',
+};
+
+/** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
+export const SCORE: MetricPresentation = {
+  autoSpecials: SCORE_SPECIALS,
+  defaultColor: 'emerald',
+  defaultIcon: 'gauge',
+  defaultLabel: 'Score',
+  defaultSpecial: 'ring',
+};
+
+/** Default presentation for repository star metrics (`stars`). */
+export const STARS: MetricPresentation = {
+  defaultColor: 'amber',
+  defaultIcon: 'star',
+  defaultLabel: 'Stars',
+};
+
+/** Default presentation for package / image last-updated timestamp metrics (`updated`). */
+export const UPDATED: MetricPresentation = {
+  defaultColor: 'indigo',
+  defaultIcon: 'clock',
+  defaultLabel: 'Updated',
+};
+
+/** Shared badge properties for a passing build or status check. */
+export const PASSING_STATUS: Partial<MetricResult> = {
+  color: 'emerald',
+  icon: 'circle-check',
+  value: 'passing',
+};
+
+/** Shared badge properties for a failing build or status check. */
+export const FAILING_STATUS: Partial<MetricResult> = {
+  color: 'rose',
+  icon: 'circle-x',
+  value: 'failing',
+};
+
+/** Shared badge properties for an unknown or absent build/status check. */
+export const UNKNOWN_STATUS: Partial<MetricResult> = {
+  color: 'slate',
+  icon: 'circle-help',
+  value: 'unknown',
+};
+
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches a trailing `.0` in compact formatted numbers. */
@@ -346,6 +441,15 @@ function readLicenseNameAtDepth(rawLicense: unknown, depth: number): string | un
   return readText(rawLicense.type) ?? readText(rawLicense.id) ?? readText(rawLicense.name);
 }
 
+/** Build a discrete `steps` widget scaled from `percent` (`0`–`100`). */
+function buildPercentStepsSpecial(percent: number): BadgeSpecialElement {
+  return {
+    done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
+    total: MAX_STEPS_COUNT,
+    type: 'steps',
+  };
+}
+
 /** Build score badge properties (value plus ring gauge and bar/steps alternatives, optionally threshold-colored). */
 function buildScoreResult(
   rawAchieved: unknown,
@@ -366,111 +470,13 @@ function buildScoreResult(
     specials: {
       bar: { type: 'bar', value: percent },
       ring,
-      steps: {
-        done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
-        total: MAX_STEPS_COUNT,
-        type: 'steps',
-      },
+      steps: buildPercentStepsSpecial(percent),
     },
     value: format(achieved, maximum),
   };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
-
-/** Automatic inline widget kinds supported by time-series metrics with period-over-period delta. */
-export const SERIES_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['sparkline', 'bars', 'delta'];
-
-/** Automatic inline widget kinds supported by period-over-period delta metrics. */
-export const DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['delta'];
-
-/** Automatic inline widget kinds supported by part-of-whole ratio metrics. */
-export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
-
-/** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps. */
-export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
-
-/** Default presentation for repository fork metrics (`forks`). */
-export const FORKS: MetricPresentation = {
-  defaultColor: 'sky',
-  defaultIcon: 'git-fork',
-  defaultLabel: 'Forks',
-};
-
-/** Presentation override for download metrics labeled `Installs` (`createDownloadsMetric(…, INSTALLS_LABEL)`). */
-export const INSTALLS_LABEL: Partial<MetricPresentation> = { defaultLabel: 'Installs' };
-
-/** Default presentation for open issue metrics (`issues`). */
-export const ISSUES: MetricPresentation = {
-  defaultColor: 'rose',
-  defaultIcon: 'circle-dot',
-  defaultLabel: 'Issues',
-};
-
-/** Default presentation for last commit / activity metrics (`commit`). */
-export const LAST_COMMIT: MetricPresentation = {
-  defaultColor: 'rose',
-  defaultIcon: 'git-commit-horizontal',
-  defaultLabel: 'Last Commit',
-};
-
-/** Default presentation for license metrics (`license`). */
-export const LICENSE: MetricPresentation = {
-  defaultColor: 'slate',
-  defaultIcon: 'scale',
-  defaultLabel: 'License',
-};
-
-/** Default presentation for open pull request metrics (`prs`). */
-export const PULL_REQUESTS: MetricPresentation = {
-  defaultColor: 'violet',
-  defaultIcon: 'git-pull-request',
-  defaultLabel: 'Pull Requests',
-};
-
-/** Default presentation for quality score metrics with a ring gauge (`score`, `points`). */
-export const SCORE: MetricPresentation = {
-  autoSpecials: SCORE_SPECIALS,
-  defaultColor: 'emerald',
-  defaultIcon: 'gauge',
-  defaultLabel: 'Score',
-  defaultSpecial: 'ring',
-};
-
-/** Default presentation for repository star metrics (`stars`). */
-export const STARS: MetricPresentation = {
-  defaultColor: 'amber',
-  defaultIcon: 'star',
-  defaultLabel: 'Stars',
-};
-
-/** Default presentation for package / image last-updated timestamp metrics (`updated`). */
-export const UPDATED: MetricPresentation = {
-  defaultColor: 'indigo',
-  defaultIcon: 'clock',
-  defaultLabel: 'Updated',
-};
-
-/** Shared badge properties for a passing build or status check. */
-export const PASSING_STATUS: Partial<MetricResult> = {
-  color: 'emerald',
-  icon: 'circle-check',
-  value: 'passing',
-};
-
-/** Shared badge properties for a failing build or status check. */
-export const FAILING_STATUS: Partial<MetricResult> = {
-  color: 'rose',
-  icon: 'circle-x',
-  value: 'failing',
-};
-
-/** Shared badge properties for an unknown or absent build/status check. */
-export const UNKNOWN_STATUS: Partial<MetricResult> = {
-  color: 'slate',
-  icon: 'circle-help',
-  value: 'unknown',
-};
 
 export { SCORE_SPECIALS, readFiniteNumber, readText };
 
@@ -878,11 +884,7 @@ export function buildRatioSpecials(
     ? {
         bar: { type: 'bar', value: percent },
         ring: { type: 'ring', value: percent },
-        steps: {
-          done: Math.round((percent / MAX_PERCENT) * MAX_STEPS_COUNT),
-          total: MAX_STEPS_COUNT,
-          type: 'steps',
-        },
+        steps: buildPercentStepsSpecial(percent),
       }
     : { bar: { type: 'bar', value: percent }, ring: { type: 'ring', value: percent } };
 }

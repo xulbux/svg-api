@@ -124,7 +124,12 @@ export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildQuoteParamRows(): ParamTableRow[] {
-  const verticalAliases = VERTICAL_LAYOUT_TOKENS.filter((token) => token !== 'vertical');
+  const verticalAliases: string[] = [];
+  for (const token of VERTICAL_LAYOUT_TOKENS) {
+    if (token !== 'vertical') {
+      verticalAliases.push(token);
+    }
+  }
   return [
     {
       defaultVal: '~required',

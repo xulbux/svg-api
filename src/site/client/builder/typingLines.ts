@@ -186,7 +186,7 @@ export function createTypingLinesController(
           } else {
             input.removeAttribute('aria-required');
           }
-          if (isFieldMissing) {
+          if (isFieldMissing && i === 0) {
             input.setAttribute('aria-invalid', 'true');
           } else if (!input.closest('.is-invalid')) {
             input.removeAttribute('aria-invalid');

@@ -491,6 +491,18 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     }
   }
 
+  function handleIndexReady(shouldSyncTab: boolean): void {
+    syncIconSelects(form);
+    validateIcons(form);
+    onIndexLoaded();
+    if (picker && site?.isPopoverOpen(picker)) {
+      if (shouldSyncTab) {
+        syncPickerTabForTarget();
+      }
+      renderPicker(true);
+    }
+  }
+
   function openPicker(): void {
     if (picker && pickerTrigger) {
       site?.placePopover(picker, pickerTrigger, { gap: 6 });
@@ -508,15 +520,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       pickerStatus.textContent = 'Loading icons…';
     }
     loadIconIndex().then(
-      () => {
-        syncIconSelects(form);
-        validateIcons(form);
-        onIndexLoaded();
-        if (picker && site?.isPopoverOpen(picker)) {
-          syncPickerTabForTarget();
-          renderPicker(true);
-        }
-      },
+      () => handleIndexReady(true),
       () => {
         if (pickerStatus) {
           pickerStatus.textContent = 'Icons could not be loaded; Reopen the picker to retry.';
@@ -603,22 +607,29 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       { root: gridElement, rootMargin: '240px 0px' }
     );
 
-    document.addEventListener('click', (event) => {
-      const button =
-        event.target instanceof Element ? event.target.closest('[data-icon-target]') : undefined;
-      if (button instanceof HTMLElement) {
-        const isSwitchingOpenTarget =
-          Boolean(site?.isPopoverOpen(pickerElement)) && button !== pickerTrigger;
-        targetPicker(button);
-        if (isSwitchingOpenTarget) {
-          event.preventDefault();
-          openPicker();
+    document.addEventListener(
+      'click',
+      (event) => {
+        const button =
+          event.target instanceof Element ? event.target.closest('[data-icon-target]') : undefined;
+        if (button instanceof HTMLElement) {
+          const isSwitchingOpenTarget =
+            Boolean(site?.isPopoverOpen(pickerElement)) && button !== pickerTrigger;
+          targetPicker(button);
+          if (isSwitchingOpenTarget) {
+            event.preventDefault();
+            openPicker();
+          }
         }
-      }
-    });
+      },
+      true
+    );
     pickerElement.addEventListener('toggle', (event) => {
       if ((event as ToggleEvent).newState === 'open') {
         openPicker();
+      } else if (pickerSearchFrame) {
+        cancelAnimationFrame(pickerSearchFrame);
+        pickerSearchFrame = 0;
       }
     });
     bindPopoverFocusDismiss(pickerElement, site, () => pickerTrigger);
@@ -662,14 +673,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     },
     loadIndexInBackground() {
       loadIconIndex().then(
-        () => {
-          syncIconSelects(form);
-          validateIcons(form);
-          onIndexLoaded();
-          if (picker && site?.isPopoverOpen(picker)) {
-            renderPicker(true);
-          }
-        },
+        () => handleIndexReady(false),
         () => undefined
       );
     },

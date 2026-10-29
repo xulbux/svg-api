@@ -3,8 +3,8 @@
  *
  * Each distinct text and typography combination is laid out once at the `(0, 0)` baseline;
  * Its ink bounds and serialized outline are cached (LRU) and positioned with `transform="translate(…)"`.
- * Probe measurements used while wrapping and truncating go through uncached helpers, and one-off text
- * is rendered with `isUncached`, so neither ever evicts hot entries.
+ * Probe measurements used while wrapping and truncating go through uncached helpers,
+ * and one-off text is rendered with `isUncached`, so neither ever evicts hot entries.
  */
 
 import { parse as parseFont } from 'opentype.js';
@@ -79,7 +79,7 @@ interface ResolvedFontGlyph {
 
 /** Options for `renderTextPathMarkup`. */
 interface TextPathOptions {
-  /** Horizontal alignment mode (defaults to `'center'`). */
+  /** Horizontal alignment mode. */
   align?: 'center' | 'left' | 'origin';
   /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`, baseline `originX` when `align === 'origin'`). */
   anchorX: number;
@@ -87,7 +87,7 @@ interface TextPathOptions {
   baselineY: number;
   /** SVG `fill` color string. */
   fill: string;
-  /** Optional font family (defaults to `'sans'`). */
+  /** Optional font family. */
   font?: TypingFont;
   /** Font size in pixels. */
   fontSize: number;
@@ -95,10 +95,7 @@ interface TextPathOptions {
   isBold?: boolean;
   /** Whether to use the bold italic font style. */
   isItalic?: boolean;
-  /**
-   * Whether to lay the text out without reading or writing the shared outline cache (used for one-off
-   * wrapped text so it never evicts hot entries; Defaults to `false`).
-   */
+  /** Whether to lay the text out without reading or writing the shared outline cache (used for one-off wrapped text so it never evicts hot entries). */
   isUncached?: boolean;
 }
 
@@ -117,8 +114,8 @@ const HALF_CAP_HEIGHT_RATIO = 0.355;
 const MAX_OUTLINE_CACHE_SIZE = 512;
 
 /**
- * Maximum summed `pathData` length in UTF-16 code units of the `TextOutline` cache; Long labels of
- * complex glyphs serialize to tens of thousands of code units, so entry count alone cannot bound memory.
+ * Maximum summed `pathData` length in UTF-16 code units of the `TextOutline` cache;
+ * Long labels of complex glyphs serialize to tens of thousands of code units, so entry count alone cannot bound memory.
  */
 const MAX_OUTLINE_CACHE_WEIGHT = 4_000_000;
 
@@ -421,7 +418,7 @@ function getTextOutline(
  * @param fontSize     Font size in pixels (defaults to `BADGE_FONT_SIZE`).
  * @param isBold       Whether the text is rendered with the bold font weight.
  * @param isItalic     Whether the text is rendered with the italic font style.
- * @param fontFamily   Font family (defaults to `'sans'`).
+ * @param fontFamily   Font family preset.
  * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
 export function measureTextWidth(

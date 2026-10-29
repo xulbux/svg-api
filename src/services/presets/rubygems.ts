@@ -43,7 +43,6 @@ export const RUBYGEMS_SERVICE = defineService({
       'Latest version, all-time downloads, license, and last-updated age of any Ruby gem.',
     title: 'RubyGems',
   },
-  metricAliases: { dl: 'dt' },
   metrics: {
     dt: createDownloadsMetric(RUBYGEMS_ENDPOINT, 'dt', (gem) => gem.downloads),
     license: createLicenseMetric(RUBYGEMS_ENDPOINT, (gem) => gem.licenses),

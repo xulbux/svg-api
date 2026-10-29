@@ -249,7 +249,9 @@
   cursor: pointer;
 }
 
-.select-value {
+.select-value,
+.select-option-label,
+.icon-select-value {
   flex: 1;
   min-inline-size: 0;
   overflow: hidden;
@@ -370,14 +372,6 @@
   background: var(--c-selected);
 }
 
-.select-option-label {
-  flex: 1;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .select-option-badge {
   flex-shrink: 0;
   padding: 1px 6px;
@@ -487,14 +481,6 @@
   cursor: pointer;
 }
 
-.icon-select-value {
-  flex: 1;
-  min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .icon-select-value.is-placeholder,
 .icon-select-grid {
   color: var(--c-text-3);
@@ -532,12 +518,21 @@
   cursor: pointer;
   transition:
     border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
     color var(--duration-fast) ease;
 }
 
 .icon-select-clear:hover {
   border-color: var(--c-border-strong);
   color: var(--c-text-1);
+}
+
+.icon-select-clear:focus-visible {
+  border-color: var(--c-focus);
+  color: var(--c-text-1);
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: 0 0 0 3px var(--c-hover);
 }
 
 /* Small Buttons (builder actions): */
@@ -1035,6 +1030,7 @@
   transition:
     background-color var(--duration-fast) ease,
     border-color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
     color var(--duration-fast) ease;
 }
 
@@ -1042,6 +1038,14 @@
   border-color: var(--c-border-strong);
   color: var(--c-text-1);
   background: var(--c-hover);
+}
+
+.stack-chip:focus-visible {
+  border-color: var(--c-focus);
+  color: var(--c-text-1);
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  box-shadow: 0 0 0 3px var(--c-hover);
 }
 
 .stack-chip[aria-pressed='true'] {

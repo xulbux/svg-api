@@ -34,12 +34,8 @@ import {
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { findSvgRoute, renderSvgPath, resolveSvgRequest, SVG_ROUTES } from '@/routes/svg';
-import { URL_PLACEHOLDER_RX } from '@/services/endpoint';
-import {
-  DEFAULT_METRIC_ALIASES,
-  listServiceMetricAliases,
-  MAX_UPSTREAM_BYTES,
-} from '@/services/fetcher';
+import { MAX_UPSTREAM_BYTES, URL_PLACEHOLDER_RX } from '@/services/endpoint';
+import { DEFAULT_METRIC_ALIASES, listServiceMetricAliases } from '@/services/fetcher';
 import { DOWNLOAD_PERIODS } from '@/services/metrics';
 import { getSiteAsset, getSiteAssetUrl } from '@/site/assets';
 import {
@@ -2480,6 +2476,142 @@ describe('site stylesheet', () => {
     }
     expect(isCopyPrevented).toBe(false);
     expect(copiedText).toBeUndefined();
+  });
+
+  it('switches fallback shared-popover triggers cleanly without closing and emits enriched SEO JSON-LD, /llms.txt alternate link, 2-step builder breadcrumbs, and nofollow preview links (regressions: fallback shared-popover trigger switch closed popover, /builder breadcrumb pointed at 301 redirect, missing llms.txt alternate link and preview rel=nofollow)', () => {
+    // [1] Non-Popover-API fallback: switching from `triggerA` to `triggerB` targeting the same `#icon-picker` keeps `.is-open` active and transfers `aria-expanded`:
+    const documentListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>();
+    const openClasses = new Set<string>();
+    const fakePopover = Object.assign(Object.create(FakeHtmlElement.prototype) as object, {
+      classList: {
+        add: (token: string) => openClasses.add(token),
+        contains: (token: string) => openClasses.has(token),
+        remove: (token: string) => openClasses.delete(token),
+      },
+      contains: () => false,
+      dispatchEvent: () => true,
+      getBoundingClientRect: () => ({ height: 120, width: 200 }),
+      hasAttribute: (name: string) => name === 'popover',
+      id: 'icon-picker',
+      style: { left: '', minWidth: '', removeProperty: () => undefined, top: '' },
+    });
+
+    function createPopoverTriggerStub(id: string): {
+      attributes: Map<string, string>;
+      closest: (selector: string) => unknown;
+      getAttribute: (name: string) => string | undefined;
+      hasAttribute: (name: string) => boolean;
+      id: string;
+      setAttribute: (name: string, val: string) => void;
+    } {
+      const attributes = new Map<string, string>([['popovertarget', 'icon-picker']]);
+      const stub = Object.assign(Object.create(FakeElement.prototype) as object, {
+        attributes,
+        closest: (selector: string) => (selector.startsWith('[popovertarget]') ? stub : undefined),
+        getAttribute: (name: string) => attributes.get(name),
+        hasAttribute: (name: string) => attributes.has(name),
+        id,
+        setAttribute: (name: string, val: string) => {
+          attributes.set(name, val);
+        },
+      });
+      return stub;
+    }
+
+    const triggerFirst = createPopoverTriggerStub('trigger-left');
+    const triggerSecond = createPopoverTriggerStub('trigger-right');
+
+    evaluateClientDom(siteScript, {
+      Element: FakeElement,
+      HTMLElement: FakeHtmlElement,
+      Node: FakeNode,
+      document: {
+        addEventListener(type: string, listener: (event: Record<string, unknown>) => void) {
+          const list = documentListeners.get(type) ?? [];
+          list.push(listener);
+          documentListeners.set(type, list);
+        },
+        documentElement: {
+          clientWidth: 1280,
+          getAttribute: () => undefined,
+          hasAttribute: () => false,
+          removeAttribute: () => undefined,
+          setAttribute: () => undefined,
+        },
+        getElementById: () => undefined,
+        querySelector: () => undefined,
+        querySelectorAll(selector: string) {
+          if (selector === '[popover]') {
+            return [fakePopover];
+          }
+          if (selector.startsWith('[popovertarget]')) {
+            return [triggerFirst, triggerSecond];
+          }
+          return [];
+        },
+      },
+      globalThis: {
+        addEventListener: () => undefined,
+        getSelection: () => undefined,
+        innerHeight: 800,
+        matchMedia: () => ({ addEventListener: () => undefined, matches: false }),
+      },
+      localStorage: {
+        getItem: () => undefined,
+        removeItem: () => undefined,
+        setItem: () => undefined,
+      },
+    });
+
+    const clickListeners = documentListeners.get('click') ?? [];
+    for (const listener of clickListeners) {
+      listener({ defaultPrevented: false, target: triggerFirst });
+    }
+    expect(openClasses.has('is-open')).toBe(true);
+    expect(triggerFirst.getAttribute('aria-expanded')).toBe('true');
+    expect(triggerSecond.getAttribute('aria-expanded')).toBe('false');
+
+    for (const listener of clickListeners) {
+      listener({ defaultPrevented: false, target: triggerSecond });
+    }
+    expect(openClasses.has('is-open')).toBe(true);
+    expect(triggerFirst.getAttribute('aria-expanded')).toBe('false');
+    expect(triggerSecond.getAttribute('aria-expanded')).toBe('true');
+
+    for (const listener of clickListeners) {
+      listener({ defaultPrevented: false, target: triggerSecond });
+    }
+    expect(openClasses.has('is-open')).toBe(false);
+    expect(triggerSecond.getAttribute('aria-expanded')).toBe('false');
+
+    // [2] Enriched `<head>` discovery tags, `WebApplication` JSON-LD, 2-item builder `BreadcrumbList`, and `rel="nofollow"` preview links:
+    const homeHtml = renderHomeHtml();
+    expect(homeHtml).toContain(
+      '<link rel="alternate" type="text/plain" href="/llms.txt" title="LLM documentation" />'
+    );
+    expect(homeHtml).toContain(`"@id":"${SITE_ORIGIN}/#website"`);
+    expect(homeHtml).toContain('"@type":"WebApplication"');
+    expect(homeHtml).toContain('rel="nofollow"');
+
+    const serviceBuilderHtml = renderBuilderHtml('service');
+    const jsonLdMatch =
+      /<script type="application\/ld\+json">(?<json>[^<]+)<\/script>/.exec(serviceBuilderHtml)
+        ?.groups?.json ?? '{}';
+    const parsedJsonLd = JSON.parse(jsonLdMatch) as {
+      '@graph'?: { '@type'?: string; itemListElement?: { item?: string; name?: string }[] }[];
+    };
+    const breadcrumbNode = parsedJsonLd['@graph']?.find(
+      (entry) => entry['@type'] === 'BreadcrumbList'
+    );
+    expect(breadcrumbNode?.itemListElement).toEqual([
+      { '@type': 'ListItem', item: `${SITE_ORIGIN}/`, name: 'Home', position: 1 },
+      {
+        '@type': 'ListItem',
+        item: `${SITE_ORIGIN}/builder/service`,
+        name: 'Service Badge Builder',
+        position: 2,
+      },
+    ]);
   });
 });
 

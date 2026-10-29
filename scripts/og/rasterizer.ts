@@ -44,6 +44,20 @@ interface RasterScene {
   width: number;
 }
 
+/** Resolved active fill/stroke paint specs, opacities, and half-stroke width for an SDF primitive. */
+interface SdfPaint {
+  /** Active `fill` attribute when visible (`undefined` when `'none'` or transparent). */
+  activeFillSpec: string | undefined;
+  /** Active `stroke` attribute when visible (`undefined` when `'none'`, zero-width, or transparent). */
+  activeStrokeSpec: string | undefined;
+  /** Clamped `fill-opacity` in `[0, 1]`. */
+  fillOpacity: number;
+  /** Half stroke width in canvas pixels. */
+  halfStroke: number;
+  /** Clamped `stroke-opacity` in `[0, 1]`. */
+  strokeOpacity: number;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Vertical supersampling grid resolution per pixel row for anti-aliased vector fills. */
@@ -192,6 +206,23 @@ function blendSdfSample(
   }
 }
 
+/** Resolve active fill/stroke paint specs, opacities, and half-stroke width for `<rect>` and `<circle>` SDFs. */
+function resolveSdfPaint(attrs: Readonly<Record<string, string>>, rootScale: number): SdfPaint {
+  const fillSpec = attrs.fill ?? '#000000';
+  const strokeSpec = attrs.stroke ?? 'none';
+  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
+  const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
+  const halfStroke = (Number.parseFloat(attrs['stroke-width'] ?? '1') * rootScale) / 2;
+  return {
+    activeFillSpec: fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined,
+    activeStrokeSpec:
+      strokeSpec !== 'none' && halfStroke > 0 && strokeOpacity > 0 ? strokeSpec : undefined,
+    fillOpacity,
+    halfStroke,
+    strokeOpacity,
+  };
+}
+
 /** Paint a `<rect>` primitive (solid or gradient fill plus optional stroke) onto `scene`. */
 function paintRect(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
   const rectX = Number.parseFloat(attrs.x ?? '0') * scene.rootScale;
@@ -203,20 +234,12 @@ function paintRect(scene: RasterScene, attrs: Readonly<Record<string, string>>):
     return;
   }
 
-  const fillSpec = attrs.fill ?? '#000000';
-  const strokeSpec = attrs.stroke ?? 'none';
-  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
-  const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
-  const halfStroke = (Number.parseFloat(attrs['stroke-width'] ?? '1') * scene.rootScale) / 2;
-  const activeFillSpec = fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined;
-  const activeStrokeSpec =
-    strokeSpec !== 'none' && halfStroke > 0 && strokeOpacity > 0 ? strokeSpec : undefined;
-
+  const paint = resolveSdfPaint(attrs, scene.rootScale);
   const halfWidth = rectWidth / 2;
   const halfHeight = rectHeight / 2;
   const centerX = rectX + halfWidth;
   const centerY = rectY + halfHeight;
-  const pad = Math.ceil(Math.max(0, halfStroke) + 2);
+  const pad = Math.ceil(Math.max(0, paint.halfStroke) + 2);
 
   const minCol = Math.max(0, Math.floor(rectX - pad));
   const maxCol = Math.min(scene.width - 1, Math.ceil(rectX + rectWidth + pad));
@@ -243,11 +266,11 @@ function paintRect(scene: RasterScene, attrs: Readonly<Record<string, string>>):
         dist,
         (sampleX - rectX) / rectWidth,
         unitY,
-        activeFillSpec,
-        fillOpacity,
-        activeStrokeSpec,
-        strokeOpacity,
-        halfStroke
+        paint.activeFillSpec,
+        paint.fillOpacity,
+        paint.activeStrokeSpec,
+        paint.strokeOpacity,
+        paint.halfStroke
       );
     }
   }
@@ -261,19 +284,12 @@ function paintCircle(scene: RasterScene, attrs: Readonly<Record<string, string>>
   }
   const centerX = Number.parseFloat(attrs.cx ?? '0') * scene.rootScale;
   const centerY = Number.parseFloat(attrs.cy ?? '0') * scene.rootScale;
-  const fillSpec = attrs.fill ?? '#000000';
-  const strokeSpec = attrs.stroke ?? 'none';
-  const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);
-  const strokeOpacity = clampRange(Number.parseFloat(attrs['stroke-opacity'] ?? '1'), 0, 1);
-  const halfStroke = (Number.parseFloat(attrs['stroke-width'] ?? '1') * scene.rootScale) / 2;
-  const activeFillSpec = fillSpec !== 'none' && fillOpacity > 0 ? fillSpec : undefined;
-  const activeStrokeSpec =
-    strokeSpec !== 'none' && halfStroke > 0 && strokeOpacity > 0 ? strokeSpec : undefined;
+  const paint = resolveSdfPaint(attrs, scene.rootScale);
 
   const diameter = radius * 2;
   const originX = centerX - radius;
   const originY = centerY - radius;
-  const pad = Math.ceil(radius + Math.max(0, halfStroke) + 2);
+  const pad = Math.ceil(radius + Math.max(0, paint.halfStroke) + 2);
   const minCol = Math.max(0, Math.floor(centerX - pad));
   const maxCol = Math.min(scene.width - 1, Math.ceil(centerX + pad));
   const minRow = Math.max(0, Math.floor(centerY - pad));
@@ -291,11 +307,11 @@ function paintCircle(scene: RasterScene, attrs: Readonly<Record<string, string>>
         dist,
         (sampleX - originX) / diameter,
         unitY,
-        activeFillSpec,
-        fillOpacity,
-        activeStrokeSpec,
-        strokeOpacity,
-        halfStroke
+        paint.activeFillSpec,
+        paint.fillOpacity,
+        paint.activeStrokeSpec,
+        paint.strokeOpacity,
+        paint.halfStroke
       );
     }
   }
@@ -394,7 +410,7 @@ function accumulateSubRowHits(
   }
 }
 
-/** Parse optional `translate(...)` and `scale(...)` attributes scaled by `rootScale`. */
+/** Parse optional `translate(…)` and `scale(…)` attributes scaled by `rootScale`. */
 function resolveElementTransform(
   transformAttr: string | undefined,
   rootScale: number
@@ -441,7 +457,7 @@ function paintFilledScanlineRow(
   }
 }
 
-/** Paint a self-closing `<path>` element with optional `translate(...)` and `scale(...)` transforms. */
+/** Paint a self-closing `<path>` element with optional `translate(…)` and `scale(…)` transforms. */
 function paintPathElement(scene: RasterScene, attrs: Readonly<Record<string, string>>): void {
   const fillSpec = attrs.fill ?? '#FFFFFF';
   const fillOpacity = clampRange(Number.parseFloat(attrs['fill-opacity'] ?? '1'), 0, 1);

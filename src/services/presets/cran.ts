@@ -35,7 +35,7 @@ interface CranPackagePayload {
 
 /** Projected cranlogs daily downloads (`cranlogs.r-pkg.org/downloads/daily/last-month/:pkg`). */
 interface CranDownloadsProjection {
-  /** 10-bar 30-day download histogram. */
+  /** Bucketed 30-day download histogram. */
   bars30d?: number[];
   /** Downloads in the recent half of the 30-day window. */
   currDl?: number;
@@ -49,11 +49,11 @@ interface CranDownloadsProjection {
   prevDd?: number;
   /** Downloads in the prior half of the 30-day window. */
   prevDl?: number;
-  /** Downloads in the preceding 7-day window. */
+  /** Downloads in the preceding weekly window. */
   prevDw?: number;
-  /** 15-point 30-day download series. */
+  /** Bucketed 30-day download sparkline series. */
   series30d?: number[];
-  /** 7-day daily download series. */
+  /** Trailing weekly daily download series. */
   series7d?: number[];
 }
 

@@ -6,7 +6,7 @@
 
 <!-- Example SVG routes to preview (and upstream API docs for new presets): -->
 
--   `/badge/...`
+-   `/badge/…`
 
 ## Checklist
 

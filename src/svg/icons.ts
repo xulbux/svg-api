@@ -16,6 +16,7 @@ import {
   readLruCache,
   roundCoord,
   roundScale,
+  sliceAtCodePoint,
   writeLruCache,
 } from '@/svg/shared';
 import type {
@@ -109,8 +110,8 @@ const FILE_ICONS_SCALE = 0.046875;
 
 /**
  * Canonical brand slugs that prefer `@iconify-json/devicon-plain` over `@iconify-json/simple-icons`
- * so icon families (`c` / `cplusplus` / `csharp`, `javascript` / `typescript`) share an identical geometric frame
- * and database icons (`mysql`, `sqlite`) use clean symbol-only marks without embedded wordmark text.
+ * so related language icon families share a consistent geometric frame and database icons use clean
+ * symbol-only marks without embedded wordmark text.
  */
 const DEVICON_PREFERRED_SLUG_LIST: readonly string[] = [
   'c',
@@ -341,7 +342,7 @@ export const FALLBACK_ICON_SLUG = 'circle-alert';
 /** Stroke opacity of the outer border around unknown-icon placeholders across all SVG elements. */
 export const PLACEHOLDER_BORDER_OPACITY = 0.45;
 
-/** Longest accepted icon slug in characters (the longest real slug is about 40 characters). */
+/** Longest accepted icon slug in characters before rejecting untrusted inputs. */
 export const MAX_ICON_SLUG_LENGTH = 64;
 
 /** Inner SVG of the placeholder icon (translucent circle border + standalone `!`) rendered for unknown icon slugs outside stack tiles. */
@@ -404,8 +405,15 @@ let brandSlugAliasMap: Map<string, string> | undefined = undefined;
 /** Matches the last character before a PascalCase word boundary (a lowercase letter or digit before an uppercase letter, or an uppercase letter before a capitalized word, e.g., `AArrow`). */
 const PASCAL_BOUNDARY_RX = /[\da-z](?=[A-Z])|[A-Z](?=[A-Z][a-z])/g;
 
-/** Matches `fill="currentColor"` attributes inside Iconify SVG path bodies so parent `<g fill="…">` controls color and sheen. */
-const CURRENT_COLOR_FILL_RX = /\s*fill="currentColor"/g;
+/** Matches `fill="currentColor"` or `color="currentColor"` attributes inside Iconify SVG bodies so parent `<g>` groups control paint and sheen. */
+const CURRENT_COLOR_ATTR_RX = /\s*(?:fill|color)="currentColor"/g;
+
+/** Matches a uniform `currentColor`-only `<defs><linearGradient id="…">…</linearGradient></defs>` block in Devicon Plain bodies. */
+const UNIFORM_CURRENT_COLOR_GRADIENT_RX =
+  /<defs><linearGradient id="(?<id>[\w-]+)"[^>]*>(?:<stop[^>]*stop-color="currentColor"[^>]*\/>)+<\/linearGradient><\/defs>/;
+
+/** Matches `<defs>…</defs>` blocks so non-rendered clip/mask definitions never inflate horizontal ink bounds. */
+const ICON_DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/g;
 
 /** Matches basic non-path SVG shape tags (`<circle>`, `<ellipse>`, `<rect>`, `<line>`, `<polyline>`, `<polygon>`). */
 const SHAPE_TAG_RX = /<(?:circle|ellipse|rect|line|polyline|polygon)\b/;
@@ -952,9 +960,9 @@ function recordSinglePathD(pathData: string, scale: number, bounds: IconXBounds)
  * Compute the exact horizontal visual bounding box of an icon body in `24x24` space (Bezier and arc extrema, not control points).
  * @param svgStr         Inner SVG markup of the icon body.
  * @param isStroke       Whether the icon is stroked (pads the bounds by half the default stroke width).
- * @param coordScale     Scale factor from the body's coordinate space to `24x24` (defaults to `1`).
- * @param coordOffsetX   Horizontal offset in `24x24` units applied to the scaled coordinates (defaults to `0`).
- * @returns `minX`/`maxX` bounds clamped to `0`–`24` (`DEFAULT_ICON_X_BOUNDS` when the body has no measurable geometry).
+ * @param coordScale     Scale factor from the body's coordinate space to `24x24`.
+ * @param coordOffsetX   Horizontal offset in `24x24` units applied to the scaled coordinates.
+ * @returns Clamped `minX`/`maxX` bounds (`DEFAULT_ICON_X_BOUNDS` when the body has no measurable geometry).
  */
 function computeIconXBounds(
   svgStr: string,
@@ -962,9 +970,10 @@ function computeIconXBounds(
   coordScale = 1,
   coordOffsetX = 0
 ): IconXBounds {
+  const paintedSvg = svgStr.includes('<defs>') ? svgStr.replace(ICON_DEFS_BLOCK_RX, '') : svgStr;
   const bounds: IconXBounds = { maxX: Number.NEGATIVE_INFINITY, minX: Number.POSITIVE_INFINITY };
-  recordShapeBounds(svgStr, coordScale, bounds);
-  for (const match of svgStr.matchAll(PATH_D_RX)) {
+  recordShapeBounds(paintedSvg, coordScale, bounds);
+  for (const match of paintedSvg.matchAll(PATH_D_RX)) {
     recordSinglePathD(match.groups?.d ?? '', coordScale, bounds);
   }
   if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.maxX)) {
@@ -1005,15 +1014,12 @@ function resolveFileIconCleanSlug(cleanSlug: string): string | undefined {
 }
 
 /** Resolve a Simple Icons alias slug (exact or `[-_.]`-cleaned) to its canonical parent slug (`undefined` when not an alias). */
-function resolveSimpleIconAlias(slug: string): string | undefined {
+function resolveSimpleIconAlias(slug: string, cleanSlug: string): string | undefined {
   const { aliases } = simpleIconSet;
   if (!aliases) {
     return undefined;
   }
-  return (
-    getOwnValue(aliases, slug)?.parent ??
-    getOwnValue(aliases, slug.replace(BRAND_SLUG_CLEAN_RX, ''))?.parent
-  );
+  return getOwnValue(aliases, slug)?.parent ?? getOwnValue(aliases, cleanSlug)?.parent;
 }
 
 /** Resolve a `[-_.]`-cleaned slug against brand-targeting entries in `ICON_SLUG_ALIASES` (`undefined` for UI aliases or non-aliases). */
@@ -1045,7 +1051,7 @@ function canonicalizeBrandSlug(slug: string): string {
   ) {
     return slug;
   }
-  return resolveSimpleIconAlias(slug) ?? resolveBrandSlugAlias(normalized) ?? slug;
+  return resolveSimpleIconAlias(slug, normalized) ?? resolveBrandSlugAlias(normalized) ?? slug;
 }
 
 /** Read a `512`-unit icon body from `@iconify-json/file-icons`, scaled and centered to `24x24` (no ink bounds). */
@@ -1068,7 +1074,7 @@ function getFileIconBody(slug: string): IconBody | undefined {
     coordOffsetX === 0 && offsetY === 0
       ? `scale(${coordScale})`
       : `translate(${coordOffsetX}, ${offsetY}) scale(${coordScale})`;
-  const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
+  const cleanBody = entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim();
   return {
     coordOffsetX,
     coordScale,
@@ -1085,7 +1091,18 @@ function getDeviconPlainBody(slug: string): IconBody | undefined {
   if (!entry?.body) {
     return undefined;
   }
-  const cleanBody = entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim();
+  let cleanBody = entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim();
+  if (cleanBody.includes('<linearGradient')) {
+    const gradMatch = UNIFORM_CURRENT_COLOR_GRADIENT_RX.exec(cleanBody);
+    const gradId = gradMatch?.groups?.id;
+    if (gradMatch && gradId) {
+      cleanBody = cleanBody
+        .replace(gradMatch[0], '')
+        .replaceAll(` fill="url(#${gradId})"`, '')
+        .replaceAll(`fill="url(#${gradId})"`, '')
+        .trim();
+    }
+  }
   return {
     coordScale: DEVICON_SCALE,
     innerSvg: `<g transform="scale(${DEVICON_SCALE})">${cleanBody}</g>`,
@@ -1096,7 +1113,7 @@ function getDeviconPlainBody(slug: string): IconBody | undefined {
 /** Read a `24x24` icon body from `@iconify-json/simple-icons`, including its alias table (no ink bounds). */
 function getSimpleIconBody(slug: string): IconBody | undefined {
   const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-  const aliasParent = resolveSimpleIconAlias(slug);
+  const aliasParent = resolveSimpleIconAlias(slug, normalized);
   const entry =
     getOwnValue(simpleIconSet.icons, slug) ??
     getOwnValue(simpleIconSet.icons, normalized) ??
@@ -1106,7 +1123,7 @@ function getSimpleIconBody(slug: string): IconBody | undefined {
   }
   return {
     coordScale: 1,
-    innerSvg: entry.body.replace(CURRENT_COLOR_FILL_RX, '').trim(),
+    innerSvg: entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim(),
     type: 'simple',
   };
 }
@@ -1127,14 +1144,16 @@ function getLucideIconBody(slug: string): IconBody | undefined {
   return innerContent ? { coordScale: 1, innerSvg: innerContent, type: 'lucide' } : undefined;
 }
 
-/** Add the exact horizontal ink bounds to an icon body. */
+/** Add the exact horizontal ink bounds and `currentColor` flag to an icon body. */
 function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
   if (!body) {
     return undefined;
   }
+  const hasCurrentColor = body.innerSvg.includes('currentColor');
   // The scale/translate wrapper carries no path geometry, so native coordinates are measured with `coordScale` and `coordOffsetX`:
   return {
     ...body,
+    ...(hasCurrentColor ? { hasCurrentColor } : {}),
     ...computeIconXBounds(
       body.innerSvg,
       body.type === 'lucide',
@@ -1301,7 +1320,11 @@ export { BRAND_SLUG_CLEAN_RX } from '@/svg/shared';
  * @returns Canonical slug (e.g., `'python'`, `'cplusplus'`, `'rocket'`).
  */
 export function normalizeIconSlug(slug: string, isBrand = false): string {
-  const rawSlug = slug.trim().toLowerCase();
+  const trimmed = slug.trim();
+  if (trimmed.length > MAX_ICON_SLUG_LENGTH) {
+    return sliceAtCodePoint(trimmed, MAX_ICON_SLUG_LENGTH).toLowerCase();
+  }
+  const rawSlug = trimmed.toLowerCase();
   const baseKey = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
   return isBrand ? canonicalizeBrandSlug(baseKey) : baseKey;
 }
@@ -1313,11 +1336,18 @@ export function normalizeIconSlug(slug: string, isBrand = false): string {
  * @returns Resolved icon data (`undefined` if `'none'`, empty, too long, or not found) and the canonical key.
  */
 export function resolveIconLookup(slug: string, isBrandFirst = false): IconLookup {
-  const rawSlug = slug.trim().toLowerCase();
-  const baseKey = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
-  if (!rawSlug || rawSlug === 'none' || rawSlug.length > MAX_ICON_SLUG_LENGTH) {
-    return { data: undefined, key: isBrandFirst ? canonicalizeBrandSlug(baseKey) : baseKey };
+  const trimmed = slug.trim();
+  if (!trimmed) {
+    return { data: undefined, key: '' };
   }
+  if (trimmed.length > MAX_ICON_SLUG_LENGTH) {
+    return { data: undefined, key: sliceAtCodePoint(trimmed, MAX_ICON_SLUG_LENGTH).toLowerCase() };
+  }
+  const rawSlug = trimmed.toLowerCase();
+  if (rawSlug === 'none') {
+    return { data: undefined, key: 'none' };
+  }
+  const baseKey = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
   if (isBrandFirst) {
     const brandKey = canonicalizeBrandSlug(baseKey);
     const brandData = lookupInIconSet(brandKey, rawSlug, true);

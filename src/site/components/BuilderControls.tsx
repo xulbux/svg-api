@@ -169,6 +169,7 @@ function renderCustomSelect(
   ) : (
     <span class="select-swatch" aria-hidden="true" hidden={true}></span>
   );
+  const listboxId = `${selectId}-options`;
   const searchElement =
     options.length > SEARCHABLE_OPTION_COUNT ? (
       <div class="select-search">
@@ -178,6 +179,7 @@ function renderCustomSelect(
           type="search"
           placeholder="Search…"
           aria-label="Search options"
+          aria-controls={listboxId}
           spellcheck={false}
           autocomplete="off"
         />
@@ -205,7 +207,7 @@ function renderCustomSelect(
       </button>
       <div class="popover-panel select-menu" id={`${selectId}-menu`} popover={true}>
         {searchElement}
-        <div class="select-options" role="listbox" aria-labelledby={labelId}></div>
+        <div class="select-options" id={listboxId} role="listbox" aria-labelledby={labelId}></div>
         <p
           class="select-empty"
           data-select-empty={true}
@@ -732,6 +734,7 @@ function renderStackGroupsControl(
             type="search"
             placeholder="Filter categories…"
             aria-label="Filter category icons"
+            aria-controls="stack-catalog"
             spellcheck={false}
             autocomplete="off"
           />

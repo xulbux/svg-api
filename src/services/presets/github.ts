@@ -11,12 +11,15 @@
 import {
   CACHE_TTL,
   OWNER_REPO_ROUTE,
+  UPSTREAM_TIMEOUT,
   asJsonObject,
+  cancelBody,
   createEndpoint,
   createMetric,
   defineService,
   isJsonObject,
   pickFields,
+  readBoundedResponseText,
   withPageSuffix,
 } from '@/services/endpoint';
 import {
@@ -120,9 +123,6 @@ const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
  */
 const MAX_GRAPHQL_BATCH_SIZE = 16;
 
-/** Upstream timeout in milliseconds for batched GraphQL `POST` requests. */
-const GRAPHQL_BATCH_TIMEOUT = 8000;
-
 /** Selection set fetching open issue and open pull request totals on a GraphQL `Repository`. */
 const REPOSITORY_COUNTS_SELECTION =
   '{issues(states:OPEN){totalCount}pullRequests(states:OPEN){totalCount}}';
@@ -144,10 +144,10 @@ const FORWARDED_RATE_HEADERS: readonly string[] = [
   'x-ratelimit-reset',
 ];
 
-/** Synthetic GraphQL payload returned at 0 API cost when `open_issues_count` is already known to be `0`. */
-const ZERO_COUNTS_PAYLOAD = {
+/** Pre-serialized synthetic GraphQL payload returned at 0 API cost when `open_issues_count` is already known to be `0`. */
+const ZERO_COUNTS_BODY = JSON.stringify({
   data: { repository: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } } },
-} as const;
+});
 
 /** Memoized aliased GraphQL query documents keyed by batch size (`2`–`MAX_GRAPHQL_BATCH_SIZE`). */
 const BATCHED_QUERY_CACHE = new Map<number, string>();
@@ -266,7 +266,7 @@ async function executeMultiRepoBatch(
       body: JSON.stringify({ query: getBatchedCountsQuery(batch.length), variables }),
       headers,
       method: 'POST',
-      signal: AbortSignal.timeout(GRAPHQL_BATCH_TIMEOUT),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT),
     });
   } catch (error) {
     for (const item of batch) {
@@ -275,8 +275,15 @@ async function executeMultiRepoBatch(
     return;
   }
   const forwardedHeaders = copyRateLimitHeaders(response);
+  if (response.url && !response.url.startsWith('https:')) {
+    cancelBody(response.body);
+    for (const item of batch) {
+      item.resolve(new Response('', { headers: forwardedHeaders, status: 502 }));
+    }
+    return;
+  }
   if (!response.ok) {
-    response.body?.cancel().catch(() => undefined);
+    cancelBody(response.body);
     for (const item of batch) {
       item.resolve(new Response('', { headers: forwardedHeaders, status: response.status }));
     }
@@ -284,7 +291,14 @@ async function executeMultiRepoBatch(
   }
   let parsed: unknown = undefined;
   try {
-    parsed = (await response.json()) as unknown;
+    const bodyText = await readBoundedResponseText(response);
+    if (bodyText === undefined) {
+      for (const item of batch) {
+        item.resolve(new Response('', { headers: forwardedHeaders, status: 413 }));
+      }
+      return;
+    }
+    parsed = JSON.parse(bodyText) as unknown;
   } catch (error) {
     const isAbortOrTimeout =
       error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
@@ -336,7 +350,7 @@ function flushGraphQlBatch(
       }),
       headers,
       method: 'POST',
-      signal: AbortSignal.timeout(GRAPHQL_BATCH_TIMEOUT),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT),
     }).then(single.resolve, single.reject);
     return;
   }
@@ -390,7 +404,8 @@ function buildGitHubCountsRequest(
   if (hasZeroOpenIssuesAndPrs(params, peekCached)) {
     return {
       cacheKey: sharedCacheKey,
-      send: () => Promise.resolve(Response.json(ZERO_COUNTS_PAYLOAD)),
+      send: () =>
+        Promise.resolve(new Response(ZERO_COUNTS_BODY, { headers: GRAPHQL_HEADERS, status: 200 })),
       url: GITHUB_GRAPHQL_URL,
     };
   }

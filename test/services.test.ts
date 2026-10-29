@@ -15,6 +15,7 @@ import app from '@/index';
 import { resolveSvgRoute } from '@/routes/svg';
 import {
   CACHE_TTL,
+  MAX_UPSTREAM_BYTES,
   createEndpoint,
   defineService,
   isJsonObject,
@@ -106,7 +107,7 @@ const REFERENCE_NOW = Date.parse('2026-10-19T12:00:00Z');
 
 /** Non-canonical metric slugs that presets must never register directly (handled via `DEFAULT_METRIC_ALIASES` or canonical download keys). */
 const NON_CANONICAL_METRIC_KEYS: readonly string[] = [
-  ...Object.keys(DEFAULT_METRIC_ALIASES).filter((alias) => alias !== 'pulls'),
+  ...Object.keys(DEFAULT_METRIC_ALIASES).filter((alias) => alias !== 'dl' && alias !== 'pulls'),
   'download',
   'downloads',
   'ver',
@@ -1099,7 +1100,7 @@ describe('forge, registry & CDN presets (AUR, Codeberg, GitLab, Hex.pm, pub.dev,
       'https://gitlab.com/gitlab-org/charts/gitlab-runner/-/starrers'
     );
     // Every segment is validated individually, missing owners are reported, and the depth stays bounded:
-    expect(await describeMetric('/badge/gitlab/gitlab-org/.../gitlab-runner/stars')).toBe(
+    expect(await describeMetric('/badge/gitlab/gitlab-org/…/gitlab-runner/stars')).toBe(
       'gitlab: invalid name'
     );
     const traversalMetric = await resolveServiceMetric(
@@ -1973,7 +1974,7 @@ describe('metric formatting helpers', () => {
     expect(formatSpdxKey(42)).toBeUndefined();
     expect(formatSpdxKey(undefined)).toBeUndefined();
 
-    // A constant series `[10, 10, ..., 10]` of length 15 bucketed into 10 buckets (uneven 1- vs 2-item spans) must stay flat `[10, ..., 10]`:
+    // A constant series `[10, 10, …, 10]` of length 15 bucketed into 10 buckets (uneven 1- vs 2-item spans) must stay flat `[10, …, 10]`:
     const flat15 = Array.from({ length: 15 }, () => 10);
     expect(bucketSeries(flat15, 10)).toEqual(Array.from({ length: 10 }, () => 10));
 
@@ -3807,5 +3808,79 @@ describe('inline widget & preset regressions', () => {
       type: 'sparkline',
       values: [100, 200, 400, 700],
     });
+  });
+
+  it('rejects empty explicit owners, resolves dl -> dt globally, caps batched GitHub GraphQL bodies, blocks non-HTTPS upstream redirects, and validates arch/aur flag types (regressions: /badge/gh//repo/stars passed owner check, duplicate preset dl:dt aliases, unbounded GraphQL response.json(), post-redirect http: scheme downgrade, truthy arch/aur flag coercion)', async () => {
+    // [1] Empty explicit `:owner` segments (`/badge/gh//repo/stars`, `/badge/npm//react/v`) reject before any upstream `fetch`:
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    expect(await describeMetric('/badge/gh//repo/stars')).toBe('gh: invalid name');
+    expect(await describeMetric('/badge/npm//react/v')).toBe('npm: invalid name');
+    expect(resolvePathRedirect('/badge/gh//repo/stars')).toBe(FALLBACK_REDIRECT_URL);
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    // [2] Global `dl: 'dt'` alias resolves across every service defining `dt` without explicit `dl` (while `crates` keeps `dl: 'dq'` and `pypi` keeps direct `dl`):
+    const cratesAliases = new Map(listServiceMetricAliases(getService('crates')));
+    const pypiAliases = new Map(listServiceMetricAliases(getService('pypi')));
+    expect(cratesAliases.get('dl')).toBe('dq');
+    expect(pypiAliases.get('dl')).toBeUndefined();
+    for (const serviceKey of ['clojars', 'modrinth', 'nuget', 'ovsx'] as const) {
+      const aliases = new Map(listServiceMetricAliases(getService(serviceKey)));
+      expect(aliases.get('dl'), serviceKey).toBe('dt');
+    }
+
+    // [3] Oversized batched GitHub GraphQL responses (`> MAX_UPSTREAM_BYTES`) abort cleanly instead of buffering unbounded JSON:
+    fetchSpy.mockImplementation(() => {
+      const oversizedResponse = new Response('x', {
+        headers: { 'content-length': String(MAX_UPSTREAM_BYTES + 1024) },
+        status: 200,
+      });
+      return Promise.resolve(oversizedResponse);
+    });
+    const oversizedGraphQl = await resolvePathMetric(
+      '/badge/gh/xulbux/svg-api/issues',
+      AUTHENTICATED_GH_ENV
+    );
+    expect(oversizedGraphQl.status).toBe(413);
+    expect(oversizedGraphQl.result.value).toBe('too large');
+    resetUpstreamCaches();
+
+    // [4] Post-redirect `http:` upstream `Response.url` downgrades are rejected as `502 api error`:
+    fetchSpy.mockImplementation(() => {
+      const redirectedHttpResponse = Response.json({ version: '1.0.0' }, { status: 200 });
+      Object.defineProperty(redirectedHttpResponse, 'url', {
+        value: 'http://insecure.example/hono/latest',
+      });
+      return Promise.resolve(redirectedHttpResponse);
+    });
+    const insecureRedirect = await resolvePathMetric('/badge/npm/hono/v');
+    expect(insecureRedirect.status).toBe(502);
+    expect(insecureRedirect.result.value).toBe('api error');
+    resetUpstreamCaches();
+
+    // [5] `arch` (`flag_date`) and `aur` (`OutOfDate`) only treat non-empty strings / positive finite timestamps as flagged:
+    mockUpstream({
+      'archlinux.org/packages/search/json/?name=empty-flag': {
+        results: [{ flag_date: '', pkgrel: '1', pkgver: '2.0' }],
+      },
+      'archlinux.org/packages/search/json/?name=flagged-pkg': {
+        results: [{ flag_date: '2026-10-01', pkgrel: '1', pkgver: '2.0' }],
+      },
+      'aur.archlinux.org/rpc/v5/info?arg[]=flagged-aur': {
+        results: [{ OutOfDate: 1_700_000_000, Version: '1.0-1' }],
+      },
+      'aur.archlinux.org/rpc/v5/info?arg[]=zero-aur': {
+        results: [{ OutOfDate: 0, Version: '1.0-1' }],
+      },
+    });
+    const [archEmpty, archFlagged, aurZero, aurFlagged] = await Promise.all([
+      resolvePathMetric('/badge/arch/empty-flag/v'),
+      resolvePathMetric('/badge/arch/flagged-pkg/v'),
+      resolvePathMetric('/badge/aur/zero-aur/v'),
+      resolvePathMetric('/badge/aur/flagged-aur/v'),
+    ]);
+    expect(archEmpty.result.color).toBe('sky');
+    expect(archFlagged.result.color).toBe('amber');
+    expect(aurZero.result.color).toBe('sky');
+    expect(aurFlagged.result.color).toBe('amber');
   });
 });

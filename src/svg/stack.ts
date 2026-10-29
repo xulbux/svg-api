@@ -23,6 +23,7 @@ import {
   isSheenMode,
   prepareDisplayText,
   renderIconGroup,
+  renderInsetRingRect,
   renderKumoBoxSurface,
   renderSheenOverlay,
   renderSurfaceGradientDefs,
@@ -474,7 +475,14 @@ function renderSingleStackTile(
 
   if (icon.isFallback) {
     const placeholderColor = THEMES.red.iconColor;
-    const hollowFrame = `<rect x="${roundCoord(tileX + 0.5)}" y="${roundCoord(tileY + 0.5)}" width="${tileSize - 1}" height="${tileSize - 1}" rx="${roundCoord(radius - 0.5)}" stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}" stroke-width="1" />`;
+    const hollowFrame = renderInsetRingRect(
+      tileX,
+      tileY,
+      tileSize,
+      tileSize,
+      radius,
+      `stroke="${placeholderColor}" stroke-opacity="${PLACEHOLDER_BORDER_OPACITY}"`
+    );
     const placeholderIcon = renderIconGroup({
       color: placeholderColor,
       innerSvg: innerUseMarkup,
@@ -514,6 +522,7 @@ function renderSingleStackTile(
   const iconPaint = resolveForegroundPaint(isOnPrimary, THEMES[themeColor].iconColor);
   const iconMarkup = renderIconGroup({
     color: iconPaint.color,
+    hasCurrentColor: icon.data.hasCurrentColor,
     innerSvg: innerUseMarkup,
     opacity: iconPaint.opacity,
     strokeWidth: STACK_ICON_STROKE_WIDTH,
@@ -596,8 +605,14 @@ export { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
  */
 export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): ThemeColorName {
   const { colorOverride, slug: cleanSlug } = splitTileToken(slug);
+  if (colorOverride) {
+    return colorOverride;
+  }
+  if (fallback) {
+    return fallback;
+  }
   const cleanKey = normalizeIconSlug(cleanSlug, true).replace(BRAND_SLUG_CLEAN_RX, '');
-  return colorOverride ?? fallback ?? resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
+  return resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
 }
 
 /**
@@ -619,10 +634,16 @@ export function parseStackGroups(
   let groupIndex = 0;
 
   for (const bandSegment of rawInput.split(';')) {
+    if (totalIcons >= MAX_STACK_ICONS) {
+      break;
+    }
     const trimmedBand = bandSegment.trim();
     if (trimmedBand.length > 0) {
       const bandGroups: StackGroup[] = [];
       for (const groupSegment of trimmedBand.split('|')) {
+        if (totalIcons >= MAX_STACK_ICONS) {
+          break;
+        }
         const fallbackPerLine =
           perLineList && perLineList.length > 0
             ? perLineList[Math.min(groupIndex, perLineList.length - 1)]

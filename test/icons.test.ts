@@ -3,9 +3,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { STACK_CATEGORIES, resolveStackIconTitle } from '@/config/stack';
 import {
   FALLBACK_ICON_SLUG,
   ICON_SLUG_ALIASES,
+  MAX_ICON_SLUG_LENGTH,
   computeIconXBounds,
   getIconPickerIndex,
   getIconPickerPage,
@@ -362,6 +364,50 @@ describe('computeIconXBounds', () => {
       expect(Number.isFinite(bounds.minX), truncatedPath).toBe(true);
       expect(Number.isFinite(bounds.maxX), truncatedPath).toBe(true);
       expect(bounds, truncatedPath).toEqual({ maxX: 15, minX: 5 });
+    }
+  });
+
+  it('strips non-rendered <defs> geometry before measuring ink bounds, detects stop-color/stroke currentColor, collapses uniform currentColor gradients, and caps overlong uppercase slugs early (regressions: <defs> paths inflated ceylon-wordmark/gitpod-wordmark ink bounds, missed stroke/stop-color currentColor, uniform currentColor linearGradient in gitpod, uncapped toLowerCase on overlong slug)', () => {
+    expect(
+      computeIconXBounds(
+        '<defs><path id="clip" d="M0 0 H24" /><clipPath><rect x="0" y="0" width="24" height="24" /></clipPath></defs><rect x="6" y="4" width="12" height="8" />',
+        false
+      )
+    ).toEqual({ maxX: 18, minX: 6 });
+
+    const ceylonWordmark = requireDefined(
+      resolveIcon('ceylon-wordmark', true),
+      'ceylon-wordmark icon'
+    );
+    expect(ceylonWordmark.minX).toBeGreaterThan(0);
+
+    const keyRound = requireDefined(resolveIcon('key-round'), 'key-round icon');
+    expect(keyRound.hasCurrentColor).toBe(true);
+
+    const gitpodWordmark = requireDefined(
+      resolveIcon('gitpod-wordmark', true),
+      'gitpod-wordmark brand icon'
+    );
+    expect(gitpodWordmark.innerSvg).not.toContain('<linearGradient');
+    expect(gitpodWordmark.minX).toBeGreaterThan(0);
+
+    const gitpodBrand = requireDefined(resolveIcon('gitpod', true), 'gitpod brand icon');
+    expect(gitpodBrand.innerSvg).not.toContain('<linearGradient');
+
+    const overlongUppercase = 'X'.repeat(MAX_ICON_SLUG_LENGTH + 32);
+    expect(normalizeIconSlug(overlongUppercase)).toBe('x'.repeat(MAX_ICON_SLUG_LENGTH));
+    expect(resolveIcon(overlongUppercase, true)).toBeUndefined();
+    expect(resolveIconLookup(overlongUppercase, true).data).toBeUndefined();
+  });
+
+  it('keeps STACK_CATEGORIES canonicals and curated titles aligned with primary brand resolution (drift guard)', () => {
+    for (const category of STACK_CATEGORIES) {
+      for (const item of category.items) {
+        const lookup = resolveIconLookup(item.slug, true);
+        expect(lookup.data, `${category.id}.${item.slug}`).toBeDefined();
+        expect(item.canonical, `${category.id}.${item.slug}`).toBe(lookup.key);
+        expect(resolveStackIconTitle(lookup.key), `${category.id}.${item.slug}`).toBeDefined();
+      }
     }
   });
 });

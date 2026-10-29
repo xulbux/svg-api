@@ -196,10 +196,17 @@ export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
  * @returns Parameter table rows.
  */
 export function buildTypingParamRows(): ParamTableRow[] {
-  const fontDefaults = TYPING_FONT_TOKENS.map(
-    (font) =>
-      `${font} (${TYPING_LAYOUT_TOKENS.filter((layout) => DEFAULT_LAYOUT_FONTS[layout] === font).join(', ')})`
-  ).join(' / ');
+  const fontDefaultParts: string[] = [];
+  for (const font of TYPING_FONT_TOKENS) {
+    const matchingLayouts: string[] = [];
+    for (const layout of TYPING_LAYOUT_TOKENS) {
+      if (DEFAULT_LAYOUT_FONTS[layout] === font) {
+        matchingLayouts.push(layout);
+      }
+    }
+    fontDefaultParts.push(`${font} (${matchingLayouts.join(', ')})`);
+  }
+  const fontDefaults = fontDefaultParts.join(' / ');
   return [
     {
       defaultVal: '~required',

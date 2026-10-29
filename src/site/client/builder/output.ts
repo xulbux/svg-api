@@ -68,6 +68,8 @@ interface BuilderOutputController {
   clearCrossBuilderNotice: () => void;
   /** Copy the shareable builder URL to the clipboard. */
   copyShareLink: () => void;
+  /** Enable syncing edits into the browser URL bar via `history.replaceState`. */
+  enableUrlSync: () => void;
   /** Return the most recently requested preview SVG path. */
   getCurrentPreviewPath: () => string;
   /** Handle `error` events on `#builder-preview`. */
@@ -80,6 +82,8 @@ interface BuilderOutputController {
   loadPreview: (path: string) => void;
   /** Recompute snippets, missing-field state, debounced preview, and browser history URL. */
   renderOutputs: () => void;
+  /** Restore the clean `/builder/:kind` pathname in `history.replaceState` until edited again. */
+  resetUrlToClean: () => void;
   /** Switch the active snippet format tab (`markdown`, `html`, or `url`). */
   selectTab: (tab: HTMLElement) => void;
   /** Set a cross-builder prefill notice string. */
@@ -165,6 +169,7 @@ export function createBuilderOutputController(
   let isFetchingPreview = false;
   let hasVisiblePreview = false;
   let hasPreviewError = false;
+  let isUrlSyncActive = false;
 
   function renderCode(tokens: readonly HighlightToken[]): void {
     if (!codeElement) {
@@ -354,16 +359,18 @@ export function createBuilderOutputController(
       if (isComplete) {
         loadPreview(result.path);
       }
-      history.replaceState(
-        history.state,
-        '',
-        buildShareUrl(
-          globalThis.location.href,
-          result.path,
-          snippetOptions.alt,
-          snippetOptions.link
-        )
-      );
+      if (isUrlSyncActive) {
+        history.replaceState(
+          history.state,
+          '',
+          buildShareUrl(
+            globalThis.location.href,
+            result.path,
+            snippetOptions.alt,
+            snippetOptions.link
+          )
+        );
+      }
     }, PREVIEW_DEBOUNCE_MS);
   }
 
@@ -400,6 +407,9 @@ export function createBuilderOutputController(
       crossBuilderNotice = '';
     },
     copyShareLink,
+    enableUrlSync() {
+      isUrlSyncActive = true;
+    },
     getCurrentPreviewPath() {
       return currentPreviewPath;
     },
@@ -408,6 +418,10 @@ export function createBuilderOutputController(
     handleTabKeydown,
     loadPreview,
     renderOutputs,
+    resetUrlToClean() {
+      isUrlSyncActive = false;
+      history.replaceState(history.state, '', new URL(globalThis.location.href).pathname);
+    },
     selectTab,
     setCrossBuilderNotice(notice: string) {
       crossBuilderNotice = notice;

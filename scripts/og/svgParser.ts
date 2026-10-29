@@ -605,8 +605,8 @@ export function flattenSvgPath(
       cursorIndex += 1;
       if (char === 'Z' || char === 'z') {
         if (state.currentSubpath && state.currentSubpath.points.length > 0) {
-          state.currentSubpath.isClosed = true;
           state.currentSubpath.points.push(toPoint(state.startX, state.startY));
+          state.currentSubpath.isClosed = true;
         }
         state.currentSubpath = undefined;
         state.command = '';

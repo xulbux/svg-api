@@ -2,7 +2,7 @@
  * HTTP helpers – Request classification, entity tags, redirect validation, and shared response headers of the Worker router.
  */
 
-import { hashText } from '@/svg/shared';
+import { hashBytes, hashText } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -26,6 +26,7 @@ export const HTML_SECURITY_HEADERS: Readonly<Record<string, string>> = {
   ...NOSNIFF_HEADERS,
   'Content-Security-Policy': HTML_CONTENT_SECURITY_POLICY,
   'Cross-Origin-Opener-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(), geolocation=(), microphone=(), payment=(), usb=()',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-Frame-Options': 'DENY',
 };
@@ -39,12 +40,13 @@ const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inlin
 /** `Vary` header of service preset badges (document navigations redirect, image requests get the SVG). */
 export const SERVICE_VARY_HEADER = 'Sec-Fetch-Dest, Accept';
 
-/** Static headers shared by every SVG response (CORS, CSP, content type, and `nosniff`). */
+/** Static headers shared by every SVG response (CORS, CORP, CSP, content type, and `nosniff`). */
 const SVG_BASE_HEADERS: Readonly<Record<string, string>> = {
   ...NOSNIFF_HEADERS,
   'Access-Control-Allow-Origin': '*',
   'Content-Security-Policy': SVG_CONTENT_SECURITY_POLICY,
   'Content-Type': 'image/svg+xml; charset=utf-8',
+  'Cross-Origin-Resource-Policy': 'cross-origin',
 };
 
 /** Browser cache lifetime in seconds of SVG responses (the shared edge TTL varies per route). */
@@ -71,6 +73,10 @@ function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
     return false;
   }
   const opaqueTag = stripWeakPrefix(etag);
+  if (!ifNoneMatch.includes(',')) {
+    const trimmed = ifNoneMatch.trim();
+    return trimmed === '*' || stripWeakPrefix(trimmed) === opaqueTag;
+  }
   for (const candidate of ifNoneMatch.split(',')) {
     const trimmed = candidate.trim();
     if (trimmed === '*' || stripWeakPrefix(trimmed) === opaqueTag) {
@@ -107,6 +113,15 @@ export function isDocumentNavigation(request: Request): boolean {
  */
 export function computeEtag(content: string): string {
   return `W/"${hashText(content)}-${content.length.toString(36)}"`;
+}
+
+/**
+ * Compute a weak entity tag (`W/"<hash>-<byteLength>"`, both base-36) for a binary asset.
+ * @param bytes   Complete binary response body.
+ * @returns Weak `ETag` header value.
+ */
+export function computeBytesEtag(bytes: ArrayBuffer): string {
+  return `W/"${hashBytes(bytes)}-${bytes.byteLength.toString(36)}"`;
 }
 
 /**

@@ -210,9 +210,12 @@ function serializeSingleAttribute(rawName: string, rawValue: unknown): string {
 /** Serialize the attributes of an intrinsic HTML or SVG element. */
 function serializeAttributes(props: Readonly<Record<string, unknown>>): string {
   let attrsHtml = '';
-  for (const [rawName, rawValue] of Object.entries(props)) {
-    if (rawName !== 'children' && rawValue !== undefined && rawValue !== null) {
-      attrsHtml += serializeSingleAttribute(rawName, rawValue);
+  for (const rawName in props) {
+    if (Object.hasOwn(props, rawName) && rawName !== 'children') {
+      const rawValue = props[rawName];
+      if (rawValue !== undefined && rawValue !== null) {
+        attrsHtml += serializeSingleAttribute(rawName, rawValue);
+      }
     }
   }
   return attrsHtml;

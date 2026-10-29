@@ -571,6 +571,13 @@ details.code-drawer[open] .drawer-chevron {
   }
 }
 
+@media (pointer: coarse) {
+  .copy-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .copy-btn.is-copied,
 .btn-secondary.is-copied {
   border-color: var(--c-brand-border);
@@ -815,15 +822,15 @@ details.code-drawer[open] .drawer-chevron {
   }
 
   .param-table td:nth-child(2)::before {
-    content: var(--label-2) ': ' / var(--label-2);
+    content: var(--label-2) ': ';
   }
 
   .param-table td:nth-child(3)::before {
-    content: var(--label-3) ': ' / var(--label-3);
+    content: var(--label-3) ': ';
   }
 
   .param-table td:nth-child(4)::before {
-    content: var(--label-4) ': ' / var(--label-4);
+    content: var(--label-4) ': ';
   }
 }
 
