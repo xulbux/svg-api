@@ -2563,7 +2563,10 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(fundingYml.trim()).toBe(`github: [${authorHandle}]`);
     expect(codeownersTxt.trim()).toBe(`* @${authorHandle}`);
     expect(readmeMd).toContain(`https://github.com/sponsors/${authorHandle}`);
-    expect(issueConfigYml).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
+    expect(issueConfigYml).toContain('blank_issues_enabled: false');
+    expect(issueConfigYml).toContain(`${SITE_ORIGIN}/docs`);
+    expect(issueConfigYml).not.toContain('/builder');
+    expect(issueConfigYml).not.toContain('/security/advisories/new');
     expect(securityMd).toContain(`${REPO_GITHUB_URL}/security/advisories/new`);
     expect(ciYml).toContain('permissions: {}');
     expect(ciYml).toContain('persist-credentials: false');

@@ -1,11 +1,5 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Interactive URL Builder
-    url: https://svg.xul.is/builder
-    about: Build, preview, and copy Markdown snippets for any SVG element.
   - name: API Documentation
     url: https://svg.xul.is/docs
     about: Check route syntax, + vs %2B encoding, parameters, and presets first.
-  - name: Report a Security Vulnerability
-    url: https://github.com/xulbux/svg-api/security/advisories/new
-    about: Privately report XSS, SSRF, open-redirect, or DoS vulnerabilities.

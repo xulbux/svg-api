@@ -104,7 +104,7 @@ function createWordPressService(directory: WordPressDirectory): ServiceDefinitio
   });
   return defineService({
     docs: { description: directory.description, title: directory.title },
-    metricAliases: { dl: 'dt' },
+    metricAliases: { dl: 'dt', wordpress: 'wp' },
     metrics: {
       dt: createDownloadsMetric(endpoint, 'dt', (info) => info.downloaded),
       installs: createCountMetric(

@@ -2003,6 +2003,10 @@ describe('icon picker index & assets', () => {
       ...Object.keys(index.lucideAliases).slice(0, 40),
       ...Object.keys(ICON_SLUG_ALIASES),
       ...Object.keys(index.brandAliases),
+      'next.js',
+      'socket.io',
+      'draw.io',
+      'premiere-pro',
       'github',
       'figma',
       'c',
@@ -2409,6 +2413,20 @@ describe('builder pages & "Open in Builder" links', () => {
     const filteredBrands = core.filterIconCatalog(index, index.sets, 'brands', 'typescript');
     expect(filteredBrands.counts?.brands).toBeGreaterThanOrEqual(1);
     expect(filteredBrands.matches.some((match) => match.slug === 'typescript')).toBe(true);
+
+    const webLucide = core.filterIconCatalog(index, index.sets, 'lucide', 'web');
+    expect(webLucide.matches.some((match) => match.slug === 'globe')).toBe(true);
+    const docsLucide = core.filterIconCatalog(index, index.sets, 'lucide', 'docs');
+    expect(docsLucide.matches.some((match) => match.slug === 'book-open')).toBe(true);
+    const dottedNextBrands = core.filterIconCatalog(index, index.sets, 'brands', 'next.js');
+    expect(dottedNextBrands.matches.some((match) => match.slug === 'nextdotjs')).toBe(true);
+    const hyphenatedGhaBrands = core.filterIconCatalog(
+      index,
+      index.sets,
+      'brands',
+      'github-actions'
+    );
+    expect(hyphenatedGhaBrands.matches.some((match) => match.slug === 'githubactions')).toBe(true);
 
     expect(core.resolveIconSelectDisplay('', 'Select icon')).toEqual({
       displayLabel: 'Select icon',

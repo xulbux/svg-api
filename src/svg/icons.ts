@@ -127,40 +127,206 @@ let deviconPreferredSlugsCache: ReadonlySet<string> | undefined = undefined;
 
 /** Common icon slug aliases mapped to their canonical icon set slugs. */
 export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
+  '11ty': 'eleventy',
+  ableton: 'abletonlive',
+  adonis: 'adonisjs',
   ae: 'adobeaftereffects',
+  aftereffects: 'adobeaftereffects',
   ai: 'adobeillustrator',
+  airflow: 'apacheairflow',
+  alpinejs: 'alpinedotjs',
+  antd: 'antdesign',
+  apollo: 'apollographql',
+  arch: 'archlinux',
+  argocd: 'argo',
+  audition: 'adobeaudition',
   aws: 'amazonwebservices',
   azure: 'microsoftazure',
+  babylonjs: 'babylondotjs',
+  backbonejs: 'backbonedotjs',
   bash: 'gnubash',
+  bigquery: 'googlebigquery',
   'box-isometric-tape': 'package',
+  brew: 'homebrew',
   browser: 'app-window',
+  bsky: 'bluesky',
+  bunjs: 'bun',
+  c4d: 'cinema4d',
   'camera-rotate': 'switch-camera',
+  cassandra: 'apachecassandra',
+  cf: 'cloudflare',
+  cfpages: 'cloudflarepages',
+  cfworkers: 'cloudflareworkers',
+  chakra: 'chakraui',
+  chartjs: 'chartdotjs',
+  chatgpt: 'openai',
+  chrome: 'googlechrome',
   'circle-info': 'info',
+  cli: 'terminal',
+  clj: 'clojure',
+  close: 'x',
+  cockroachdb: 'cockroachlabs',
+  console: 'terminal',
+  copilot: 'githubcopilot',
+  couchdb: 'apachecouchdb',
   cpp: 'cplusplus',
   'crosshairs-simple': 'crosshair',
   cs: 'csharp',
   css: 'css3',
+  cws: 'chromewebstore',
+  d3js: 'd3',
+  davinci: 'davinciresolve',
+  denojs: 'deno',
+  devto: 'devdotto',
+  discordjs: 'discorddotjs',
+  docs: 'book-open',
+  docsrs: 'docsdotrs',
+  drawio: 'diagramsdotnet',
+  emacs: 'gnuemacs',
+  email: 'mail',
+  ember: 'emberdotjs',
+  emberjs: 'emberdotjs',
+  envoy: 'envoyproxy',
+  error: 'circle-alert',
+  esp32: 'espressif',
+  expressjs: 'express',
+  external: 'external-link',
+  flink: 'apacheflink',
+  flyio: 'flydotio',
+  gcloud: 'googlecloud',
+  gcp: 'googlecloud',
+  gear: 'settings',
+  gemini: 'googlegemini',
+  gh: 'github',
+  gha: 'githubactions',
+  gl: 'gitlab',
   'globe-code': 'globe',
+  godot: 'godotengine',
+  golang: 'go',
+  gql: 'graphql',
+  groovy: 'apachegroovy',
+  hadoop: 'apachehadoop',
+  handlebars: 'handlebarsdotjs',
+  handlebarsjs: 'handlebarsdotjs',
+  hbs: 'handlebarsdotjs',
+  help: 'circle-question-mark',
+  hf: 'huggingface',
+  hn: 'ycombinator',
+  hs: 'haskell',
   html: 'html5',
+  ig: 'instagram',
+  illustrator: 'adobeillustrator',
+  indesign: 'adobeindesign',
+  inertiajs: 'inertia',
+  'info-circle': 'info',
+  intellij: 'intellijidea',
+  itchio: 'itchdotio',
   js: 'javascript',
+  jwt: 'jsonwebtokens',
+  k8s: 'kubernetes',
+  kafka: 'apachekafka',
+  kali: 'kalilinux',
+  knex: 'knexdotjs',
+  knexjs: 'knexdotjs',
+  kt: 'kotlin',
+  license: 'scale',
+  lightroom: 'adobelightroom',
+  lr: 'adobelightroom',
+  materialui: 'mui',
+  maya: 'autodeskmaya',
   md: 'markdown',
   microchip: 'cpu',
+  mistral: 'mistralai',
+  mongo: 'mongodb',
+  nest: 'nestjs',
+  netbeans: 'apachenetbeanside',
+  nextjs: 'nextdotjs',
+  node: 'nodedotjs',
   nodejs: 'nodedotjs',
+  notepadpp: 'notepadplusplus',
+  npp: 'notepadplusplus',
+  nuxtjs: 'nuxt',
+  nvim: 'neovim',
+  objc: 'objectivec',
+  obs: 'obsstudio',
+  openapi: 'openapiinitiative',
+  otel: 'opentelemetry',
+  p5js: 'p5dotjs',
+  pg: 'postgresql',
+  phoenix: 'phoenixframework',
+  photoshop: 'adobephotoshop',
+  plausible: 'plausibleanalytics',
   postgres: 'postgresql',
   pr: 'adobepremierepro',
+  premiere: 'adobepremierepro',
+  premierepro: 'adobepremierepro',
   ps: 'adobephotoshop',
   'puzzle-piece': 'puzzle',
+  pwsh: 'powershell',
   py: 'python',
+  question: 'circle-question-mark',
+  radix: 'radixui',
+  rails: 'rubyonrails',
+  raspi: 'raspberrypi',
+  rb: 'ruby',
+  reactjs: 'react',
+  repo: 'git-branch',
   'rocket-launch': 'rocket',
+  rollup: 'rollupdotjs',
+  rollupjs: 'rollupdotjs',
+  rpi: 'raspberrypi',
+  rs: 'rust',
+  rtd: 'readthedocs',
+  rxjs: 'reactivex',
+  scrutinizer: 'scrutinizerci',
+  scss: 'sass',
+  security: 'shield',
+  sh: 'gnubash',
+  shadcn: 'shadcnui',
+  shieldsio: 'shieldsdotio',
+  sklearn: 'scikitlearn',
   snake: 'worm',
+  socketio: 'socketdotio',
+  solidjs: 'solid',
+  spigot: 'spigotmc',
+  sponsor: 'heart',
+  spyder: 'spyderide',
   'square-text': 'message-square-text',
+  sublime: 'sublimetext',
+  success: 'circle-check',
+  sveltejs: 'svelte',
+  sveltekit: 'svelte',
   swatchbook: 'swatch-book',
   tailwind: 'tailwindcss',
+  tex: 'latex',
+  tf: 'terraform',
+  tg: 'telegram',
   threejs: 'threedotjs',
+  tofu: 'opentofu',
+  torch: 'pytorch',
+  traefik: 'traefikproxy',
   ts: 'typescript',
+  tw: 'tailwindcss',
+  ue: 'unrealengine',
   unreal: 'unrealengine',
+  vb: 'visualbasic',
+  vitejs: 'vite',
+  vs: 'visualstudio',
   vscode: 'visualstudiocode',
   vue: 'vuedotjs',
+  vuejs: 'vuedotjs',
+  wandb: 'weightsandbiases',
+  warn: 'triangle-alert',
+  warning: 'triangle-alert',
+  wasm: 'webassembly',
+  web: 'globe',
+  website: 'globe',
+  wp: 'wordpress',
+  xd: 'adobexd',
+  xorg: 'xdotorg',
+  yml: 'yaml',
+  yt: 'youtube',
+  zed: 'zedindustries',
 };
 
 /** Default stroke width in `24x24` icon units across stroked icons. */
@@ -229,6 +395,9 @@ let iconPickerIndexCache: IconPickerIndex | undefined = undefined;
 
 /** Memoized cleaned-slug (`[-_.]` stripped) lookup table for `@iconify-json/file-icons` (`undefined` until first built). */
 let fileIconsCleanSlugMap: Map<string, string> | undefined = undefined;
+
+/** Memoized cleaned-slug (`[-_.]` stripped) lookup table for brand-targeting `ICON_SLUG_ALIASES` (`undefined` until first built). */
+let brandSlugAliasMap: Map<string, string> | undefined = undefined;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -847,7 +1016,27 @@ function resolveSimpleIconAlias(slug: string): string | undefined {
   );
 }
 
-/** Canonicalize a normalized slug against Simple Icons' alias table when it is not a direct Simple Icons slug. */
+/** Resolve a `[-_.]`-cleaned slug against brand-targeting entries in `ICON_SLUG_ALIASES` (`undefined` for UI aliases or non-aliases). */
+function resolveBrandSlugAlias(cleanSlug: string): string | undefined {
+  if (brandSlugAliasMap === undefined) {
+    deviconPreferredSlugsCache ??= new Set(DEVICON_PREFERRED_SLUG_LIST);
+    brandSlugAliasMap = new Map<string, string>();
+    for (const [alias, target] of Object.entries(ICON_SLUG_ALIASES)) {
+      if (
+        getOwnValue(simpleIconSet.icons, target) !== undefined ||
+        deviconPreferredSlugsCache.has(target)
+      ) {
+        const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
+        if (!brandSlugAliasMap.has(cleanAlias)) {
+          brandSlugAliasMap.set(cleanAlias, target);
+        }
+      }
+    }
+  }
+  return brandSlugAliasMap.get(cleanSlug);
+}
+
+/** Canonicalize a normalized slug against Simple Icons' and brand slug alias tables when it is not a direct Simple Icons slug. */
 function canonicalizeBrandSlug(slug: string): string {
   const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
   if (
@@ -856,7 +1045,7 @@ function canonicalizeBrandSlug(slug: string): string {
   ) {
     return slug;
   }
-  return resolveSimpleIconAlias(slug) ?? slug;
+  return resolveSimpleIconAlias(slug) ?? resolveBrandSlugAlias(normalized) ?? slug;
 }
 
 /** Read a `512`-unit icon body from `@iconify-json/file-icons`, scaled and centered to `24x24` (no ink bounds). */
@@ -1031,6 +1220,15 @@ function buildIconPickerIndex(): IconPickerIndex {
     const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
     if (!canonicalByCleanSlug.has(cleanAlias)) {
       canonicalByCleanSlug.set(cleanAlias, entry.parent);
+    }
+  }
+  for (const [alias, target] of Object.entries(ICON_SLUG_ALIASES)) {
+    if (brandSlugs.has(target)) {
+      const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
+      if (!canonicalByCleanSlug.has(cleanAlias)) {
+        canonicalByCleanSlug.set(cleanAlias, target);
+        brandAliases[cleanAlias] = target;
+      }
     }
   }
 

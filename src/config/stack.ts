@@ -4863,12 +4863,29 @@ const STACK_BRAND_COLORS_BY_THEME: Readonly<Partial<Record<ThemeColorName, reado
 /** Full display titles for stack tile `<title>` tooltips where `STACK_CATEGORIES` uses a compact chip label or alias slug. */
 const STACK_TITLE_OVERRIDES: Readonly<Record<string, string>> = {
   adobeaftereffects: 'Adobe After Effects',
+  adobeaudition: 'Adobe Audition',
   adobeillustrator: 'Adobe Illustrator',
+  adobeindesign: 'Adobe InDesign',
+  adobelightroom: 'Adobe Lightroom',
   adobephotoshop: 'Adobe Photoshop',
   adobepremierepro: 'Adobe Premiere Pro',
   apachemaven: 'Apache Maven',
+  autodeskmaya: 'Autodesk Maya',
+  backbonedotjs: 'Backbone.js',
+  chromewebstore: 'Chrome Web Store',
+  devdotto: 'DEV',
+  discorddotjs: 'discord.js',
+  docsdotrs: 'docs.rs',
+  googlechrome: 'Google Chrome',
+  itchdotio: 'itch.io',
   maven: 'Apache Maven',
   microsoftazure: 'Microsoft Azure',
+  reactivex: 'ReactiveX',
+  scrutinizerci: 'Scrutinizer CI',
+  shieldsdotio: 'Shields.io',
+  spigotmc: 'SpigotMC',
+  xdotorg: 'X.Org',
+  ycombinator: 'Y Combinator',
 };
 
 /** Lazily populated `slug -> ThemeColorName` lookup map built from `STACK_BRAND_COLORS_BY_THEME` on first use. */

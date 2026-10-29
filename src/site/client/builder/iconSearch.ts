@@ -3,6 +3,7 @@
  */
 
 import {
+  BRAND_SLUG_CLEAN_RX,
   getOwnValue,
   resolveIconSelectDisplay as resolvePureIconSelectDisplay,
 } from '@/site/shared';
@@ -34,14 +35,43 @@ function hasAllQueryTokens(haystack: string, tokens: readonly string[]): boolean
   return true;
 }
 
-/** Collect target icon slugs whose alias matches every token of `queryTokens`. */
+/** Build `[-_.]`-cleaned search tokens (`undefined` when no token contains brand punctuation) so `next.js` or `github-actions` match brand slugs. */
+function buildCleanBrandTokens(tokens: readonly string[]): string[] | undefined {
+  let cleanTokens: string[] | undefined = undefined;
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i] ?? '';
+    const cleaned = token.replace(BRAND_SLUG_CLEAN_RX, '');
+    if (cleaned.length > 0 && cleaned !== token) {
+      cleanTokens ??= tokens.slice(0, i);
+      cleanTokens.push(cleaned);
+    } else if (cleanTokens) {
+      cleanTokens.push(token);
+    }
+  }
+  return cleanTokens;
+}
+
+/** Check whether `haystack` matches either `tokens` or optional `cleanTokens`. */
+function matchesQueryOrCleanTokens(
+  haystack: string,
+  tokens: readonly string[],
+  cleanTokens: readonly string[] | undefined
+): boolean {
+  return (
+    hasAllQueryTokens(haystack, tokens) ||
+    (cleanTokens !== undefined && hasAllQueryTokens(haystack, cleanTokens))
+  );
+}
+
+/** Collect target icon slugs whose alias matches every token of `queryTokens` (or `cleanTokens`). */
 function collectMatchingAliasTargets(
   aliasMap: Readonly<Record<string, string>>,
   queryTokens: readonly string[],
-  targetSet: Set<string>
+  targetSet: Set<string>,
+  cleanTokens?: readonly string[]
 ): void {
   for (const [alias, primary] of Object.entries(aliasMap)) {
-    if (hasAllQueryTokens(alias, queryTokens)) {
+    if (matchesQueryOrCleanTokens(alias, queryTokens, cleanTokens)) {
       targetSet.add(primary);
     }
   }
@@ -57,7 +87,8 @@ function computeSetMatches(
   set: IconPickerSetId,
   query: string,
   queryTokens: readonly string[],
-  setAliasHits: ReadonlySet<string>
+  setAliasHits: ReadonlySet<string>,
+  cleanTokens?: readonly string[]
 ): IconMatch[] {
   const prefixMatches: IconMatch[] = [];
   const substringMatches: IconMatch[] = [];
@@ -65,7 +96,10 @@ function computeSetMatches(
   for (const slug of catalog[set]) {
     if (slug.startsWith(query)) {
       prefixMatches.push({ set, slug });
-    } else if (hasAllQueryTokens(slug, queryTokens) || setAliasHits.has(slug)) {
+    } else if (
+      matchesQueryOrCleanTokens(slug, queryTokens, cleanTokens) ||
+      setAliasHits.has(slug)
+    ) {
       substringMatches.push({ set, slug });
     } else if (set === 'lucide') {
       const tags = getOwnValue(index.lucideTags, slug);
@@ -104,13 +138,16 @@ export function filterIconCatalog(
   }
 
   const queryTokens = query.split(WHITESPACE_RX);
+  const cleanBrandTokens = buildCleanBrandTokens(queryTokens);
   const lucideAliasHits = new Set<string>();
   const brandAliasHits = new Set<string>();
   collectMatchingAliasTargets(index.lucideAliases, queryTokens, lucideAliasHits);
-  collectMatchingAliasTargets(index.brandAliases, queryTokens, brandAliasHits);
+  collectMatchingAliasTargets(index.brandAliases, queryTokens, brandAliasHits, cleanBrandTokens);
   for (const [alias, primary] of Object.entries(index.aliases)) {
     if (hasAllQueryTokens(alias, queryTokens)) {
       lucideAliasHits.add(primary);
+      brandAliasHits.add(primary);
+    } else if (cleanBrandTokens !== undefined && hasAllQueryTokens(alias, cleanBrandTokens)) {
       brandAliasHits.add(primary);
     }
   }
@@ -129,7 +166,8 @@ export function filterIconCatalog(
     'brands',
     query,
     queryTokens,
-    brandAliasHits
+    brandAliasHits,
+    cleanBrandTokens
   );
   return {
     counts: { brands: brandMatches.length, lucide: lucideMatches.length },

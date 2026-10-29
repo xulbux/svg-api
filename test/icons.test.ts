@@ -253,6 +253,36 @@ describe('resolveIcon', () => {
     expect(getIconPickerPage('lucide', 9999)).toBeUndefined();
     expect(getIconPickerPage('lucide', -1)).toBeUndefined();
   });
+
+  it('maps every ICON_SLUG_ALIASES entry to a primary picker slug, deduplicates secondary brand sets, and resolves dotted brand aliases', () => {
+    const index = getIconPickerIndex();
+    const primarySlugs = new Set<string>([...index.sets.lucide, ...index.sets.brands]);
+    for (const [alias, canonical] of Object.entries(ICON_SLUG_ALIASES)) {
+      expect(primarySlugs.has(canonical), `${alias} -> ${canonical}`).toBe(true);
+      expect(resolveIcon(alias), alias).toBeDefined();
+      expect(resolveIcon(alias, true), `${alias} (brand-first)`).toBeDefined();
+    }
+
+    // Secondary-set duplicates of brand aliases (`vscode`, `nodejs`, `nextjs`) map through `brandAliases` instead of duplicating `sets.brands`:
+    for (const duplicate of ['vscode', 'nodejs', 'nextjs', 'nuxtjs', 'vitejs']) {
+      expect(index.sets.brands, duplicate).not.toContain(duplicate);
+      expect(index.brandAliases[duplicate], duplicate).toBe(ICON_SLUG_ALIASES[duplicate]);
+    }
+
+    // Dotted and hyphenated spellings of brand aliases (`next.js`, `socket.io`, `draw.io`, `premiere-pro`) resolve to their canonical Simple Icons glyphs and titles:
+    expect(resolveIconLookup('next.js', true)).toEqual(resolveIconLookup('nextdotjs', true));
+    expect(resolveIconLookup('next-js', true)).toEqual(resolveIconLookup('nextdotjs', true));
+    expect(resolveIconLookup('socket.io', true)).toEqual(resolveIconLookup('socketdotio', true));
+    expect(resolveIconLookup('draw.io', true)).toEqual(resolveIconLookup('diagramsdotnet', true));
+    expect(resolveIconLookup('premiere-pro', true)).toEqual(
+      resolveIconLookup('adobepremierepro', true)
+    );
+    expect(
+      extractAriaLabel(
+        renderStack({ icons: ['next.js', 'socket.io', 'discordjs', 'docsrs', 'chrome', 'hn'] })
+      )
+    ).toBe('tech stack: Next.js, Socket.io, discord.js, docs.rs, Google Chrome, Y Combinator');
+  });
 });
 
 describe('computeIconXBounds', () => {

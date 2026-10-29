@@ -84,10 +84,16 @@ export {
 
 /** Shorthand aliases mapped to their canonical per-icon motion tokens. */
 export const ICON_MOTION_ALIASES: Readonly<Record<string, IconMotionMode>> = {
+  beat: 'pulse',
+  bob: 'float',
   grow: 'breathe',
+  hover: 'float',
+  rotate: 'spin',
   scale: 'breathe',
+  slide: 'nudge',
   'spin-smooth': 'whirl',
   twirl: 'turn',
+  wiggle: 'shake',
 };
 
 /** Shorthand aliases mapped to their canonical per-tile stack motion tokens. */
@@ -143,11 +149,14 @@ export const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
   assistant: 'prompt',
   bar: 'prompt',
   bare: 'none',
+  bash: 'window',
   browser: 'browser',
   bubble: 'prompt',
   chat: 'prompt',
+  cli: 'window',
   code: 'ide',
   command: 'prompt',
+  console: 'window',
   editor: 'ide',
   ide: 'ide',
   mac: 'window',
@@ -161,6 +170,8 @@ export const TYPING_LAYOUT_MAP: Readonly<Record<string, TypingLayout>> = {
   prompt: 'prompt',
   raycast: 'prompt',
   search: 'browser',
+  sh: 'window',
+  shell: 'window',
   spotlight: 'prompt',
   tab: 'ide',
   terminal: 'window',
@@ -176,6 +187,7 @@ export const TYPING_CURSOR_MAP: Readonly<Record<string, TypingCursor>> = {
   beam: 'bar',
   block: 'block',
   box: 'block',
+  caret: 'bar',
   line: 'bar',
   pipe: 'bar',
   under: 'underscore',
@@ -206,6 +218,7 @@ export const TYPING_FONT_MAP: Readonly<Record<string, TypingFont>> = {
   monospace: 'mono',
   proportional: 'sans',
   sans: 'sans',
+  'sans-serif': 'sans',
   ui: 'sans',
 };
 

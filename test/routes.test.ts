@@ -348,6 +348,9 @@ describe('route parameter parsers', () => {
     expect(resolveAnimationMode('sheen,default')).toBe('sheen');
     expect(resolveAnimationMode(' Sheen , Auto ')).toBe('sheen,auto');
     expect(resolveAnimationMode('sheen,shake,nudge')).toBe('sheen,shake,nudge');
+    expect(resolveAnimationMode('sheen,wiggle,slide')).toBe('sheen,shake,nudge');
+    expect(resolveAnimationMode('beat,rotate')).toBe('pulse,spin');
+    expect(resolveAnimationMode('bob')).toBe('float');
     expect(resolveAnimationMode('sheen,sheen')).toBe('default');
     expect(resolveAnimationMode('sheen,sheen,auto')).toBe('default');
     expect(resolveAnimationMode('shake,nudge,spin')).toBe('default');

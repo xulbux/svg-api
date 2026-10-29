@@ -193,7 +193,7 @@ export const NPM_SERVICE = defineService({
     title: 'npm',
   },
   // `dt` reported the last-year downloads before the download keys were normalized:
-  metricAliases: { dt: 'dy' },
+  metricAliases: { dt: 'dy', ts: 'types', typescript: 'types' },
   metrics: {
     dl: createDownloadsMetric(
       NPM_DOWNLOADS_ENDPOINT,

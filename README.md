@@ -5,7 +5,7 @@
     <br>
     SVG API
     <br><br>
-    <a href="https://svg.xul.is"><img alt="svg.xul.is" src="https://svg.xul.is/badge/svg.xul.is?icon=sparkles,external-link&anim=sheen,default,nudge" /></a>
+    <a href="https://svg.xul.is"><img alt="svg.xul.is" src="https://svg.xul.is/badge/svg.xul.is?icon=panels-top-left,external-link&anim=sheen,default,nudge" /></a>
     <a href="https://svg.xul.is/builder"><img alt="Builder" src="https://svg.xul.is/badge/Builder?variant=2&icon=sliders-vertical,external-link&anim=default,nudge" /></a>
     <a href="https://github.com/xulbux/svg-api/blob/main/LICENSE"><img alt="License: MIT*" src="https://svg.xul.is/badge/License/MIT*?variant=3&color=neutral&icon=scale" /></a>
     <a href="https://github.com/xulbux/svg-api/commits"><img alt="Last Commit" src="https://svg.xul.is/badge/gh/xulbux/svg-api/commit?variant=3&color=neutral" /></a>

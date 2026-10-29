@@ -856,6 +856,7 @@ describe('core forge & registry presets (GitHub, PyPI, npm, Open VSX, crates.io,
 
     expect(await requestAriaLabel('/badge/pypi/xulbux/v')).toBe('PyPI: v1.4.0');
     expect(await requestAriaLabel('/badge/pypi/xulbux/py')).toBe('Python: any');
+    expect(await requestAriaLabel('/badge/pypi/xulbux/python')).toBe('Python: any');
     expect(await requestAriaLabel('/badge/pypi/xulbux/l')).toBe('License: MIT');
     expect(await requestAriaLabel('/badge/pypi/xulbux/dt?label=total+downloads')).toBe(
       'total downloads: 86.8k'
@@ -913,6 +914,8 @@ describe('core forge & registry presets (GitHub, PyPI, npm, Open VSX, crates.io,
     expect(await requestAriaLabel('/badge/npm/hono/v')).toBe('npm: v4.13.13');
     expect(await requestAriaLabel('/badge/npm/hono/version')).toBe('npm: v4.13.13');
     expect(await requestAriaLabel('/badge/npm/hono/types')).toBe('Types: included');
+    expect(await requestAriaLabel('/badge/npm/hono/ts')).toBe('Types: included');
+    expect(await requestAriaLabel('/badge/npm/hono/typescript')).toBe('Types: included');
     expect(await requestAriaLabel('/badge/npm/@hono/node-server/dy')).toBe('Downloads: 12.4M/yr');
     expect(await requestAriaLabel('/badge/npm/@hono/node-server/dt')).toBe('Downloads: 12.4M/yr');
     expect(requestedUrls).toHaveLength(2);
@@ -2346,6 +2349,7 @@ describe('developer, AI, quality & app presets (Homebrew, Hugging Face, docs.rs,
     expect(await describeMetric('/badge/modrinth/sodium/dl')).toBe('Downloads: 249.1M');
     expect(await describeMetric('/badge/modrinth/sodium/followers')).toBe('Followers: 41.9k');
     expect(await describeMetric('/badge/modrinth/sodium/mc')).toBe('Minecraft: 26.3');
+    expect(await describeMetric('/badge/modrinth/sodium/minecraft')).toBe('Minecraft: 26.3');
     expect(await describeMetric('/badge/modrinth/sodium/l')).toBe('License: Polyform-Shield-1.0.0');
   });
 
@@ -2545,6 +2549,7 @@ describe('developer, AI, quality & app presets (Homebrew, Hugging Face, docs.rs,
     expect(await describeMetric('/badge/wp/akismet/dl')).toBe('Downloads: 407.7M');
     expect(await describeMetric('/badge/wp/akismet/php')).toBe('PHP: v7.2');
     expect(await describeMetric('/badge/wp/akismet/wp')).toBe('WordPress: v5.8');
+    expect(await describeMetric('/badge/wp/akismet/wordpress')).toBe('WordPress: v5.8');
     expect(await describeMetric('/badge/wp-theme/astra/v')).toBe('WordPress Theme: v4.14.1');
     expect(await describeMetric('/badge/wp-theme/astra/rating')).toBe('Rating: 4.9/5');
     expect(await describeMetric('/badge/wp-theme/astra/php')).toBe('PHP: n/a');

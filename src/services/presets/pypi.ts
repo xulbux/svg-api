@@ -185,6 +185,7 @@ export const PYPI_SERVICE = defineService({
       'PyPI version, ClickPy total/30-day downloads (dt/dl), required Python, and license.',
     title: 'PyPI',
   },
+  metricAliases: { python: 'py' },
   metrics: {
     dl: createDownloadsMetric(
       CLICKPY_ENDPOINT,
