@@ -36,11 +36,12 @@ import {
   renderSvgPath,
   resolveSvgPathRedirectUrl,
   resolveSvgRoute,
+  SVG_ROUTES,
 } from '@/routes/svg';
 import { getSiteAsset } from '@/site/assets';
 import { BUILDER_PAGES, DOCS_PAGES } from '@/site/navigation';
 import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
-import { buildMarkdownSnippetTokens } from '@/site/shared';
+import { buildMarkdownSnippetTokens, resolvePathBuilderKind } from '@/site/shared';
 import {
   DEFAULT_ICON_STROKE_WIDTH,
   getIconPickerIndex,
@@ -264,17 +265,19 @@ function parseTranslateY(rawTranslate: string): number {
   return Number.parseFloat(yToken ?? '0') || 0;
 }
 
-/** Collect the decoded `?path=` of every preview link on a page. */
+/** Collect the SVG path of every `/builder/<svg-path>` preview link on a page. */
 function collectPreviewPaths(html: string): string[] {
   const paths: string[] = [];
   for (const match of html.matchAll(PREVIEW_LINK_RX)) {
     const href = (match.groups?.href ?? '').replaceAll('&amp;', '&');
-    paths.push(new URL(href, 'https://svg.xul.is').searchParams.get('path') ?? '');
+    const url = new URL(href, 'https://svg.xul.is');
+    expect(url.pathname.startsWith('/builder/'), href).toBe(true);
+    paths.push(`${url.pathname.slice('/builder'.length)}${url.search}`);
   }
   return paths;
 }
 
-/** Collect the decoded `?path=` of every preview link on the homepage and every docs page. */
+/** Collect the SVG path of every `/builder/<svg-path>` preview link on the homepage and every docs page. */
 function collectAllPreviewPaths(): string[] {
   const paths = collectPreviewPaths(renderHomeHtml());
   for (const page of DOCS_PAGES) {
@@ -373,6 +376,123 @@ function FakeHTMLSelectElement(): undefined {
   return undefined;
 }
 FakeHTMLSelectElement.prototype = Object.create(FakeHTMLElement.prototype);
+
+/** Mount a minimal fake `/builder/service` DOM at `initialHref` for deep prefill and `Clear` URL tests. */
+function mountServiceBuilderAt(initialHref: string): {
+  altValue: () => string;
+  clickReset: () => void;
+  replacedUrls: string[];
+  statusText: () => string;
+  targetValue: () => string;
+} {
+  const targetInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+    closest: () => undefined,
+    id: 'field-target',
+    placeholder: '',
+    removeAttribute: noopDomAction,
+    setAttribute: noopDomAction,
+    value: '',
+  });
+  const altInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+    addEventListener: noopDomAction,
+    id: 'builder-alt',
+    placeholder: '',
+    value: '',
+  });
+  const resetListeners: (() => void)[] = [];
+  const resetButton = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+    addEventListener(type: string, listener: () => void) {
+      if (type === 'click') {
+        resetListeners.push(listener);
+      }
+    },
+    id: 'builder-reset',
+  });
+  const statusElement = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+    classList: { toggle: noopDomAction },
+    id: 'builder-status',
+    textContent: '',
+  });
+  const targetField = Object.assign(Object.create(FakeElement.prototype) as object, {
+    classList: { toggle: noopDomAction },
+    getAttribute: (name: string) => (name === 'data-field' ? 'target' : undefined),
+    querySelector: (selector: string) => (selector === '#field-target' ? targetInput : undefined),
+    querySelectorAll: (selector: string) =>
+      selector === '.builder-input:not(.select-trigger)' ? [targetInput] : [],
+  });
+  const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+    addEventListener: noopDomAction,
+    querySelector(selector: string) {
+      if (selector === '[data-field="target"]') {
+        return targetField;
+      }
+      return selector === '#field-target' ? targetInput : undefined;
+    },
+    querySelectorAll: () => [],
+  });
+  const replacedUrls: string[] = [];
+  const locationState = { href: initialHref, origin: 'https://svg.xul.is' };
+
+  evaluateClientDom(builderScript, {
+    Element: FakeElement,
+    HTMLButtonElement: FakeHTMLButtonElement,
+    HTMLElement: FakeHTMLElement,
+    HTMLFormElement: FakeHTMLFormElement,
+    HTMLInputElement: FakeHTMLInputElement,
+    HTMLSelectElement: FakeHTMLSelectElement,
+    HTMLTextAreaElement: FakeHTMLElement,
+    document: {
+      createDocumentFragment: () => ({ append: noopDomAction, childElementCount: 0 }),
+      createElement: () => ({}),
+      getElementById(id: string) {
+        const byId: Readonly<Record<string, unknown>> = {
+          'builder-alt': altInput,
+          'builder-form': formStub,
+          'builder-reset': resetButton,
+          'builder-schema': { textContent: JSON.stringify(getBuilderSchema('service')) },
+          'builder-status': statusElement,
+          'field-target': targetInput,
+        };
+        return byId[id];
+      },
+      querySelector: () => undefined,
+      querySelectorAll: () => [],
+    },
+    globalThis: {
+      clearTimeout: noopDomAction,
+      fetch: () => Promise.resolve(new Response('{}')),
+      location: locationState,
+      matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+      setTimeout: () => 1,
+      svgSite: {
+        closePopover: noopDomAction,
+        copyText: noopDomAction,
+        isPopoverOpen: () => false,
+        openPopover: noopDomAction,
+        placePopover: noopDomAction,
+      },
+    },
+    history: {
+      replaceState(_state: unknown, _title: string, url: string) {
+        replacedUrls.push(url);
+        locationState.href = new URL(url, locationState.href).href;
+      },
+      state: undefined,
+    },
+  });
+
+  return {
+    altValue: () => altInput.value,
+    clickReset() {
+      for (const listener of resetListeners) {
+        listener();
+      }
+    },
+    replacedUrls,
+    statusText: () => statusElement.textContent,
+    targetValue: () => targetInput.value,
+  };
+}
 
 /** Build a minimal attribute-tracking input stub for `syncOutputAvailability` tests. */
 function createLineInputStub(): {
@@ -1880,21 +2000,39 @@ describe('builder client core', () => {
     expect(core.buildPreviewPath('', true)).toBe('');
   });
 
-  it('persists alt text and link target in share links', () => {
+  it('builds readable /builder/<svg-path> share links while preserving SVG query pairs and alt/link overrides', () => {
     const shareUrl = new URL(
       core.buildShareUrl(
         'https://svg.xul.is/builder/badge?path=%2Fold&alt=old',
-        '/badge/a/b?color=rose',
+        '/badge/a/b?color=rose&icon=sparkles,arrow-right',
         'My alt',
         'https://xul.is'
       )
     );
-    expect(shareUrl.searchParams.get('path')).toBe('/badge/a/b?color=rose');
+    expect(shareUrl.href).toBe(
+      'https://svg.xul.is/builder/badge/a/b?color=rose&icon=sparkles,arrow-right&alt=My+alt&link=https%3A%2F%2Fxul.is'
+    );
+    expect(shareUrl.searchParams.has('path')).toBe(false);
     expect(shareUrl.searchParams.get('alt')).toBe('My alt');
     expect(shareUrl.searchParams.get('link')).toBe('https://xul.is');
     const cleared = new URL(core.buildShareUrl(shareUrl.href, '/badge/a', '', ''));
+    expect(cleared.href).toBe('https://svg.xul.is/builder/badge/a');
     expect(cleared.searchParams.has('alt')).toBe(false);
     expect(cleared.searchParams.has('link')).toBe(false);
+
+    // Canonicalizes alias prefixes (`/btn`, `/type`) and preserves base pathname when `path` is empty:
+    expect(
+      core.buildShareUrl('https://svg.xul.is/builder/button', '/btn/Try/Now?color=sky', '', '')
+    ).toBe('https://svg.xul.is/builder/button/Try/Now?color=sky');
+    expect(
+      core.buildShareUrl('https://svg.xul.is/builder/typing', '/type/Hi?color=cyan', '', '')
+    ).toBe('https://svg.xul.is/builder/typing/Hi?color=cyan');
+    expect(core.buildShareUrl('https://svg.xul.is/builder/service', '', 'Custom', '')).toBe(
+      'https://svg.xul.is/builder/service?alt=Custom'
+    );
+    expect(core.buildShareUrl('https://svg.xul.is/builder/service', '', '', '')).toBe(
+      'https://svg.xul.is/builder/service'
+    );
   });
 
   it('retries failed loads instead of caching the rejection (regression: failed icon fetches cached forever)', async () => {
@@ -2230,7 +2368,10 @@ describe('builder pages & "Open in Builder" links', () => {
       '<input class="check-input" type="checkbox" id="field-anim-sheen" data-part="sheen" /><span class="check-box" aria-hidden="true">'
     );
     expect(html).toMatch(
-      /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><a class="section-action" href="\/docs\/badges" tabindex="0">/
+      /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><div class="section-actions"><button type="button" class="section-action" id="builder-import-trigger" popovertarget="builder-import-popover" aria-expanded="false" aria-controls="builder-import-popover">[\s\S]*?Import<\/button><a class="section-action" href="\/docs\/badges" tabindex="0">/
+    );
+    expect(html).toContain(
+      'class="popover-panel builder-import-popover" id="builder-import-popover" popover role="dialog" aria-labelledby="builder-import-title"'
     );
     expect(html).not.toContain('id="icon-picker-none"');
     expect(html).not.toContain('icon-picker-row');
@@ -2609,12 +2750,17 @@ describe('builder pages & "Open in Builder" links', () => {
     }
   });
 
-  it('links every docs preview to a builder whose prefill renders the identical SVG', () => {
+  it('links every docs preview to a /builder/<svg-path> URL whose prefill extracts and renders the identical SVG', () => {
     let linkCount = 0;
     for (const path of collectAllPreviewPaths()) {
       const target = resolveBuilderTarget(path);
       expect(target, path).toBeDefined();
+      expect(target?.href, path).toBe(`/builder${path}`);
       const schema = getBuilderSchema(target?.kind ?? 'badge');
+      expect(
+        core.extractBuilderPrefillPath(`https://svg.xul.is${target?.href}`, schema),
+        path
+      ).toBe(path);
       const parsed = core.parsePath(schema, path);
       expect(parsed, path).toBeDefined();
       const rebuilt = core.buildPath(schema, parsed ?? {}).path;
@@ -2624,10 +2770,16 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(linkCount).toBeGreaterThan(100);
   });
 
-  it('resolves builder targets per route family and skips invalid or mismatched-arity paths', () => {
-    expect(resolveBuilderTarget('/badge/build/passing')?.kind).toBe('badge');
+  it('resolves builder targets per route family, canonicalizes aliases, and skips invalid, external, or mismatched-arity paths', () => {
+    expect(resolveBuilderTarget('/badge/build/passing')).toEqual({
+      href: '/builder/badge/build/passing',
+      kind: 'badge',
+    });
     expect(resolveBuilderTarget('/badge/status/online/up')).toBeUndefined();
-    expect(resolveBuilderTarget('/badge/pypi/xulbux/v')?.kind).toBe('service');
+    expect(resolveBuilderTarget('/badge/pypi/xulbux/v')).toEqual({
+      href: '/builder/badge/pypi/xulbux/v',
+      kind: 'service',
+    });
     expect(resolveBuilderTarget('/badge/pypi/owner/pkg/v')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/gh/xulbux/svg-api/stars')?.kind).toBe('service');
     expect(resolveBuilderTarget('/badge/gh/svg-api/stars')).toBeUndefined();
@@ -2641,13 +2793,32 @@ describe('builder pages & "Open in Builder" links', () => {
       'service'
     );
     expect(resolveBuilderTarget('/badge/gitlab/gitlab-runner/stars')).toBeUndefined();
-    expect(resolveBuilderTarget('/btn/Go')?.kind).toBe('button');
+    expect(resolveBuilderTarget('/btn/Go')).toEqual({ href: '/builder/button/Go', kind: 'button' });
+    expect(resolveBuilderTarget('/type/Hi')).toEqual({
+      href: '/builder/typing/Hi',
+      kind: 'typing',
+    });
     expect(resolveBuilderTarget('/icon/a/b')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/a/b/c/d')).toBeUndefined();
     expect(resolveBuilderTarget('/favicon.png')).toBeUndefined();
+    expect(resolveBuilderTarget('https://evil.com/badge/a/b')).toBeUndefined();
+    expect(resolveBuilderTarget('//evil.com/badge/a/b')).toBeUndefined();
     expect(resolveBuilderTarget('/quote/Hi?layout=vertical')?.href).toBe(
-      `/builder/quote?path=${encodeURIComponent('/quote/Hi?layout=vertical')}`
+      '/builder/quote/Hi?layout=vertical'
     );
+
+    // Every `SVG_ROUTES` entry stays synchronized with `core.resolvePathBuilderKind` and `core.buildShareUrl`:
+    for (const route of SVG_ROUTES) {
+      const samplePath = `/${route.prefix}/sample`;
+      const canonicalPrefix = route.aliasOf ?? route.prefix;
+      expect(core.resolvePathBuilderKind(samplePath, 'https://svg.xul.is'), route.prefix).toBe(
+        route.builderKind
+      );
+      expect(
+        core.buildShareUrl(`https://svg.xul.is/builder/${route.builderKind}`, samplePath, '', ''),
+        route.prefix
+      ).toBe(`https://svg.xul.is/builder/${canonicalPrefix}/sample`);
+    }
   });
 
   it('exposes pure icon catalog filtering, icon select display resolution, and ambiguous HTML character-reference escaping (regressions: &amp; in alt text broke HTML5 img snippets)', () => {
@@ -3610,13 +3781,13 @@ describe('builder pages & "Open in Builder" links', () => {
       },
     });
 
-    // Initial load leaves `/builder/button` untouched, while `Copy builder link` still copies the full `?path=` URL:
+    // Initial load leaves `/builder/button` untouched, while `Copy builder link` copies the `/builder/<svg-path>` URL:
     flushDebounce();
     expect(replacedUrls).toEqual([]);
     for (const listener of shareListeners) {
       listener();
     }
-    expect(copiedTexts).toEqual(['https://svg.xul.is/builder/button?path=%2Fbutton%2FLaunch']);
+    expect(copiedTexts).toEqual(['https://svg.xul.is/builder/button/Launch']);
 
     // Editing a control enables URL sync and updates the address bar on debounce:
     labelInput.value = 'Deploy';
@@ -3624,7 +3795,7 @@ describe('builder pages & "Open in Builder" links', () => {
       inputListener({ target: labelInput, type: 'input' });
     }
     flushDebounce();
-    expect(replacedUrls).toEqual(['https://svg.xul.is/builder/button?path=%2Fbutton%2FDeploy']);
+    expect(replacedUrls).toEqual(['https://svg.xul.is/builder/button/Deploy']);
 
     // Clicking `Clear` immediately restores the clean `/builder/button` pathname and keeps it clean after debounce:
     for (const listener of resetListeners) {
@@ -3908,5 +4079,533 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(tabListClasses.has('is-animated')).toBe(false);
     expect(tabListProps.get('--tab-pill-x')).toBe('97px');
     expect(tabListProps.get('--tab-pill-w')).toBe('66px');
+  });
+
+  it('keeps resolvePathBuilderKind in lockstep with SVG_ROUTES prefixes and segment limits (drift guard)', () => {
+    const origin = 'https://svg.xul.is';
+    for (const route of SVG_ROUTES) {
+      expect(resolvePathBuilderKind(`/${route.prefix}/sample`, origin), route.prefix).toBe(
+        route.builderKind
+      );
+      if (route.maxSegments !== undefined) {
+        const withinLimit = `/${route.prefix}/${Array.from({ length: route.maxSegments }, (_unused, i) => `s${i}`).join('/')}`;
+        const overLimit = `/${route.prefix}/${Array.from({ length: route.maxSegments + 1 }, (_unused, i) => `s${i}`).join('/')}`;
+        expect(resolvePathBuilderKind(withinLimit, origin), withinLimit).toBe(route.builderKind);
+        expect(resolvePathBuilderKind(overLimit, origin), overLimit).toBeUndefined();
+      }
+    }
+    expect(resolvePathBuilderKind('/icon', origin)).toBeUndefined();
+    expect(resolvePathBuilderKind('/badge/a/b', origin)).toBe('badge');
+    expect(resolvePathBuilderKind('/badge/npm/react/v', origin)).toBe('service');
+    expect(resolvePathBuilderKind('/docs/badges', origin)).toBeUndefined();
+  });
+
+  it('round-trips URL, Markdown, HTML, bare-host, relative, and share-link snippets through parseImportedSnippet and rejects unsafe or invalid inputs', () => {
+    const origins = ['https://svg.xul.is', 'http://localhost:8787'];
+    const roundTripCases: { alt: string; kind: BuilderKind; link: string; path: string }[] = [
+      {
+        alt: String.raw`build \[ok\] & <fast>`,
+        kind: 'badge',
+        link: 'https://example.com/a (b)/<c>?q=1%262',
+        path: '/badge/build/ok+(v2)?icon=circle-check&color=emerald',
+      },
+      {
+        alt: 'npm react v',
+        kind: 'service',
+        link: 'https://www.npmjs.com/package/react',
+        path: '/badge/npm/react/v?variant=2',
+      },
+      {
+        alt: 'A &amp; "B"',
+        kind: 'button',
+        link: '',
+        path: '/button/Join/Discord?icon=message-circle&size=lg',
+      },
+      { alt: 'rust', kind: 'icon', link: '', path: '/icon/rust?color=amber&size=32' },
+      {
+        alt: 'My Stack',
+        kind: 'stack',
+        link: './LICENSE',
+        path: '/stack/ts,rust@amber:2|docker,k8s?variant=2&gap=10',
+      },
+      {
+        alt: 'Shipping fast',
+        kind: 'typing',
+        link: '#hero',
+        path: '/typing/$+/Shipping+fast;Zero+cold+starts?layout=terminal&color=violet',
+      },
+      {
+        alt: 'Quote by Ada',
+        kind: 'quote',
+        link: 'https://xul.is',
+        path: '/quote/Ada/Simplicity+first?variant=3',
+      },
+    ];
+
+    for (const sample of roundTripCases) {
+      const fullUrl = `https://svg.xul.is${sample.path}`;
+      const snippets = core.buildSnippets(fullUrl, sample.alt, sample.link);
+      expect(core.parseImportedSnippet(snippets.url, origins), `url: ${sample.path}`).toEqual({
+        alt: '',
+        kind: sample.kind,
+        link: '',
+        path: sample.path,
+      });
+      expect(core.parseImportedSnippet(snippets.markdown, origins), `md: ${sample.path}`).toEqual(
+        sample
+      );
+      expect(core.parseImportedSnippet(snippets.html, origins), `html: ${sample.path}`).toEqual(
+        sample
+      );
+      const shareUrl = core.buildShareUrl(
+        `https://svg.xul.is/builder/${sample.kind}`,
+        sample.path,
+        sample.alt,
+        sample.link
+      );
+      expect(core.parseImportedSnippet(shareUrl, origins), `share: ${sample.path}`).toEqual(sample);
+    }
+
+    // Bare hosts, local dev origins, root-relative aliases, CommonMark titles/brackets, and single-quoted multi-line HTML:
+    expect(core.parseImportedSnippet('  svg.xul.is/btn/Try/Now?color=sky  ', origins)).toEqual({
+      alt: '',
+      kind: 'button',
+      link: '',
+      path: '/btn/Try/Now?color=sky',
+    });
+    expect(core.parseImportedSnippet('localhost:8787/type/Hello+world', origins)).toEqual({
+      alt: '',
+      kind: 'typing',
+      link: '',
+      path: '/type/Hello+world',
+    });
+    expect(
+      core.parseImportedSnippet('![Status](https://svg.xul.is/badge/ci/green "CI Badge")', origins)
+    ).toEqual({ alt: 'Status', kind: 'badge', link: '', path: '/badge/ci/green' });
+    expect(
+      core.parseImportedSnippet(
+        '[![Docs](<https://svg.xul.is/icon/book-open>)](<https://xul.is/docs (v1)>)',
+        origins
+      )
+    ).toEqual({
+      alt: 'Docs',
+      kind: 'icon',
+      link: 'https://xul.is/docs (v1)',
+      path: '/icon/book-open',
+    });
+    expect(
+      core.parseImportedSnippet(
+        "<a target='_blank' href='https://xul.is'>\n  <img alt='A &#39;B&#39; &gt; C' src='https://svg.xul.is/stack/ts,go' />\n</a>",
+        origins
+      )
+    ).toEqual({ alt: "A 'B' > C", kind: 'stack', link: 'https://xul.is', path: '/stack/ts,go' });
+    expect(
+      core.parseImportedSnippet(
+        '[![python](https://svg.xul.is/button/Python?icon=snake&variant=3)](https://github.com/xulbux/python)',
+        origins
+      )
+    ).toEqual({
+      alt: 'python',
+      kind: 'button',
+      link: 'https://github.com/xulbux/python',
+      path: '/button/Python?icon=snake&variant=3',
+    });
+    expect(
+      core.parseImportedSnippet(
+        '<a id="tech-stack" href="#tech-stack"><img src="https://svg.xul.is/icon/microchip?size=40" align="left"></a>',
+        origins
+      )
+    ).toEqual({ alt: '', kind: 'icon', link: '#tech-stack', path: '/icon/microchip?size=40' });
+    expect(
+      core.parseImportedSnippet(
+        '## <a id="tech-stack" href="#tech-stack"><img src="https://svg.xul.is/icon/microchip?size=40" align=left></a> Tech Stack',
+        origins
+      )
+    ).toEqual({ alt: '', kind: 'icon', link: '#tech-stack', path: '/icon/microchip?size=40' });
+    expect(
+      core.parseImportedSnippet(
+        '- [![python](https://svg.xul.is/button/Python?icon=snake&variant=3)](https://github.com/xulbux/python) – Python CLI',
+        origins
+      )
+    ).toEqual({
+      alt: 'python',
+      kind: 'button',
+      link: 'https://github.com/xulbux/python',
+      path: '/button/Python?icon=snake&variant=3',
+    });
+    expect(
+      core.parseImportedSnippet(
+        'https://svg.xul.is/builder/badge/npm/%40hono%2Fhono/v?alt=Hono+v4&link=https%3A%2F%2Fhono.dev',
+        origins
+      )
+    ).toEqual({
+      alt: 'Hono v4',
+      kind: 'service',
+      link: 'https://hono.dev',
+      path: '/badge/npm/%40hono%2Fhono/v',
+    });
+    expect(
+      core.parseImportedSnippet(
+        'https://svg.xul.is/builder/stack?icons=ts,rust&alt=My+Stack',
+        origins
+      )
+    ).toEqual({ alt: 'My Stack', kind: 'stack', link: '', path: '/stack?icons=ts,rust' });
+    expect(core.parseImportedSnippet('/builder/btn/Try/Now?color=sky', origins)).toEqual({
+      alt: '',
+      kind: 'button',
+      link: '',
+      path: '/btn/Try/Now?color=sky',
+    });
+    expect(
+      core.parseImportedSnippet('https://svg.xul.is/builder?path=%2Ficon%2Fzap', origins)
+    ).toEqual({ alt: '', kind: 'icon', link: '', path: '/icon/zap' });
+
+    // Rejections (empty, oversized, external origins, backslash host tricks, bare builder landings, bad arities, unsafe link schemes):
+    const invalidInputs = [
+      '',
+      '   ',
+      `https://svg.xul.is/stack/${'a,'.repeat(4100)}`,
+      'hello world',
+      'badge',
+      'https://evil.com/badge/build/passing',
+      '//evil.com/badge/build/passing',
+      String.raw`/\evil.com/badge/build/passing`,
+      'https://svg.xul.is/docs/badges',
+      'https://svg.xul.is/icon',
+      'https://svg.xul.is/icon/a/b',
+      'https://svg.xul.is/stack/a/b',
+      'https://svg.xul.is/builder',
+      'https://svg.xul.is/builder/',
+      'https://svg.xul.is/builder/stack',
+      'https://svg.xul.is/builder/stack/',
+      'https://svg.xul.is/builder/badge?alt=OnlyAlt',
+      'https://svg.xul.is/builder/builder/badge',
+      'https://svg.xul.is/builder/icon/a/b',
+      'https://svg.xul.is/builder?path=%2Fbuilder%2Fbadge',
+      'https://svg.xul.is/builder?path=https%3A%2F%2Fevil.com%2Fbadge%2Fa%2Fb',
+      '[![x](https://svg.xul.is/badge/a/b)](javascript:alert(1))',
+      '<a href="data:text/html,hi"><img src="https://svg.xul.is/badge/a/b" /></a>',
+      '<a href="//evil.com"><img src="https://svg.xul.is/badge/a/b" /></a>',
+      '<div>not an img</div>',
+    ];
+    for (const invalid of invalidInputs) {
+      expect(core.parseImportedSnippet(invalid, origins), invalid).toBeUndefined();
+    }
+  });
+
+  it('hydrates same-builder imports in-place (deduplicating auto alt/link), validates errors, and navigates cross-builder imports', async () => {
+    const labelInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      closest: () => undefined,
+      id: 'field-label',
+      removeAttribute: noopDomAction,
+      setAttribute: noopDomAction,
+      value: '',
+    });
+    const valueInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      closest: () => undefined,
+      id: 'field-value',
+      removeAttribute: noopDomAction,
+      setAttribute: noopDomAction,
+      value: '',
+    });
+    const altInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      id: 'builder-alt',
+      placeholder: '',
+      value: '',
+    });
+    const linkInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      id: 'builder-link',
+      placeholder: '',
+      value: '',
+    });
+    const importInputAttrs = new Map<string, string>();
+    let isImportInputFocused = false;
+    let isImportInputSelected = false;
+    const importInputListeners = new Map<string, ((event: unknown) => void)[]>();
+    const importInput = Object.assign(Object.create(FakeHTMLInputElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = importInputListeners.get(type) ?? [];
+        list.push(listener);
+        importInputListeners.set(type, list);
+      },
+      focus() {
+        isImportInputFocused = true;
+      },
+      getAttribute: (name: string) => importInputAttrs.get(name),
+      id: 'builder-import-input',
+      removeAttribute: (name: string) => importInputAttrs.delete(name),
+      select() {
+        isImportInputSelected = true;
+      },
+      setAttribute: (name: string, val: string) => importInputAttrs.set(name, val),
+      value: '',
+    });
+    let isImportTriggerFocused = false;
+    const importTrigger = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      focus() {
+        isImportTriggerFocused = true;
+      },
+      id: 'builder-import-trigger',
+    });
+    const importPopoverListeners = new Map<string, ((event: unknown) => void)[]>();
+    const importPopover = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = importPopoverListeners.get(type) ?? [];
+        list.push(listener);
+        importPopoverListeners.set(type, list);
+      },
+      contains: () => false,
+      id: 'builder-import-popover',
+    });
+    const importFormClasses = new Set<string>();
+    const importFormListeners = new Map<string, ((event: unknown) => void)[]>();
+    const importForm = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = importFormListeners.get(type) ?? [];
+        list.push(listener);
+        importFormListeners.set(type, list);
+      },
+      classList: {
+        toggle(token: string, force?: boolean) {
+          if (force ?? !importFormClasses.has(token)) {
+            importFormClasses.add(token);
+          } else {
+            importFormClasses.delete(token);
+          }
+        },
+      },
+      id: 'builder-import-form',
+    });
+    const importError = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      id: 'builder-import-error',
+      textContent: '',
+    });
+
+    function createFieldStub(fieldId: string, control: { id: string; value: string }): object {
+      return Object.assign(Object.create(FakeElement.prototype) as object, {
+        classList: { toggle: noopDomAction },
+        getAttribute: (name: string) => (name === 'data-field' ? fieldId : undefined),
+        querySelector: (selector: string) =>
+          selector === `#field-${fieldId}` ? control : undefined,
+        querySelectorAll: (selector: string) =>
+          selector === '.builder-input:not(.select-trigger)' ? [control] : [],
+      });
+    }
+    const labelField = createFieldStub('label', labelInput);
+    const valueField = createFieldStub('value', valueInput);
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      querySelector(selector: string) {
+        if (selector === '[data-field="label"]') {
+          return labelField;
+        }
+        if (selector === '[data-field="value"]') {
+          return valueField;
+        }
+        if (selector === '#field-label') {
+          return labelInput;
+        }
+        if (selector === '#field-value') {
+          return valueInput;
+        }
+        return undefined;
+      },
+      querySelectorAll: () => [],
+    });
+
+    let isPopoverOpen = false;
+    let placedAlign = '';
+    let closedCount = 0;
+    let assignedUrl = '';
+    let replacedUrl = '';
+    const scheduledTimers: (() => void)[] = [];
+
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      document: {
+        createDocumentFragment: () => ({ append: noopDomAction, childElementCount: 0 }),
+        createElement: () => ({}),
+        getElementById(id: string) {
+          const byId: Readonly<Record<string, unknown>> = {
+            'builder-alt': altInput,
+            'builder-form': formStub,
+            'builder-import-error': importError,
+            'builder-import-form': importForm,
+            'builder-import-input': importInput,
+            'builder-import-popover': importPopover,
+            'builder-import-trigger': importTrigger,
+            'builder-link': linkInput,
+            'builder-schema': { textContent: JSON.stringify(getBuilderSchema('badge')) },
+            'field-label': labelInput,
+            'field-value': valueInput,
+          };
+          return byId[id];
+        },
+        querySelector: () => undefined,
+        querySelectorAll: () => [],
+      },
+      globalThis: {
+        clearTimeout: noopDomAction,
+        fetch: () => Promise.resolve(new Response('{}')),
+        location: {
+          assign(url: string) {
+            assignedUrl = url;
+          },
+          href: 'https://svg.xul.is/builder/badge',
+          origin: 'https://svg.xul.is',
+        },
+        matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+        setTimeout(callback: () => void) {
+          scheduledTimers.push(callback);
+          return scheduledTimers.length;
+        },
+        svgSite: {
+          closePopover() {
+            isPopoverOpen = false;
+            closedCount += 1;
+          },
+          copyText: noopDomAction,
+          isPopoverOpen: () => isPopoverOpen,
+          openPopover: noopDomAction,
+          placePopover(_popover: unknown, _anchor: unknown, options?: { align?: string }) {
+            placedAlign = options?.align ?? '';
+          },
+        },
+      },
+      history: {
+        replaceState(_state: unknown, _title: string, url: string) {
+          replacedUrl = url;
+        },
+        state: undefined,
+      },
+    });
+
+    // [1] Opening the import popover places it right-aligned and focuses/selects the input:
+    isPopoverOpen = true;
+    for (const listener of importPopoverListeners.get('beforetoggle') ?? []) {
+      listener({ newState: 'open' });
+    }
+    await Promise.resolve();
+    expect(placedAlign).toBe('end');
+    expect(isImportInputFocused).toBe(true);
+    expect(isImportInputSelected).toBe(true);
+
+    // [2] Submitting invalid text surfaces a warning alert, marks the field invalid, and clears on input:
+    importInput.value = 'not a valid url';
+    for (const listener of importFormListeners.get('submit') ?? []) {
+      listener({ preventDefault: noopDomAction });
+    }
+    expect(importError.textContent).toContain('Enter a valid SVG URL');
+    expect(importFormClasses.has('is-invalid')).toBe(true);
+    expect(importInputAttrs.get('aria-invalid')).toBe('true');
+
+    for (const listener of importInputListeners.get('input') ?? []) {
+      listener({});
+    }
+    expect(importError.textContent).toBe('');
+    expect(importFormClasses.has('is-invalid')).toBe(false);
+    expect(importInputAttrs.has('aria-invalid')).toBe(false);
+
+    // [3] Same-builder Markdown import with auto-default alt hydrates fields, keeps `altInput` clean, syncs URL, and closes:
+    importInput.value = '![deploy: live](https://svg.xul.is/badge/deploy/live)';
+    for (const listener of importFormListeners.get('submit') ?? []) {
+      listener({ preventDefault: noopDomAction });
+    }
+    expect(labelInput.value).toBe('deploy');
+    expect(valueInput.value).toBe('live');
+    expect(altInput.value).toBe('');
+    expect(linkInput.value).toBe('');
+    expect(closedCount).toBe(1);
+    expect(isImportTriggerFocused).toBe(true);
+    scheduledTimers.at(-1)?.();
+    expect(replacedUrl).toBe('https://svg.xul.is/builder/badge/deploy/live');
+
+    // [4] Same-builder linked Markdown import with custom alt & link populates both snippet override fields:
+    importInput.value =
+      '[![Release Notes](https://svg.xul.is/badge/v2.4/stable)](https://xul.is/changelog)';
+    for (const listener of importFormListeners.get('submit') ?? []) {
+      listener({ preventDefault: noopDomAction });
+    }
+    expect(labelInput.value).toBe('v2.4');
+    expect(valueInput.value).toBe('stable');
+    expect(altInput.value).toBe('Release Notes');
+    expect(linkInput.value).toBe('https://xul.is/changelog');
+
+    // [5] Cross-builder import navigates directly to the canonical `/builder/<svg-path>` URL with metadata:
+    importInput.value =
+      '[![My Stack](https://svg.xul.is/stack/ts,rust:2?variant=2)](https://xul.is)';
+    for (const listener of importFormListeners.get('submit') ?? []) {
+      listener({ preventDefault: noopDomAction });
+    }
+    expect(assignedUrl).toBe(
+      'https://svg.xul.is/builder/stack/ts,rust:2?variant=2&alt=My+Stack&link=https%3A%2F%2Fxul.is'
+    );
+
+    // [6] `extractBuilderPrefillPath` handles deep `/builder/<svg-path>`, query-only prefills, legacy `?path=`, and clean landings:
+    const badgeSchema = getBuilderSchema('badge');
+    const serviceSchema = getBuilderSchema('service');
+    const stackSchema = getBuilderSchema('stack');
+    expect(core.extractBuilderPrefillPath('https://svg.xul.is/builder/badge', badgeSchema)).toBe(
+      ''
+    );
+    expect(core.extractBuilderPrefillPath('https://svg.xul.is/builder/badge/', badgeSchema)).toBe(
+      ''
+    );
+    expect(
+      core.extractBuilderPrefillPath(
+        'https://svg.xul.is/builder/badge?alt=Custom&utm_source=gh',
+        badgeSchema
+      )
+    ).toBe('');
+    expect(
+      core.extractBuilderPrefillPath(
+        'https://svg.xul.is/builder/badge?variant=3&color=neutral&icon=github&alt=Icon',
+        badgeSchema
+      )
+    ).toBe('/badge?variant=3&color=neutral&icon=github');
+    expect(
+      core.extractBuilderPrefillPath(
+        'https://svg.xul.is/builder/stack?icons=ts,rust&alt=Stack',
+        stackSchema
+      )
+    ).toBe('/stack?icons=ts,rust');
+    expect(
+      core.extractBuilderPrefillPath(
+        'https://svg.xul.is/builder/badge/npm/%40hono%2Fhono/v?color=orange&alt=Hono',
+        serviceSchema
+      )
+    ).toBe('/badge/npm/%40hono%2Fhono/v?color=orange');
+    expect(
+      core.extractBuilderPrefillPath(
+        'https://svg.xul.is/builder/badge?path=%2Fbadge%2Fci%2Fgreen',
+        badgeSchema
+      )
+    ).toBe('/badge/ci/green');
+  });
+
+  it('hydrates deep /builder/badge/:service/:target/:metric URLs on the service builder and resets to /builder/service on Clear or invalid preset', () => {
+    // [1] Valid deep `/builder/badge/npm/%40hono%2Fhono/v?alt=Hono+v4` hydrates `target` + `alt` and resets to `/builder/service` on `Clear`:
+    const valid = mountServiceBuilderAt(
+      'https://svg.xul.is/builder/badge/npm/%40hono%2Fhono/v?alt=Hono+v4'
+    );
+    expect(valid.targetValue()).toBe('@hono/hono');
+    expect(valid.altValue()).toBe('Hono v4');
+    expect(valid.statusText()).toBe('');
+    valid.clickReset();
+    expect(valid.replacedUrls.at(-1)).toBe('/builder/service');
+
+    // [2] Unknown service preset `/builder/badge/not-a-service/pkg/v` falls back to example state, surfaces warning, and cleans URL to `/builder/service`:
+    const invalid = mountServiceBuilderAt('https://svg.xul.is/builder/badge/not-a-service/pkg/v');
+    expect(invalid.targetValue()).toBe('react');
+    expect(invalid.statusText()).toContain('does not match a valid preset or route');
+    expect(invalid.replacedUrls).toEqual(['/builder/service']);
   });
 });

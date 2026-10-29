@@ -1747,6 +1747,7 @@ describe('website client scripts & markup regressions', () => {
     expect(docsHtml).toContain('<div class="card-grid is-3col">');
     const builderHtml = renderBuilderHtml('badge');
     expect(builderHtml).toContain('class="popover-panel select-menu"');
+    expect(builderHtml).toContain('class="popover-panel builder-import-popover"');
     expect(builderHtml).toContain('class="popover-panel icon-picker"');
     expect(renderBuilderHtml('stack')).toContain('class="popover-panel stack-help-popover"');
   });
@@ -1896,7 +1897,12 @@ describe('site stylesheet', () => {
     expect(css).toMatch(
       /\.popover-panel:not\(:where\(:popover-open, \.is-open\)\) \{\s*display: none;\s*pointer-events: none;\s*\}/
     );
-    for (const popover of ['.select-menu', '.icon-picker', '.stack-help-popover']) {
+    for (const popover of [
+      '.select-menu',
+      '.builder-import-popover',
+      '.icon-picker',
+      '.stack-help-popover',
+    ]) {
       expect(css, popover).not.toContain(`${popover}:where(:popover-open, .is-open) {`);
     }
   });
@@ -1965,7 +1971,7 @@ describe('site stylesheet', () => {
     expect(css).toMatch(/\.builder-hint\.is-warning \{\s*color: var\(--c-danger\);/);
     expect(css).toMatch(/\.builder-status\.is-warning \{\s*color: var\(--c-danger\);/);
     expect(css).toMatch(
-      /\.icon-input\.is-invalid \.icon-select-trigger,\s*\.builder-field:is\(\.is-invalid, \.is-missing\) :is\(\.builder-input, \.stack-catalog-wrap\) \{\s*border-color: var\(--c-danger\);/
+      /\.icon-input\.is-invalid \.icon-select-trigger,\s*\.builder-import-form\.is-invalid \.builder-input,\s*\.builder-field:is\(\.is-invalid, \.is-missing\) :is\(\.builder-input, \.stack-catalog-wrap\) \{\s*border-color: var\(--c-danger\);/
     );
     expect(countOccurrences(css, 'var(--c-hl-path)')).toBe(1);
     expect(css).toMatch(/\.hl-path \{\s*color: var\(--c-hl-path\);/);

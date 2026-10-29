@@ -44,6 +44,7 @@ export {
   buildMarkdownSnippetTokens,
   buildSnippets,
   buildSnippetTokens,
+  parseImportedSnippet,
 } from '@/site/shared/snippets';
 export {
   collectStackSlugs,
@@ -60,5 +61,8 @@ export {
   buildPath,
   buildPreviewPath,
   buildShareUrl,
+  extractBuilderPrefillPath,
   parsePath,
+  resolvePathBuilderKind,
+  stripBuilderMetaQuery,
 } from '@/site/shared/url';

@@ -469,25 +469,75 @@ describe('Hono routes on svg.xul.is', () => {
     }
   });
 
-  it('301-redirects /builder (preserving query strings), answers unknown kinds with 404, and renders every builder page', async () => {
-    const [builderRedirect, prefillRedirect, unknownBuilderRes] = await requestAll(
-      ['/builder', '/builder?path=%2Ficon%2Frust', '/builder/unknown'],
+  it('301-redirects /builder, legacy ?path= links, and route aliases, answers unknown builder routes with 404, and keeps bare /builder/:kind indexable', async () => {
+    const redirectCases: readonly [path: string, expectedLocation: string][] = [
+      ['/builder', '/builder/badge'],
+      ['/builder?path=%2Ficon%2Frust', '/builder/icon/rust'],
+      [
+        '/builder?path=%2Fbadge%2Fnpm%2Freact%2Fv&alt=Custom',
+        '/builder/badge/npm/react/v?alt=Custom',
+      ],
+      ['/builder?path=%2Finvalid', '/builder/badge?path=%2Finvalid'],
+      ['/builder/btn?color=sky', '/builder/button?color=sky'],
+      ['/builder/btn/Join/Now?color=sky', '/builder/button/Join/Now?color=sky'],
+      ['/builder/type/zsh/cargo+test', '/builder/typing/zsh/cargo+test'],
+    ];
+    const redirectResponses = await requestAll(
+      redirectCases.map(([path]) => path),
       TEST_ENV
     );
-    expect(builderRedirect?.status).toBe(301);
-    expect(builderRedirect?.headers.get('Location')).toBe('/builder/badge');
-    expect(prefillRedirect?.status).toBe(301);
-    expect(prefillRedirect?.headers.get('Location')).toBe('/builder/badge?path=%2Ficon%2Frust');
-    expect(unknownBuilderRes?.status).toBe(404);
-    expect(unknownBuilderRes?.headers.get('Content-Type')).toContain('text/html');
-    expect(await unknownBuilderRes?.text()).toContain('<meta name="robots" content="noindex" />');
+    for (const [i, response] of redirectResponses.entries()) {
+      const [path, expectedLocation] = requireDefined(redirectCases[i], `redirect ${i}`);
+      expect(response.status, path).toBe(301);
+      expect(response.headers.get('Location'), path).toBe(expectedLocation);
+    }
+
+    const notFoundPaths = ['/builder/unknown', '/builder/unknown/foo', '/builder/icon/a/b'];
+    const notFoundResponses = await requestAll(notFoundPaths, TEST_ENV);
+    const notFoundBodies = await Promise.all(notFoundResponses.map((response) => response.text()));
+    for (const [i, response] of notFoundResponses.entries()) {
+      expect(response.status, notFoundPaths[i]).toBe(404);
+      expect(response.headers.get('Content-Type'), notFoundPaths[i]).toContain('text/html');
+      expect(notFoundBodies[i], notFoundPaths[i]).toContain(
+        '<meta name="robots" content="noindex" />'
+      );
+    }
 
     const builderPaths = BUILDER_PAGES.map((page) => `/builder/${page.kind}`);
     const builderResponses = await requestAll(builderPaths, TEST_ENV);
     for (const [i, response] of builderResponses.entries()) {
       expect(response.status, builderPaths[i]).toBe(200);
       expect(response.headers.get('Content-Type'), builderPaths[i]).toContain('text/html');
+      expect(response.headers.get('X-Robots-Tag'), builderPaths[i]).toBeNull();
     }
+  });
+
+  it('serves deep /builder/<svg-path> and query-prefilled builder routes with X-Robots-Tag: noindex and ETag revalidation', async () => {
+    const prefillCases: readonly [path: string, expectedKind: string][] = [
+      ['/builder/stack/ts,rust:2?variant=2', 'stack'],
+      ['/builder/badge/npm/%40hono%2Fhono/v', 'service'],
+      ['/builder/badge/build/passing', 'badge'],
+      ['/builder/badge?variant=3&color=neutral&icon=github', 'badge'],
+    ];
+    const responses = await requestAll(
+      prefillCases.map(([path]) => path),
+      TEST_ENV
+    );
+    const bodies = await Promise.all(responses.map((response) => response.text()));
+    for (const [i, response] of responses.entries()) {
+      const [path, expectedKind] = requireDefined(prefillCases[i], `prefill ${i}`);
+      expect(response.status, path).toBe(200);
+      expect(response.headers.get('X-Robots-Tag'), path).toBe('noindex');
+      expect(bodies[i], path).toContain(`data-builder-kind="${expectedKind}"`);
+    }
+
+    const firstResponse = requireDefined(responses[0], 'stack prefill');
+    const notModifiedRes = await app.request(
+      '/builder/stack/ts,rust:2?variant=2',
+      { headers: { 'If-None-Match': firstResponse.headers.get('ETag') ?? '' } },
+      TEST_ENV
+    );
+    expect(notModifiedRes.status).toBe(304);
   });
 
   it('serves /robots.txt, /sitemap.xml, and /llms.txt with ETag revalidation and lists every page and service preset', async () => {

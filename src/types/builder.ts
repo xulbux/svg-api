@@ -192,7 +192,7 @@ export interface SpecialKindDetail {
 
 /** Builder target of a documented SVG path. */
 export interface BuilderTarget {
-  /** Root-relative builder URL with the prefilled path (e.g., `'/builder/badge?path=…'`). */
+  /** Root-relative builder URL with the prefilled path (e.g., `'/builder/badge/build/passing'`). */
   href: string;
   /** Builder element kind. */
   kind: BuilderKind;
@@ -226,6 +226,18 @@ export interface BuilderBuildResult {
   /** Labels of required fields that are still empty. */
   missing: string[];
   /** Root-relative SVG path with an optional query string. */
+  path: string;
+}
+
+/** Extracted SVG path, target builder kind, and optional snippet metadata parsed from a pasted URL or embed. */
+export interface ImportedBuilderSnippet {
+  /** Extracted alt text (`''` when absent). */
+  alt: string;
+  /** Target builder element kind inferred from the SVG route prefix and path arity. */
+  kind: BuilderKind;
+  /** Extracted click-through link target (`''` when unlinked). */
+  link: string;
+  /** Extracted root-relative SVG path and query string (e.g., `'/stack/ts,rust?variant=2'`). */
   path: string;
 }
 
@@ -412,6 +424,8 @@ export interface BuilderClientCore {
   decodeSegment: (raw: string) => string;
   /** Encode a URL path segment (spaces to `+`, preserving readable punctuation). */
   encodeSegment: (text: string) => string;
+  /** Extract the prefilled root-relative SVG path from a builder page URL. */
+  extractBuilderPrefillPath: (href: string, schema: BuilderSchema) => string;
   /** Filter icon picker matches across both sets for a search query. */
   filterIconCatalog: (
     index: IconPickerIndex,
@@ -421,6 +435,11 @@ export interface BuilderClientCore {
   ) => IconCatalogFilterResult;
   /** Check whether a typing builder field applies to the selected container layout. */
   isTypingFieldActiveForLayout: (fieldId: string, layoutValue: string) => boolean;
+  /** Parse a pasted SVG URL, root-relative path, builder share link, Markdown embed, or HTML `<img>` snippet. */
+  parseImportedSnippet: (
+    rawInput: string,
+    allowedOrigins: readonly string[]
+  ) => ImportedBuilderSnippet | undefined;
   /** Parse a relative SVG path and query string into a builder form state. */
   parsePath: (schema: BuilderSchema, rawPath: string) => BuilderState | undefined;
   /** Resolve the effective default value of a field under the current state. */
@@ -436,6 +455,8 @@ export interface BuilderClientCore {
     presetIcon?: string,
     isPresetDynamic?: boolean
   ) => IconSelectDisplay;
+  /** Resolve the builder element kind matching an existing SVG path and query string. */
+  resolvePathBuilderKind: (rawPath: string, origin: string) => BuilderKind | undefined;
   /** Determine whether a prefilled `/stack` DSL string fits `Categories` mode or requires `Raw DSL`. */
   resolveStackPrefillMode: (
     dslValue: string,

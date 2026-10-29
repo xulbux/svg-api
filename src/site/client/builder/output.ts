@@ -360,12 +360,13 @@ export function createBuilderOutputController(
         loadPreview(result.path);
       }
       if (isUrlSyncActive) {
+        const { origin } = new URL(globalThis.location.href);
         history.replaceState(
           history.state,
           '',
           buildShareUrl(
-            globalThis.location.href,
-            result.path,
+            `${origin}/builder/${schema.kind}`,
+            isComplete ? result.path : '',
             snippetOptions.alt,
             snippetOptions.link
           )
@@ -389,11 +390,12 @@ export function createBuilderOutputController(
   function copyShareLink(): void {
     const snippetOptions = readSnippetOptions();
     if (shareButton) {
-      const currentPath = buildPath(schema, getState()).path;
+      const result = buildPath(schema, getState());
+      const { origin } = new URL(globalThis.location.href);
       site?.copyText(
         buildShareUrl(
-          globalThis.location.href,
-          currentPath,
+          `${origin}/builder/${schema.kind}`,
+          result.missing.length === 0 ? result.path : '',
           snippetOptions.alt,
           snippetOptions.link
         ),
@@ -420,7 +422,7 @@ export function createBuilderOutputController(
     renderOutputs,
     resetUrlToClean() {
       isUrlSyncActive = false;
-      history.replaceState(history.state, '', new URL(globalThis.location.href).pathname);
+      history.replaceState(history.state, '', `/builder/${schema.kind}`);
     },
     selectTab,
     setCrossBuilderNotice(notice: string) {

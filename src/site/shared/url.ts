@@ -21,6 +21,7 @@ import {
 import { normalizeStackGroups } from '@/site/shared/stackDsl';
 import type {
   BuilderBuildResult,
+  BuilderKind,
   BuilderSchema,
   BuilderServiceOption,
   BuilderState,
@@ -252,12 +253,8 @@ function parseServiceSegments(
   return middle.length === 1 && service.ownerMode !== 'required';
 }
 
-/** Populate quote path segments and `?center=` fallback, reporting whether `route` matches `/quote`. */
-function parseQuoteSegments(
-  state: BuilderState,
-  schema: BuilderSchema,
-  route: ParsedRoute
-): boolean {
+/** Populate quote path segments and `?center=` fallback. */
+function parseQuoteSegments(state: BuilderState, schema: BuilderSchema, route: ParsedRoute): void {
   parseOptionalLeadingPair(state, schema, route, 'author', 'text');
   const layoutField = findField(schema, 'layout');
   const rawLayout = layoutField?.param
@@ -266,20 +263,44 @@ function parseQuoteSegments(
   if (!rawLayout && hasTruthyCenterFlag(route.query)) {
     state.layout = 'vertical';
   }
-  return route.prefix === 'quote' && route.segments.length <= 2;
 }
 
-/** Populate typing path segments and `?center=` fallback, reporting whether `route` matches `/typing` or `/type`. */
-function parseTypingSegments(
-  state: BuilderState,
-  schema: BuilderSchema,
-  route: ParsedRoute
-): boolean {
+/** Populate typing path segments and `?center=` fallback. */
+function parseTypingSegments(state: BuilderState, schema: BuilderSchema, route: ParsedRoute): void {
   parseOptionalLeadingPair(state, schema, route, 'prefix', 'lines');
   if (!state.align && hasTruthyCenterFlag(route.query)) {
     state.align = 'center';
   }
-  return (route.prefix === 'typing' || route.prefix === 'type') && route.segments.length <= 2;
+}
+
+/** Resolve the builder element kind matching `route`'s prefix and decoded segment count. */
+function resolveRouteBuilderKind(route: ParsedRoute): BuilderKind | undefined {
+  const { prefix, segments } = route;
+  switch (prefix) {
+    case 'badge': {
+      return segments.length <= 2 ? 'badge' : 'service';
+    }
+    case 'btn':
+    case 'button': {
+      return segments.length <= 2 ? 'button' : undefined;
+    }
+    case 'icon': {
+      return segments.length === 1 ? 'icon' : undefined;
+    }
+    case 'quote': {
+      return segments.length <= 2 ? 'quote' : undefined;
+    }
+    case 'stack': {
+      return segments.length <= 1 ? 'stack' : undefined;
+    }
+    case 'type':
+    case 'typing': {
+      return segments.length <= 2 ? 'typing' : undefined;
+    }
+    default: {
+      return undefined;
+    }
+  }
 }
 
 /** Populate path-derived `state` fields and report whether `route` belongs to `schema.kind`. */
@@ -288,34 +309,35 @@ function parsePathSegments(
   route: ParsedRoute,
   schema: BuilderSchema
 ): boolean {
-  const { prefix, query, segments } = route;
+  if (resolveRouteBuilderKind(route) !== schema.kind) {
+    return false;
+  }
+  const { query, segments } = route;
   switch (schema.kind) {
-    case 'badge': {
-      state.label = segments[0] ?? '';
-      state.value = segments[1] ?? '';
-      return prefix === 'badge' && segments.length <= 2;
-    }
+    case 'badge':
     case 'button': {
       state.label = segments[0] ?? '';
       state.value = segments[1] ?? '';
-      return (prefix === 'button' || prefix === 'btn') && segments.length <= 2;
+      return true;
     }
     case 'icon': {
       state.icon = segments[0] ?? '';
-      return prefix === 'icon' && segments.length === 1;
+      return true;
     }
     case 'quote': {
-      return parseQuoteSegments(state, schema, route);
+      parseQuoteSegments(state, schema, route);
+      return true;
     }
     case 'service': {
       return parseServiceSegments(state, route, schema);
     }
     case 'stack': {
       state.groups = segments[0] || readSegmentFallback(schema, query, 'groups');
-      return prefix === 'stack' && segments.length <= 1;
+      return true;
     }
     case 'typing': {
-      return parseTypingSegments(state, schema, route);
+      parseTypingSegments(state, schema, route);
+      return true;
     }
     default: {
       return false;
@@ -378,6 +400,31 @@ function setOptionalSearchParam(params: URLSearchParams, name: string, value: st
   }
 }
 
+/** Replace route alias prefixes with their canonical SVG route prefixes. */
+function canonicalizeSvgPathPrefix(rawPath: string): string {
+  if (rawPath === '/btn' || rawPath.startsWith('/btn/') || rawPath.startsWith('/btn?')) {
+    return `/button${rawPath.slice(4)}`;
+  }
+  if (rawPath === '/type' || rawPath.startsWith('/type/') || rawPath.startsWith('/type?')) {
+    return `/typing${rawPath.slice(5)}`;
+  }
+  return rawPath;
+}
+
+/** Check whether `query` contains at least one non-blank parameter recognized by `schema`. */
+function hasSchemaQueryParam(query: URLSearchParams, schema: BuilderSchema): boolean {
+  if ((schema.kind === 'quote' || schema.kind === 'typing') && readQueryParam(query, ['center'])) {
+    return true;
+  }
+  for (const field of schema.fields) {
+    const names = field.param ? [field.param, ...(field.aliases ?? [])] : (field.aliases ?? []);
+    if (names.length > 0 && readQueryParam(query, names)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -421,6 +468,17 @@ export function buildPreviewPath(path: string, isReducedMotion: boolean): string
   }
   pairs.push(STATIC_ANIM_PAIR);
   return `${queryIndex === -1 ? path : path.slice(0, queryIndex)}?${pairs.join('&')}`;
+}
+
+/**
+ * Resolve the builder element kind matching an existing SVG path and query string.
+ * @param rawPath   Root-relative path or absolute URL.
+ * @param origin    Base origin used to parse `rawPath`.
+ * @returns Matching builder kind, or `undefined` when `rawPath` is not a valid SVG route.
+ */
+export function resolvePathBuilderKind(rawPath: string, origin: string): BuilderKind | undefined {
+  const route = parseRoute(rawPath, origin);
+  return route ? resolveRouteBuilderKind(route) : undefined;
 }
 
 /**
@@ -510,18 +568,86 @@ export function buildDefaultLinkTarget(
 }
 
 /**
- * Build a shareable builder URL with the current path, alt text, and link target.
+ * Strip builder-only query parameters (`alt`, `link`, `path`) while preserving raw SVG query pairs.
+ * @param rawSearch   Raw query string with or without a leading `?`.
+ * @returns Filtered `?…` query string (`''` when no SVG parameters remain).
+ */
+export function stripBuilderMetaQuery(rawSearch: string): string {
+  const body = rawSearch.startsWith('?') ? rawSearch.slice(1) : rawSearch;
+  if (!body) {
+    return '';
+  }
+  const kept: string[] = [];
+  for (const pair of body.split('&')) {
+    const equalsIndex = pair.indexOf('=');
+    const key = equalsIndex === -1 ? pair : pair.slice(0, equalsIndex);
+    if (key && key !== 'alt' && key !== 'link' && key !== 'path') {
+      kept.push(pair);
+    }
+  }
+  return kept.length > 0 ? `?${kept.join('&')}` : '';
+}
+
+/**
+ * Extract the prefilled root-relative SVG path from a builder page URL (`/builder/<svg-path>` or legacy `?path=…`).
+ * @param href     Current builder page URL.
+ * @param schema   Active builder schema.
+ * @returns Root-relative SVG path (`''` on a clean `/builder/:kind` landing URL).
+ */
+export function extractBuilderPrefillPath(href: string, schema: BuilderSchema): string {
+  if (!URL.canParse(href)) {
+    return '';
+  }
+  const locationUrl = new URL(href);
+  const legacyPath = locationUrl.searchParams.get('path') ?? '';
+  if (legacyPath) {
+    return legacyPath;
+  }
+  if (!locationUrl.pathname.startsWith('/builder/')) {
+    return '';
+  }
+  const svgPathname = locationUrl.pathname.slice('/builder'.length);
+  const svgSearch = stripBuilderMetaQuery(locationUrl.search);
+  const secondSlash = svgPathname.indexOf('/', 1);
+  if (secondSlash !== -1 && secondSlash < svgPathname.length - 1) {
+    return `${svgPathname}${svgSearch}`;
+  }
+  if (
+    svgSearch &&
+    resolvePathBuilderKind(svgPathname, schema.origin) === schema.kind &&
+    hasSchemaQueryParam(locationUrl.searchParams, schema)
+  ) {
+    return `${svgPathname}${svgSearch}`;
+  }
+  return '';
+}
+
+/**
+ * Build a shareable `/builder/<svg-path>` URL with the current path, alt text, and link target.
  * @param href   Current builder page URL.
- * @param path   Root-relative SVG path.
+ * @param path   Root-relative SVG path (`''` keeps `href`'s pathname).
  * @param alt    Custom alt text (`''` omits the parameter).
  * @param link   Custom link target (`''` omits the parameter).
  * @returns Shareable builder URL string.
  */
 export function buildShareUrl(href: string, path: string, alt: string, link: string): string {
   const parsed = new URL(href);
-  const shareUrl = new URL(parsed.pathname, parsed.origin);
-  setOptionalSearchParam(shareUrl.searchParams, 'path', path);
-  setOptionalSearchParam(shareUrl.searchParams, 'alt', alt);
-  setOptionalSearchParam(shareUrl.searchParams, 'link', link);
-  return shareUrl.href;
+  let basePathname = parsed.pathname;
+  let svgSearch = '';
+  if (path) {
+    const canonicalPath = canonicalizeSvgPathPrefix(path);
+    const queryIndex = canonicalPath.indexOf('?');
+    const svgPathname = queryIndex === -1 ? canonicalPath : canonicalPath.slice(0, queryIndex);
+    svgSearch = queryIndex === -1 ? '' : stripBuilderMetaQuery(canonicalPath.slice(queryIndex));
+    basePathname = `/builder${svgPathname}`;
+  }
+  const metaParams = new URLSearchParams();
+  setOptionalSearchParam(metaParams, 'alt', alt);
+  setOptionalSearchParam(metaParams, 'link', link);
+  const metaQuery = metaParams.toString();
+  let combinedQuery = svgSearch;
+  if (metaQuery) {
+    combinedQuery = combinedQuery ? `${combinedQuery}&${metaQuery}` : `?${metaQuery}`;
+  }
+  return `${parsed.origin}${basePathname}${combinedQuery}`;
 }

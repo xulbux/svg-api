@@ -7,7 +7,7 @@ import ogImagePngBuffer from '@bundles/og.png';
 import type { Context, MiddlewareHandler, Next } from 'hono';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { DEFAULT_ENV } from '@/config/site';
+import { DEFAULT_ENV, SITE_ORIGIN } from '@/config/site';
 import {
   buildConditionalBodyResponse,
   buildSvgCacheControl,
@@ -23,6 +23,7 @@ import {
   SERVICE_VARY_HEADER,
   toConditionalResponse,
 } from '@/routes/http';
+import { resolveBuilderTarget } from '@/routes/schema';
 import {
   findSvgRoute,
   renderInternalErrorBadge,
@@ -45,6 +46,7 @@ import {
   renderServerErrorHtml,
 } from '@/site/pages';
 import { renderLlmsTxt, renderOgImageSvg, renderRobotsTxt, renderSitemapXml } from '@/site/seo';
+import { buildShareUrl, resolvePathBuilderKind } from '@/site/shared';
 import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -123,6 +125,12 @@ const HTML_DOCUMENT_HEADERS: Readonly<Record<string, string>> = {
   ...HTML_SECURITY_HEADERS,
   'Cache-Control': HTML_CACHE_CONTROL,
   'Content-Type': 'text/html; charset=utf-8',
+};
+
+/** Headers of prefilled `/builder/<svg-path>` HTML pages (`noindex` avoids duplicate-content indexing). */
+const PREFILLED_BUILDER_HTML_HEADERS: Readonly<Record<string, string>> = {
+  ...HTML_DOCUMENT_HEADERS,
+  'X-Robots-Tag': 'noindex',
 };
 
 /** Headers of the branded `404` HTML error page. */
@@ -240,13 +248,18 @@ function getMemoizedDocument(documentId: string, render: () => string): Memoized
 }
 
 /** Serve a memoized documentation page with security headers, answering matching revalidations with `304`. */
-function buildHtmlResponse(context: AppContext, pageId: string, render: () => string): Response {
+function buildHtmlResponse(
+  context: AppContext,
+  pageId: string,
+  render: () => string,
+  headers: Readonly<Record<string, string>> = HTML_DOCUMENT_HEADERS
+): Response {
   const page = getMemoizedDocument(pageId, render);
   return buildConditionalBodyResponse(
     page.body,
     page.etag,
     context.req.header('If-None-Match'),
-    HTML_DOCUMENT_HEADERS
+    headers
   );
 }
 
@@ -538,20 +551,67 @@ function handleDocsSectionRoute(context: AppContext): Response {
   return buildHtmlResponse(context, `docs/${section}`, () => renderDocsHtml(section));
 }
 
-/** Permanently redirect `/builder` to the default builder page (preserving query parameters such as `?path=…`). */
+/** Permanently redirect `/builder` to the canonical `/builder/<svg-path>` route for legacy `?path=` links (or the default builder page). */
 function handleBuilderIndexRoute(context: AppContext): Response {
+  const rawPath = context.req.query('path') ?? '';
+  if (rawPath && resolveBuilderTarget(rawPath)) {
+    const shareUrl = new URL(
+      buildShareUrl(
+        SITE_ORIGIN,
+        rawPath,
+        context.req.query('alt') ?? '',
+        context.req.query('link') ?? ''
+      )
+    );
+    return buildPermanentRedirectResponse(`${shareUrl.pathname}${shareUrl.search}`);
+  }
   return buildPermanentRedirectResponse(
     `${buildBuilderPath(DEFAULT_BUILDER_KIND)}${getRawSearch(context.req.raw)}`
   );
 }
 
-/** Handle the `/builder/:kind` URL builder pages (unknown kinds return `404`). */
+/** Handle the `/builder/:kind` URL builder pages (redirecting SVG alias prefixes and answering unknown kinds with `404`). */
 function handleBuilderRoute(context: AppContext): Response {
   const kind = (context.req.param('kind') ?? '').trim().toLowerCase();
-  if (!isBuilderKind(kind)) {
+  const rawSearch = getRawSearch(context.req.raw);
+  if (isBuilderKind(kind)) {
+    return buildHtmlResponse(
+      context,
+      `builder/${kind}`,
+      () => renderBuilderHtml(kind),
+      rawSearch ? PREFILLED_BUILDER_HTML_HEADERS : HTML_DOCUMENT_HEADERS
+    );
+  }
+  const aliasTarget = findSvgRoute(kind)?.aliasOf;
+  if (aliasTarget) {
+    return buildPermanentRedirectResponse(`/builder/${aliasTarget}${rawSearch}`);
+  }
+  return buildNotFoundHtmlResponse();
+}
+
+/** Handle deep `/builder/<svg-path>` prefill URLs, redirecting route aliases and serving the matching builder page with `noindex`. */
+function handleBuilderPrefillRoute(context: AppContext): Response {
+  const rawSvgPathname = getRawPathname(context.req.raw).slice('/builder'.length);
+  const rawSearch = getRawSearch(context.req.raw);
+  const route = findSvgRoute(extractFirstPathSegment(rawSvgPathname));
+  if (!route) {
     return buildNotFoundHtmlResponse();
   }
-  return buildHtmlResponse(context, `builder/${kind}`, () => renderBuilderHtml(kind));
+  if (route.aliasOf) {
+    return buildPermanentRedirectResponse(
+      `/builder/${route.aliasOf}${rawSvgPathname.slice(route.prefix.length + 1)}${rawSearch}`
+    );
+  }
+  const kind = resolvePathBuilderKind(`${rawSvgPathname}${rawSearch}`, SITE_ORIGIN);
+  if (!kind) {
+    return buildNotFoundHtmlResponse();
+  }
+  return buildHtmlResponse(
+    context,
+    `builder/${kind}`,
+    () => renderBuilderHtml(kind),
+    PREFILLED_BUILDER_HTML_HEADERS
+  );
 }
 
 /** Permanently redirect a trailing-slash documentation or builder path (e.g., `/docs/badges/`) to its canonical path. */
@@ -644,6 +704,7 @@ app.get('/assets/:name', handleAssetRoute);
 for (const path of TRAILING_SLASH_PATHS) {
   app.get(path, handleTrailingSlashRoute);
 }
+app.get('/builder/*', handleBuilderPrefillRoute);
 
 // [3] Registered SVG routes from `SVG_ROUTES`:
 for (const route of SVG_ROUTES) {

@@ -5,9 +5,16 @@
 import {
   bindPopoverFocusDismiss,
   bindPopoverToggle,
+  buildAltText,
+  buildDefaultLinkTarget,
+  buildPath,
+  buildShareUrl,
   core,
+  extractBuilderPrefillPath,
   findService,
+  parseImportedSnippet,
   parsePath,
+  resolvePathBuilderKind,
   syncTabPill,
 } from '@/site/client/builder/core';
 import { createBuilderFieldsController } from '@/site/client/builder/fields';
@@ -84,6 +91,11 @@ function initBuilderDom(): void {
   const copyButton = document.getElementById('builder-copy') as HTMLButtonElement | null;
   const shareButton = document.getElementById('builder-share');
   const resetButton = document.getElementById('builder-reset');
+  const importTrigger = document.getElementById('builder-import-trigger');
+  const importPopover = document.getElementById('builder-import-popover');
+  const importForm = document.getElementById('builder-import-form');
+  const importInput = document.getElementById('builder-import-input') as HTMLInputElement | null;
+  const importError = document.getElementById('builder-import-error');
   const stackCategorySearch = document.getElementById(
     'stack-category-search'
   ) as HTMLInputElement | null;
@@ -226,27 +238,56 @@ function initBuilderDom(): void {
     update(form);
   }
 
-  function initializeState(): void {
-    const pageParams = new URL(globalThis.location.href).searchParams;
-    const sharedPath = pageParams.get('path');
-    const parsedState = sharedPath ? parsePath(schema, sharedPath) : undefined;
-    const hasCustomMeta = Boolean(pageParams.get('alt') || pageParams.get('link'));
+  function applyHydratedMeta(
+    parsedState: BuilderState | undefined,
+    rawAlt: string,
+    rawLink: string
+  ): boolean {
+    const trimmedAlt = rawAlt.trim();
+    const trimmedLink = rawLink.trim();
+    const autoAlt = parsedState ? buildAltText(schema, parsedState) : '';
+    const autoLink = parsedState
+      ? buildDefaultLinkTarget(
+          schema,
+          parsedState,
+          `${schema.origin}${buildPath(schema, parsedState).path}`
+        )
+      : '';
+    const customAlt = trimmedAlt && trimmedAlt !== autoAlt ? trimmedAlt : '';
+    const customLink = trimmedLink && trimmedLink !== autoLink ? trimmedLink : '';
     if (altInput) {
-      altInput.value = pageParams.get('alt') ?? '';
+      altInput.value = customAlt;
     }
     if (linkInput) {
-      linkInput.value = pageParams.get('link') ?? '';
+      linkInput.value = customLink;
     }
+    return Boolean(customAlt || customLink);
+  }
+
+  function initializeState(): void {
+    const locationUrl = new URL(globalThis.location.href);
+    const pageParams = locationUrl.searchParams;
+    const sharedPath = extractBuilderPrefillPath(locationUrl.href, schema);
+    const parsedState = sharedPath ? parsePath(schema, sharedPath) : undefined;
+    const hasCustomMeta = applyHydratedMeta(
+      parsedState,
+      pageParams.get('alt') ?? '',
+      pageParams.get('link') ?? ''
+    );
     if (parsedState || hasCustomMeta) {
       outputController.enableUrlSync();
     } else if (sharedPath) {
       outputController.resetUrlToClean();
     }
-    outputController.setCrossBuilderNotice(
-      sharedPath && !parsedState
-        ? 'The shared link belongs to another builder; Showing the example instead.'
-        : ''
-    );
+    let notice = '';
+    if (sharedPath && !parsedState) {
+      const sharedKind = resolvePathBuilderKind(sharedPath, schema.origin);
+      notice =
+        sharedKind && sharedKind !== schema.kind
+          ? 'The shared link belongs to another builder; Showing the example instead.'
+          : 'The shared URL does not match a valid preset or route; Showing the example instead.';
+    }
+    outputController.setCrossBuilderNotice(notice);
     applyState(parsedState ?? schema.initialState);
     if (schema.kind === 'stack' && parsedState) {
       stackCatalogController?.syncModeForPrefill(
@@ -254,6 +295,97 @@ function initBuilderDom(): void {
         parsedState.perline ?? ''
       );
     }
+  }
+
+  function setImportError(message: string): void {
+    if (importError) {
+      importError.textContent = message;
+    }
+    importForm?.classList.toggle('is-invalid', Boolean(message));
+    if (importInput) {
+      if (message) {
+        importInput.setAttribute('aria-invalid', 'true');
+      } else {
+        importInput.removeAttribute('aria-invalid');
+      }
+    }
+    if (importPopover && importTrigger && site?.isPopoverOpen(importPopover)) {
+      site.placePopover(importPopover, importTrigger, { align: 'end', gap: 6 });
+    }
+  }
+
+  function handleImportSubmit(event: Event): void {
+    event.preventDefault();
+    if (!importInput) {
+      return;
+    }
+    const imported = parseImportedSnippet(importInput.value, [
+      schema.origin,
+      globalThis.location.origin,
+    ]);
+    if (!imported) {
+      setImportError('Enter a valid SVG URL, Markdown/HTML image snippet, or builder link.');
+      importInput.focus();
+      return;
+    }
+    if (imported.kind !== schema.kind) {
+      globalThis.location.assign(
+        buildShareUrl(
+          `${globalThis.location.origin}/builder/${imported.kind}`,
+          imported.path,
+          imported.alt,
+          imported.link
+        )
+      );
+      return;
+    }
+    const nextState = parsePath(schema, imported.path);
+    if (!nextState) {
+      setImportError('This service badge route does not match any supported preset or metric.');
+      importInput.focus();
+      return;
+    }
+    setImportError('');
+    importInput.value = '';
+    applyHydratedMeta(nextState, imported.alt, imported.link);
+    outputController.clearCrossBuilderNotice();
+    outputController.enableUrlSync();
+    applyState(nextState);
+    if (schema.kind === 'stack') {
+      stackCatalogController?.syncModeForPrefill(nextState.groups ?? '', nextState.perline ?? '');
+    }
+    if (importPopover) {
+      site?.closePopover(importPopover);
+    }
+    if (importTrigger instanceof HTMLElement) {
+      importTrigger.focus();
+    }
+  }
+
+  function bindImportPopover(): void {
+    if (!(importPopover instanceof HTMLElement) || !(importTrigger instanceof HTMLElement)) {
+      return;
+    }
+    bindPopoverToggle(
+      importPopover,
+      site,
+      () => {
+        setImportError('');
+        site?.placePopover(importPopover, importTrigger, { align: 'end', gap: 6 });
+        importInput?.focus();
+        importInput?.select?.();
+      },
+      () => {
+        setImportError('');
+      }
+    );
+    bindPopoverFocusDismiss(importPopover, site, () => importTrigger);
+    importInput?.addEventListener('input', () => {
+      if (importError?.textContent) {
+        setImportError('');
+      }
+    });
+    importForm?.addEventListener('submit', handleImportSubmit);
   }
 
   function bindHelpPopovers(): void {
@@ -364,6 +496,7 @@ function initBuilderDom(): void {
     });
     bindSelects(form, site);
     bindHelpPopovers();
+    bindImportPopover();
 
     resetButton?.addEventListener('click', () => {
       outputController.clearCrossBuilderNotice();

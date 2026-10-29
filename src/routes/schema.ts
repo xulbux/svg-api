@@ -964,22 +964,32 @@ export function getBuilderSchema(kind: BuilderKind): BuilderSchema {
  * @returns Builder kind and prefilled builder URL, or `undefined` for paths no builder can edit.
  */
 export function resolveBuilderTarget(path: string): BuilderTarget | undefined {
-  if (!URL.canParse(path, SITE_ORIGIN)) {
+  if (!path.startsWith('/') || path.startsWith('//') || !URL.canParse(path, SITE_ORIGIN)) {
     return undefined;
   }
   const url = new URL(path, SITE_ORIGIN);
+  if (url.origin !== SITE_ORIGIN) {
+    return undefined;
+  }
   const match = resolveSvgRoute(url);
   if (!match) {
     return undefined;
   }
+  const prefix = url.pathname.split('/', 2)[1] ?? '';
+  const route = findSvgRoute(prefix);
   let kind: BuilderKind | undefined = undefined;
   if (match.kind === 'service') {
     if (isValidServiceRequest(match.request)) {
       kind = 'service';
     }
   } else {
-    const prefix = url.pathname.split('/', 2)[1] ?? '';
-    kind = findSvgRoute(prefix)?.builderKind;
+    kind = route?.builderKind;
   }
-  return kind ? { href: `/builder/${kind}?path=${encodeURIComponent(path)}`, kind } : undefined;
+  if (!kind || !route) {
+    return undefined;
+  }
+  const canonicalPathname = route.aliasOf
+    ? `/${route.aliasOf}${url.pathname.slice(route.prefix.length + 1)}`
+    : url.pathname;
+  return { href: `/builder${canonicalPathname}${url.search}`, kind };
 }

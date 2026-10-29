@@ -100,11 +100,13 @@
 }
 
 .icon-input.is-invalid .icon-select-trigger,
+.builder-import-form.is-invalid .builder-input,
 .builder-field:is(.is-invalid, .is-missing) :is(.builder-input, .stack-catalog-wrap) {
   border-color: var(--c-danger);
 }
 
 .icon-input.is-invalid .icon-select-trigger:focus-visible,
+.builder-import-form.is-invalid .builder-input:focus-visible,
 .builder-field:is(.is-invalid, .is-missing) .builder-input:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-danger) 20%, transparent);
 }
@@ -852,6 +854,32 @@
   flex-wrap: wrap;
   gap: 8px;
   margin-block-start: 14px;
+}
+
+/* URL & Snippet Import Popover */
+
+.builder-import-popover {
+  inline-size: min(440px, calc(100dvw - 16px));
+  padding: 13px 14px;
+  border-radius: var(--radius-md);
+}
+
+.builder-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.builder-import-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.builder-import-row .btn-small {
+  flex-shrink: 0;
+  min-block-size: 36px;
+  padding-inline: 14px;
 }
 
 /* Icon Picker Popover */
