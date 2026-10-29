@@ -87,10 +87,34 @@ interface FakeDomEvent {
   type: string;
 }
 
+/** Recorded Web Animations API glide on a synthetic `FakeDomNode`. */
+interface FakeRowAnimation {
+  /** Register an animation lifecycle listener (`'finish'`). */
+  addEventListener: (type: string, listener: () => void) => void;
+  /** Cancel this animation immediately. */
+  cancel: () => void;
+  /** Complete this animation and fire `'finish'` listeners. */
+  finish: () => void;
+  /** Starting `translate` keyframe value (e.g., `'0 42px'`). */
+  fromTranslate: string;
+  /** Whether `cancel()` was invoked. */
+  isCancelled: boolean;
+  /** Whether `finish()` completed this animation. */
+  isFinished: boolean;
+  /** Target `translate` keyframe value (e.g., `'0 0'`). */
+  toTranslate: string;
+}
+
 /** Minimal synthetic DOM element supporting pointer capture, layout geometry, and DOM relocation. */
 interface FakeDomNode {
   /** Register an event listener for `type`. */
   addEventListener: (type: string, listener: (event: FakeDomEvent) => void) => void;
+  /** Insert `nodes` right after this child inside `parentElement`. */
+  after: (...nodes: FakeDomNode[]) => void;
+  /** Start a synthetic WAAPI `translate` animation and record it in `animations`. */
+  animate: (keyframes: readonly { translate?: string }[]) => FakeRowAnimation;
+  /** Recorded WAAPI `animate` invocations in call order. */
+  animations: FakeRowAnimation[];
   /** Append child nodes or fragments. */
   append: (...nodes: (FakeDomFragment | FakeDomNode)[]) => void;
   /** Attribute map. */
@@ -154,6 +178,8 @@ interface FakeDomNode {
   querySelectorAll: (selector: string) => FakeDomNode[];
   /** Release pointer capture for `pointerId`. */
   releasePointerCapture: (pointerId: number) => void;
+  /** Detach this element from `parentElement`. */
+  remove: () => void;
   /** Remove an attribute. */
   removeAttribute: (name: string) => void;
   /** Replace all children with `nodes`. */
@@ -224,9 +250,19 @@ const PREVIEW_LINK_RX = /<a class="preview-link" href="(?<href>[^"]+)"/g;
 /** Matches SMIL animation elements in rendered SVGs. */
 const SMIL_ANIMATION_RX = /<animate/;
 
+/** Matches one or more ASCII whitespace characters between CSS `translate` tokens. */
+const TRANSLATE_SPACE_RX = /\s+/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 const core = evaluateClientCore<BuilderClientCore>(builderScript, 'svgBuilderCore');
+
+/** Parse the vertical pixel offset from a CSS `translate` property value (e.g., `'0 -42px'`). */
+function parseTranslateY(rawTranslate: string): number {
+  const tokens = rawTranslate.trim().split(TRANSLATE_SPACE_RX);
+  const yToken = tokens.length > 1 ? tokens[1] : tokens[0];
+  return Number.parseFloat(yToken ?? '0') || 0;
+}
 
 /** Collect the decoded `?path=` of every preview link on a page. */
 function collectPreviewPaths(html: string): string[] {
@@ -509,7 +545,9 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
     const rowHeight = 36;
     const rowGap = 6;
     const listTop = 100;
+    let activeAnimationTranslateY = 0;
 
+    node.animations = [];
     node.attributes = new Map<string, string>();
     node.children = [];
     node.dataset = {};
@@ -582,6 +620,52 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
     node.releasePointerCapture = (pointerId) => {
       getCapturedSet(node).delete(pointerId);
     };
+    node.after = (...items) => {
+      const parent = node.parentElement;
+      if (!parent) {
+        return;
+      }
+      let anchor = node.nextElementSibling;
+      for (const item of items) {
+        relocateChild(parent, item, anchor, false);
+        anchor = item.nextElementSibling;
+      }
+    };
+    node.animate = (keyframes) => {
+      const finishListeners: (() => void)[] = [];
+      const fromTranslate = keyframes[0]?.translate ?? '';
+      const toTranslate = keyframes[1]?.translate ?? '';
+      // Simulate mid-flight WAAPI `translate` so `getBoundingClientRect` differs from `offsetTop`:
+      activeAnimationTranslateY = parseTranslateY(fromTranslate) * 0.5;
+      const record: FakeRowAnimation = {
+        addEventListener(type, listener) {
+          if (type === 'finish') {
+            finishListeners.push(listener);
+          }
+        },
+        cancel() {
+          if (!record.isCancelled && !record.isFinished) {
+            record.isCancelled = true;
+            activeAnimationTranslateY = 0;
+          }
+        },
+        finish() {
+          if (!record.isCancelled && !record.isFinished) {
+            record.isFinished = true;
+            activeAnimationTranslateY = 0;
+            for (const listener of finishListeners) {
+              listener();
+            }
+          }
+        },
+        fromTranslate,
+        isCancelled: false,
+        isFinished: false,
+        toTranslate,
+      };
+      node.animations.push(record);
+      return record;
+    };
     node.append = (...items) => {
       for (const item of items) {
         if ('isFragment' in item) {
@@ -601,6 +685,18 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
       for (const item of items) {
         relocateChild(parent, item, node, false);
       }
+    };
+    node.remove = () => {
+      const parent = node.parentElement;
+      if (!parent) {
+        return;
+      }
+      const existingIndex = parent.children.indexOf(node);
+      if (existingIndex !== -1) {
+        parent.children.splice(existingIndex, 1);
+      }
+      node.parentElement = undefined;
+      releaseCaptureInDetachedSubtree(node);
     };
     node.replaceChildren = (...items) => {
       for (const existing of node.children) {
@@ -660,7 +756,9 @@ function mountTypingLinesDomHarness(initialLines: string): TypingLinesDomHarness
         const index = node.parentElement
           ? Math.max(0, node.parentElement.children.indexOf(node))
           : 0;
-        const top = listTop + index * (rowHeight + rowGap);
+        const inlineTranslateY = node.style.translate ? parseTranslateY(node.style.translate) : 0;
+        const top =
+          listTop + index * (rowHeight + rowGap) + inlineTranslateY + activeAnimationTranslateY;
         return { bottom: top + rowHeight, height: rowHeight, left: 0, right: 320, top, width: 320 };
       }
       const count = node.children.length;
@@ -2373,6 +2471,144 @@ describe('builder pages & "Open in Builder" links', () => {
     }
   });
 
+  it('glides only displaced neighbor rows during pointer drag without animating the dragged row or oscillating mid-flight (regression: dragged typing line animated on every neighbor swap)', () => {
+    const harness = mountTypingLinesDomHarness('Alpha;Beta;Gamma;Delta');
+    try {
+      const initialRows = harness.listElement.querySelectorAll('[data-typing-line-row]');
+      expect(initialRows).toHaveLength(4);
+      for (const row of initialRows) {
+        expect(row.classList.contains('is-entering')).toBe(false);
+      }
+
+      // [1] Interactive `+ Add line` scopes `.is-entering` solely to the newly added row and strips it on `transitionend`:
+      harness.addButton.dispatchEvent({
+        bubbles: true,
+        preventDefault: noopDomAction,
+        target: harness.addButton,
+        type: 'click',
+      });
+      const addedRow = harness.listElement.querySelectorAll('[data-typing-line-row]').at(4);
+      expect(addedRow?.classList.contains('is-entering')).toBe(true);
+      addedRow?.dispatchEvent({
+        bubbles: false,
+        preventDefault: noopDomAction,
+        target: addedRow,
+        type: 'transitionend',
+      });
+      expect(addedRow?.classList.contains('is-entering')).toBe(false);
+
+      const alphaRow = requireDefined(initialRows[0], 'Alpha row');
+      const betaRow = requireDefined(initialRows[1], 'Beta row');
+      const gammaRow = requireDefined(initialRows[2], 'Gamma row');
+      const alphaHandle = requireDefined(
+        alphaRow.querySelector('[data-typing-line-handle]'),
+        'Alpha handle'
+      );
+
+      // [2] Start dragging `Alpha` (slot 0, `top = 100`, `height = 36`, grab at `clientY = 118` -> `grabOffset = 18`):
+      alphaHandle.dispatchEvent({
+        bubbles: true,
+        button: 0,
+        clientY: 118,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: alphaHandle,
+        type: 'pointerdown',
+      });
+      expect(alphaRow.classList.contains('is-dragging')).toBe(true);
+      expect(alphaRow.classList.contains('is-entering')).toBe(false);
+
+      // Swap 1; cross `Beta` midpoint (`160`) at `clientY = 164` (`visualCenterY = 164`):
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 164,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointermove',
+      });
+      expect(harness.readInputs().slice(0, 3)).toEqual(['Beta', 'Alpha', 'Gamma']);
+      expect(alphaRow.animations).toHaveLength(0);
+      expect(alphaRow.style.translate).toBe('0 4px');
+      expect(betaRow.animations).toHaveLength(1);
+      expect(betaRow.animations[0]?.fromTranslate).toBe('0 42px');
+      expect(betaRow.animations[0]?.toTranslate).toBe('0 0');
+      expect(betaRow.animations[0]?.isCancelled).toBe(false);
+
+      // Jitter 2px upward (`clientY = 162`) while `Beta` is mid-glide; untransformed `offsetTop` prevents swap-back oscillation:
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 162,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointermove',
+      });
+      expect(harness.readInputs().slice(0, 3)).toEqual(['Beta', 'Alpha', 'Gamma']);
+      expect(alphaRow.animations).toHaveLength(0);
+      expect(betaRow.animations).toHaveLength(1);
+
+      // Swap 2; cross `Gamma` midpoint (`202`) at `clientY = 210` without disturbing `Beta` or animating `Alpha`:
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 210,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointermove',
+      });
+      expect(harness.readInputs().slice(0, 3)).toEqual(['Beta', 'Gamma', 'Alpha']);
+      expect(alphaRow.animations).toHaveLength(0);
+      expect(alphaRow.style.translate).toBe('0 8px');
+      expect(betaRow.animations).toHaveLength(1);
+      expect(betaRow.animations[0]?.isCancelled).toBe(false);
+      expect(gammaRow.animations).toHaveLength(1);
+      expect(gammaRow.animations[0]?.fromTranslate).toBe('0 42px');
+
+      // Reverse mid-flight above `Gamma` (`clientY = 154`); `Gamma` continues smoothly from `-21px` while `Alpha` stays un-animated:
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 154,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointermove',
+      });
+      expect(harness.readInputs().slice(0, 3)).toEqual(['Beta', 'Alpha', 'Gamma']);
+      expect(alphaRow.animations).toHaveLength(0);
+      expect(alphaRow.style.translate).toBe('0 -6px');
+      expect(gammaRow.animations).toHaveLength(2);
+      expect(gammaRow.animations[0]?.isCancelled).toBe(true);
+      expect(gammaRow.animations[1]?.fromTranslate).toBe('0 -21px');
+
+      // [3] Releasing the pointer settles `Alpha` smoothly from `'0 -6px'` to `'0 0'` at `.is-settling` until finished:
+      harness.listElement.dispatchEvent({
+        bubbles: true,
+        clientY: 154,
+        pointerId: 7,
+        pointerType: 'mouse',
+        preventDefault: noopDomAction,
+        target: harness.listElement,
+        type: 'pointerup',
+      });
+      expect(alphaRow.classList.contains('is-dragging')).toBe(false);
+      expect(alphaRow.classList.contains('is-settling')).toBe(true);
+      expect(alphaRow.style.translate).toBe('');
+      expect(alphaRow.animations).toHaveLength(1);
+      expect(alphaRow.animations[0]?.fromTranslate).toBe('0 -6px');
+      expect(alphaRow.animations[0]?.toTranslate).toBe('0 0');
+      alphaRow.animations[0]?.finish();
+      expect(alphaRow.classList.contains('is-settling')).toBe(false);
+    } finally {
+      harness.teardown();
+    }
+  });
+
   it('links every docs preview to a builder whose prefill renders the identical SVG', () => {
     let linkCount = 0;
     for (const path of collectAllPreviewPaths()) {
@@ -3399,5 +3635,278 @@ describe('builder pages & "Open in Builder" links', () => {
     flushDebounce();
     expect(replacedUrls.at(-1)).toBe('/builder/button');
     expect(locationState.href).toBe('https://svg.xul.is/builder/button');
+  });
+
+  it('positions popovers in the beforetoggle microtask before first paint without duplicating work on toggle (regression: first-open top-left flash)', async () => {
+    const popoverListeners = new Map<string, ((event: unknown) => void)[]>();
+    const helpPopover = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = popoverListeners.get(type) ?? [];
+        list.push(listener);
+        popoverListeners.set(type, list);
+      },
+      contains: () => false,
+    });
+    const helpTrigger = Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+      contains: () => false,
+      dataset: { helpAlign: 'start', helpPopover: 'special-syntax-help' },
+    });
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      querySelector: () => undefined,
+      querySelectorAll: (selector: string) =>
+        selector === '[data-help-popover]' ? [helpTrigger] : [],
+    });
+
+    let isHelpOpen = false;
+    const placements: { align?: string; gap?: number }[] = [];
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      document: {
+        createDocumentFragment: () => ({ append: noopDomAction, childElementCount: 0 }),
+        createElement: () => ({}),
+        getElementById(id: string) {
+          if (id === 'builder-schema') {
+            return { textContent: JSON.stringify(getBuilderSchema('badge')) };
+          }
+          if (id === 'builder-form') {
+            return formStub;
+          }
+          if (id === 'special-syntax-help') {
+            return helpPopover;
+          }
+          return undefined;
+        },
+        querySelector: () => undefined,
+        querySelectorAll: () => [],
+      },
+      globalThis: {
+        clearTimeout: noopDomAction,
+        fetch: () => Promise.resolve(new Response('{}')),
+        location: { href: 'https://svg.xul.is/builder/badge' },
+        matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+        setTimeout: () => 0,
+        svgSite: {
+          closePopover: noopDomAction,
+          copyText: noopDomAction,
+          isPopoverOpen: () => isHelpOpen,
+          openPopover: noopDomAction,
+          placePopover(
+            _popover: unknown,
+            _anchor: unknown,
+            options?: { align?: string; gap?: number }
+          ) {
+            placements.push(options ?? {});
+          },
+        },
+      },
+      history: { replaceState: noopDomAction, state: undefined },
+    });
+
+    // Native Popover API flow: `beforetoggle` fires synchronously, `:popover-open` turns true, and the microtask places before paint:
+    for (const listener of popoverListeners.get('beforetoggle') ?? []) {
+      listener({ newState: 'open' });
+    }
+    isHelpOpen = true;
+    await Promise.resolve();
+    expect(placements).toEqual([{ align: 'start', gap: 6 }]);
+
+    // Subsequent queued `toggle` (`newState: 'open'`) does not duplicate placement:
+    for (const listener of popoverListeners.get('toggle') ?? []) {
+      listener({ newState: 'open' });
+    }
+    expect(placements).toHaveLength(1);
+
+    // Closing resets state so a fallback `toggle`-only open still positions cleanly:
+    isHelpOpen = false;
+    for (const listener of popoverListeners.get('toggle') ?? []) {
+      listener({ newState: 'closed' });
+    }
+    isHelpOpen = true;
+    for (const listener of popoverListeners.get('toggle') ?? []) {
+      listener({ newState: 'open' });
+    }
+    expect(placements).toHaveLength(2);
+  });
+
+  it('syncs the sliding segmented tab pill without initial-load transition and animates user tab switches', () => {
+    const tabListClasses = new Set<string>();
+    const tabListProps = new Map<string, string>();
+    const tabListListeners = new Map<string, ((event: unknown) => void)[]>();
+
+    function createTabStub(
+      format: string,
+      isActive: boolean,
+      offsetLeft: number,
+      offsetWidth: number
+    ) {
+      const classes = new Set<string>(isActive ? ['builder-tab', 'is-active'] : ['builder-tab']);
+      const attrs = new Map<string, string>([
+        ['aria-selected', String(isActive)],
+        ['tabindex', isActive ? '0' : '-1'],
+      ]);
+      return Object.assign(Object.create(FakeHTMLButtonElement.prototype) as object, {
+        classList: {
+          contains: (token: string) => classes.has(token),
+          toggle(token: string, force?: boolean) {
+            const shouldHave = force ?? !classes.has(token);
+            if (shouldHave) {
+              classes.add(token);
+            } else {
+              classes.delete(token);
+            }
+          },
+        },
+        closest(selector: string) {
+          return selector === '.builder-tab' ? this : undefined;
+        },
+        dataset: { format },
+        getAttribute: (name: string) => attrs.get(name),
+        id: `builder-tab-${format}`,
+        offsetHeight: 28,
+        offsetLeft,
+        offsetTop: 3,
+        offsetWidth,
+        parentElement: undefined as unknown,
+        setAttribute(name: string, value: string) {
+          attrs.set(name, value);
+        },
+      });
+    }
+
+    const markdownTab = createTabStub('markdown', true, 3, 88);
+    const htmlTab = createTabStub('html', false, 93, 62);
+    const tabs = [markdownTab, htmlTab];
+
+    const tabList = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      addEventListener(type: string, listener: (event: unknown) => void) {
+        const list = tabListListeners.get(type) ?? [];
+        list.push(listener);
+        tabListListeners.set(type, list);
+      },
+      classList: {
+        add: (token: string) => tabListClasses.add(token),
+        contains: (token: string) => tabListClasses.has(token),
+        remove: (token: string) => tabListClasses.delete(token),
+      },
+      offsetWidth: 220,
+      querySelector(selector: string) {
+        if (selector === '.is-active') {
+          return tabs.find((candidate) => candidate.classList.contains('is-active'));
+        }
+        return undefined;
+      },
+      style: {
+        setProperty(name: string, value: string) {
+          tabListProps.set(name, value);
+        },
+      },
+    });
+    markdownTab.parentElement = tabList;
+    htmlTab.parentElement = tabList;
+
+    const outputStub = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      classList: { toggle: noopDomAction },
+      querySelector: (selector: string) => (selector === '.builder-tabs' ? tabList : undefined),
+    });
+    const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
+      addEventListener: noopDomAction,
+      querySelector: () => undefined,
+      querySelectorAll: () => [],
+    });
+
+    const resizeCallbacks: ((entries: { target: { parentElement: unknown } }[]) => void)[] = [];
+    function FakeResizeObserver(
+      callback: (entries: { target: { parentElement: unknown } }[]) => void
+    ): { observe: () => void } {
+      resizeCallbacks.push(callback);
+      return { observe: noopDomAction };
+    }
+
+    evaluateClientDom(builderScript, {
+      Element: FakeElement,
+      HTMLButtonElement: FakeHTMLButtonElement,
+      HTMLElement: FakeHTMLElement,
+      HTMLFormElement: FakeHTMLFormElement,
+      HTMLInputElement: FakeHTMLInputElement,
+      HTMLSelectElement: FakeHTMLSelectElement,
+      HTMLTextAreaElement: FakeHTMLElement,
+      ResizeObserver: FakeResizeObserver,
+      document: {
+        createDocumentFragment: () => ({ append: noopDomAction, childElementCount: 0 }),
+        createElement: () => ({}),
+        getElementById(id: string) {
+          if (id === 'builder-schema') {
+            return { textContent: JSON.stringify(getBuilderSchema('badge')) };
+          }
+          if (id === 'builder-form') {
+            return formStub;
+          }
+          return undefined;
+        },
+        querySelector: (selector: string) =>
+          selector === '.builder-output' ? outputStub : undefined,
+        querySelectorAll(selector: string) {
+          if (selector === '.builder-tabs, .icon-picker-tabs') {
+            return [tabList];
+          }
+          if (
+            selector === '.builder-tab' ||
+            selector === '.builder-tab, .stack-mode-tab, .icon-picker-tab'
+          ) {
+            return tabs;
+          }
+          return [];
+        },
+      },
+      globalThis: {
+        clearTimeout: noopDomAction,
+        fetch: () => Promise.resolve(new Response('{}')),
+        location: { href: 'https://svg.xul.is/builder/badge' },
+        matchMedia: () => ({ addEventListener: noopDomAction, matches: false }),
+        setTimeout: () => 0,
+        svgSite: {
+          closePopover: noopDomAction,
+          copyText: noopDomAction,
+          isPopoverOpen: () => false,
+          openPopover: noopDomAction,
+          placePopover: noopDomAction,
+        },
+      },
+      history: { replaceState: noopDomAction, state: undefined },
+    });
+
+    // Initial load positions the pill immediately without activating CSS transitions:
+    expect(tabListClasses.has('has-pill')).toBe(true);
+    expect(tabListClasses.has('is-animated')).toBe(false);
+    expect(tabListProps.get('--tab-pill-x')).toBe('3px');
+    expect(tabListProps.get('--tab-pill-y')).toBe('3px');
+    expect(tabListProps.get('--tab-pill-w')).toBe('88px');
+    expect(tabListProps.get('--tab-pill-h')).toBe('28px');
+
+    // Clicking the HTML tab enables transitions and glides the pill to the new tab:
+    for (const listener of tabListListeners.get('click') ?? []) {
+      listener({ target: htmlTab });
+    }
+    expect(tabListClasses.has('is-animated')).toBe(true);
+    expect(tabListProps.get('--tab-pill-x')).toBe('93px');
+    expect(tabListProps.get('--tab-pill-w')).toBe('62px');
+
+    // Viewport or webfont resize updates pill geometry cleanly without rubber-banding:
+    expect(resizeCallbacks).toHaveLength(1);
+    htmlTab.offsetLeft = 97;
+    htmlTab.offsetWidth = 66;
+    for (const callback of resizeCallbacks) {
+      callback([{ target: htmlTab }]);
+    }
+    expect(tabListClasses.has('is-animated')).toBe(false);
+    expect(tabListProps.get('--tab-pill-x')).toBe('97px');
+    expect(tabListProps.get('--tab-pill-w')).toBe('66px');
   });
 });

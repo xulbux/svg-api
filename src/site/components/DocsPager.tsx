@@ -37,14 +37,14 @@ export function DocsPager(props: DocsPagerProps): HtmlFragment {
     <nav class={prev ? 'pager-row' : 'pager-row is-end'} aria-label="Documentation pagination">
       {prev ? (
         <a href={buildDocsPath(prev.slug)} class="btn-secondary" rel="prev" tabindex="0">
-          <UiIcon slug="arrow-left" size={16} />
+          <UiIcon slug="arrow-left" size={16} extraClass="btn-arrow-left" />
           {prev.pagerLabel}
         </a>
       ) : undefined}
       {next ? (
         <a href={buildDocsPath(next.slug)} class="btn-primary" rel="next" tabindex="0">
           {next.pagerLabel}
-          <UiIcon slug="arrow-right" size={16} />
+          <UiIcon slug="arrow-right" size={16} extraClass="btn-arrow-right" />
         </a>
       ) : undefined}
     </nav>

@@ -47,17 +47,60 @@ import type {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Mark `selectedTab` as the active roving tab (`is-active`, `aria-selected`, `tabindex`) across `tabs`.
- * @param tabs          All tab elements in the `tablist`.
- * @param selectedTab   Newly selected tab element.
+ * Measure the active tab inside `tabList` and sync its sliding selection pill CSS custom properties.
+ * @param tabList         Segmented `.builder-tabs` or `.icon-picker-tabs` container element.
+ * @param shouldAnimate   Whether to slide the pill from its previous position (`false` on initial/layout sync).
  */
-export function activateRovingTab(tabs: Iterable<Element>, selectedTab: Element): void {
+export function syncTabPill(tabList: Element | null | undefined, shouldAnimate = false): void {
+  if (!(tabList instanceof HTMLElement) || typeof tabList.style?.setProperty !== 'function') {
+    return;
+  }
+  const checkedInput = tabList.querySelector('input:checked');
+  const activeTab =
+    tabList.querySelector('.is-active') ??
+    (checkedInput instanceof Element ? checkedInput.closest('.icon-picker-tab') : undefined);
+  if (
+    !(activeTab instanceof HTMLElement) ||
+    typeof activeTab.offsetWidth !== 'number' ||
+    activeTab.offsetWidth <= 0
+  ) {
+    return;
+  }
+  if (shouldAnimate && tabList.classList.contains('has-pill')) {
+    if (!tabList.classList.contains('is-animated')) {
+      // Flush the pre-animation pill geometry before enabling CSS transitions:
+      tabList.getBoundingClientRect?.();
+      tabList.classList.add('is-animated');
+    }
+  } else {
+    tabList.classList.remove('is-animated');
+  }
+  tabList.style.setProperty('--tab-pill-x', `${activeTab.offsetLeft}px`);
+  tabList.style.setProperty('--tab-pill-y', `${activeTab.offsetTop}px`);
+  tabList.style.setProperty('--tab-pill-w', `${activeTab.offsetWidth}px`);
+  tabList.style.setProperty('--tab-pill-h', `${activeTab.offsetHeight}px`);
+  tabList.classList.add('has-pill');
+}
+
+/**
+ * Mark `selectedTab` as the active roving tab (`is-active`, `aria-selected`, `tabindex`) across `tabs`
+ * and update its parent container's sliding selection pill.
+ * @param tabs            All tab elements in the `tablist`.
+ * @param selectedTab     Newly selected tab element.
+ * @param shouldAnimate   Whether to animate the selection pill transition (defaults to `true`).
+ */
+export function activateRovingTab(
+  tabs: Iterable<Element>,
+  selectedTab: Element,
+  shouldAnimate = true
+): void {
   for (const tab of tabs) {
     const isSelected = tab === selectedTab;
     tab.classList.toggle('is-active', isSelected);
     tab.setAttribute('aria-selected', String(isSelected));
     tab.setAttribute('tabindex', isSelected ? '0' : '-1');
   }
+  syncTabPill(selectedTab.parentElement, shouldAnimate);
 }
 
 /**
@@ -79,6 +122,46 @@ export function bindPopoverFocusDismiss(
       (!boundary || !boundary.contains(event.relatedTarget))
     ) {
       site?.closePopover(popover);
+    }
+  });
+}
+
+/**
+ * Run `onOpen` before the browser paints a newly opened `popover` (in the `beforetoggle` microtask once `:popover-open` applies,
+ * falling back to `toggle` when `beforetoggle` did not fire), and optionally run `onClose` when `popover` closes.
+ * @param popover   Popover element to observe.
+ * @param site      Shared site client utilities.
+ * @param onOpen    Callback invoked once per open cycle after `popover` is open in layout.
+ * @param onClose   Optional callback invoked when `popover` closes.
+ */
+export function bindPopoverToggle(
+  popover: HTMLElement,
+  site: SvgSite | undefined,
+  onOpen: () => void,
+  onClose?: () => void
+): void {
+  let isHandledBeforePaint = false;
+  popover.addEventListener('beforetoggle', (event) => {
+    if ((event as ToggleEvent).newState !== 'open') {
+      return;
+    }
+    isHandledBeforePaint = false;
+    queueMicrotask(() => {
+      if (!isHandledBeforePaint && (!site || site.isPopoverOpen(popover))) {
+        isHandledBeforePaint = true;
+        onOpen();
+      }
+    });
+  });
+  popover.addEventListener('toggle', (event) => {
+    if ((event as ToggleEvent).newState === 'open') {
+      if (!isHandledBeforePaint) {
+        onOpen();
+      }
+      isHandledBeforePaint = false;
+    } else {
+      isHandledBeforePaint = false;
+      onClose?.();
     }
   });
 }

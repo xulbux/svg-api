@@ -4,11 +4,13 @@
 
 import {
   bindPopoverFocusDismiss,
+  bindPopoverToggle,
   collectStackSlugs,
   computeGridFocusIndex,
   createAsyncCache,
   createIconResolver,
   getOwnValue,
+  syncTabPill,
 } from '@/site/client/builder/core';
 import {
   createIconGlyph,
@@ -100,6 +102,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     site,
   } = options;
 
+  const pickerTabs = picker?.querySelector('.icon-picker-tabs');
   const iconIndexUrl = picker?.dataset.indexUrl ?? '/assets/icons.json';
   const iconVersion = new URL(iconIndexUrl, globalThis.location.href).searchParams.get('v') ?? '';
 
@@ -260,15 +263,23 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
   }
 
   function updatePickerTabLabels(counts: Record<IconPickerSetId, number> | undefined): void {
+    let hasLabelChanged = false;
     for (const labelSpan of picker?.querySelectorAll('[data-picker-tab-label]') ?? []) {
       if (labelSpan instanceof HTMLElement) {
         const setId = labelSpan.dataset.pickerTabLabel;
         const baseLabel = labelSpan.dataset.label ?? '';
-        labelSpan.textContent =
+        const nextText =
           counts && (setId === 'lucide' || setId === 'brands')
             ? `${baseLabel} (${counts[setId].toLocaleString('en-US')})`
             : baseLabel;
+        if (labelSpan.textContent !== nextText) {
+          labelSpan.textContent = nextText;
+          hasLabelChanged = true;
+        }
       }
+    }
+    if (hasLabelChanged) {
+      syncTabPill(pickerTabs, false);
     }
   }
 
@@ -500,6 +511,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
         syncPickerTabForTarget();
       }
       renderPicker(true);
+      syncTabPill(pickerTabs, false);
     }
   }
 
@@ -512,6 +524,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       pickerSearch.focus();
     }
     syncPickerTabForTarget();
+    syncTabPill(pickerTabs, false);
     if (iconIndex) {
       renderPicker(true);
       return;
@@ -624,17 +637,21 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       },
       true
     );
-    pickerElement.addEventListener('toggle', (event) => {
-      if ((event as ToggleEvent).newState === 'open') {
-        openPicker();
-      } else if (pickerSearchFrame) {
-        cancelAnimationFrame(pickerSearchFrame);
-        pickerSearchFrame = 0;
+    bindPopoverToggle(
+      pickerElement,
+      site,
+      () => openPicker(),
+      () => {
+        if (pickerSearchFrame) {
+          cancelAnimationFrame(pickerSearchFrame);
+          pickerSearchFrame = 0;
+        }
       }
-    });
+    );
     bindPopoverFocusDismiss(pickerElement, site, () => pickerTrigger);
     pickerElement.addEventListener('change', (event) => {
       if (event.target instanceof HTMLInputElement && event.target.name === 'icon-picker-set') {
+        syncTabPill(pickerTabs, true);
         renderPicker(false);
       }
     });

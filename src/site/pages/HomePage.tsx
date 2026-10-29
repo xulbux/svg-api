@@ -204,7 +204,7 @@ function HomePage(): HtmlFragment {
             <a href={builderPath} class="btn-primary" tabindex="0">
               <UiIcon slug="wand-sparkles" size={16} />
               Start Building
-              <UiIcon slug="arrow-right" size={16} />
+              <UiIcon slug="arrow-right" size={16} extraClass="btn-arrow-right" />
             </a>
             <a href={docsPath} class="btn-secondary" tabindex="0">
               <UiIcon slug="book-open" size={16} />
@@ -236,7 +236,7 @@ function HomePage(): HtmlFragment {
         <a href={builderPath} class="btn-primary" tabindex="0">
           <UiIcon slug="wand-sparkles" size={16} />
           Start Building
-          <UiIcon slug="arrow-right" size={16} />
+          <UiIcon slug="arrow-right" size={16} extraClass="btn-arrow-right" />
         </a>
       </div>
     </PageLayout>

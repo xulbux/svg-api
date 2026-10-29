@@ -174,9 +174,7 @@ function getThemeTokens(): readonly ThemeToken[] {
       light: 'blur(12px) brightness(0) opacity(0.1)',
       name: 'hero-logo-glow',
     },
-    { dark: '18px', isColor: false, light: '0px', name: 'switch-thumb-shift' },
-    { dark: 'none', isColor: false, light: 'inline-flex', name: 'theme-light-display' },
-    { dark: 'inline-flex', isColor: false, light: 'none', name: 'theme-dark-display' },
+    { dark: '1', isColor: false, light: '0', name: 'is-dark' },
   ];
   return themeTokensCache;
 }

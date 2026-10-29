@@ -15,7 +15,8 @@
   transition:
     background-color var(--duration-base) ease,
     border-color var(--duration-base) ease,
-    color var(--duration-base) ease;
+    color var(--duration-base) ease,
+    scale var(--duration-fast) var(--ease-out);
 }
 
 .btn-primary {
@@ -43,6 +44,23 @@ button.btn-primary,
 button.btn-secondary {
   font-family: inherit;
   cursor: pointer;
+}
+
+:is(.btn-primary, .btn-secondary):active:not(:disabled, [aria-disabled='true']) {
+  scale: 0.98;
+}
+
+.btn-arrow-left,
+.btn-arrow-right {
+  transition: translate var(--duration-base) var(--ease-out);
+}
+
+:is(.btn-primary, .btn-secondary):is(:hover, :focus-visible) .btn-arrow-left {
+  translate: -3px 0;
+}
+
+:is(.btn-primary, .btn-secondary):is(:hover, :focus-visible) .btn-arrow-right {
+  translate: 3px 0;
 }
 
 /* Disabled buttons and link buttons (e.g., the builder's `Open SVG` link without an `href` while required fields are empty): */
@@ -495,7 +513,8 @@ details.code-drawer[open] .drawer-chevron {
     background-color var(--duration-base) ease,
     border-color var(--duration-base) ease,
     color var(--duration-base) ease,
-    opacity var(--duration-base) ease;
+    opacity var(--duration-base) ease,
+    scale var(--duration-fast) var(--ease-out);
 }
 
 .scroll-btn {
@@ -549,6 +568,10 @@ details.code-drawer[open] .drawer-chevron {
   background: color-mix(in srgb, var(--c-bg-soft) 88%, var(--c-text-1) 6%);
 }
 
+:is(.scroll-btn, .copy-btn):active:not(:disabled) {
+  scale: 0.93;
+}
+
 .scroll-btn:disabled,
 .copy-btn:disabled {
   border-color: color-mix(in srgb, var(--c-divider) 45%, transparent);
@@ -591,13 +614,30 @@ details.code-drawer[open] .drawer-chevron {
   color: var(--c-danger);
 }
 
-.copy-btn .icon-check,
+.copy-btn :is(.icon-copy, .icon-check) {
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    rotate var(--duration-base) var(--ease-out),
+    scale var(--duration-base) var(--ease-out);
+}
+
+.copy-btn .icon-check {
+  position: absolute;
+  opacity: 0;
+  rotate: -25deg;
+  scale: 0.5;
+}
+
 .copy-btn.is-copied .icon-copy {
-  display: none;
+  opacity: 0;
+  rotate: 25deg;
+  scale: 0.5;
 }
 
 .copy-btn.is-copied .icon-check {
-  display: inline-block;
+  opacity: 1;
+  rotate: 0deg;
+  scale: 1;
 }
 
 /* Soft-Edge Inner Fade-Out for Code Blocks (a horizontal mask on the scrolling `<pre>`): */

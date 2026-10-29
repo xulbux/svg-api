@@ -1884,16 +1884,61 @@ describe('site stylesheet', () => {
     );
   });
 
-  it('shares one elevated popover panel base for every popover', () => {
+  it('shares one elevated popover panel base with smooth discrete entry and exit transitions for every popover', () => {
     const css = getSiteStylesheet();
     expect(css).toMatch(
-      /\.popover-panel \{[^}]*background: color-mix\(in srgb, var\(--c-bg-elv\) 78%, transparent\);[^}]*backdrop-filter: blur\(16px\);/
+      /\.popover-panel \{[^}]*background: color-mix\(in srgb, var\(--c-bg-elv\) 78%, transparent\);[^}]*backdrop-filter: blur\(16px\);[^}]*opacity: 0;\s*scale: 0\.95;[^}]*display 0\.18s ease allow-discrete,\s*overlay 0\.18s ease allow-discrete;/
     );
     expect(css).toContain('.popover-panel:where(:popover-open, .is-open) {');
-    expect(css).toContain('.popover-panel:not(:where(:popover-open, .is-open)) {');
+    expect(css).toMatch(
+      /\.popover-panel:where\(:popover-open, \.is-open\) \{[^}]*@starting-style \{\s*opacity: 0;\s*scale: 0\.95;\s*\}/
+    );
+    expect(css).toMatch(
+      /\.popover-panel:not\(:where\(:popover-open, \.is-open\)\) \{\s*display: none;\s*pointer-events: none;\s*\}/
+    );
     for (const popover of ['.select-menu', '.icon-picker', '.stack-help-popover']) {
       expect(css, popover).not.toContain(`${popover}:where(:popover-open, .is-open) {`);
     }
+  });
+
+  it('animates segmented tab pills, copy button icons, theme sun/moon morphs, CTA arrows, and typing line entries smoothly', () => {
+    const css = getSiteStylesheet();
+    expect(css).toContain('--ease-out: cubic-bezier(0.22, 1, 0.36, 1);');
+    expect(css).toMatch(
+      /\.builder-tabs::before,\s*\.icon-picker-tabs::before \{[^}]*inline-size: var\(--tab-pill-w, 0px\);\s*block-size: var\(--tab-pill-h, 0px\);[^}]*translate: var\(--tab-pill-x, 0px\) var\(--tab-pill-y, 0px\);/
+    );
+    expect(css).toMatch(
+      /\.builder-tabs\.is-animated::before,\s*\.icon-picker-tabs\.is-animated::before \{\s*transition:\s*translate 0\.22s var\(--ease-out\),\s*inline-size 0\.22s var\(--ease-out\),\s*block-size 0\.22s var\(--ease-out\);\s*\}/
+    );
+    expect(css).toMatch(
+      /\.builder-tabs\.has-pill > \.is-active,\s*\.icon-picker-tabs\.has-pill \.icon-picker-tab input:checked \+ span \{\s*background: transparent;\s*\}/
+    );
+    expect(css).toMatch(
+      /\.builder-tab:hover,\s*\.stack-mode-tab:hover,\s*\.icon-picker-tab:hover span \{\s*color: var\(--c-text-1\);\s*\}/
+    );
+    expect(css).toMatch(
+      /\.copy-btn :is\(\.icon-copy, \.icon-check\) \{\s*transition:\s*opacity var\(--duration-base\) var\(--ease-out\),\s*rotate var\(--duration-base\) var\(--ease-out\),\s*scale var\(--duration-base\) var\(--ease-out\);\s*\}/
+    );
+    expect(css).not.toMatch(/\.copy-btn[^{]*\{\s*display: none;\s*\}/);
+    expect(css).toContain('--c-is-dark: 0;');
+    expect(css).toContain('--c-is-dark: 1;');
+    expect(css).toMatch(
+      /\.theme-switch-thumb \{[^}]*translate: calc\(var\(--c-is-dark\) \* 18px\) 0;/
+    );
+    expect(css).toMatch(/\.theme-label-light \{\s*opacity: calc\(1 - var\(--c-is-dark\)\);/);
+    expect(css).toMatch(/\.theme-label-dark \{\s*opacity: var\(--c-is-dark\);/);
+    expect(css).toMatch(
+      /:root\[data-preview-bg='inverse'\] \.bg-swatch \{[^}]*rotate: 180deg;\s*\}/
+    );
+    expect(css).toMatch(
+      /:is\(\.btn-primary, \.btn-secondary\):is\(:hover, :focus-visible\) \.btn-arrow-right \{\s*translate: 3px 0;\s*\}/
+    );
+    expect(css).not.toContain('.typing-lines-list.is-ready');
+    expect(css).toMatch(
+      /\.typing-line-row\.is-entering:not\(\.is-dragging\) \{[^}]*@starting-style \{\s*opacity: 0;\s*translate: 0 -6px;\s*\}/
+    );
+    expect(css).toMatch(/\.typing-line-row\.is-settling \{\s*z-index: 1;\s*\}/);
+    expect(css).toMatch(/\.typing-line-row\.is-dragging \{[^}]*transition: none;\s*\}/);
   });
 
   it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-path for syntax highlighting', () => {
@@ -2324,6 +2369,7 @@ describe('site stylesheet', () => {
           }
         },
         top: '',
+        transformOrigin: '',
       },
     });
 
@@ -2409,9 +2455,34 @@ describe('site stylesheet', () => {
     const svgSite = requireDefined(fakeGlobal.svgSite, 'svgSite helpers');
     svgSite.placePopover(fakePopover, fakeAnchor, { isWidthMatched: true });
     expect(fakePopover.style.minWidth).toBe('140px');
+    expect(fakePopover.style.transformOrigin).toBe('70px 0px');
     svgSite.placePopover(fakePopover, fakeAnchor, {});
     expect(fakePopover.style.minWidth).toBe('');
     expect(removedStyles).toContain('min-width');
+
+    // Untransformed `offsetWidth` / `offsetHeight` take precedence over `@starting-style` `0.95x` scaled `getBoundingClientRect()`:
+    const scaledPopover = Object.assign(Object.create(FakeHtmlElement.prototype) as object, {
+      getBoundingClientRect: () => ({ height: 209, width: 349.6 }),
+      hasAttribute: (name: string) => name === 'popover',
+      offsetHeight: 220,
+      offsetWidth: 368,
+      style: {
+        left: '',
+        minWidth: '',
+        removeProperty: () => undefined,
+        top: '',
+        transformOrigin: '',
+      },
+    });
+    const bottomRightAnchor = Object.assign(Object.create(FakeElement.prototype) as object, {
+      getBoundingClientRect: () => ({ bottom: 760, left: 440, right: 458, top: 742, width: 18 }),
+      hasAttribute: () => false,
+      setAttribute: () => undefined,
+    });
+    svgSite.placePopover(scaledPopover, bottomRightAnchor, { align: 'end', gap: 6 });
+    expect(scaledPopover.style.left).toBe('90px');
+    expect(scaledPopover.style.top).toBe('516px');
+    expect(scaledPopover.style.transformOrigin).toBe('359px 100%');
 
     // [1] `event.defaultPrevented = true` on a click (e.g., switching icon picker triggers) must NOT dismiss fallback popovers:
     const clickListeners = documentListeners.get('click') ?? [];

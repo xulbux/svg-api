@@ -76,6 +76,7 @@
   --duration-fast: 0.15s;
   --duration-base: 0.2s;
   --duration-slow: 0.25s;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
   /* Stacking Order */
   --z-sticky: 10;
@@ -284,6 +285,7 @@ img,
 .popover-panel {
   position: fixed;
   inset: auto;
+  z-index: var(--z-popover);
   flex-direction: column;
   margin: 0;
   padding: 0;
@@ -295,18 +297,30 @@ img,
   box-shadow: var(--c-shadow-popover);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  transform-origin: top center;
+  opacity: 0;
+  scale: 0.95;
+  transition:
+    opacity 0.18s var(--ease-out),
+    scale 0.18s var(--ease-out),
+    display 0.18s ease allow-discrete,
+    overlay 0.18s ease allow-discrete;
 }
 
 .popover-panel:where(:popover-open, .is-open) {
   display: flex;
+  opacity: 1;
+  scale: 1;
+
+  @starting-style {
+    opacity: 0;
+    scale: 0.95;
+  }
 }
 
 .popover-panel:not(:where(:popover-open, .is-open)) {
   display: none;
-}
-
-.popover-panel.is-open {
-  z-index: var(--z-popover);
+  pointer-events: none;
 }
 
 /* Shared Hidden Input Overlays; the native input covers its custom-styled label for clicks and keyboard focus: */

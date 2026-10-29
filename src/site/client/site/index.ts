@@ -157,15 +157,35 @@ function initSiteClient(): void {
         anchor.setAttribute('aria-expanded', 'true');
       }
     }
+    const anchorRect = anchor.getBoundingClientRect();
     const popoverRect = popover.getBoundingClientRect();
+    // Read untransformed layout dimensions first so `@starting-style` `scale` never shrinks measured size:
+    const popoverSize = {
+      height: popover.offsetHeight || popoverRect.height,
+      width: popover.offsetWidth || popoverRect.width,
+    };
     const placement = computePopoverPlacement(
-      anchor.getBoundingClientRect(),
-      { height: popoverRect.height, width: popoverRect.width },
+      anchorRect,
+      popoverSize,
       { height: globalThis.innerHeight, width: rootElement.clientWidth },
       options
     );
+    const renderedWidth =
+      placement.minWidth === undefined
+        ? popoverSize.width
+        : Math.max(popoverSize.width, placement.minWidth);
+    const originX = Math.round(
+      Math.max(0, Math.min(renderedWidth, anchorRect.left + anchorRect.width / 2 - placement.left))
+    );
+    let originY = '0px';
+    if (placement.top + popoverSize.height <= anchorRect.top) {
+      originY = '100%';
+    } else if (placement.top < anchorRect.bottom) {
+      originY = `${Math.round(Math.max(0, Math.min(popoverSize.height, anchorRect.top + anchorRect.height / 2 - placement.top)))}px`;
+    }
     popover.style.top = `${placement.top}px`;
     popover.style.left = `${placement.left}px`;
+    popover.style.transformOrigin = `${originX}px ${originY}`;
     if (placement.minWidth !== undefined) {
       popover.style.minWidth = `${placement.minWidth}px`;
     } else {

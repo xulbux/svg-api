@@ -68,7 +68,7 @@ export interface StackCatalogController {
   /** Sync the `aria-pressed` state of every category chip and custom token list from a `/stack` DSL string. */
   syncFromDsl: (dslValue: string) => void;
   /** Select `Categories` or `Raw DSL` based on whether `dslValue` is losslessly representable by the category chips. */
-  syncModeForPrefill: (dslValue: string, rawPerLine: string) => void;
+  syncModeForPrefill: (dslValue: string, rawPerLine: string, shouldAnimate?: boolean) => void;
   /** Sync the category chips or recompute `#field-groups` when a stack field changes. */
   syncStackFieldChange: (field: BuilderField) => void;
 }
@@ -291,23 +291,23 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     stackCatalogEmpty?.toggleAttribute('hidden', visibleCategories > 0);
   }
 
-  function selectStackModeTab(tab: HTMLElement): void {
+  function selectStackModeTab(tab: HTMLElement, shouldAnimate = true): void {
     const isCategories = tab.dataset.stackMode !== 'raw';
-    activateRovingTab(form.querySelectorAll('.stack-mode-tab'), tab);
+    activateRovingTab(form.querySelectorAll('.stack-mode-tab'), tab, shouldAnimate);
     stackCategoriesPanel?.toggleAttribute('hidden', !isCategories);
     stackRawPanel?.toggleAttribute('hidden', isCategories);
     stackRawActions?.toggleAttribute('hidden', isCategories);
     stackGroupToggleLabel?.toggleAttribute('hidden', !isCategories);
   }
 
-  function setStackMode(mode: 'categories' | 'raw'): void {
+  function setStackMode(mode: 'categories' | 'raw', shouldAnimate = false): void {
     const targetTab = form.querySelector(`.stack-mode-tab[data-stack-mode="${mode}"]`);
     if (targetTab instanceof HTMLElement) {
-      selectStackModeTab(targetTab);
+      selectStackModeTab(targetTab, shouldAnimate);
     }
   }
 
-  function syncModeForPrefill(dslValue: string, rawPerLine: string): void {
+  function syncModeForPrefill(dslValue: string, rawPerLine: string, shouldAnimate = false): void {
     indexStackCatalog();
     if (stackChips.length === 0) {
       return;
@@ -321,7 +321,7 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     if (stackGroupToggle && isGroupedByCategory !== undefined) {
       stackGroupToggle.checked = isGroupedByCategory;
     }
-    setStackMode(mode);
+    setStackMode(mode, shouldAnimate);
   }
 
   function bindStackCatalog(): void {

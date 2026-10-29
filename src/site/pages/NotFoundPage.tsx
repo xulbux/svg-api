@@ -48,7 +48,7 @@ function StatusPage(props: StatusPageProps): HtmlFragment {
         <p class="hero-lead">{message}</p>
         <div class="hero-cta-row">
           <a href="/" class="btn-primary" tabindex="0">
-            <UiIcon slug="arrow-left" size={16} />
+            <UiIcon slug="arrow-left" size={16} extraClass="btn-arrow-left" />
             Back to Home
           </a>
         </div>

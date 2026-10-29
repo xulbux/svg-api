@@ -2,7 +2,7 @@
  * Custom dropdown controller – Lazy option rendering, search filtering, keyboard navigation, and native `<select>` synchronization for `[data-select]` controls.
  */
 
-import { bindPopoverFocusDismiss } from '@/site/client/builder/core';
+import { bindPopoverFocusDismiss, bindPopoverToggle } from '@/site/client/builder/core';
 import type { SvgSite } from '@/site/client/site/types';
 import { getOwnValue } from '@/site/shared';
 import type { BuilderOption } from '@/types';
@@ -338,11 +338,9 @@ export function setSelectOptions(
 export function bindSelects(form: HTMLFormElement | null, site: SvgSite | undefined): void {
   for (const wrapper of form?.querySelectorAll('[data-select]') ?? []) {
     const { menu, search, trigger } = getSelectParts(wrapper);
-    menu?.addEventListener('toggle', (event) => {
-      if ((event as ToggleEvent).newState === 'open') {
-        openSelectMenu(wrapper, site);
-      }
-    });
+    if (menu) {
+      bindPopoverToggle(menu, site, () => openSelectMenu(wrapper, site));
+    }
     menu?.addEventListener('click', (event) => {
       const item =
         event.target instanceof Element ? event.target.closest('.select-option') : undefined;

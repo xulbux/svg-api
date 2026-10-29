@@ -2,7 +2,14 @@
  * URL builder client entry point – Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
  */
 
-import { bindPopoverFocusDismiss, core, findService, parsePath } from '@/site/client/builder/core';
+import {
+  bindPopoverFocusDismiss,
+  bindPopoverToggle,
+  core,
+  findService,
+  parsePath,
+  syncTabPill,
+} from '@/site/client/builder/core';
 import { createBuilderFieldsController } from '@/site/client/builder/fields';
 import { createIconPickerController } from '@/site/client/builder/iconPicker';
 import { createKindSyncController } from '@/site/client/builder/kindSync';
@@ -14,6 +21,36 @@ import { createTypingLinesController } from '@/site/client/builder/typingLines';
 import type { BuilderField, BuilderSchema, BuilderState } from '@/types';
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Re-measure all segmented `.builder-tabs` and `.icon-picker-tabs` selection pills without animation. */
+function syncAllTabPills(): void {
+  for (const container of document.querySelectorAll('.builder-tabs, .icon-picker-tabs')) {
+    syncTabPill(container, false);
+  }
+}
+
+/** Sync initial segmented tab pills and keep them aligned across tab resizes and webfont swaps. */
+function bindTabPills(): void {
+  syncAllTabPills();
+  if (typeof ResizeObserver !== 'undefined') {
+    const tabObserver = new ResizeObserver((entries) => {
+      const syncedLists = new Set<Element>();
+      for (const entry of entries) {
+        const parentList = entry.target.parentElement;
+        if (parentList && !syncedLists.has(parentList)) {
+          syncedLists.add(parentList);
+          syncTabPill(parentList, false);
+        }
+      }
+    });
+    for (const tab of document.querySelectorAll(
+      '.builder-tab, .stack-mode-tab, .icon-picker-tab'
+    )) {
+      tabObserver.observe(tab);
+    }
+  }
+  document.fonts?.ready.then(syncAllTabPills, () => undefined);
+}
 
 /** Initialize the URL builder DOM when running in a browser context. */
 function initBuilderDom(): void {
@@ -226,10 +263,8 @@ function initBuilderDom(): void {
         const align = trigger.dataset.helpAlign === 'start' ? 'start' : 'end';
         const popover = popoverId ? document.getElementById(popoverId) : undefined;
         if (popover instanceof HTMLElement) {
-          popover.addEventListener('toggle', (event) => {
-            if ((event as ToggleEvent).newState === 'open') {
-              site?.placePopover(popover, trigger, { align, gap: 6 });
-            }
+          bindPopoverToggle(popover, site, () => {
+            site?.placePopover(popover, trigger, { align, gap: 6 });
           });
           bindPopoverFocusDismiss(popover, site, () => trigger);
         }
@@ -339,7 +374,7 @@ function initBuilderDom(): void {
       if (linkInput) {
         linkInput.value = '';
       }
-      stackCatalogController?.syncModeForPrefill('', '');
+      stackCatalogController?.syncModeForPrefill('', '', true);
       if (stackCategorySearch && stackCategorySearch.value) {
         stackCategorySearch.value = '';
         stackCatalogController?.filterCatalog();
@@ -354,6 +389,7 @@ function initBuilderDom(): void {
   stackCatalogController.bind();
   typingLinesController.bind();
   iconPickerController.bind();
+  bindTabPills();
   iconPickerController.loadIndexInBackground();
 }
 
