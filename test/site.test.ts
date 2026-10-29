@@ -2719,6 +2719,12 @@ describe('repository & OSS Markdown drift guards', () => {
   it('keeps README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, .github/*, .vscode/*, and .agents/* synchronized with routes, order, presets, icons, scripts, limits, URLs, and exports (drift guard)', async () => {
     const repoRoot = path.resolve(import.meta.dirname, '..');
     const packageJson = JSON.parse(readRepoFile(repoRoot, 'package.json')) as RepoPackageJson;
+    const wranglerConfig = JSON.parse(readRepoFile(repoRoot, 'wrangler.jsonc')) as {
+      limits?: unknown;
+      main: string;
+      name: string;
+      routes: { custom_domain?: boolean; pattern: string }[];
+    };
     const pnpmWorkspaceYml = readRepoFile(repoRoot, 'pnpm-workspace.yaml');
     const gitattributesTxt = readRepoFile(repoRoot, '.gitattributes');
     const editorconfigTxt = readRepoFile(repoRoot, '.editorconfig');
@@ -2755,6 +2761,11 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(packageJson.bugs.url).toBe(`${REPO_GITHUB_URL}/issues`);
     expect(packageJson.license).toBe('MIT');
     expect('maintainers' in packageJson).toBe(false);
+    expect(wranglerConfig.name).toBe(packageJson.name);
+    expect(wranglerConfig.main).toBe('src/index.ts');
+    expect(wranglerConfig.routes).toEqual([{ custom_domain: true, pattern: SITE_HOST }]);
+    // Cloudflare Workers Free plan rejects Paid-only `limits.cpu_ms` at deploy time (`[code: 100328]`):
+    expect('limits' in wranglerConfig).toBe(false);
     expect(SERVICE_USER_AGENT).toBe(`${packageJson.name}/${packageJson.version} (${SITE_ORIGIN})`);
     expect(FALLBACK_REDIRECT_URL).toBe(AUTHOR_WEBSITE_URL);
     expect(pnpmWorkspaceYml).toContain('engineStrict: true');
