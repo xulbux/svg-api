@@ -2104,8 +2104,11 @@ describe('site stylesheet', () => {
     );
   });
 
-  it('pins a compact focus-free live preview above the form on single-column builder viewports while keeping snippets below', () => {
+  it('pins a compact focus-free live preview above the form on single-column builder viewports while keeping snippets below and letting wheel events chain past .builder-panel (regression: overscroll-behavior: contain trapped page scrolling over the preview card)', () => {
     const css = getSiteStylesheet();
+    expect(css).not.toMatch(/\.builder-panel \{[^}]*overscroll-behavior/);
+    expect(countOccurrences(css, 'overscroll-behavior')).toBe(3);
+    expect(css).toMatch(/\.builder-code \{\s*overflow-x: visible;/);
     expect(css).toMatch(
       /@media \(max-width: 1200px\) \{[\s\S]*?\.builder-grid \{[\s\S]*?grid-template-areas:\s*'preview'\s*'form'\s*'output';/
     );
