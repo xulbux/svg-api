@@ -1,5 +1,8 @@
 /**
- * Site client entry point – Initializes theme/background switches, reduced-motion SMIL pausing, mobile sidebar drawer, code drawer scrolling, popovers, and clipboard copying across site pages.
+ * Site Client Entry Point
+ *
+ * Initializes theme/background switches, reduced-motion SMIL pausing, mobile sidebar drawer,
+ * code drawer scrolling, popovers, and clipboard copying across site pages.
  */
 
 import {
@@ -119,6 +122,17 @@ function initSiteClient(): void {
       return;
     }
     if (hasPopoverApi) {
+      const source = resolvePopoverTrigger(popover);
+      if (source instanceof HTMLElement) {
+        try {
+          (
+            popover as HTMLElement & { showPopover: (options?: { source?: HTMLElement }) => void }
+          ).showPopover({ source });
+          return;
+        } catch {
+          // Older engines accept only the zero-argument `showPopover()` overload.
+        }
+      }
       popover.showPopover();
       return;
     }
@@ -213,6 +227,44 @@ function initSiteClient(): void {
     true
   );
 
+  /** Handle a fallback `[popovertarget]` trigger click in browsers without the native Popover API. */
+  function handleFallbackTriggerClick(
+    popover: HTMLElement,
+    trigger: Element,
+    action: string | undefined
+  ): void {
+    if (action === 'hide') {
+      const hasFocusInside = popover.contains(document.activeElement);
+      const activeTrigger = resolvePopoverTrigger(popover);
+      closePopover(popover);
+      if (hasFocusInside && activeTrigger instanceof HTMLElement) {
+        activeTrigger.focus();
+      }
+      return;
+    }
+    const previousTrigger = activeTriggers.get(popover);
+    const isOpen = isPopoverOpen(popover);
+    if (action === 'show') {
+      rememberPopoverTrigger(popover, trigger);
+      if (isOpen) {
+        syncPopoverExpanded(popover, true);
+        dispatchFallbackToggle(popover, 'open');
+      } else {
+        openPopover(popover);
+      }
+    } else if (isOpen && (!previousTrigger || previousTrigger === trigger)) {
+      closePopover(popover);
+    } else {
+      rememberPopoverTrigger(popover, trigger);
+      if (isOpen) {
+        syncPopoverExpanded(popover, true);
+        dispatchFallbackToggle(popover, 'open');
+      } else {
+        openPopover(popover);
+      }
+    }
+  }
+
   // Popovers (mobile sidebar drawer, builder menus); native popovers with a class-toggle fallback:
   if (hasPopoverApi) {
     document.addEventListener(
@@ -235,37 +287,6 @@ function initSiteClient(): void {
       '[popovertarget]:not([popovertargetaction="hide"])'
     )) {
       trigger.setAttribute('aria-expanded', 'false');
-    }
-    function handleFallbackTriggerClick(
-      popover: HTMLElement,
-      trigger: Element,
-      action: string | undefined
-    ): void {
-      if (action === 'hide') {
-        closePopover(popover);
-        return;
-      }
-      const previousTrigger = activeTriggers.get(popover);
-      const isOpen = isPopoverOpen(popover);
-      if (action === 'show') {
-        rememberPopoverTrigger(popover, trigger);
-        if (isOpen) {
-          syncPopoverExpanded(popover, true);
-          dispatchFallbackToggle(popover, 'open');
-        } else {
-          openPopover(popover);
-        }
-      } else if (isOpen && (!previousTrigger || previousTrigger === trigger)) {
-        closePopover(popover);
-      } else {
-        rememberPopoverTrigger(popover, trigger);
-        if (isOpen) {
-          syncPopoverExpanded(popover, true);
-          dispatchFallbackToggle(popover, 'open');
-        } else {
-          openPopover(popover);
-        }
-      }
     }
     document.addEventListener('click', (event) => {
       if (event.defaultPrevented) {
@@ -325,7 +346,7 @@ function initSiteClient(): void {
         placePopover(activePopover.popover, activePopover.anchor, activePopover.options);
       }
     },
-    true
+    { capture: true, passive: true }
   );
 
   bindCodeCopySanitizer();

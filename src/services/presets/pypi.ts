@@ -1,17 +1,18 @@
 /**
- * PyPI service preset – Live upstream metrics and redirect transformations.
+ * PyPI Service Preset
  *
- * The PyPI JSON document lists every release file (e.g., `~3.3 MB` for `boto3`), but its leading
- * `info` object holds every needed field, so the body stream is cancelled as soon as `info` is
- * complete (`extractKeys`).
+ * Live upstream metrics and redirect transformations for PyPI.
+ *
+ * The PyPI JSON document lists every release file (e.g., `~3.3 MB` for `boto3`), but its leading `info` object holds every needed field,
+ * so the body stream is cancelled as soon as `info` is complete (`extractKeys`).
  */
 
 import {
   CACHE_TTL,
-  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -20,8 +21,8 @@ import {
   createDownloadsMetric,
   createLicenseMetric,
   createVersionMetric,
+  parseFiniteNumber,
   readText,
-  toFiniteNumber,
 } from '@/services/metrics';
 import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { MetricResult, RawCount, ServiceRouteParams } from '@/types';
@@ -81,8 +82,8 @@ const PYPI_PROJECT_RX = /^[A-Za-z\d](?:[A-Za-z\d._-]{0,212}[A-Za-z\d])?$/;
 
 /**
  * Normalize a PyPI project name per PEP 503 (`My_Package.Name` -> `my-package-name`).
- * `PYPI_PROJECT_RX` restricts `:pkg` to ASCII letters, digits, `.`, `_`, and `-`, so the normalized
- * name is safe to embed in the ClickPy SQL string literal.
+ * `PYPI_PROJECT_RX` restricts `:pkg` to ASCII letters, digits, `.`, `_`, and `-`,
+ * so the normalized name is safe to embed in the ClickPy SQL string literal.
  */
 function normalizePyPiName(pkg: string): string {
   return pkg.replace(PEP503_SEPARATOR_RX, '-').toLowerCase();
@@ -98,9 +99,10 @@ function readLicenseClassifier(classifiers: unknown): string | undefined {
   for (const classifier of classifiers) {
     if (typeof classifier === 'string' && classifier.startsWith(LICENSE_CLASSIFIER_PREFIX)) {
       const parts = classifier.split(CLASSIFIER_SEPARATOR);
-      if (parts.length >= bestDepth) {
+      const leaf = readText(parts.at(-1));
+      if (leaf !== undefined && parts.length >= bestDepth) {
         bestDepth = parts.length;
-        license = parts.at(-1);
+        license = leaf;
       }
     }
   }
@@ -109,7 +111,7 @@ function readLicenseClassifier(classifiers: unknown): string | undefined {
 
 /** Project the PyPI `info` object into the badge fields (the README `description` is dropped). */
 function projectPyPiInfo(data: unknown): PyPiInfoProjection | undefined {
-  const info = asJsonObject(asJsonObject(data)?.info);
+  const info = readJsonObject(readJsonObject(data)?.info);
   if (!info) {
     return undefined;
   }
@@ -138,7 +140,7 @@ function readClickPySeries(raw: unknown): number[] | undefined {
   }
   const values: number[] = [];
   for (const item of raw) {
-    const parsed = toFiniteNumber(item as RawCount);
+    const parsed = parseFiniteNumber(item);
     if (parsed !== undefined) {
       values.push(parsed);
     }
@@ -146,7 +148,10 @@ function readClickPySeries(raw: unknown): number[] | undefined {
   return values.length >= MIN_SERIES_POINTS ? values : undefined;
 }
 
-/** Build the read-only ClickPy SQL URL returning all-time, 30-day, prior 30-day, and bucketed downloads (`HAVING count() > 0` yields empty JSON for missing projects). */
+/**
+ * Build the read-only ClickPy SQL URL returning all-time, 30-day, prior 30-day, and bucketed downloads
+ * (`HAVING count() > 0` yields empty JSON for missing projects).
+ */
 function buildClickPyApiUrl({ target }: ServiceRouteParams): string {
   const sql = `SELECT sum(count) AS total, sumIf(count, date >= today() - 30 AND date < today()) AS last_month, sumIf(count, date >= today() - 60 AND date < today() - 30) AS prev_month, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 15) * 2) AND date < addDays(today(), (i - 14) * 2), count, 0)), range(15))) AS bins_30d, sumForEach(arrayMap(i -> toUInt64(if(date >= addDays(today(), (i - 12) * 30) AND date < addDays(today(), (i - 11) * 30), count, 0)), range(12))) AS monthly_12m FROM pypi.pypi_downloads_per_day WHERE project = '${normalizePyPiName(target)}' HAVING count() > 0`;
   return `https://sql-clickhouse.clickhouse.com/?user=play&default_format=JSONObjectEachRow&query=${encodeURIComponent(sql)}`;
@@ -168,9 +173,10 @@ const PYPI_ENDPOINT = createEndpoint({
 /** ClickPy daily download statistics endpoint (`undefined` when `row_1` is absent so missing packages return `404`). */
 const CLICKPY_ENDPOINT = createEndpoint<Partial<ClickPyDownloadsPayload>>({
   api: buildClickPyApiUrl,
+  extractKeys: ['row_1'],
   page: buildClickPyPageUrl,
   project: (data) => {
-    const row = asJsonObject(asJsonObject(data)?.row_1);
+    const row = readJsonObject(readJsonObject(data)?.row_1);
     return row ? { row_1: row as ClickPyDownloadsRow } : undefined;
   },
   ttl: CACHE_TTL.daily,

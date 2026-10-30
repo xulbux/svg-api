@@ -286,39 +286,6 @@
   rotate: 180deg;
 }
 
-/* Narrow Screens; the nav row wraps below the brand on every page (sidebar toggle left, tabs right): */
-
-@media (max-width: 960px) {
-  :root {
-    --header-height: 104px;
-  }
-
-  .header-inner {
-    row-gap: 8px;
-    reading-flow: flex-visual;
-  }
-
-  .header-nav-row {
-    order: 3;
-    inline-size: 100%;
-    margin-inline-start: 0;
-    padding-block-start: 8px;
-    border-block-start: 1px solid var(--c-border);
-  }
-
-  .site-nav {
-    flex-shrink: 0;
-  }
-
-  .sidebar-toggle {
-    display: inline-flex;
-  }
-
-  .header-actions > .header-divider:first-child {
-    display: none;
-  }
-}
-
 /* Page Shell; full-width content or sidebar + content: */
 
 .page-shell {
@@ -419,11 +386,40 @@
   outline-offset: -2px;
 }
 
-/* Narrow Screens; the sidebar becomes a drawer opened by the header's sidebar toggle: */
+/* Narrow Screens; the nav row wraps below the brand and the sidebar collapses into a popover drawer: */
 
 @media (max-width: 960px) {
+  :root {
+    --header-height: 104px;
+  }
+
   body:has(.sidebar:where(:popover-open, .is-open)) {
     overflow: hidden;
+  }
+
+  .header-inner {
+    row-gap: 8px;
+    reading-flow: flex-visual;
+  }
+
+  .header-nav-row {
+    order: 3;
+    inline-size: 100%;
+    margin-inline-start: 0;
+    padding-block-start: 8px;
+    border-block-start: 1px solid var(--c-border);
+  }
+
+  .site-nav {
+    flex-shrink: 0;
+  }
+
+  .sidebar-toggle {
+    display: inline-flex;
+  }
+
+  .header-actions > .header-divider:first-child {
+    display: none;
   }
 
   .has-sidebar .page-shell {
@@ -495,6 +491,16 @@
     inline-size: 32px;
     block-size: 32px;
     padding: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  .header-inner {
+    column-gap: 10px;
+  }
+
+  .header-actions {
+    gap: 8px;
   }
 }
 

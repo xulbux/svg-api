@@ -1,5 +1,7 @@
 /**
- * OpenSSF Scorecard service preset – Live upstream metrics and redirect transformations.
+ * OpenSSF Scorecard Service Preset
+ *
+ * Live upstream metrics and redirect transformations for OpenSSF Scorecard.
  */
 
 import {
@@ -39,6 +41,7 @@ function projectScorecard(data: unknown): ScorecardProjectProjection | undefined
 /** OpenSSF Scorecard API endpoint (results refresh weekly) with Scorecard viewer redirect. */
 const SCORECARD_ENDPOINT = createEndpoint({
   api: 'https://api.securityscorecards.dev/projects/github.com/{owner}/{target}',
+  extractKeys: ['checks', 'score'],
   page: 'https://scorecard.dev/viewer/?uri=github.com/{owner}/{target}',
   project: projectScorecard,
   ttl: CACHE_TTL.daily,

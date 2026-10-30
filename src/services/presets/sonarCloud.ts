@@ -1,19 +1,21 @@
 /**
- * SonarCloud service preset – Live upstream metrics and redirect transformations.
+ * SonarCloud Service Preset
  *
- * Every metric reads one shared measures request whose measures are projected into a small
- * `metric -> value` map.
+ * Live upstream metrics and redirect transformations for SonarCloud.
+ *
+ * Every metric reads one shared measures request whose measures are projected into a small `metric -> value` map.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
   isJsonObject,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
+  RATIO_DELTA_SPECIALS,
   buildRatioSpecials,
   computeProgressPercent,
   computeScaledSteps,
@@ -22,7 +24,7 @@ import {
   formatCount,
   formatPercent,
   formatPointDelta,
-  toFiniteNumber,
+  parseFiniteNumber,
 } from '@/services/metrics';
 import { MAX_STEPS_COUNT, MAX_STRIP_TICKS } from '@/svg/renderer';
 import { getOwnValue } from '@/svg/shared';
@@ -97,9 +99,6 @@ const GRADE_SPECIALS: readonly BadgeSpecialKind[] = ['steps', 'ring', 'bar'];
 /** Automatic inline widget kinds supported by SonarCloud `quality`. */
 const QUALITY_GATE_SPECIALS: readonly BadgeSpecialKind[] = ['strip', 'steps', 'ring', 'bar'];
 
-/** Automatic inline widget kinds supported by SonarCloud `duplication`. */
-const DUPLICATION_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'delta'];
-
 /** Letter grades of the SonarCloud ratings `1.0` (A) to `5.0` (E). */
 const SONAR_GRADES: readonly SonarGrade[] = [
   { color: 'emerald', letter: 'A' },
@@ -141,7 +140,7 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
   if (typeof measure.value === 'string') {
     return measure.value;
   }
-  const period = asJsonObject(measure.period);
+  const period = readJsonObject(measure.period);
   if (typeof period?.value === 'string') {
     return period.value;
   }
@@ -151,7 +150,7 @@ function readMeasureValue(measure: Record<string, unknown>): string | undefined 
 
 /** Project a SonarCloud measures response into a `metric -> value` map of the requested measures. */
 function projectSonarMeasures(data: unknown): SonarMeasures | undefined {
-  const component = asJsonObject(asJsonObject(data)?.component);
+  const component = readJsonObject(readJsonObject(data)?.component);
   if (!component || !Array.isArray(component.measures) || component.measures.length === 0) {
     return undefined;
   }
@@ -233,14 +232,15 @@ function readMeasureDiff(
   newKey: SonarMeasureKey,
   overallKey: SonarMeasureKey
 ): number | undefined {
-  const newValue = toFiniteNumber(measures[newKey]);
-  const overallValue = toFiniteNumber(measures[overallKey]);
+  const newValue = parseFiniteNumber(measures[newKey]);
+  const overallValue = parseFiniteNumber(measures[overallKey]);
   return newValue !== undefined && overallValue !== undefined ? newValue - overallValue : undefined;
 }
 
 /** SonarCloud component measures endpoint with project overview page redirect. */
 const MEASURES_ENDPOINT = createEndpoint({
   api: `https://sonarcloud.io/api/measures/component?component={target}&metricKeys=${SONAR_MEASURE_KEYS.join(',')}`,
+  extractKeys: ['component'],
   page: 'https://sonarcloud.io/project/overview?id={target}',
   project: projectSonarMeasures,
 });
@@ -255,14 +255,15 @@ function createIssueCountMetric(
     MEASURES_ENDPOINT,
     { ...presentation, autoSpecials: ISSUE_SPECIALS, hasDynamicColor: true },
     (measures) => {
-      const count = toFiniteNumber(measures[key]);
-      const newCount = toFiniteNumber(measures[newKey]);
+      const rawCount = parseFiniteNumber(measures[key]);
+      const count = rawCount !== undefined && rawCount >= 0 ? rawCount : undefined;
+      const rawNewCount = parseFiniteNumber(measures[newKey]);
+      const newCount = rawNewCount !== undefined && rawNewCount >= 0 ? rawNewCount : undefined;
       const specials: BadgeSpecialMap = {};
       if (newCount !== undefined) {
         specials.delta = {
           type: 'delta',
-          value:
-            newCount === 0 ? '0' : `${newCount > 0 ? '+' : ''}${formatCompactNumber(newCount)}`,
+          value: newCount === 0 ? '0' : `+${formatCompactNumber(newCount)}`,
         };
         const ratio = buildRatioSpecials(newCount, count);
         if (ratio) {
@@ -285,8 +286,9 @@ function createGradeMetric(key: SonarMeasureKey, label: string): ServiceMetricCo
     MEASURES_ENDPOINT,
     { ...RATING_PRESENTATION, defaultLabel: label },
     (measures) => {
-      const rating = toFiniteNumber(measures[key]);
-      const rounded = rating === undefined ? undefined : Math.round(rating);
+      const rating = parseFiniteNumber(measures[key]);
+      const rounded =
+        rating !== undefined && rating >= 1 && rating <= 5 ? Math.round(rating) : undefined;
       const grade = rounded === undefined ? undefined : SONAR_GRADES[rounded - 1];
       if (!grade || rounded === undefined) {
         return { value: 'n/a' };
@@ -332,20 +334,20 @@ export const SONARCLOUD_SERVICE = defineService({
     coverage: createCoverageMetric(
       MEASURES_ENDPOINT,
       'sonarcloud',
-      (measures) => toFiniteNumber(measures.coverage),
+      (measures) => parseFiniteNumber(measures.coverage),
       (measures) => readMeasureDiff(measures, 'new_coverage', 'coverage')
     ),
     duplication: createMetric(
       MEASURES_ENDPOINT,
       {
-        autoSpecials: DUPLICATION_SPECIALS,
+        autoSpecials: RATIO_DELTA_SPECIALS,
         defaultColor: 'sky',
         defaultIcon: 'copy',
         defaultLabel: 'Duplicated Lines',
       },
       (measures) => {
-        const percent = toFiniteNumber(measures.duplicated_lines_density);
-        if (percent === undefined) {
+        const percent = parseFiniteNumber(measures.duplicated_lines_density);
+        if (percent === undefined || percent < 0) {
           return { value: 'n/a' };
         }
         const clamped = computeProgressPercent(percent, 100);

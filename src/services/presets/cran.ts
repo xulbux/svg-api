@@ -1,5 +1,7 @@
 /**
- * CRAN service preset – Live upstream metrics and redirect transformations.
+ * CRAN Service Preset
+ *
+ * Live upstream metrics and redirect transformations for CRAN.
  */
 
 import {

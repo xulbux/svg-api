@@ -1,9 +1,3 @@
-/**
- * Documentation catalog barrel – Re-exports the modular catalog data (`src/site/catalog/`).
- */
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 export {
   buildBadgeParamRows,
   buildBadgeUseCaseCards,
@@ -11,25 +5,25 @@ export {
 } from '@/site/catalog/badges';
 export {
   buildButtonParamRows,
+  buildButtonUseCaseCards,
   buildButtonVariantCards,
-  BUTTON_USE_CASE_CARDS,
 } from '@/site/catalog/buttons';
 export { buildColorSwatchCards } from '@/site/catalog/colors';
-export { buildIconParamRows, ICON_CARDS } from '@/site/catalog/icons';
+export { buildIconCards, buildIconParamRows } from '@/site/catalog/icons';
 export {
   buildCachingRows,
+  buildEmbeddingCards,
   buildSharedParamRows,
   CACHING_COLUMNS,
-  EMBEDDING_CARDS,
   SEGMENT_ENCODING_COLUMNS,
   SEGMENT_ENCODING_ROWS,
   SHARED_PARAM_COLUMNS,
   URL_ANATOMY_PARTS,
 } from '@/site/catalog/overview';
 export {
+  buildHorizontalQuoteCards,
   buildQuoteParamRows,
-  HORIZONTAL_QUOTE_CARDS,
-  VERTICAL_QUOTE_CARDS,
+  buildVerticalQuoteCards,
 } from '@/site/catalog/quotes';
 export {
   buildServiceParamRows,
@@ -52,8 +46,8 @@ export {
   buildStackVariantCards,
 } from '@/site/catalog/stack';
 export {
+  buildTypingBehaviorCards,
+  buildTypingLayoutCards,
   buildTypingParamRows,
-  TYPING_BEHAVIOR_CARDS,
-  TYPING_LAYOUT_CARDS,
-  TYPING_VARIANT_CARDS,
+  buildTypingVariantCards,
 } from '@/site/catalog/typing';

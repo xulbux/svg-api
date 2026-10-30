@@ -1,21 +1,24 @@
 /**
- * MetaCPAN service preset – Live upstream metrics and redirect transformations.
+ * MetaCPAN Service Preset
  *
- * The distribution name is placed into a Lucene query string, so it is restricted to ASCII letters,
- * digits, and inner hyphens (CPAN distribution names, e.g., `libwww-perl`) before any fetch.
+ * Live upstream metrics and redirect transformations for MetaCPAN.
+ *
+ * The distribution name is placed into a Lucene query string,
+ * so it is restricted to ASCII letters, digits, and inner hyphens (CPAN distribution names, e.g., `libwww-perl`) before any fetch.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   defineService,
   pickFields,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   createLicenseMetric,
   createRelativeDateMetric,
   createVersionMetric,
+  readText,
 } from '@/services/metrics';
 import { getOwnValue } from '@/svg/shared';
 
@@ -81,21 +84,22 @@ const projectReleaseFields = pickFields<CpanRelease>(['date', 'license', 'versio
 
 /** Project the first MetaCPAN search hit's `_source` fields (`undefined` when no hits match). */
 function projectCpanRelease(data: unknown): Partial<CpanRelease> | undefined {
-  const firstHit = readFirstObjectEntry(asJsonObject(asJsonObject(data)?.hits)?.hits);
+  const firstHit = readFirstObjectEntry(readJsonObject(readJsonObject(data)?.hits)?.hits);
   return projectReleaseFields(firstHit?.[SEARCH_HIT_SOURCE_KEY]);
 }
 
 /** MetaCPAN latest release search with distribution page redirect. */
 const CPAN_ENDPOINT = createEndpoint({
   api: 'https://fastapi.metacpan.org/v1/release/_search?q=distribution:{target}%20AND%20status:latest&_source=version,license,date&size=1',
+  extractKeys: ['hits'],
   page: 'https://metacpan.org/dist/{target}',
   project: projectCpanRelease,
 });
 
 /** Read the display name of the first release license (`unknown` keys render as missing). */
 function readCpanLicense(release: Partial<CpanRelease>): string | undefined {
-  const key: unknown = Array.isArray(release.license) ? release.license[0] : undefined;
-  if (typeof key !== 'string' || key === 'unknown') {
+  const key = Array.isArray(release.license) ? readText(release.license[0]) : undefined;
+  if (key === undefined || key === 'unknown') {
     return undefined;
   }
   return getOwnValue(CPAN_LICENSE_NAMES, key) ?? key;
@@ -103,8 +107,8 @@ function readCpanLicense(release: Partial<CpanRelease>): string | undefined {
 
 /** Read the release timestamp as UTC (MetaCPAN omits the timezone designator). */
 function readCpanReleaseDate(release: Partial<CpanRelease>): string | undefined {
-  const { date } = release;
-  if (typeof date !== 'string' || date === '') {
+  const date = readText(release.date);
+  if (date === undefined) {
     return undefined;
   }
   return TIMEZONE_SUFFIX_RX.test(date) ? date : `${date}Z`;

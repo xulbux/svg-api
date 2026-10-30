@@ -1,13 +1,15 @@
 /**
- * Tech stack renderer – Renders single or multi-group grids of Kumo 3D icon tiles.
+ * Tech Stack Renderer
+ *
+ * Renders single or multi-group grids of Kumo 3D icon tiles.
  */
 
 import { WHITE } from '@/config/palette';
 import { resolveStackBrandColor, resolveStackIconTitle } from '@/config/stack';
 import { DEFAULT_THEME_COLOR, resolveOptionalColor, THEMES } from '@/config/theme';
-import { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
+import { LIST_SEPARATOR_RX } from '@/site/shared/encoding';
+import { splitStackTileColor, STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
 import {
-  BRAND_SLUG_CLEAN_RX,
   DEFAULT_ICON_SLUG,
   MAX_ICON_SLUG_LENGTH,
   PLACEHOLDER_BORDER_OPACITY,
@@ -17,6 +19,7 @@ import {
   resolveStackPlaceholderIcon,
 } from '@/svg/icons';
 import {
+  BRAND_SLUG_CLEAN_RX,
   buildIconBodyId,
   clampInt,
   escapeXml,
@@ -197,9 +200,8 @@ export const DEFAULT_STACK_VARIANT: BadgeVariant = '2';
 const MAX_STACK_ICONS = 128;
 
 /**
- * Maximum summed length in UTF-16 code units of the unique icon bodies in one stack; Further unique
- * icons render the fallback icon. Repeated icons are referenced via `<use>`, so this only caps
- * pathological mixes of the largest brand bodies (up to ~54k code units each).
+ * Maximum summed length in UTF-16 code units of the unique icon bodies in one stack; Further unique icons render the fallback icon.
+ * Repeated icons are referenced via `<use>`, so this only caps pathological mixes of the largest brand bodies (up to ~54k code units each).
  */
 const MAX_STACK_ICON_BODY_LENGTH = 400_000;
 
@@ -232,9 +234,6 @@ const STACK_FLOAT_STEP_SECONDS = 0.45;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches comma or whitespace separators between icon slugs inside a group. */
-const SLUG_SPLIT_RX = /[,\s]+/;
-
 /** Matches a string consisting only of ASCII digits. */
 const DIGITS_ONLY_RX = /^\d+$/;
 
@@ -242,14 +241,19 @@ const DIGITS_ONLY_RX = /^\d+$/;
 
 /** Split an optional `@<color>` suffix off a tile token (e.g., `rust@amber` or `cpu@emerald`). */
 function splitTileToken(token: string): TileTokenParts {
-  const atIndex = token.lastIndexOf('@');
-  if (atIndex <= 0) {
-    return { colorOverride: undefined, slug: token };
-  }
+  const { colorSuffix, slug } = splitStackTileColor(token);
   return {
-    colorOverride: resolveOptionalColor(token.slice(atIndex + 1)),
-    slug: token.slice(0, atIndex),
+    colorOverride: colorSuffix === undefined ? undefined : resolveOptionalColor(colorSuffix),
+    slug,
   };
+}
+
+/** Resolve the stack tile theme color for a canonical icon key. */
+function resolveBrandColorFromKey(canonicalKey: string): ThemeColorName {
+  return (
+    resolveStackBrandColor(canonicalKey.replace(BRAND_SLUG_CLEAN_RX, '')) ??
+    DEFAULT_STACK_ICON_COLOR
+  );
 }
 
 /** Split an optional trailing `:<perLine>` suffix off a group token (e.g., `figma,ai,ps:3`). */
@@ -262,7 +266,10 @@ function splitGroupToken(token: string): GroupTokenParts {
   return { iconList: token.slice(0, colonIndex), perLine: Number(suffix) };
 }
 
-/** Parse a single group token (`icon1,icon2:6`) and return its cleaned icon list (tokens capped at `MAX_STACK_TOKEN_LENGTH`) and optional `perLine` override. */
+/**
+ * Parse a single group token (`icon1,icon2:6`)
+ * and return its cleaned icon list (tokens capped at `MAX_STACK_TOKEN_LENGTH`) and optional `perLine` override.
+ */
 function parseSingleGroupToken(
   rawGroup: string,
   fallbackPerLine: number | undefined,
@@ -275,7 +282,7 @@ function parseSingleGroupToken(
 
   const { iconList, perLine } = splitGroupToken(trimmed);
   const slugs: string[] = [];
-  for (const part of iconList.split(SLUG_SPLIT_RX)) {
+  for (const part of iconList.split(LIST_SEPARATOR_RX)) {
     if (slugs.length >= remainingBudget) {
       break;
     }
@@ -300,7 +307,7 @@ function buildStackTile(rawToken: string): StackTile | undefined {
     return undefined;
   }
   const cleanKey = lookup.key.replace(BRAND_SLUG_CLEAN_RX, '');
-  const color = resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
+  const color = resolveBrandColorFromKey(lookup.key);
   const title =
     resolveStackIconTitle(cleanKey) ??
     prepareDisplayText(formatSlugTitle(slug.slice(0, MAX_ICON_SLUG_LENGTH)), MAX_TILE_TITLE_LENGTH);
@@ -382,8 +389,8 @@ function buildMeasuredBands(
 }
 
 /**
- * Register a tile's icon body once in the shared `<defs>` under its content-addressed ID, switching to
- * the fallback icon for unknown slugs and once the unique-body length budget (`MAX_STACK_ICON_BODY_LENGTH`) is spent.
+ * Register a tile's icon body once in the shared `<defs>` under its content-addressed ID,
+ * switching to the fallback icon for unknown slugs and once the unique-body length budget (`MAX_STACK_ICON_BODY_LENGTH`) is spent.
  */
 function resolveStackTileIcon(tile: StackTile, context: StackTileContext): StackTileIcon {
   let isFallback = tile.data === undefined;
@@ -598,6 +605,15 @@ function renderStackBands(
 export { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
 
 /**
+ * Resolve the default inter-group gap in pixels for a given intra-group `gap` (clamped to `STACK_GROUP_GAP_RANGE`).
+ * @param gap   Effective intra-group gap in pixels.
+ * @returns Default inter-group gap in pixels.
+ */
+export function resolveDefaultStackGroupGap(gap: number): number {
+  return clampInt(undefined, STACK_GROUP_GAP_RANGE, Math.round(gap * GROUP_GAP_RATIO));
+}
+
+/**
  * Resolve the semantic Tailwind v4 theme color for a tech stack icon slug or `<slug>@<color>` token.
  * @param slug       Raw or canonical icon slug (e.g., `'rust'`, `'py'`, `'ts'`, `'cpu@emerald'`).
  * @param fallback   Optional explicit theme color override.
@@ -611,8 +627,7 @@ export function resolveStackIconColor(slug: string, fallback?: ThemeColorName): 
   if (fallback) {
     return fallback;
   }
-  const cleanKey = normalizeIconSlug(cleanSlug, true).replace(BRAND_SLUG_CLEAN_RX, '');
-  return resolveStackBrandColor(cleanKey) ?? DEFAULT_STACK_ICON_COLOR;
+  return resolveBrandColorFromKey(normalizeIconSlug(cleanSlug, true));
 }
 
 /**
@@ -679,7 +694,7 @@ export function renderStack(options: StackRenderOptions): string {
   const groupGap = clampInt(
     options.groupGap,
     STACK_GROUP_GAP_RANGE,
-    Math.round(gap * GROUP_GAP_RATIO)
+    resolveDefaultStackGroupGap(gap)
   );
   const defaultPerLine = clampInt(options.perLine, STACK_PER_LINE_RANGE);
   const variant: BadgeVariant = options.variant ?? DEFAULT_STACK_VARIANT;

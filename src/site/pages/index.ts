@@ -1,9 +1,3 @@
-/**
- * Website pages barrel – Re-exports the homepage (`/`), documentation pages (`/docs`, `/docs/:section`), URL builder pages (`/builder/:kind`), HTTP status pages, and section components.
- */
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 export { BadgesSection } from '@/site/pages/BadgesPage';
 export { renderBuilderHtml } from '@/site/pages/BuilderPage';
 export { ButtonsSection } from '@/site/pages/ButtonsPage';

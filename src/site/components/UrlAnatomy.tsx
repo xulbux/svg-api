@@ -1,5 +1,7 @@
 /**
- * URL anatomy component – Syntax-highlighted URL diagram and legend (`<UrlAnatomy />`).
+ * URL Anatomy Component
+ *
+ * Syntax-highlighted URL diagram and legend (`<UrlAnatomy />`).
  */
 
 import type { HtmlFragment } from '@/site/jsx';

@@ -1,5 +1,7 @@
 /**
- * Edge cache helpers – Access to the Cloudflare Workers default Cache API with non-blocking writes.
+ * Edge Cache Helpers
+ *
+ * Access to the Cloudflare Workers default Cache API with non-blocking writes.
  */
 
 import type { WaitUntilContext } from '@/types';
@@ -30,7 +32,12 @@ export async function putInEdgeCache(
   response: Response,
   executionCtx?: WaitUntilContext
 ): Promise<void> {
-  const cachePromise = edgeCache.put(cacheKey, response).catch(() => undefined);
+  let cachePromise: Promise<void> | undefined = undefined;
+  try {
+    cachePromise = edgeCache.put(cacheKey, response).catch(() => undefined);
+  } catch {
+    return;
+  }
   if (executionCtx) {
     executionCtx.waitUntil(cachePromise);
   } else {

@@ -1,5 +1,7 @@
 /**
- * RubyGems service preset – Live upstream metrics and redirect transformations.
+ * RubyGems Service Preset
+ *
+ * Live upstream metrics and redirect transformations for RubyGems.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

@@ -1,12 +1,14 @@
 /**
- * Hacker News service preset – Live upstream metrics and redirect transformations.
+ * Hacker News Service Preset
  *
- * The `karma` child path returns a bare number (`null` for unknown users) instead of the full user
- * document, which lists every submitted item id (`100+ KB` for active users).
+ * Live upstream metrics and redirect transformations for Hacker News.
+ *
+ * The `karma` child path returns a bare number (`null` for unknown users) instead of the full user document,
+ * which lists every submitted item id (`100+ KB` for active users).
  */
 
 import { createEndpoint, defineService } from '@/services/endpoint';
-import { createCountMetric } from '@/services/metrics';
+import { createCountMetric, readFiniteNumber } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -22,7 +24,10 @@ interface HackerNewsKarmaPayload {
 const HN_KARMA_ENDPOINT = createEndpoint<HackerNewsKarmaPayload>({
   api: 'https://hacker-news.firebaseio.com/v0/user/{target}/karma.json',
   page: 'https://news.ycombinator.com/user?id={target}',
-  project: (data) => (typeof data === 'number' ? { karma: data } : undefined),
+  project: (data) => {
+    const karma = readFiniteNumber(data);
+    return karma === undefined ? undefined : { karma };
+  },
 });
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
@@ -39,7 +44,10 @@ export const HACKER_NEWS_SERVICE = defineService({
     karma: createCountMetric(
       HN_KARMA_ENDPOINT,
       { defaultColor: 'orange', defaultIcon: 'ycombinator', defaultLabel: 'Karma' },
-      (payload) => payload.karma
+      (payload) => payload.karma,
+      '',
+      undefined,
+      true
     ),
   },
   route: { target: { pattern: HN_USER_RX, placeholder: ':user' } },

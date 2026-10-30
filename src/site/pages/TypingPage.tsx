@@ -1,5 +1,7 @@
 /**
- * Typing animation documentation page – Renders the Realistic SVG Typing Animations (`/docs/typing`) section (`<TypingSection />`).
+ * Typing Animation Documentation Page
+ *
+ * Renders the Realistic SVG Typing Animations (`/docs/typing`) section (`<TypingSection />`).
  */
 
 import {
@@ -10,10 +12,10 @@ import {
 } from '@/routes/params';
 import { listRouteAliases } from '@/site/catalog/shared';
 import {
+  buildTypingBehaviorCards,
+  buildTypingLayoutCards,
   buildTypingParamRows,
-  TYPING_BEHAVIOR_CARDS,
-  TYPING_LAYOUT_CARDS,
-  TYPING_VARIANT_CARDS,
+  buildTypingVariantCards,
 } from '@/site/catalog/typing';
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
@@ -29,9 +31,13 @@ import { DEFAULT_TYPING_ERASE } from '@/svg/typing';
  * @returns Rendered `<section class="doc-section" id="typing">` JSX fragment.
  */
 export function TypingSection(): HtmlFragment {
-  const alternateEraseTokens = TYPING_ERASE_TOKENS.filter(
-    (token) => token !== DEFAULT_TYPING_ERASE
-  ).join('|');
+  const alternateTokens: string[] = [];
+  for (const token of TYPING_ERASE_TOKENS) {
+    if (token !== DEFAULT_TYPING_ERASE) {
+      alternateTokens.push(token);
+    }
+  }
+  const alternateEraseTokens = alternateTokens.join('|');
   const routes = ['/typing/:lines', '/typing/:prefix/:lines'];
   for (const alias of listRouteAliases('typing')) {
     routes.push(`/${alias}/:lines`);
@@ -51,17 +57,17 @@ export function TypingSection(): HtmlFragment {
         iconSlug="terminal"
         text={`Container Layouts (\`?layout=${TYPING_LAYOUT_TOKENS.join('|')}\`)`}
       />
-      <CardGrid cards={TYPING_LAYOUT_CARDS} />
+      <CardGrid cards={buildTypingLayoutCards()} />
       <SectionSubhead
         iconSlug="layers"
         text={`Surface Variants & Caret Cursors (\`?variant=${VARIANT_TOKENS.join('|')}\`, \`?cursor=${TYPING_CURSOR_TOKENS.join('|')}\`)`}
       />
-      <CardGrid cards={TYPING_VARIANT_CARDS} isThreeColumn={true} />
+      <CardGrid cards={buildTypingVariantCards()} isThreeColumn={true} />
       <SectionSubhead
         iconSlug="keyboard"
         text={`Erase Modes & Human Keystroke Dynamics (\`?erase=${alternateEraseTokens}\`, \`?typo=true\`)`}
       />
-      <CardGrid cards={TYPING_BEHAVIOR_CARDS} isThreeColumn={true} />
+      <CardGrid cards={buildTypingBehaviorCards()} isThreeColumn={true} />
     </section>
   );
 }

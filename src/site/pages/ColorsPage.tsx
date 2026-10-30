@@ -1,5 +1,7 @@
 /**
- * Colors documentation page – Renders the Theme Colors (`/docs/colors`) section (`<ColorsSection />`).
+ * Colors Documentation Page
+ *
+ * Renders the Theme Colors (`/docs/colors`) section (`<ColorsSection />`).
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';

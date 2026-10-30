@@ -1,23 +1,26 @@
 /**
- * Read the Docs service preset – Live upstream metrics and redirect transformations.
+ * Read the Docs Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Read the Docs.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
   isJsonObject,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   FAILING_STATUS,
   PASSING_STATUS,
   UNKNOWN_STATUS,
   buildRatioSpecials,
+  computeScaledSteps,
   readFiniteNumber,
 } from '@/services/metrics';
-import { MAX_STRIP_TICKS, MIN_SERIES_POINTS } from '@/svg/renderer';
+import { MAX_STEPS_COUNT, MAX_STRIP_TICKS, MIN_SERIES_POINTS } from '@/svg/renderer';
 import type { BadgeSpecialKind, BadgeSpecialMap, MetricResult, StripTickState } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -91,7 +94,7 @@ function isInProgressState(code: string | undefined): boolean {
 }
 
 /** Map a single Read the Docs build entry to its strip tick state (`'9'`, `'5'`, `'3'`, `'0'`). */
-function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
+function resolveBuildTickState(build: ReadTheDocsBuild): StripTickState {
   const code = build.state?.code;
   if (code === 'finished') {
     return build.isSuccess === true ? '9' : '0';
@@ -104,7 +107,7 @@ function toBuildTickState(build: ReadTheDocsBuild): StripTickState {
 
 /** Project Read the Docs builds to the newest build plus chronological history in a single pass. */
 function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefined {
-  const results = asJsonObject(data)?.results;
+  const results = readJsonObject(data)?.results;
   if (!readFirstObjectEntry(results)) {
     return undefined;
   }
@@ -118,7 +121,7 @@ function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefi
   for (let i = bound - 1; i >= 0; i -= 1) {
     const item = items[i];
     if (isJsonObject(item)) {
-      const rawState = asJsonObject(item.state);
+      const rawState = readJsonObject(item.state);
       const entry: ReadTheDocsBuild = {
         isSuccess: typeof item.success === 'boolean' ? item.success : undefined,
         state: rawState
@@ -128,7 +131,7 @@ function projectReadTheDocsBuilds(data: unknown): ReadTheDocsProjection | undefi
       if (i === 0) {
         latest = entry;
       }
-      const tick = toBuildTickState(entry);
+      const tick = resolveBuildTickState(entry);
       states.push(tick);
       if (tick === '9') {
         passedCount += 1;
@@ -161,6 +164,8 @@ function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<M
     base = RUNNING_BUILD;
   }
   const ratio = buildRatioSpecials(passedCount, totalCount);
+  const stepTotal = Math.min(MAX_STEPS_COUNT, totalCount);
+  const stepDone = computeScaledSteps(passedCount, totalCount, stepTotal);
   const specials: BadgeSpecialMap = {
     ...ratio,
     ...(durations
@@ -169,7 +174,7 @@ function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<M
           sparkline: { type: 'sparkline', values: durations },
         }
       : {}),
-    ...(totalCount > 0 ? { steps: { done: passedCount, total: totalCount, type: 'steps' } } : {}),
+    ...(stepTotal > 0 ? { steps: { done: stepDone, total: stepTotal, type: 'steps' } } : {}),
     ...(states.length > 0 ? { strip: { states, type: 'strip' } } : {}),
   };
   return { ...base, specials };
@@ -178,6 +183,7 @@ function transformReadTheDocsBuild(projection: ReadTheDocsProjection): Partial<M
 /** Read the Docs latest-version builds endpoint (`limit=10`) with hosted documentation redirect. */
 const READ_THE_DOCS_ENDPOINT = createEndpoint({
   api: 'https://readthedocs.org/api/v3/projects/{target}/versions/latest/builds/?limit=10',
+  extractKeys: ['results'],
   page: 'https://{target}.readthedocs.io/',
   project: projectReadTheDocsBuilds,
 });

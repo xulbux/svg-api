@@ -1,18 +1,20 @@
 /**
- * Builder types – Declarative URL builder schemas embedded into builder pages and consumed by the builder client.
+ * Builder Types
+ *
+ * Declarative URL builder schemas embedded into builder pages and consumed by the builder client.
  */
 
-import type { BadgeSpecialKind } from './badge';
-import type { IconPickerIndex, IconPickerSetId } from './icon';
-import type { ServiceOwnerMode } from './service';
-import type { BuilderKind, HighlightToken } from './site';
-import type { ThemeColorName } from './theme';
+import type { BadgeSpecialKind } from '@/types/badge';
+import type { IconPickerIndex, IconPickerSetId } from '@/types/icon';
+import type { ServiceOwnerMode } from '@/types/service';
+import type { BuilderKind, HighlightToken } from '@/types/site';
+import type { ThemeColorName } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
 /**
- * Form control kind of a builder field. Composite controls render several interactive sub-inputs
- * while serializing to a single parameter or segment value string.
+ * Form control kind of a builder field.
+ * Composite controls render several interactive sub-inputs while serializing to a single parameter or segment value string.
  */
 export type BuilderControl =
   | 'anim'
@@ -69,8 +71,8 @@ export interface BuilderServiceMetric extends BuilderOption {
   /** Whether the metric transform overrides `defaultIcon` dynamically from live upstream data. */
   hasDynamicIcon?: boolean;
   /**
-   * Upstream page URL template with `{owner}` and `{target}` placeholders (the effective owner falls back to
-   * the service's default owner); Omitted when the upstream URL cannot be expressed as a plain template.
+   * Upstream page URL template with `{owner}` and `{target}` placeholders (the effective owner falls back to the service's default owner);
+   * Omitted when the upstream URL cannot be expressed as a plain template.
    */
   redirect?: string;
 }
@@ -156,8 +158,8 @@ export interface BuilderSchema {
   /** Public origin used in the generated snippets. */
   origin: string;
   /**
-   * Pattern (`RegExp` source) every owner and target segment must match before a service redirect template
-   * is filled; Other values link to the badge URL, which the Worker redirects itself.
+   * Pattern (`RegExp` source) every owner and target segment must match before a service redirect template is filled;
+   * Other values link to the badge URL, which the Worker redirects itself.
    */
   redirectValuePattern?: string;
   /** Service presets (service badge builder only). */
@@ -272,7 +274,7 @@ export interface IconLocation extends IconMatch {
 export interface IconResolver {
   /** Locate the icon set, canonical slug, and body page of `slug`, or `undefined` when unknown. */
   locate: (slug: string, isBrandFirst: boolean) => IconLocation | undefined;
-  /** Resolve the icon set of `slug` (`'none'` when empty/`none`, `undefined` when unknown). */
+  /** Resolve the icon set of `slug` (returning the explicit suppression sentinel when disabled, or `undefined` when unknown). */
   resolve: (slug: string, isBrandFirst: boolean) => IconPickerSetId | 'none' | undefined;
 }
 
@@ -360,12 +362,60 @@ export interface TypingLinesController {
   syncFromValue: (rawValue: string) => void;
 }
 
-/** Resolved `/builder/stack` mode tab and `Group by category` toggle state for a prefilled DSL string. */
+/** Resolved `/builder/stack` mode tab and category grouping toggle state for a prefilled DSL string. */
 export interface StackPrefillModeResult {
-  /** Target state of `Group by category` (`undefined` when switching to `Raw DSL`). */
+  /** Target state of the category grouping toggle (`undefined` when switching to the raw DSL tab). */
   isGroupedByCategory: boolean | undefined;
-  /** Target stack editor tab (`'categories'` or `'raw'`). */
+  /** Target stack editor tab identifier. */
   mode: 'categories' | 'raw';
+}
+
+/** Public controller interface returned by `createBuilderFieldsController`. */
+export interface BuilderFieldsController<
+  TControl = unknown,
+  TElement = unknown,
+  TEventTarget = unknown,
+> {
+  /** Return the active auto-supported widget kinds for the selected service metric. */
+  getActiveAutoSpecials: () => readonly string[];
+  /** Return the currently selected service metric option on `/builder/service`. */
+  getActiveServiceMetric: () => BuilderServiceMetric | undefined;
+  /** Look up and memoize `#field-<id>` as a native form control. */
+  getControl: (id: string) => TControl | undefined;
+  /** Omit values that match the effective default of `field` under the current state. */
+  normalizeDefaultSelection: (
+    field: BuilderField,
+    rawValue: string,
+    isCustomSize?: boolean
+  ) => string;
+  /** Serialize the current DOM state of `field` into a builder state string. */
+  readFieldValue: (field: BuilderField, fieldElement: TElement) => string;
+  /** Keep interdependent sub-controls synchronized right after user input on `fieldElement`. */
+  syncControlPartsOnInput: (
+    field: BuilderField,
+    fieldElement: TElement,
+    target: TEventTarget | undefined
+  ) => void;
+  /** Synchronize the payload input, modifier select, and hint text of a `special` field. */
+  syncSpecialParts: (field: BuilderField, fieldElement: TElement, modifier: string) => void;
+  /** Write a builder state string into the DOM control(s) of `field`. */
+  writeFieldValue: (field: BuilderField, value: string) => void;
+}
+
+/** Public controller interface returned by `createStackCatalogController`. */
+export interface StackCatalogController {
+  /** Bind the `/builder/stack` interactive category picker, mode tabs, and filter search. */
+  bind: () => void;
+  /** Filter the category chips and category sections by the search query. */
+  filterCatalog: () => void;
+  /** Fill any category chips that became visible before the icon index finished loading. */
+  flushPendingChips: () => void;
+  /** Sync the `aria-pressed` state of every category chip and custom token list from a `/stack` DSL string. */
+  syncFromDsl: (dslValue: string) => void;
+  /** Select `Categories` or `Raw DSL` based on whether `dslValue` is losslessly representable by the category chips. */
+  syncModeForPrefill: (dslValue: string, rawPerLine: string, isAnimated?: boolean) => void;
+  /** Sync the category chips or recompute `#field-groups` when a stack field changes. */
+  syncStackFieldChange: (field: BuilderField) => void;
 }
 
 /** Pure helpers exposed on `globalThis.svgBuilderCore` when the builder client runs without a DOM. */

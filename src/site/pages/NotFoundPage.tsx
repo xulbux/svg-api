@@ -1,5 +1,7 @@
 /**
- * HTTP status error pages – Branded `noindex` HTML error pages for unmatched site paths and unexpected server errors.
+ * HTTP Status Error Pages
+ *
+ * Branded `noindex` HTML error pages for unmatched site paths and unexpected server errors.
  */
 
 import { SITE_NAME } from '@/config/site';

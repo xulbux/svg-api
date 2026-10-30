@@ -1,5 +1,7 @@
 /**
- * Homepage – Renders the public homepage (`/`) with the hero section, dynamically computed feature highlight cards, and unified endpoint showcase cards.
+ * Homepage
+ *
+ * Renders the public homepage (`/`) with the hero section, dynamically computed feature highlight cards, and unified endpoint showcase cards.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
@@ -51,78 +53,6 @@ const COUNT_WORDS: readonly string[] = [
   'Ten',
 ];
 
-/** Quickstart overview cards displayed on the `/` homepage. */
-const HOME_OVERVIEW_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      {
-        alt: 'Status Operational',
-        path: '/badge/Status/Operational?variant=2&color=emerald&dot=green',
-      },
-      { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
-      {
-        alt: 'Coverage',
-        path: '/badge/Coverage/99.4%25?variant=2&color=emerald&icon=shield-check&special=bar:99.4',
-      },
-      {
-        alt: 'Edge Latency',
-        path: '/badge/Latency/11ms?variant=2&color=cyan&icon=zap&special=sparkline:19,16,18,15,14,15,12,11',
-      },
-      {
-        alt: 'Uptime',
-        path: '/badge/Uptime/99.98%25?variant=3&color=violet&icon=activity&special=strip:9998997999',
-      },
-      {
-        alt: 'Explore Docs',
-        href: `${SITE_ORIGIN}/docs/buttons`,
-        path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=sheen,none,nudge',
-      },
-    ],
-    subtitle: 'Status badges, live package metrics, inline charts, and action buttons.',
-    title: 'Badges & CTA Buttons (/badge/*, /button/*)',
-  },
-  {
-    items: [
-      { alt: 'Loading', path: '/icon/loader?color=sky&size=32&anim=spin' },
-      { alt: 'Heart', path: '/icon/heart?color=rose&size=32&anim=pulse' },
-      { alt: 'Notifications', path: '/icon/bell?color=amber&size=32&anim=shake' },
-      { alt: 'Launch', path: '/icon/rocket?color=indigo&size=32&anim=nudge' },
-      { alt: 'Cloud', path: '/icon/cloud?color=cyan&size=32&anim=float' },
-      { alt: 'Rust', path: '/icon/rust?color=orange&size=32&anim=sheen' },
-      { alt: 'TypeScript', path: '/icon/ts?color=blue&size=32' },
-      { alt: 'Vue.js', path: '/icon/vue?color=emerald&size=32' },
-    ],
-    subtitle: 'UI icons and brand logos with custom colors, pixel sizing, and animations.',
-    title: 'Standalone Icons (/icon/:icon)',
-  },
-  {
-    isCentered: true,
-    items: [{ alt: 'Tech Stack', path: `/stack/${STACK_EXAMPLE_GROUPS}` }],
-    subtitle: 'Grouped technology icon grids with custom columns, row bands, and tile animations.',
-    title: 'Grouped Tech Stacks (/stack/:groups)',
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: 'Typing Animation',
-        path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
-      },
-    ],
-    subtitle:
-      'Realistic typing animations in terminal, prompt, code editor, browser, or frameless layouts.',
-    title: 'Typing Animations (/typing/:lines)',
-  },
-  {
-    isCentered: true,
-    items: [
-      { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical` },
-    ],
-    subtitle: 'Auto-wrapping quote cards in vertical and horizontal layouts.',
-    title: 'Quote Cards (/quote/:author/:text)',
-  },
-];
-
 /** Memoized homepage HTML (`undefined` until first rendered). */
 let homeHtmlCache: string | undefined = undefined;
 
@@ -131,6 +61,81 @@ let homeHtmlCache: string | undefined = undefined;
 /** Format a small count as a capitalized English word (`5` -> `'Five'`), falling back to digits. */
 function formatCountWord(count: number): string {
   return COUNT_WORDS[count] ?? String(count);
+}
+
+/** Build the quickstart overview cards displayed on the `/` homepage. */
+function buildHomeOverviewCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Status Operational',
+          path: '/badge/Status/Operational?variant=2&color=emerald&dot=green',
+        },
+        { alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' },
+        {
+          alt: 'Coverage',
+          path: '/badge/Coverage/99.4%25?variant=2&color=emerald&icon=shield-check&special=bar:99.4',
+        },
+        {
+          alt: 'Edge Latency',
+          path: '/badge/Latency/11ms?variant=2&color=cyan&icon=zap&special=sparkline:19,16,18,15,14,15,12,11',
+        },
+        {
+          alt: 'Uptime',
+          path: '/badge/Uptime/99.98%25?variant=3&color=violet&icon=activity&special=strip:9998997999',
+        },
+        {
+          alt: 'Explore Docs',
+          href: `${SITE_ORIGIN}/docs/buttons`,
+          path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=sheen,none,nudge',
+        },
+      ],
+      subtitle: 'Status badges, live package metrics, inline charts, and action buttons.',
+      title: 'Badges & CTA Buttons (/badge/*, /button/*)',
+    },
+    {
+      items: [
+        { alt: 'Loading', path: '/icon/loader?color=sky&size=32&anim=spin' },
+        { alt: 'Heart', path: '/icon/heart?color=rose&size=32&anim=pulse' },
+        { alt: 'Notifications', path: '/icon/bell?color=amber&size=32&anim=shake' },
+        { alt: 'Launch', path: '/icon/rocket?color=indigo&size=32&anim=nudge' },
+        { alt: 'Cloud', path: '/icon/cloud?color=cyan&size=32&anim=float' },
+        { alt: 'Rust', path: '/icon/rust?color=orange&size=32&anim=sheen' },
+        { alt: 'TypeScript', path: '/icon/ts?color=blue&size=32' },
+        { alt: 'Vue.js', path: '/icon/vue?color=emerald&size=32' },
+      ],
+      subtitle: 'UI icons and brand logos with custom colors, pixel sizing, and animations.',
+      title: 'Standalone Icons (/icon/:icon)',
+    },
+    {
+      isCentered: true,
+      items: [{ alt: 'Tech Stack', path: `/stack/${STACK_EXAMPLE_GROUPS}` }],
+      subtitle:
+        'Grouped technology icon grids with custom columns, row bands, and tile animations.',
+      title: 'Grouped Tech Stacks (/stack/:groups)',
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: 'Typing Animation',
+          path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
+        },
+      ],
+      subtitle:
+        'Realistic typing animations in terminal, prompt, code editor, browser, or frameless layouts.',
+      title: 'Typing Animations (/typing/:lines)',
+    },
+    {
+      isCentered: true,
+      items: [
+        { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical` },
+      ],
+      subtitle: 'Auto-wrapping quote cards in vertical and horizontal layouts.',
+      title: 'Quote Cards (/quote/:author/:text)',
+    },
+  ];
 }
 
 /** Build the homepage feature highlight cards (every count is computed from the code it describes). */
@@ -224,7 +229,7 @@ function HomePage(): HtmlFragment {
           routes={endpointRoutes}
           title={`${formatCountWord(endpointRoutes.length)} Unified Endpoints`}
         />
-        <CardGrid cards={HOME_OVERVIEW_CARDS} />
+        <CardGrid cards={buildHomeOverviewCards()} />
       </section>
       <div class="pager-row is-end">
         <a href={docsPath} class="btn-secondary" tabindex="0">

@@ -1,14 +1,17 @@
 /**
- * Packagist service preset – Live upstream metrics and redirect transformations.
+ * Packagist Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Packagist.
  */
 
-import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, readJsonObject } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   buildWindowDeltaSpecials,
   createDownloadsMetric,
   createVersionMetric,
   readFiniteNumber,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -28,9 +31,9 @@ interface PackagistStatsProjection {
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /**
- * Matches Composer development branches and pre-release versions, anchored to the version start
- * (`dev-main`) or end (`13.x-dev`, `2.0.0-RC1`, `1.0.0-beta.2`, `3.1a2`); Patch suffixes such as
- * `-p1` and `-patch1` are stable.
+ * Matches Composer development branches and pre-release versions,
+ * anchored to the version start (`dev-main`) or end (`13.x-dev`, `2.0.0-RC1`, `1.0.0-beta.2`, `3.1a2`);
+ * Patch suffixes such as `-p1` and `-patch1` are stable.
  */
 const UNSTABLE_VERSION_RX = /^dev-|[._-]dev$|\d[._-]?(?:alpha|beta|rc|a|b)[\d.-]*$/i;
 
@@ -42,8 +45,9 @@ function readStablePackagistVersion(rawVersions: unknown): string | undefined {
     return undefined;
   }
   let newestVersion: string | undefined = undefined;
-  for (const version of rawVersions) {
-    if (typeof version === 'string') {
+  for (const rawVersion of rawVersions) {
+    const version = readText(rawVersion);
+    if (version !== undefined) {
       if (!UNSTABLE_VERSION_RX.test(version)) {
         return version;
       }
@@ -58,7 +62,7 @@ function projectPackagistStats(data: unknown): PackagistStatsProjection | undefi
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = asJsonObject(data.downloads);
+  const downloads = readJsonObject(data.downloads);
   return {
     daily: readFiniteNumber(downloads?.daily),
     monthly: readFiniteNumber(downloads?.monthly),
@@ -70,6 +74,7 @@ function projectPackagistStats(data: unknown): PackagistStatsProjection | undefi
 /** Packagist statistics endpoint with package page redirect. */
 const PACKAGIST_ENDPOINT = createEndpoint({
   api: 'https://packagist.org/packages/{owner}/{target}/stats.json',
+  extractKeys: ['downloads', 'versions'],
   page: 'https://packagist.org/packages/{owner}/{target}',
   project: projectPackagistStats,
 });

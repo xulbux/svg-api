@@ -1,5 +1,7 @@
 /**
- * Documentation pager component – Bottom previous/next navigation links (`<DocsPager />`) between documentation pages in sidebar order.
+ * Documentation Pager Component
+ *
+ * Bottom previous/next navigation links (`<DocsPager />`) between documentation pages in sidebar order.
  */
 
 import { UiIcon } from '@/site/components/UiIcon';

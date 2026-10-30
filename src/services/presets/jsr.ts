@@ -1,9 +1,11 @@
 /**
- * JSR service preset – Live upstream metrics and redirect transformations.
+ * JSR Service Preset
+ *
+ * Live upstream metrics and redirect transformations for JSR.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createPercentScoreMetric, createVersionMetric, SCORE } from '@/services/metrics';
+import { SCORE, createPercentScoreMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 

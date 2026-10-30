@@ -1,5 +1,7 @@
 /**
- * Shared URL segment encoding & schema lookup helpers – Path segment escaping/decoding and builder schema lookups shared by SSR and browser bundles.
+ * Shared URL Segment Encoding & Schema Lookup Helpers
+ *
+ * Path segment escaping/decoding and builder schema lookups shared by SSR and browser bundles.
  */
 
 import type {
@@ -11,6 +13,9 @@ import type {
 } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
+
+/** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
+export const MAX_ANIMATION_INPUT_LENGTH = 60;
 
 /** Maximum number of cycling lines accepted by `/typing` and the typing builder. */
 export const MAX_TYPING_LINES = 12;
@@ -230,4 +235,21 @@ export function isTruthyFlagToken(token: string): boolean {
  */
 export function normalizeTypingLinesInput(value: string): string {
   return value.trim().replace(LINE_BREAK_RX, ';');
+}
+
+/**
+ * Truncate `text` to at most `maxUnits` UTF-16 code units without leaving a trailing lone high surrogate.
+ * @param text       Input string.
+ * @param maxUnits   Maximum UTF-16 code units.
+ * @returns Truncated string safe for UTF-8/URI encoding.
+ */
+export function sliceCodeUnitSafe(text: string, maxUnits: number): string {
+  if (maxUnits <= 0) {
+    return '';
+  }
+  if (text.length <= maxUnits) {
+    return text;
+  }
+  const lastCode = text.charCodeAt(maxUnits - 1);
+  return text.slice(0, lastCode >= 0xd8_00 && lastCode <= 0xdb_ff ? maxUnits - 1 : maxUnits);
 }

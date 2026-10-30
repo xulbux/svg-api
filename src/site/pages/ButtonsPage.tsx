@@ -1,12 +1,14 @@
 /**
- * Buttons documentation page – Renders the Interactive CTA Buttons (`/docs/buttons`) section (`<ButtonsSection />`).
+ * Buttons Documentation Page
+ *
+ * Renders the Interactive CTA Buttons (`/docs/buttons`) section (`<ButtonsSection />`).
  */
 
 import { SIZE_TOKENS } from '@/routes/params';
 import {
   buildButtonParamRows,
+  buildButtonUseCaseCards,
   buildButtonVariantCards,
-  BUTTON_USE_CASE_CARDS,
 } from '@/site/catalog/buttons';
 import { listRouteAliases } from '@/site/catalog/shared';
 import { ParamTable } from '@/site/components/ParamTable';
@@ -43,7 +45,7 @@ export function ButtonsSection(): HtmlFragment {
         iconSlug="sliders-horizontal"
         text="Size Scale, Trailing Icons, Animations & Split Buttons"
       />
-      <CardGrid cards={BUTTON_USE_CASE_CARDS} />
+      <CardGrid cards={buildButtonUseCaseCards()} />
     </section>
   );
 }

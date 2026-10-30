@@ -1,8 +1,11 @@
 /**
- * Icon picker controller – Lazy icon index & body page loading, inline glyph rendering, input slug validation, and chunked grid navigation.
+ * Icon Picker Controller
+ *
+ * Lazy icon index & body page loading, inline glyph rendering, input slug validation, and chunked grid navigation.
  */
 
 import {
+  activateRovingTab,
   bindPopoverFocusDismiss,
   bindPopoverToggle,
   collectStackSlugs,
@@ -10,6 +13,7 @@ import {
   createAsyncCache,
   createIconResolver,
   getOwnValue,
+  handleRovingTabKeydown,
   syncTabPill,
 } from '@/site/client/builder/core';
 import {
@@ -47,6 +51,8 @@ interface IconPickerOptions {
   pickerGrid: HTMLElement | null;
   /** `#icon-picker-search` input element. */
   pickerSearch: HTMLInputElement | null;
+  /** `#icon-picker-slug` hovered/focused slug preview element. */
+  pickerSlug: HTMLElement | null;
   /** `#icon-picker-status` footer status element. */
   pickerStatus: HTMLElement | null;
   /** Active builder schema. */
@@ -81,6 +87,23 @@ const PICKER_CHUNK_SIZE = 72;
 /** Maximum number of unknown icon slugs listed explicitly in a validation hint. */
 const MAX_LISTED_UNKNOWN_ICONS = 3;
 
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Count space-separated resolved CSS grid column tracks without allocating an intermediate array. */
+function countCssColumnTracks(columnsValue: string): number {
+  const trimmed = columnsValue.trim();
+  if (!trimmed) {
+    return 1;
+  }
+  let count = 1;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    if (trimmed.charCodeAt(i) === 32 && trimmed.charCodeAt(i - 1) !== 32) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
@@ -97,6 +120,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     pickerEmpty,
     pickerGrid,
     pickerSearch,
+    pickerSlug,
     pickerStatus,
     schema,
     site,
@@ -287,9 +311,11 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     index: IconPickerIndex,
     catalog: Record<IconPickerSetId, string[]>
   ): IconMatch[] {
-    const checkedTab = picker?.querySelector('input[name="icon-picker-set"]:checked');
+    const activeTab = pickerTabs?.querySelector('[role="tab"][aria-selected="true"]');
     const activeSet: IconPickerSetId =
-      checkedTab instanceof HTMLInputElement && checkedTab.value === 'brands' ? 'brands' : 'lucide';
+      activeTab instanceof HTMLElement && activeTab.dataset.pickerSet === 'brands'
+        ? 'brands'
+        : 'lucide';
     const { counts, matches } = filterIconCatalog(
       index,
       catalog,
@@ -343,16 +369,11 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       fragment.append(tile);
       tileObserver?.observe(tile);
     }
-    pickerGrid.querySelector('.icon-picker-sentinel')?.remove();
+    sentinelObserver?.disconnect();
     pickerGrid.append(fragment);
     pickerRendered = end;
-    if (pickerRendered < pickerMatches.length) {
-      const sentinel = document.createElement('div');
-      sentinel.className = 'icon-picker-sentinel';
-      sentinel.setAttribute('aria-hidden', 'true');
-      sentinel.setAttribute('role', 'presentation');
-      pickerGrid.append(sentinel);
-      sentinelObserver?.observe(sentinel);
+    if (pickerRendered < pickerMatches.length && pickerGrid.lastElementChild) {
+      sentinelObserver?.observe(pickerGrid.lastElementChild);
     }
   }
 
@@ -443,6 +464,9 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
           ? 'No icons found.'
           : `${pickerMatches.length.toLocaleString('en-US')} icon${pickerMatches.length === 1 ? '' : 's'}`;
     }
+    if (pickerSlug) {
+      pickerSlug.textContent = '';
+    }
   }
 
   function scheduleRenderPicker(): void {
@@ -480,7 +504,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     if (!pickerGrid) {
       return 1;
     }
-    return Math.max(1, getComputedStyle(pickerGrid).gridTemplateColumns.split(' ').length);
+    return countCssColumnTracks(getComputedStyle(pickerGrid).gridTemplateColumns);
   }
 
   function targetPicker(button: HTMLElement): void {
@@ -496,18 +520,18 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     const targetSet =
       iconResolver?.locate(currentSlug, schema.isBrandFirst)?.set ??
       (schema.isBrandFirst ? 'brands' : 'lucide');
-    const tabInput = picker?.querySelector(`input[name="icon-picker-set"][value="${targetSet}"]`);
-    if (tabInput instanceof HTMLInputElement) {
-      tabInput.checked = true;
+    const tabButton = pickerTabs?.querySelector(`[data-picker-set="${targetSet}"]`);
+    if (tabButton instanceof HTMLElement) {
+      activateRovingTab(pickerTabs?.querySelectorAll('[role="tab"]') ?? [], tabButton, false);
     }
   }
 
-  function handleIndexReady(shouldSyncTab: boolean): void {
+  function handleIndexReady(isSyncingTab: boolean): void {
     syncIconSelects(form);
     validateIcons(form);
     onIndexLoaded();
     if (picker && site?.isPopoverOpen(picker)) {
-      if (shouldSyncTab) {
+      if (isSyncingTab) {
         syncPickerTabForTarget();
       }
       renderPicker(true);
@@ -591,8 +615,14 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
 
   function showTileSlug(event: Event): void {
     const tile = event.target instanceof Element ? event.target.closest('.icon-tile') : undefined;
-    if (tile instanceof HTMLElement && pickerStatus) {
-      pickerStatus.textContent = tile.dataset.slug ?? '';
+    if (tile instanceof HTMLElement && pickerSlug) {
+      pickerSlug.textContent = tile.dataset.slug ?? '';
+    }
+  }
+
+  function clearTileSlug(): void {
+    if (pickerSlug) {
+      pickerSlug.textContent = '';
     }
   }
 
@@ -649,15 +679,34 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       }
     );
     bindPopoverFocusDismiss(pickerElement, site, () => pickerTrigger);
-    pickerElement.addEventListener('change', (event) => {
-      if (event.target instanceof HTMLInputElement && event.target.name === 'icon-picker-set') {
-        syncTabPill(pickerTabs, true);
-        renderPicker(false);
+    function selectPickerTab(tab: HTMLElement): void {
+      activateRovingTab(pickerTabs?.querySelectorAll('[role="tab"]') ?? [], tab, true);
+      renderPicker(false);
+    }
+    pickerTabs?.addEventListener('click', (event) => {
+      const tab =
+        event.target instanceof Element ? event.target.closest('[role="tab"]') : undefined;
+      if (tab instanceof HTMLElement && tab.getAttribute('aria-selected') !== 'true') {
+        selectPickerTab(tab);
       }
+    });
+    pickerTabs?.addEventListener('keydown', (event) => {
+      handleRovingTabKeydown(
+        event as KeyboardEvent,
+        [...(pickerTabs.querySelectorAll('[role="tab"]') ?? [])],
+        selectPickerTab
+      );
     });
     pickerSearch?.addEventListener('input', scheduleRenderPicker);
     pickerSearch?.addEventListener('keydown', handlePickerSearchKeydown);
 
+    pickerElement.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !event.isComposing) {
+        event.preventDefault();
+        site?.closePopover(pickerElement);
+        pickerTrigger?.focus();
+      }
+    });
     pickerElement.addEventListener('click', (event) => {
       const target = event.target instanceof Element ? event.target : undefined;
       if (target?.closest('[data-picker-clear]') && pickerSearch) {
@@ -675,7 +724,9 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
     });
     gridElement.addEventListener('keydown', handlePickerGridKeydown);
     gridElement.addEventListener('focusin', showTileSlug);
+    gridElement.addEventListener('focusout', clearTileSlug);
     gridElement.addEventListener('pointerover', showTileSlug);
+    gridElement.addEventListener('pointerleave', clearTileSlug);
   }
 
   return {

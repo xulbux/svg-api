@@ -1,9 +1,11 @@
 /**
- * Route types – SVG route dispatch results and numeric query parameter ranges.
+ * Route Types
+ *
+ * SVG route dispatch results and numeric query parameter ranges.
  */
 
-import type { ServiceRequest } from './service';
-import type { BuilderKind } from './site';
+import type { MetricResult, ServiceRequest } from '@/types/service';
+import type { BuilderKind } from '@/types/site';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -31,6 +33,8 @@ export interface StaticSvgRouteMatch {
 export interface ServiceSvgRouteMatch {
   /** Discriminant of a service preset badge. */
   kind: 'service';
+  /** Render the complete badge SVG markup from the resolved upstream metric and normalized query. */
+  render: (result: MetricResult) => string;
   /** Parsed service preset route. */
   request: ServiceRequest;
 }
@@ -58,6 +62,8 @@ export interface SvgRouteDefinition {
 export interface ResolvedSvgRequest {
   /** Normalized cache key URL (origin, raw pathname, and only the route's recognized query parameters, sorted). */
   cacheKey: string;
+  /** Canonical path and query string when resolved through a shorthand route alias (`undefined` on canonical prefixes). */
+  canonicalPath?: string;
   /** Dispatched route match. */
   match: SvgRouteMatch;
 }

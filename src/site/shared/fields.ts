@@ -1,11 +1,15 @@
 /**
- * Composite builder parameter codecs – Composes and splits multi-part query DSL values (`?icon=`, `?hint=`, `?anim=`, `?special=`, and `?size=`).
+ * Composite Builder Parameter Codecs
+ *
+ * Composes and splits multi-part query DSL values (`?icon=`, `?hint=`, `?anim=`, `?special=`, and `?size=`).
  */
 
 import {
   findOption,
   HINT_ICON_REST_RX,
   LIST_SEPARATOR_RX,
+  MAX_ANIMATION_INPUT_LENGTH,
+  MAX_TYPING_LINES,
   resolveOptionValue,
 } from '@/site/shared/encoding';
 import type {
@@ -17,6 +21,14 @@ import type {
   SpecialSplitParts,
 } from '@/types';
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches a trailing percent sign on numeric `bar:` / `ring:` widget payloads. */
+const TRAILING_PERCENT_RX = /%$/;
+
+/** Matches `;` or newline separators when splitting a serialized or pasted typing lines list. */
+export const TYPING_LINE_SPLIT_RX = /[\r\n;]+/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Resolve a single motion token against optional `anim` field options (case-insensitive, mapping aliases). */
@@ -25,9 +37,42 @@ function resolveAnimOptionToken(
   options: readonly BuilderOption[] | undefined
 ): string | undefined {
   if (token === 'default') {
-    return '';
+    return 'default';
   }
   return options ? resolveOptionValue(options, token) : token;
+}
+
+/** Check whether `rawPayload` contains at least `minPoints` finite numbers separated by commas or whitespace. */
+function hasMinSeriesPoints(rawPayload: string, minPoints: number): boolean {
+  let count = 0;
+  for (const part of rawPayload.split(LIST_SEPARATOR_RX)) {
+    if (part.length > 0 && Number.isFinite(Number(part))) {
+      count += 1;
+      if (count >= minPoints) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Check whether `rawPayload` contains at least one valid `'0'`–`'9'` status strip tick state. */
+function hasValidStripTick(rawPayload: string): boolean {
+  if (LIST_SEPARATOR_RX.test(rawPayload)) {
+    for (const part of rawPayload.split(LIST_SEPARATOR_RX)) {
+      if (part.length === 1 && part >= '0' && part <= '9') {
+        return true;
+      }
+    }
+    return false;
+  }
+  for (let i = 0; i < rawPayload.length; i += 1) {
+    const code = rawPayload.charCodeAt(i);
+    if (code >= 48 && code <= 57) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -134,11 +179,15 @@ export function composeAnim(hasSheen: boolean, left: string, right: string): str
  * @returns Sheen flag and left/right icon motion tokens.
  */
 export function splitAnim(value: string, options?: readonly BuilderOption[]): AnimSplitParts {
+  const trimmed = value.trim();
+  if (trimmed.length > MAX_ANIMATION_INPUT_LENGTH) {
+    return { hasSheen: false, left: '', right: '' };
+  }
   const motions: string[] = [];
   let hasSheen = false;
-  for (const token of value.trim().toLowerCase().split(LIST_SEPARATOR_RX)) {
+  for (const token of trimmed.toLowerCase().split(LIST_SEPARATOR_RX)) {
     if (token === 'sheen') {
-      if (hasSheen && options) {
+      if (hasSheen) {
         return { hasSheen: false, left: '', right: '' };
       }
       hasSheen = true;
@@ -150,15 +199,73 @@ export function splitAnim(value: string, options?: readonly BuilderOption[]): An
       motions.push(resolved);
     }
   }
-  if (options && motions.length > 2) {
+  if (motions.length > 2) {
     return { hasSheen: false, left: '', right: '' };
   }
-  const left = motions[0] ?? '';
-  const right = motions[1] ?? '';
-  if (hasSheen && !right && left === 'default') {
+  const rawLeft = motions[0] ?? '';
+  const rawRight = motions[1] ?? '';
+  if (motions.length <= 1) {
+    return { hasSheen, left: rawLeft === 'default' ? '' : rawLeft, right: '' };
+  }
+  if (rawLeft === 'default' && rawRight === 'default') {
     return { hasSheen, left: '', right: '' };
   }
-  return { hasSheen, left, right };
+  return {
+    hasSheen,
+    left: rawLeft === 'default' ? '' : rawLeft,
+    right: rawRight === 'default' ? 'none' : rawRight,
+  };
+}
+
+/**
+ * Check whether a non-empty manual `?special=` payload is valid for `kind` under the Worker parser rules.
+ * @param kind      Widget kind token.
+ * @param payload   Trimmed widget payload string.
+ * @returns `true` when `payload` parses into a renderable widget for `kind`.
+ */
+export function isValidSpecialPayload(kind: string, payload: string): boolean {
+  const cleanPayload = payload.trim();
+  if (!cleanPayload) {
+    return false;
+  }
+  switch (kind) {
+    case 'sparkline':
+    case 'bars': {
+      return hasMinSeriesPoints(cleanPayload, 2);
+    }
+    case 'bar':
+    case 'ring': {
+      const colonIndex = cleanPayload.indexOf(':');
+      const numberPart = colonIndex === -1 ? cleanPayload : cleanPayload.slice(0, colonIndex);
+      const cleaned = numberPart.trim().replace(TRAILING_PERCENT_RX, '');
+      return Boolean(cleaned) && Number.isFinite(Number(cleaned));
+    }
+    case 'steps': {
+      const slashIndex = cleanPayload.indexOf('/');
+      if (slashIndex <= 0) {
+        return false;
+      }
+      const doneRaw = cleanPayload.slice(0, slashIndex).trim();
+      const totalRaw = cleanPayload.slice(slashIndex + 1).trim();
+      if (!doneRaw || !totalRaw) {
+        return false;
+      }
+      const parsedDone = Number(doneRaw);
+      const parsedTotal = Number(totalRaw);
+      return (
+        Number.isFinite(parsedDone) && Number.isFinite(parsedTotal) && Math.round(parsedTotal) >= 1
+      );
+    }
+    case 'strip': {
+      return hasValidStripTick(cleanPayload);
+    }
+    case 'delta': {
+      return cleanPayload.toLowerCase() !== 'auto';
+    }
+    default: {
+      return false;
+    }
+  }
 }
 
 /**
@@ -187,6 +294,9 @@ export function composeSpecial(
       return '';
     }
     return modifier ? `${kind}:${modifier}` : kind;
+  }
+  if (!isValidSpecialPayload(kind, cleanPayload)) {
+    return '';
   }
   return modifier ? `${kind}:${cleanPayload}:${modifier}` : `${kind}:${cleanPayload}`;
 }
@@ -293,4 +403,24 @@ export function resolveIconSelectDisplay(
     };
   }
   return { displayLabel: placeholder, glyphSlug: '', isPlaceholder: true };
+}
+
+/**
+ * Split a serialized `;`- or newline-separated typing lines string into up to `maxLines` trimmed rows (at least `['']`).
+ * @param rawValue   Serialized typing lines value.
+ * @param maxLines   Maximum number of non-empty lines to retain.
+ * @returns Non-empty list of trimmed line strings (or `['']` when none).
+ */
+export function splitTypingLines(rawValue: string, maxLines = MAX_TYPING_LINES): string[] {
+  const lines: string[] = [];
+  for (const segment of rawValue.split(TYPING_LINE_SPLIT_RX)) {
+    const trimmedLine = segment.trim();
+    if (trimmedLine && lines.length < maxLines) {
+      lines.push(trimmedLine);
+    }
+  }
+  if (lines.length === 0) {
+    lines.push('');
+  }
+  return lines;
 }

@@ -450,12 +450,17 @@
     0 0 0 4px var(--c-text-1);
 }
 
-/* Keyboard focus; brighten the ring of all unselected swatches instead of adding a second ring to the selected one: */
+/* Keyboard focus; brighten the ring of all unselected swatches and outline the focused swatch: */
 
 .swatch-grid:has(.swatch-input:focus-visible) .swatch-input:not(:checked) + .swatch-dot {
   box-shadow:
     0 0 0 2px var(--c-bg-soft),
     0 0 0 3px var(--c-focus);
+}
+
+.swatch-input:focus-visible + .swatch-dot {
+  outline: 2px solid var(--c-focus);
+  outline-offset: 4px;
 }
 
 /* Icon Selectors; the trigger opens the icon picker; the slug lives in a hidden input: */
@@ -716,9 +721,9 @@
 
 /* Segmented Tabs (snippet formats, stack modes, and icon sets): */
 
-.builder-tabs,
-.icon-picker-tabs {
+.builder-tabs {
   position: relative;
+  display: inline-flex;
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--c-border);
@@ -728,16 +733,11 @@
   user-select: none;
 }
 
-.builder-tabs {
-  display: inline-flex;
-}
-
 .icon-picker-tabs {
   display: flex;
 }
 
-.builder-tabs::before,
-.icon-picker-tabs::before {
+.builder-tabs::before {
   content: '';
   position: absolute;
   inset-block-start: 0;
@@ -752,81 +752,54 @@
   pointer-events: none;
 }
 
-.builder-tabs.has-pill::before,
-.icon-picker-tabs.has-pill::before {
+.builder-tabs.has-pill::before {
   opacity: 1;
 }
 
-.builder-tabs.is-animated::before,
-.icon-picker-tabs.is-animated::before {
+.builder-tabs.is-animated::before {
   transition:
     translate 0.22s var(--ease-out),
     inline-size 0.22s var(--ease-out),
     block-size 0.22s var(--ease-out);
 }
 
-.builder-tab,
-.stack-mode-tab,
-.icon-picker-tab span {
-  border-radius: var(--radius-sm);
-  color: var(--c-text-2);
-  transition: color var(--duration-fast) ease;
-}
-
-.builder-tab:hover,
-.stack-mode-tab:hover,
-.icon-picker-tab:hover span {
-  color: var(--c-text-1);
-}
-
-.builder-tab.is-active,
-.stack-mode-tab.is-active,
-.icon-picker-tab input:checked + span {
-  color: var(--c-text-1);
-  background: var(--c-selected);
-}
-
-.builder-tabs.has-pill > .is-active,
-.icon-picker-tabs.has-pill .icon-picker-tab input:checked + span {
-  background: transparent;
-}
-
-.builder-tab,
-.stack-mode-tab {
+.builder-tab {
   position: relative;
   z-index: 1;
   padding: 5px 13px;
   border: 0;
+  border-radius: var(--radius-sm);
   font: inherit;
   font-size: 0.78rem;
   font-weight: 600;
+  color: var(--c-text-2);
   background: transparent;
   cursor: pointer;
+  transition: color var(--duration-fast) ease;
 }
 
-.builder-tab:focus-visible,
-.stack-mode-tab:focus-visible {
+.builder-tab:hover {
+  color: var(--c-text-1);
+}
+
+.builder-tab.is-active {
+  color: var(--c-text-1);
+  background: var(--c-selected);
+}
+
+.builder-tabs.has-pill > .is-active {
+  background: transparent;
+}
+
+.builder-tab:focus-visible {
   outline-offset: -2px;
 }
 
 .icon-picker-tab {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex: 1;
-}
-
-.icon-picker-tab span {
   flex: 1;
   padding: 4px 11px;
   font-size: 0.76rem;
-  font-weight: 600;
   text-align: center;
-}
-
-.icon-picker-tab input:focus-visible + span {
-  outline: 2px solid var(--c-focus);
-  outline-offset: -2px;
 }
 
 /* Wrap long URLs instead of scrolling (the builder shows a single snippet): */
@@ -983,20 +956,28 @@
   color: var(--c-text-3);
 }
 
-.icon-picker-sentinel {
-  grid-column: 1 / -1;
-  block-size: 1px;
-}
-
 .icon-picker-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin: 0;
   padding: 7px 12px;
-  overflow: hidden;
   border-block-start: 1px solid var(--c-border);
   font-size: 0.74rem;
-  text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--c-text-3);
+}
+
+.icon-picker-status {
+  flex-shrink: 0;
+}
+
+.icon-picker-slug {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--c-text-2);
 }
 
 /* Interactive Tech Stack Category Composer & DSL Help Popover (`/builder/stack`): */
@@ -1118,9 +1099,8 @@
 .stack-chip:focus-visible {
   border-color: var(--c-focus);
   color: var(--c-text-1);
-  outline: 2px solid transparent;
-  outline-offset: -2px;
-  box-shadow: 0 0 0 3px var(--c-hover);
+  outline: 2px solid var(--c-focus);
+  outline-offset: 2px;
 }
 
 .stack-chip[aria-pressed='true'] {

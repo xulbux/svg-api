@@ -1,5 +1,7 @@
 /**
- * JetBrains Marketplace service preset – Live upstream metrics and redirect transformations.
+ * JetBrains Marketplace Service Preset
+ *
+ * Live upstream metrics and redirect transformations for JetBrains Marketplace.
  */
 
 import { createEndpoint, defineService, pickFields, projectFirstEntry } from '@/services/endpoint';

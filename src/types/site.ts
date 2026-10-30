@@ -1,9 +1,11 @@
 /**
- * Website types – Navigation, showcase cards, parameter tables, and page layout options.
+ * Website Types
+ *
+ * Navigation, showcase cards, parameter tables, and page layout options.
  */
 
-import type { ServicePreviewSample } from './service';
-import type { BadgeVariant } from './theme';
+import type { ServicePreviewSample } from '@/types/service';
+import type { BadgeVariant } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -24,6 +26,37 @@ export type JsxChild =
   | string
   | null
   | undefined;
+
+/** Base props accepted by every intrinsic HTML and SVG element in server-rendered JSX. */
+export interface IntrinsicElementAttributes {
+  /** Children passed to the element. */
+  children?: JsxChild;
+  /** CSS class name(s). */
+  class?: string | undefined;
+  /** React-style alias for `class`. */
+  className?: string | undefined;
+  /** Label target ID (`<label for="…">`). */
+  for?: string | undefined;
+  /** React-style alias for `for`. */
+  htmlFor?: string | undefined;
+  /** Element ID. */
+  id?: string | undefined;
+  /** Trusted pre-serialized attribute fragment(s) inserted verbatim. */
+  rawAttrs?: string | readonly string[] | undefined;
+  /** Inline CSS style string. */
+  style?: string | undefined;
+  /** Keyboard tab order index. */
+  tabindex?: number | string | undefined;
+  /** React-style alias for `tabindex`. */
+  tabIndex?: number | string | undefined;
+  /** Tooltip title text. */
+  title?: string | undefined;
+  /** Arbitrary HTML, SVG, `aria-*`, and `data-*` attributes. */
+  [attribute: string]: unknown;
+}
+
+/** Synchronous server-rendered JSX functional component type. */
+export type FunctionComponent<TProps = Record<string, unknown>> = (props: TProps) => HtmlFragment;
 
 /** Supported documentation section slugs. */
 export type DocsSectionSlug =
@@ -180,8 +213,8 @@ export interface ShowcaseCardConfig {
 
 /**
  * Single row in a documentation parameter or route reference table.
- * Inside code values, ` | `, ` / `, ` to `, and `…` render as dimmed separators, and a bracketed
- * suffix (e.g., `license [l]`) renders as an alias note (`license (l)`).
+ * Inside code values, ` | `, ` / `, ` to `, and `…` render as dimmed separators,
+ * and a bracketed suffix (e.g., `license [l]`) renders as an alias note (`license (l)`).
  */
 export interface ParamTableRow {
   /** Default value when omitted (prefix with `~` for a non-code descriptive note). */
@@ -259,6 +292,24 @@ export interface SiteClientCore {
     viewportSize: PopoverSize,
     options: PopoverPlacementOptions
   ) => PopoverPlacement;
+}
+
+/** Popover and clipboard helpers exposed by the site script for page scripts (`globalThis.svgSite`). */
+export interface SvgSite<TElement = unknown, THtmlElement = unknown> {
+  /** Close a popover element (native Popover API or the `.is-open` fallback). */
+  closePopover: (popover: THtmlElement) => void;
+  /** Copy text (Clipboard API with a selection fallback) and announce the result on a button's `[data-copy-label]`. */
+  copyText: (text: string, button: TElement) => void;
+  /** Check whether a popover element is open. */
+  isPopoverOpen: (popover: TElement) => boolean;
+  /** Open a popover element (native Popover API or the `.is-open` fallback). */
+  openPopover: (popover: THtmlElement) => void;
+  /** Position an open popover next to its anchor, clamped to the viewport. */
+  placePopover: (
+    popover: THtmlElement,
+    anchor: TElement,
+    options?: PopoverPlacementOptions
+  ) => void;
 }
 
 /** Descriptor for a visual hierarchy variant showcase card. */

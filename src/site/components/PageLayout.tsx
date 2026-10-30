@@ -1,5 +1,8 @@
 /**
- * Page layout component – Shared responsive HTML document shell (`<PageLayout />`) with FOUC-free color-scheme support, view transitions, social/canonical metadata, header, optional sidebar, footer, and PNG favicon.
+ * Page Layout Component
+ *
+ * Shared responsive HTML document shell (`<PageLayout />`) with FOUC-free color-scheme support, view transitions,
+ * social/canonical metadata, header, optional sidebar, footer, and PNG favicon.
  */
 
 import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
@@ -144,6 +147,7 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
             media="(prefers-color-scheme: dark)"
           />
           {raw(renderHeadScript())}
+          <link rel="stylesheet" href={getSiteAssetUrl('site.css')} />
           <link rel="expect" href="#main-content" blocking="render" />
           <link
             rel="preload"
@@ -195,7 +199,6 @@ export function PageLayout(props: PageLayoutProps): HtmlFragment {
           {props.jsonLd ? (
             <script type="application/ld+json">{raw(serializeInlineJson(props.jsonLd))}</script>
           ) : undefined}
-          <link rel="stylesheet" href={getSiteAssetUrl('site.css')} />
           <script src={getSiteAssetUrl('site.js')} defer={true}></script>
         </head>
         <body class={props.sidebar ? 'has-sidebar' : undefined}>

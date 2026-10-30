@@ -1,5 +1,7 @@
 /**
- * Quote card renderer – Renders Kumo 3D horizontal and vertical quote cards.
+ * Quote Card Renderer
+ *
+ * Renders Kumo 3D horizontal and vertical quote cards.
  */
 
 import { WHITE } from '@/config/palette';
@@ -7,6 +9,7 @@ import { THEMES } from '@/config/theme';
 import { measureTextAdvance, measureTextWidthUncached, renderTextPathMarkup } from '@/svg/measure';
 import {
   ELLIPSIS,
+  MAX_LABEL_LENGTH,
   PRIMARY_FOREGROUND_OPACITY,
   buildThemeGradientId,
   clampInt,
@@ -158,7 +161,7 @@ export const DEFAULT_VERTICAL_QUOTE_WIDTH = 380;
 /** Custom numeric quote font size bounds in pixels. */
 export const QUOTE_FONT_SIZE_RANGE: NumericRange = { default: 15, max: 28, min: 11 };
 
-/** Maximum quote text and author length in UTF-16 code units before ellipsis truncation. */
+/** Maximum quote body text length in UTF-16 code units before ellipsis truncation. */
 export const MAX_QUOTE_TEXT_LENGTH = 1000;
 
 /** Preset font sizes in pixels for named `SizePreset` tokens. */
@@ -179,8 +182,8 @@ const DEFAULT_QUOTE_TEXT = 'Always creating more cool stuff for you.';
 const WRAP_TOLERANCE_RATIO = 0.25;
 
 /**
- * Conservative lower bound of a Geist glyph advance in em; The narrowest non-zero advance is `0.171em`
- * (italic apostrophe), so `0.15` leaves headroom for negative kerning and tracking.
+ * Conservative lower bound of a Geist glyph advance in em;
+ * The narrowest non-zero advance is `0.171em` (italic apostrophe), so `0.15` leaves headroom for negative kerning and tracking.
  */
 const MIN_GLYPH_ADVANCE_RATIO = 0.15;
 
@@ -267,9 +270,10 @@ function computeWatermarkX(width: number, iconBoxSize: number): number {
 }
 
 /**
- * Compute the text column of a quote card. Vertical cards center text between symmetric `padX` insets;
- * Horizontal cards keep the same `QUOTE_TEXT_GAP` to the accent bar on the left and to the watermark
- * ink on the right, so no line (including the first, which shares the watermark's rows) ever runs under it.
+ * Compute the text column of a quote card.
+ * Vertical cards center text between symmetric `padX` insets;
+ * Horizontal cards keep the same `QUOTE_TEXT_GAP` to the accent bar on the left and to the watermark ink on the right,
+ * so no line (including the first, which shares the watermark's rows) ever runs under it.
  */
 function computeQuoteTextColumn(
   layout: QuoteLayout,
@@ -290,9 +294,10 @@ function computeQuoteTextColumn(
 }
 
 /**
- * Shorten `text` until it (plus optional `prefix`/`suffix` decorations and a trailing ellipsis) fits within `maxWidth` pixels, using binary search over its length.
- * Text far longer than any line could hold is first cut to a line-sized prefix (every glyph advances at
- * least `MIN_GLYPH_ADVANCE_RATIO` em), so the ink measurements never lay out thousands of glyphs.
+ * Shorten `text` until it (plus optional `prefix`/`suffix` decorations and a trailing ellipsis) fits within `maxWidth` pixels,
+ * using binary search over its length.
+ * Text far longer than any line could hold is first cut to a line-sized prefix
+ * (every glyph advances at least `MIN_GLYPH_ADVANCE_RATIO` em), so the ink measurements never lay out thousands of glyphs.
  */
 function truncateToWidth(
   text: string,
@@ -376,9 +381,9 @@ function finalizeLastLine(lines: string[], isTruncated: boolean, context: QuoteW
 /**
  * Wrap a quote text string into at most `MAX_QUOTE_LINES` lines that fit within `context.maxWidth`,
  * including the opening and closing quote marks rendered on the first and last line.
- * Line widths are estimated from cheap per-word advance widths and only measured exactly when an
- * estimate lands within `WRAP_TOLERANCE_RATIO * fontSize` of the limit; Words wider than a full line
- * are shortened with an ellipsis, and an ellipsis marks text cut off after the last line.
+ * Line widths are estimated from cheap per-word advance widths
+ * and only measured exactly when an estimate lands within `WRAP_TOLERANCE_RATIO * fontSize` of the limit;
+ * Words wider than a full line are shortened with an ellipsis, and an ellipsis marks text cut off after the last line.
  */
 function wrapQuoteLines(rawText: string, context: QuoteWrapContext): string[] {
   const { fontSize, isBold, maxWidth } = context;
@@ -575,8 +580,25 @@ function renderHorizontalQuoteContent(context: QuoteCardContext): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render a standalone SVG quote card.
- * Supports horizontal and vertical layouts with configurable preset or numeric font sizing and auto-wrapping.
+ * Resolve the default quote card width in pixels for `layout` and `fontSize` (clamped to `QUOTE_WIDTH_RANGE`).
+ * @param layout     Quote card layout orientation.
+ * @param fontSize   Resolved quote body font size in pixels.
+ * @returns Default card width in pixels.
+ */
+export function resolveDefaultQuoteWidth(layout: QuoteLayout, fontSize: number): number {
+  const isVertical = layout === 'vertical';
+  const baseWidth = isVertical ? DEFAULT_VERTICAL_QUOTE_WIDTH : QUOTE_WIDTH_RANGE.default;
+  const baseFontSize =
+    QUOTE_SIZE_MAP[isVertical ? DEFAULT_VERTICAL_QUOTE_SIZE : DEFAULT_HORIZONTAL_QUOTE_SIZE];
+  return clampInt(
+    undefined,
+    QUOTE_WIDTH_RANGE,
+    Math.round(baseWidth * Math.max(1, fontSize / baseFontSize))
+  );
+}
+
+/**
+ * Render a standalone SVG quote card. Supports horizontal and vertical layouts with configurable preset or numeric font sizing and auto-wrapping.
  * @param options   Quote card rendering configuration.
  * @returns Complete, self-contained `<svg>` markup string.
  */
@@ -590,16 +612,11 @@ export function renderQuote(options: QuoteRenderOptions): string {
   const { authorFontSize, authorSpace, fontSize, lineHeight, padY, quoteIconScale } = metrics;
 
   const isVertical = layout === 'vertical';
-  const defaultWidth = isVertical
-    ? Math.round(
-        DEFAULT_VERTICAL_QUOTE_WIDTH *
-          Math.max(1, fontSize / QUOTE_SIZE_MAP[DEFAULT_VERTICAL_QUOTE_SIZE])
-      )
-    : Math.round(
-        QUOTE_WIDTH_RANGE.default *
-          Math.max(1, fontSize / QUOTE_SIZE_MAP[DEFAULT_HORIZONTAL_QUOTE_SIZE])
-      );
-  const width = clampInt(options.width, QUOTE_WIDTH_RANGE, defaultWidth);
+  const width = clampInt(
+    options.width,
+    QUOTE_WIDTH_RANGE,
+    resolveDefaultQuoteWidth(layout, fontSize)
+  );
   const iconBoxSize = Math.round(24 * quoteIconScale);
   const textColumn = computeQuoteTextColumn(layout, width, metrics, iconBoxSize);
 
@@ -609,14 +626,22 @@ export function renderQuote(options: QuoteRenderOptions): string {
     color,
     palette
   );
-  const lines = wrapQuoteLines(prepareDisplayText(options.text, MAX_QUOTE_TEXT_LENGTH), {
+  const wrapOptions = {
     fontSize,
     isBold: isBoldText,
     maxWidth: textColumn.maxWidth,
     prefix: isVertical ? '' : OPENING_QUOTE_MARK,
     suffix: isVertical ? '' : CLOSING_QUOTE_MARK,
-  });
-  const author = prepareDisplayText(options.author ?? '', MAX_QUOTE_TEXT_LENGTH).trim();
+  };
+  let lines = wrapQuoteLines(prepareDisplayText(options.text, MAX_QUOTE_TEXT_LENGTH), wrapOptions);
+  if (!lines.some((line) => measureTextAdvance(line, fontSize, isBoldText) > 0)) {
+    lines = wrapQuoteLines(DEFAULT_QUOTE_TEXT, wrapOptions);
+  }
+  const rawAuthor = prepareDisplayText(options.author ?? '', MAX_LABEL_LENGTH).trim();
+  const author =
+    rawAuthor.length > 0 && measureTextAdvance(rawAuthor, authorFontSize, true, isVertical) > 0
+      ? rawAuthor
+      : '';
   const authorLine =
     author.length > 0
       ? truncateToWidth(`— ${author}`, textColumn.maxWidth, {

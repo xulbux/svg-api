@@ -1,12 +1,15 @@
 /**
- * Static website assets – Versioned stylesheet, browser scripts, bundled fonts, and icon picker data served at `/assets/:name` with immutable caching.
+ * Static Website Assets
  *
- * Each stylesheet and script is built once per isolate, and its content hash is appended to its URL
- * (`?v=<hash>`), so pages always reference the deployed version and browsers can cache it forever.
- * Icon picker pages are built on demand (never kept in memory) and share the version of the icon index.
+ * Versioned stylesheet, browser scripts, bundled fonts, and icon picker data served at `/assets/:name` with immutable caching.
+ *
+ * Each stylesheet and script is built once per isolate, and its content hash is appended to its URL (`?v=<hash>`),
+ * so pages always reference the deployed version and browsers can cache it forever.
+ * Valid icon picker pages are memoized on first request and share the version of the icon index.
  */
 
 import builderScript from '@bundles/builder.client.js';
+import iconPickerIndexJson from '@bundles/icons-index.iconpack';
 import siteScript from '@bundles/site.client.js';
 import geistBoldBuffer from '@/assets/fonts/Geist-Bold.ttf';
 import geistMediumBuffer from '@/assets/fonts/Geist-Medium.ttf';
@@ -15,10 +18,10 @@ import geistSemiBoldBuffer from '@/assets/fonts/Geist-SemiBold.ttf';
 import geistSemiBoldItalicBuffer from '@/assets/fonts/Geist-SemiBoldItalic.ttf';
 import jetBrainsMonoBoldBuffer from '@/assets/fonts/JetBrainsMono-Bold.ttf';
 import jetBrainsMonoRegularBuffer from '@/assets/fonts/JetBrainsMono-Regular.ttf';
-import { getSiteStylesheet } from '@/site/styles';
-import { getIconPickerIndex, getIconPickerPage } from '@/svg/icons';
+import { getIconPickerPage } from '@/svg/icons';
 import { getOwnValue, hashBytes, hashText } from '@/svg/shared';
 import type { IconPickerSetId, SiteAsset, SiteAssetName, SiteFontName } from '@/types';
+import siteStylesheet from '@bundles/site.client.css';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -44,11 +47,8 @@ const JSON_CONTENT_TYPE = 'application/json; charset=utf-8';
 /** Static website assets keyed by their public file name, sorted alphabetically. */
 const SITE_ASSET_SOURCES: Readonly<Record<SiteAssetName, SiteAssetSource>> = {
   'builder.js': { contentType: JAVASCRIPT_CONTENT_TYPE, render: () => builderScript },
-  'icons.json': {
-    contentType: JSON_CONTENT_TYPE,
-    render: () => JSON.stringify(getIconPickerIndex()),
-  },
-  'site.css': { contentType: 'text/css; charset=utf-8', render: getSiteStylesheet },
+  'icons.json': { contentType: JSON_CONTENT_TYPE, render: () => iconPickerIndexJson },
+  'site.css': { contentType: 'text/css; charset=utf-8', render: () => siteStylesheet },
   'site.js': { contentType: JAVASCRIPT_CONTENT_TYPE, render: () => siteScript },
 };
 
@@ -64,10 +64,13 @@ const SITE_FONT_BUFFERS: Readonly<Record<SiteFontName, ArrayBuffer>> = {
 };
 
 /** Memoized built assets (bounded by the fixed set of asset names). */
-const SITE_ASSET_CACHE = new Map<SiteAssetName, SiteAsset>();
+const SITE_ASSET_CACHE: Partial<Record<SiteAssetName, SiteAsset>> = {};
 
 /** Memoized built font assets (bounded by the fixed set of font file names). */
-const SITE_FONT_CACHE = new Map<SiteFontName, SiteAsset<ArrayBuffer>>();
+const SITE_FONT_CACHE: Partial<Record<SiteFontName, SiteAsset<ArrayBuffer>>> = {};
+
+/** Memoized built icon picker page assets (bounded by the fixed set of paginated icon chunks). */
+const ICON_PAGE_ASSET_CACHE = Object.create(null) as Record<string, SiteAsset>;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -81,11 +84,11 @@ const ICON_PAGE_NAME_RX = /^icons-(?<set>brands|lucide)-(?<page>0|[1-9]\d{0,2})\
 
 /** Build (once per isolate) a static website font asset with its content version. */
 function buildFontAsset(name: SiteFontName): SiteAsset<ArrayBuffer> {
-  let asset = SITE_FONT_CACHE.get(name);
+  let asset = SITE_FONT_CACHE[name];
   if (!asset) {
     const body = SITE_FONT_BUFFERS[name];
     asset = { body, contentType: FONT_CONTENT_TYPE, version: hashBytes(body) };
-    SITE_FONT_CACHE.set(name, asset);
+    SITE_FONT_CACHE[name] = asset;
   }
   return asset;
 }
@@ -101,27 +104,35 @@ function versionStylesheetFonts(css: string): string {
 
 /** Build (once per isolate) a static website asset with its content version. */
 function buildSiteAsset(name: SiteAssetName): SiteAsset {
-  let asset = SITE_ASSET_CACHE.get(name);
+  let asset = SITE_ASSET_CACHE[name];
   if (!asset) {
     const source = SITE_ASSET_SOURCES[name];
     const rawBody = source.render();
     const body = name === 'site.css' ? versionStylesheetFonts(rawBody) : rawBody;
     asset = { body, contentType: source.contentType, version: hashText(body) };
-    SITE_ASSET_CACHE.set(name, asset);
+    SITE_ASSET_CACHE[name] = asset;
   }
   return asset;
 }
 
-/** Build an icon picker body page asset on demand (versioned with the icon index). */
+/** Build (once per valid chunk per isolate) an icon picker body page asset versioned with the icon index. */
 function buildIconPageAsset(setId: IconPickerSetId, page: number): SiteAsset | undefined {
+  const cacheKey = `${setId}:${page}`;
+  const cached = ICON_PAGE_ASSET_CACHE[cacheKey];
+  if (cached) {
+    return cached;
+  }
   const bodies = getIconPickerPage(setId, page);
-  return bodies
-    ? {
-        body: JSON.stringify(bodies),
-        contentType: JSON_CONTENT_TYPE,
-        version: buildSiteAsset('icons.json').version,
-      }
-    : undefined;
+  if (!bodies) {
+    return undefined;
+  }
+  const asset: SiteAsset = {
+    body: JSON.stringify(bodies),
+    contentType: JSON_CONTENT_TYPE,
+    version: buildSiteAsset('icons.json').version,
+  };
+  ICON_PAGE_ASSET_CACHE[cacheKey] = asset;
+  return asset;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------

@@ -1,5 +1,7 @@
 /**
- * Thunderstore service preset – Live upstream metrics and redirect transformations.
+ * Thunderstore Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Thunderstore.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

@@ -1,5 +1,7 @@
 /**
- * Popover positioning & fallback – Viewport-clamped popover placement calculation and non-Popover-API browser fallback.
+ * Popover Positioning & Fallback
+ *
+ * Viewport-clamped popover placement calculation and non-Popover-API browser fallback.
  */
 
 import type {
@@ -17,8 +19,8 @@ const VIEWPORT_MARGIN = 8;
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Compute the viewport position of a popover below (or, without room, above) its anchor, clamped to the
- * viewport; Used where CSS anchor positioning is unavailable.
+ * Compute the viewport position of a popover below (or, without room, above) its anchor, clamped to the viewport;
+ * Used where CSS anchor positioning is unavailable.
  * @param anchorRect     Anchor bounding rectangle.
  * @param popoverSize    Measured popover size.
  * @param viewportSize   Viewport size.

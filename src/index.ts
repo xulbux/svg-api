@@ -1,5 +1,8 @@
 /**
- * Worker entrypoint – Hono router for documentation, builder, and error pages, crawler/social discovery documents, versioned static assets, registered SVG routes, smart document redirects, and Tier-2 SVG edge caching.
+ * Worker Entrypoint
+ *
+ * Hono router for documentation, builder, and error pages, crawler/social discovery documents,
+ * versioned static assets, registered SVG routes, smart document redirects, and Tier-2 SVG edge caching.
  */
 
 import faviconPngBuffer from '@bundles/favicon.png';
@@ -17,17 +20,16 @@ import {
   computeEtag,
   HTML_SECURITY_HEADERS,
   isDocumentNavigation,
+  matchConditionalResponse,
   MAX_REQUEST_URL_LENGTH,
   NOSNIFF_HEADERS,
   sanitizeRedirectUrl,
   SERVICE_VARY_HEADER,
-  toConditionalResponse,
 } from '@/routes/http';
 import { resolveBuilderTarget } from '@/routes/schema';
 import {
   findSvgRoute,
   renderInternalErrorBadge,
-  renderServiceBadge,
   resolveSvgRequest,
   SERVICE_ERROR_TTL_SECONDS,
   SERVICE_TTL_SECONDS,
@@ -53,7 +55,7 @@ import {
   renderSitemapXml,
 } from '@/site/seo';
 import { buildShareUrl, resolvePathBuilderKind } from '@/site/shared';
-import type { Env, ServiceRequest, WaitUntilContext } from '@/types';
+import type { Env, ServiceSvgRouteMatch, WaitUntilContext } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -113,6 +115,7 @@ const MAX_IN_FLIGHT_SVG_RENDERS = 64;
 /** Extra headers of `/og.svg` allowing its embedded `data:image/png;base64,…` brand icon to render when opened directly. */
 const OG_SVG_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy': "default-src 'none'; img-src data:; style-src 'unsafe-inline'",
+  'X-Robots-Tag': 'noindex',
 };
 
 /** Extra headers of service preset badge SVGs (the same URL redirects document navigations). */
@@ -201,7 +204,10 @@ const TRAILING_SLASH_PATHS: readonly string[] = [
 ];
 
 /** Memoized HTML, crawler, and brand SVG documents and their entity tags keyed by internal identifier. */
-const DOCUMENT_CACHE = new Map<string, MemoizedDocument>();
+const DOCUMENT_CACHE: Record<string, MemoizedDocument> = Object.create(null) as Record<
+  string,
+  MemoizedDocument
+>;
 
 /** Pending uncached SVG renders keyed by normalized cache key so concurrent identical misses render once. */
 const IN_FLIGHT_SVG_RENDERS = new Map<string, Promise<PreparedSvgRender>>();
@@ -244,11 +250,11 @@ function guardRequestUrlLength(
 
 /** Resolve a memoized static document, computing its entity tag only once per isolate. */
 function getMemoizedDocument(documentId: string, render: () => string): MemoizedDocument {
-  let doc = DOCUMENT_CACHE.get(documentId);
+  let doc = DOCUMENT_CACHE[documentId];
   if (!doc) {
     const body = render();
     doc = { body, etag: computeEtag(body) };
-    DOCUMENT_CACHE.set(documentId, doc);
+    DOCUMENT_CACHE[documentId] = doc;
   }
   return doc;
 }
@@ -362,7 +368,7 @@ async function respondWithEdgeCache(
   if (edgeCache && cacheKey) {
     const cachedResponse = await edgeCache.match(cacheKey);
     if (cachedResponse) {
-      return toConditionalResponse(cachedResponse, ifNoneMatch);
+      return matchConditionalResponse(cachedResponse, ifNoneMatch);
     }
   }
 
@@ -402,13 +408,13 @@ async function respondWithEdgeCache(
 }
 
 /** Handle a service preset badge: redirect document navigations, otherwise serve from the edge cache or upstream. */
-async function handleServiceRoute(
+function handleServiceRoute(
   context: AppContext,
-  url: URL,
   cacheKeyUrl: string,
-  request: ServiceRequest
-): Promise<Response> {
+  match: ServiceSvgRouteMatch
+): Response | Promise<Response> {
   const env = context.env ?? DEFAULT_ENV;
+  const { request } = match;
 
   // Document navigations only need the redirect target; skip the upstream fetch entirely:
   if (isDocumentNavigation(context.req.raw)) {
@@ -432,13 +438,28 @@ async function handleServiceRoute(
       const { result, status } = await resolveServiceMetric(request, env, executionCtx);
       const isSuccess = status === 200;
       return {
-        extraHeaders: SERVICE_SVG_HEADERS,
+        extraHeaders: isSuccess ? SERVICE_SVG_HEADERS : ERROR_SERVICE_SVG_HEADERS,
         isCacheable: isSuccess,
-        svg: renderServiceBadge(result, url.searchParams),
+        svg: match.render(result),
         ttl: isSuccess ? SERVICE_TTL_SECONDS : SERVICE_ERROR_TTL_SECONDS,
       };
     }
   );
+}
+
+/** Clone `response` with a `Link: <…>; rel="canonical"` header without mutating shared cached headers. */
+async function attachCanonicalLinkHeader(
+  responsePromise: Promise<Response>,
+  canonicalPath: string
+): Promise<Response> {
+  const response = await responsePromise;
+  const headers = new Headers(response.headers);
+  headers.set('Link', `<${SITE_ORIGIN}${canonicalPath}>; rel="canonical"`);
+  return new Response(response.body, {
+    headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
 }
 
 /** Handle every registered SVG route via `SVG_ROUTES`. */
@@ -448,17 +469,20 @@ function handleSvgRoute(context: AppContext): Response | Promise<Response> {
   if (!resolved) {
     return context.notFound();
   }
-  const { cacheKey, match } = resolved;
+  const { cacheKey, canonicalPath, match } = resolved;
   if (match.kind === 'service') {
-    return handleServiceRoute(context, url, cacheKey, match.request);
+    return handleServiceRoute(context, cacheKey, match);
   }
-  return respondWithEdgeCache(
+  const responsePromise = respondWithEdgeCache(
     cacheKey,
     cacheKey,
     context.req.header('If-None-Match'),
     getSafeExecutionContext(context),
     () => ({ isCacheable: true, svg: match.render(), ttl: match.ttl })
   );
+  return canonicalPath
+    ? attachCanonicalLinkHeader(responsePromise, canonicalPath)
+    : responsePromise;
 }
 
 /** Serve a bundled binary PNG asset (e.g., `/favicon.png` or `/og.png`) with `ETag` revalidation. */
@@ -586,11 +610,12 @@ function handleBuilderRoute(context: AppContext): Response {
   const kind = (context.req.param('kind') ?? '').trim().toLowerCase();
   const rawSearch = getRawSearch(context.req.raw);
   if (isBuilderKind(kind)) {
+    const isPrefilled = Boolean(rawSearch);
     return buildHtmlResponse(
       context,
-      `builder/${kind}`,
-      () => renderBuilderHtml(kind),
-      rawSearch ? PREFILLED_BUILDER_HTML_HEADERS : HTML_DOCUMENT_HEADERS
+      isPrefilled ? `builder/${kind}:noindex` : `builder/${kind}`,
+      () => renderBuilderHtml(kind, isPrefilled),
+      isPrefilled ? PREFILLED_BUILDER_HTML_HEADERS : HTML_DOCUMENT_HEADERS
     );
   }
   const aliasTarget = findSvgRoute(kind)?.aliasOf;
@@ -619,8 +644,8 @@ function handleBuilderPrefillRoute(context: AppContext): Response {
   }
   return buildHtmlResponse(
     context,
-    `builder/${kind}`,
-    () => renderBuilderHtml(kind),
+    `builder/${kind}:noindex`,
+    () => renderBuilderHtml(kind, true),
     PREFILLED_BUILDER_HTML_HEADERS
   );
 }
@@ -659,7 +684,10 @@ function handleNotFound(context: AppContext): Response {
   return buildNotFoundHtmlResponse();
 }
 
-/** Log an unexpected failure and answer SVG routes with an error badge, site pages with a branded `500` HTML page, and assets/crawler endpoints with a plain `500`. */
+/**
+ * Log an unexpected failure and answer SVG routes with an error badge,
+ * site pages with a branded `500` HTML page, and assets/crawler endpoints with a plain `500`.
+ */
 function handleAppError(error: Error, context: AppContext): Response {
   if (error instanceof HTTPException) {
     return error.getResponse();

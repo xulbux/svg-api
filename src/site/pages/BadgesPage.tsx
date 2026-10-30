@@ -1,5 +1,7 @@
 /**
- * Badges documentation page – Renders the Status Badges (`/docs/badges`) section (`<BadgesSection />`).
+ * Badges Documentation Page
+ *
+ * Renders the Status Badges (`/docs/badges`) section (`<BadgesSection />`).
  */
 
 import { VARIANT_TOKENS } from '@/routes/params';

@@ -1,5 +1,8 @@
 /**
- * Color palette – The single source of every fixed color: Isolux gray scale, Isolux Pro UI and syntax colors, brand indigo, carbon SVG surface stop, and strip widget stage colors.
+ * Color Palette
+ *
+ * The single source of every fixed color: Isolux gray scale, Isolux Pro UI and syntax colors,
+ * brand indigo, carbon SVG surface stop, and strip widget stage colors.
  *
  * Mirrors `vscode-theme-isolux` (`theme/palette.ts` for raw grays, `dist/isolux-pro-*.json`
  * for resolved UI and syntax colors), shared across SVG renderers and website stylesheets.
@@ -7,6 +10,11 @@
  */
 
 import type { SchemeColor } from '@/types';
+
+// ---------------------------------------- CONSTS ---------------------------------------
+
+/** Tailwind `rose-200` (negative tint on solid primary surfaces). */
+const ROSE_200 = '#FECDD3';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -98,9 +106,6 @@ export const OG_CARD_SURFACE = {
   /** Raised background fill of the OpenGraph sample URL capsule. */
   pillBg: '#181824',
 } as const;
-
-/** Tailwind `rose-200` (negative tint on solid primary surfaces). */
-export const ROSE_200 = '#FECDD3';
 
 /** Strip tick heat-scale colors on dark capsules, ordered from worst (`0`) to best. */
 export const STRIP_DARK_COLORS = {

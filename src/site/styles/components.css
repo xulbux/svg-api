@@ -409,7 +409,7 @@ button.btn-secondary {
   align-items: center;
   justify-content: center;
   padding: 2px 6px 1px;
-  border: 1px solid color-mix(in srgb, var(--c-btn-bg), var(--c-on-brand) 28%);
+  border: 1px solid color-mix(in srgb, var(--c-btn-bg), var(--c-btn-text) 28%);
   border-radius: var(--radius-pill);
   font-size: 0.62rem;
   font-weight: 600;

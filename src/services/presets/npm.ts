@@ -1,5 +1,7 @@
 /**
- * npm service preset – Live upstream metrics and redirect transformations.
+ * npm Service Preset
+ *
+ * Live upstream metrics and redirect transformations for npm.
  */
 
 import {
@@ -79,6 +81,39 @@ const MAX_EXPORTS_KEYS = 256;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Check whether a matched `types` export target resolves to at least one non-empty declaration path. */
+function hasResolvedTypesTarget(node: unknown, depth: number, budget: ExportsWalkBudget): boolean {
+  if (typeof node === 'string') {
+    return node.trim() !== '';
+  }
+  if (depth > MAX_EXPORTS_DEPTH || typeof node !== 'object' || node === null) {
+    return false;
+  }
+  if (Array.isArray(node)) {
+    for (const entry of node) {
+      budget.remainingKeys -= 1;
+      if (budget.remainingKeys < 0) {
+        return false;
+      }
+      if (hasResolvedTypesTarget(entry, depth + 1, budget)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  const nested = node as Record<string, unknown>;
+  for (const key of Object.keys(nested)) {
+    budget.remainingKeys -= 1;
+    if (budget.remainingKeys < 0) {
+      return false;
+    }
+    if (hasResolvedTypesTarget(nested[key], depth + 1, budget)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** Check whether an `exports` node declares a `types` condition (bounded depth and key count). */
 function hasTypesCondition(node: unknown, depth: number, budget: ExportsWalkBudget): boolean {
   if (depth > MAX_EXPORTS_DEPTH || typeof node !== 'object' || node === null) {
@@ -104,10 +139,11 @@ function hasTypesCondition(node: unknown, depth: number, budget: ExportsWalkBudg
       return false;
     }
     const value = conditions[key];
-    if (key === 'types' && (typeof value === 'string' || isJsonObject(value))) {
-      return true;
-    }
-    if (hasTypesCondition(value, depth + 1, budget)) {
+    if (key === 'types') {
+      if (hasResolvedTypesTarget(value, depth + 1, budget)) {
+        return true;
+      }
+    } else if (hasTypesCondition(value, depth + 1, budget)) {
       return true;
     }
   }
@@ -171,6 +207,7 @@ function projectNpmDownloads(data: unknown): NpmDownloadsProjection | undefined 
 /** Shared npm Downloads range API endpoint (`last-year` covers `dw`, `dl`, and `dy` in one request). */
 const NPM_DOWNLOADS_ENDPOINT = createEndpoint({
   api: 'https://api.npmjs.org/downloads/range/last-year/{npm}',
+  extractKeys: ['downloads'],
   page: 'https://www.npmjs.com/package/{npm}',
   project: projectNpmDownloads,
   ttl: CACHE_TTL.daily,
@@ -179,6 +216,7 @@ const NPM_DOWNLOADS_ENDPOINT = createEndpoint({
 /** npm Registry latest version metadata endpoint. */
 const NPM_LATEST_ENDPOINT = createEndpoint({
   api: 'https://registry.npmjs.org/{npm}/latest',
+  extractKeys: ['exports', 'license', 'types', 'typings', 'version'],
   page: 'https://www.npmjs.com/package/{npm}',
   project: projectNpmLatest,
 });

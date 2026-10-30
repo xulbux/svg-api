@@ -1,5 +1,7 @@
 /**
- * Discord service preset – Live upstream metrics and redirect transformations.
+ * Discord Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Discord.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';
@@ -18,8 +20,8 @@ interface DiscordInvitePayload {
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /**
- * Discord invite endpoint (with approximate counts) and invite link redirect; Discord rate-limits
- * per IP and Workers share egress IPs, so approximate counts use the slow TTL.
+ * Discord invite endpoint (with approximate counts) and invite link redirect;
+ * Discord rate-limits per IP and Workers share egress IPs, so approximate counts use the slow TTL.
  */
 const DISCORD_ENDPOINT = createEndpoint({
   api: 'https://discord.com/api/v10/invites/{target}?with_counts=true',

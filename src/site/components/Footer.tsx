@@ -1,5 +1,7 @@
 /**
- * Footer component – Shared site footer (`<Footer />`) with GitHub contribution links, MIT license link, and author credit.
+ * Footer Component
+ *
+ * Shared site footer (`<Footer />`) with GitHub contribution links, MIT license link, and author credit.
  */
 
 import { AUTHOR_NAME, AUTHOR_WEBSITE_URL, REPO_GITHUB_URL } from '@/config/site';

@@ -1,13 +1,20 @@
 /**
- * Icon resolver – Resolves stroke and brand/tech vector icon paths and their exact horizontal ink bounds.
+ * Icon Resolver
+ *
+ * Resolves stroke and brand/tech vector icon paths and their exact horizontal ink bounds.
  */
 
-import { icons as deviconPlainSet } from '@iconify-json/devicon-plain';
-import { icons as fileIconSet } from '@iconify-json/file-icons';
-import { icons as simpleIconSet } from '@iconify-json/simple-icons';
-// oxlint-disable-next-line import/no-namespace -- Lucide exports one binding per icon; The whole namespace is the slug lookup table.
-import * as lucideIcons from 'lucide-static';
-import lucideTagMap from 'lucide-static/tags.json';
+import deviconPackJson from '@bundles/icons-devicon.iconpack';
+import filePackJson from '@bundles/icons-file.iconpack';
+import iconPickerIndexJson from '@bundles/icons-index.iconpack';
+import lucidePackJson from '@bundles/icons-lucide.iconpack';
+import simplePackJson from '@bundles/icons-simple.iconpack';
+import {
+  DEVICON_PREFERRED_SLUG_LIST,
+  FILE_ICONS_DEFAULT_SIZE,
+  ICON_PICKER_PAGE_SIZE,
+  ICON_SLUG_ALIASES,
+} from '@/config/icons';
 import {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
@@ -26,6 +33,8 @@ import type {
   IconPickerSetId,
   IconXBounds,
   LruCache,
+  PackedFileIconEntry,
+  PackedSimpleIconSet,
   ResolvedIcon,
 } from '@/types';
 
@@ -91,244 +100,14 @@ interface LazyIconCache {
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Ordered display names of all bundled stroke and brand icon sets. */
-export const ALL_ICON_SOURCE_NAMES: readonly string[] = [
-  'Lucide',
-  'Simple Icons',
-  'Devicon Plain',
-  'File Icons',
-];
-
 /** Scale factor normalizing Devicon Plain's `128x128` coordinate space to `24x24`. */
 const DEVICON_SCALE = 0.1875;
-
-/** Default coordinate box size of File Icons (`512x512`). */
-const FILE_ICONS_DEFAULT_SIZE = 512;
 
 /** Scale factor normalizing File Icons' `512x512` coordinate space to `24x24`. */
 const FILE_ICONS_SCALE = 0.046875;
 
-/**
- * Canonical brand slugs that prefer `@iconify-json/devicon-plain` over `@iconify-json/simple-icons`
- * so related language icon families share a consistent geometric frame and database icons use clean
- * symbol-only marks without embedded wordmark text.
- */
-const DEVICON_PREFERRED_SLUG_LIST: readonly string[] = [
-  'c',
-  'cplusplus',
-  'csharp',
-  'javascript',
-  'mysql',
-  'sqlite',
-  'typescript',
-];
-
 /** Lazily built set of `DEVICON_PREFERRED_SLUG_LIST` (`undefined` until first brand lookup). */
 let deviconPreferredSlugsCache: ReadonlySet<string> | undefined = undefined;
-
-/** Common icon slug aliases mapped to their canonical icon set slugs. */
-export const ICON_SLUG_ALIASES: Readonly<Record<string, string>> = {
-  '11ty': 'eleventy',
-  ableton: 'abletonlive',
-  adonis: 'adonisjs',
-  ae: 'adobeaftereffects',
-  aftereffects: 'adobeaftereffects',
-  ai: 'adobeillustrator',
-  airflow: 'apacheairflow',
-  alpinejs: 'alpinedotjs',
-  antd: 'antdesign',
-  apollo: 'apollographql',
-  arch: 'archlinux',
-  argocd: 'argo',
-  audition: 'adobeaudition',
-  aws: 'amazonwebservices',
-  azure: 'microsoftazure',
-  babylonjs: 'babylondotjs',
-  backbonejs: 'backbonedotjs',
-  bash: 'gnubash',
-  bigquery: 'googlebigquery',
-  'box-isometric-tape': 'package',
-  brew: 'homebrew',
-  browser: 'app-window',
-  bsky: 'bluesky',
-  bunjs: 'bun',
-  c4d: 'cinema4d',
-  'camera-rotate': 'switch-camera',
-  cassandra: 'apachecassandra',
-  cf: 'cloudflare',
-  cfpages: 'cloudflarepages',
-  cfworkers: 'cloudflareworkers',
-  chakra: 'chakraui',
-  chartjs: 'chartdotjs',
-  chatgpt: 'openai',
-  chrome: 'googlechrome',
-  'circle-info': 'info',
-  cli: 'terminal',
-  clj: 'clojure',
-  close: 'x',
-  cockroachdb: 'cockroachlabs',
-  console: 'terminal',
-  copilot: 'githubcopilot',
-  couchdb: 'apachecouchdb',
-  cpp: 'cplusplus',
-  'crosshairs-simple': 'crosshair',
-  cs: 'csharp',
-  css: 'css3',
-  cws: 'chromewebstore',
-  d3js: 'd3',
-  davinci: 'davinciresolve',
-  denojs: 'deno',
-  devto: 'devdotto',
-  discordjs: 'discorddotjs',
-  docs: 'book-open',
-  docsrs: 'docsdotrs',
-  drawio: 'diagramsdotnet',
-  emacs: 'gnuemacs',
-  email: 'mail',
-  ember: 'emberdotjs',
-  emberjs: 'emberdotjs',
-  envoy: 'envoyproxy',
-  error: 'circle-alert',
-  esp32: 'espressif',
-  expressjs: 'express',
-  external: 'external-link',
-  flink: 'apacheflink',
-  flyio: 'flydotio',
-  gcloud: 'googlecloud',
-  gcp: 'googlecloud',
-  gear: 'settings',
-  gemini: 'googlegemini',
-  gh: 'github',
-  gha: 'githubactions',
-  gl: 'gitlab',
-  'globe-code': 'globe',
-  godot: 'godotengine',
-  golang: 'go',
-  gql: 'graphql',
-  groovy: 'apachegroovy',
-  hadoop: 'apachehadoop',
-  handlebars: 'handlebarsdotjs',
-  handlebarsjs: 'handlebarsdotjs',
-  hbs: 'handlebarsdotjs',
-  help: 'circle-question-mark',
-  hf: 'huggingface',
-  hn: 'ycombinator',
-  hs: 'haskell',
-  html: 'html5',
-  ig: 'instagram',
-  illustrator: 'adobeillustrator',
-  indesign: 'adobeindesign',
-  inertiajs: 'inertia',
-  'info-circle': 'info',
-  intellij: 'intellijidea',
-  itchio: 'itchdotio',
-  js: 'javascript',
-  jwt: 'jsonwebtokens',
-  k8s: 'kubernetes',
-  kafka: 'apachekafka',
-  kali: 'kalilinux',
-  knex: 'knexdotjs',
-  knexjs: 'knexdotjs',
-  kt: 'kotlin',
-  license: 'scale',
-  lightroom: 'adobelightroom',
-  lr: 'adobelightroom',
-  materialui: 'mui',
-  maya: 'autodeskmaya',
-  md: 'markdown',
-  microchip: 'cpu',
-  mistral: 'mistralai',
-  mongo: 'mongodb',
-  nest: 'nestjs',
-  netbeans: 'apachenetbeanside',
-  nextjs: 'nextdotjs',
-  node: 'nodedotjs',
-  nodejs: 'nodedotjs',
-  notepadpp: 'notepadplusplus',
-  npp: 'notepadplusplus',
-  nuxtjs: 'nuxt',
-  nvim: 'neovim',
-  objc: 'objectivec',
-  obs: 'obsstudio',
-  openapi: 'openapiinitiative',
-  otel: 'opentelemetry',
-  p5js: 'p5dotjs',
-  pg: 'postgresql',
-  phoenix: 'phoenixframework',
-  photoshop: 'adobephotoshop',
-  plausible: 'plausibleanalytics',
-  postgres: 'postgresql',
-  pr: 'adobepremierepro',
-  premiere: 'adobepremierepro',
-  premierepro: 'adobepremierepro',
-  ps: 'adobephotoshop',
-  'puzzle-piece': 'puzzle',
-  pwsh: 'powershell',
-  py: 'python',
-  question: 'circle-question-mark',
-  radix: 'radixui',
-  rails: 'rubyonrails',
-  raspi: 'raspberrypi',
-  rb: 'ruby',
-  reactjs: 'react',
-  repo: 'git-branch',
-  'rocket-launch': 'rocket',
-  rollup: 'rollupdotjs',
-  rollupjs: 'rollupdotjs',
-  rpi: 'raspberrypi',
-  rs: 'rust',
-  rtd: 'readthedocs',
-  rxjs: 'reactivex',
-  scrutinizer: 'scrutinizerci',
-  scss: 'sass',
-  security: 'shield',
-  sh: 'gnubash',
-  shadcn: 'shadcnui',
-  shieldsio: 'shieldsdotio',
-  sklearn: 'scikitlearn',
-  snake: 'worm',
-  socketio: 'socketdotio',
-  solidjs: 'solid',
-  spigot: 'spigotmc',
-  sponsor: 'heart',
-  spyder: 'spyderide',
-  'square-text': 'message-square-text',
-  sublime: 'sublimetext',
-  success: 'circle-check',
-  sveltejs: 'svelte',
-  sveltekit: 'svelte',
-  swatchbook: 'swatch-book',
-  tailwind: 'tailwindcss',
-  tex: 'latex',
-  tf: 'terraform',
-  tg: 'telegram',
-  threejs: 'threedotjs',
-  tofu: 'opentofu',
-  torch: 'pytorch',
-  traefik: 'traefikproxy',
-  ts: 'typescript',
-  tw: 'tailwindcss',
-  ue: 'unrealengine',
-  unreal: 'unrealengine',
-  vb: 'visualbasic',
-  vitejs: 'vite',
-  vs: 'visualstudio',
-  vscode: 'visualstudiocode',
-  vue: 'vuedotjs',
-  vuejs: 'vuedotjs',
-  wandb: 'weightsandbiases',
-  warn: 'triangle-alert',
-  warning: 'triangle-alert',
-  wasm: 'webassembly',
-  web: 'globe',
-  website: 'globe',
-  wp: 'wordpress',
-  xd: 'adobexd',
-  xorg: 'xdotorg',
-  yml: 'yaml',
-  yt: 'youtube',
-  zed: 'zedindustries',
-};
 
 /** Default stroke width in `24x24` icon units across stroked icons. */
 export const DEFAULT_ICON_STROKE_WIDTH = 2.25;
@@ -362,26 +141,18 @@ const DEFAULT_ICON_X_BOUNDS: Readonly<IconXBounds> = { maxX: 22, minX: 2 };
 const STROKE_BOUNDS_PAD = DEFAULT_ICON_STROKE_WIDTH / 2;
 
 /**
- * Maximum number of resolved icons in the icon cache per Worker isolate. Misses are never cached: They
- * are a few cheap map lookups, and caching them would let junk slugs evict hot entries.
+ * Maximum number of resolved icons in the icon cache per Worker isolate.
+ * Misses are never cached; They are cheap map lookups, and caching them would let junk slugs evict hot entries.
  */
 const MAX_RESOLVED_ICON_CACHE_SIZE = 1024;
 
 /**
- * Maximum summed `innerSvg` length in UTF-16 code units of the resolved icon cache; The largest brand
- * bodies reach ~54k code units, so the entry count alone cannot bound the isolate's memory.
+ * Maximum summed `innerSvg` length in UTF-16 code units of the resolved icon cache;
+ * Large brand bodies make an entry count limit alone insufficient to bound isolate memory.
  */
 const MAX_RESOLVED_ICON_CACHE_WEIGHT = 2_000_000;
 
-/** Number of icons per icon picker body asset page. */
-const ICON_PICKER_PAGE_SIZE = 120;
-
-/** Lucide `lucide-static` exports (SVG strings) keyed by PascalCase icon name. */
-const LUCIDE_ICON_MAP: Readonly<Record<string, unknown>> = lucideIcons;
-
-/**
- * Bounded LRU cache of resolved icons keyed by icon category and exact lookup slug, weighted by body size.
- */
+/** Bounded LRU cache of resolved icons keyed by icon category and exact lookup slug, weighted by body size. */
 const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(
   MAX_RESOLVED_ICON_CACHE_SIZE,
   (icon) => icon.innerSvg.length,
@@ -391,26 +162,31 @@ const RESOLVED_ICON_CACHE = createLruCache<ResolvedIcon>(
 /** Lazily built fallback icons. */
 const LAZY_ICONS: LazyIconCache = {};
 
+/** Lazily parsed Lucide inner-SVG map keyed by PascalCase icon name (`undefined` until first stroke lookup). */
+let lucideIconMapCache: Readonly<Record<string, string>> | undefined = undefined;
+
+/** Lazily parsed Simple Icons dataset (`undefined` until first brand lookup). */
+let simpleIconSetCache: PackedSimpleIconSet | undefined = undefined;
+
+/** Lazily parsed Devicon Plain inner-SVG map (`undefined` until first Devicon lookup). */
+let deviconPlainSetCache: Readonly<Record<string, string>> | undefined = undefined;
+
+/** Lazily parsed File Icons dataset (`undefined` until first File Icons lookup). */
+let fileIconSetCache: Readonly<Record<string, PackedFileIconEntry>> | undefined = undefined;
+
 /** Memoized icon picker index (`undefined` until first built). */
 let iconPickerIndexCache: IconPickerIndex | undefined = undefined;
 
-/** Memoized cleaned-slug (`[-_.]` stripped) lookup table for `@iconify-json/file-icons` (`undefined` until first built). */
-let fileIconsCleanSlugMap: Map<string, string> | undefined = undefined;
+/** Memoized cleaned-slug (`[-_.]` stripped) lookup table for File Icons (`undefined` until first built). */
+let fileIconsCleanSlugMap: Record<string, string> | undefined = undefined;
+
+/** Memoized cleaned-slug (`[-_.]` stripped) lookup table for hyphenated Simple Icons keys (`undefined` until first built). */
+let simpleIconsCleanSlugMap: Record<string, string> | undefined = undefined;
 
 /** Memoized cleaned-slug (`[-_.]` stripped) lookup table for brand-targeting `ICON_SLUG_ALIASES` (`undefined` until first built). */
-let brandSlugAliasMap: Map<string, string> | undefined = undefined;
+let brandSlugAliasMap: Record<string, string> | undefined = undefined;
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches the last character before a PascalCase word boundary (a lowercase letter or digit before an uppercase letter, or an uppercase letter before a capitalized word, e.g., `AArrow`). */
-const PASCAL_BOUNDARY_RX = /[\da-z](?=[A-Z])|[A-Z](?=[A-Z][a-z])/g;
-
-/** Matches `fill="currentColor"` or `color="currentColor"` attributes inside Iconify SVG bodies so parent `<g>` groups control paint and sheen. */
-const CURRENT_COLOR_ATTR_RX = /\s*(?:fill|color)="currentColor"/g;
-
-/** Matches a uniform `currentColor`-only `<defs><linearGradient id="…">…</linearGradient></defs>` block in Devicon Plain bodies. */
-const UNIFORM_CURRENT_COLOR_GRADIENT_RX =
-  /<defs><linearGradient id="(?<id>[\w-]+)"[^>]*>(?:<stop[^>]*stop-color="currentColor"[^>]*\/>)+<\/linearGradient><\/defs>/;
 
 /** Matches `<defs>…</defs>` blocks so non-rendered clip/mask definitions never inflate horizontal ink bounds. */
 const ICON_DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/g;
@@ -548,6 +324,21 @@ function evaluateCubic(
   );
 }
 
+/** Record a candidate cubic Bezier derivative root when it lies strictly inside `(0, 1)`. */
+function recordCubicExtremaRoot(
+  progress: number,
+  startX: number,
+  control1X: number,
+  control2X: number,
+  endX: number,
+  scale: number,
+  bounds: IconXBounds
+): void {
+  if (progress > 0 && progress < 1) {
+    updateBounds(bounds, evaluateCubic(startX, control1X, control2X, endX, progress), scale);
+  }
+}
+
 /** Record the interior horizontal extrema of a cubic Bezier segment (the end points are recorded by the caller). */
 function recordCubicXBounds(
   startX: number,
@@ -561,25 +352,42 @@ function recordCubicXBounds(
   const quadraticCoef = -startX + 3 * control1X - 3 * control2X + endX;
   const linearCoef = 2 * (startX - 2 * control1X + control2X);
   const constantCoef = control1X - startX;
-  const roots: number[] = [];
   if (Math.abs(quadraticCoef) < 1e-12) {
     if (Math.abs(linearCoef) > 1e-12) {
-      roots.push(-constantCoef / linearCoef);
-    }
-  } else {
-    const discriminant = linearCoef * linearCoef - 4 * quadraticCoef * constantCoef;
-    if (discriminant >= 0) {
-      const sqrtDiscriminant = Math.sqrt(discriminant);
-      roots.push(
-        (-linearCoef + sqrtDiscriminant) / (2 * quadraticCoef),
-        (-linearCoef - sqrtDiscriminant) / (2 * quadraticCoef)
+      recordCubicExtremaRoot(
+        -constantCoef / linearCoef,
+        startX,
+        control1X,
+        control2X,
+        endX,
+        scale,
+        bounds
       );
     }
+    return;
   }
-  for (const progress of roots) {
-    if (progress > 0 && progress < 1) {
-      updateBounds(bounds, evaluateCubic(startX, control1X, control2X, endX, progress), scale);
-    }
+  const discriminant = linearCoef * linearCoef - 4 * quadraticCoef * constantCoef;
+  if (discriminant >= 0) {
+    const sqrtDiscriminant = Math.sqrt(discriminant);
+    const invTwoQuadratic = 1 / (2 * quadraticCoef);
+    recordCubicExtremaRoot(
+      (-linearCoef + sqrtDiscriminant) * invTwoQuadratic,
+      startX,
+      control1X,
+      control2X,
+      endX,
+      scale,
+      bounds
+    );
+    recordCubicExtremaRoot(
+      (-linearCoef - sqrtDiscriminant) * invTwoQuadratic,
+      startX,
+      control1X,
+      control2X,
+      endX,
+      scale,
+      bounds
+    );
   }
 }
 
@@ -614,8 +422,8 @@ function isAngleOnArc(angle: number, startAngle: number, deltaAngle: number): bo
 }
 
 /**
- * Record the exact horizontal extrema of an SVG elliptical arc (endpoint recorded by the caller), honoring
- * both radii, the X-axis rotation, and out-of-range radius scaling (SVG 1.1 implementation notes, F.6.5–F.6.6).
+ * Record the exact horizontal extrema of an SVG elliptical arc (endpoint recorded by the caller),
+ * honoring both radii, the X-axis rotation, and out-of-range radius scaling (SVG 1.1 implementation notes, F.6.5–F.6.6).
  */
 function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): void {
   let radiusX = Math.abs(arc.radiusX);
@@ -669,7 +477,8 @@ function recordArcXBounds(arc: ArcSegment, scale: number, bounds: IconXBounds): 
 
   // `x(θ) = cx + rx·cos(φ)·cos(θ) − ry·sin(φ)·sin(θ)` is extremal where its derivative vanishes:
   const extremumAngle = Math.atan2(-radiusY * sinRotation, radiusX * cosRotation);
-  for (const angle of [extremumAngle, extremumAngle + Math.PI]) {
+  for (let i = 0; i < 2; i += 1) {
+    const angle = i === 0 ? extremumAngle : extremumAngle + Math.PI;
     if (isAngleOnArc(angle, startAngle, deltaAngle)) {
       updateBounds(
         bounds,
@@ -988,120 +797,148 @@ function computeIconXBounds(
   return { maxX, minX };
 }
 
-/** Extract the inner markup of the outermost `<svg …>…</svg>` element (`undefined` when malformed). */
-function extractInnerSvg(rawSvg: string): string | undefined {
-  const openStart = rawSvg.indexOf('<svg');
-  const openEnd = openStart === -1 ? -1 : rawSvg.indexOf('>', openStart);
-  const closeStart = rawSvg.lastIndexOf('</svg>');
-  if (openEnd === -1 || closeStart <= openEnd) {
-    return undefined;
-  }
-  return rawSvg.slice(openEnd + 1, closeStart).trim();
+/** Lazily parse and return the packed Lucide inner-SVG map keyed by PascalCase export name. */
+function getLucideIconMap(): Readonly<Record<string, string>> {
+  lucideIconMapCache ??= JSON.parse(lucidePackJson) as Record<string, string>;
+  return lucideIconMapCache;
 }
 
-/** Resolve a cleaned (`[-_.]` stripped) brand slug to its `@iconify-json/file-icons` key (built lazily on first use). */
+/** Lazily parse and return the packed Simple Icons dataset. */
+function getSimpleIconSet(): PackedSimpleIconSet {
+  simpleIconSetCache ??= JSON.parse(simplePackJson) as PackedSimpleIconSet;
+  return simpleIconSetCache;
+}
+
+/** Lazily parse and return the packed Devicon Plain inner-SVG map. */
+function getDeviconPlainSet(): Readonly<Record<string, string>> {
+  deviconPlainSetCache ??= JSON.parse(deviconPackJson) as Record<string, string>;
+  return deviconPlainSetCache;
+}
+
+/** Lazily parse and return the packed File Icons dataset. */
+function getFileIconSet(): Readonly<Record<string, PackedFileIconEntry>> {
+  fileIconSetCache ??= JSON.parse(filePackJson) as Record<string, PackedFileIconEntry>;
+  return fileIconSetCache;
+}
+
+/** Resolve a cleaned (`[-_.]` stripped) brand slug to its File Icons key (built lazily on first use). */
 function resolveFileIconCleanSlug(cleanSlug: string): string | undefined {
   if (fileIconsCleanSlugMap === undefined) {
-    fileIconsCleanSlugMap = new Map<string, string>();
-    for (const key of Object.keys(fileIconSet.icons)) {
+    const fileIcons = getFileIconSet();
+    const map = Object.create(null) as Record<string, string>;
+    for (const key of Object.keys(fileIcons)) {
       const cleanKey = key.replace(BRAND_SLUG_CLEAN_RX, '');
-      if (!fileIconsCleanSlugMap.has(cleanKey)) {
-        fileIconsCleanSlugMap.set(cleanKey, key);
+      map[cleanKey] ??= key;
+    }
+    fileIconsCleanSlugMap = map;
+  }
+  return fileIconsCleanSlugMap[cleanSlug];
+}
+
+/** Resolve a cleaned (`[-_.]` stripped) brand slug to a hyphenated Simple Icons key (built lazily on first use). */
+function resolveSimpleIconCleanSlug(cleanSlug: string): string | undefined {
+  if (simpleIconsCleanSlugMap === undefined) {
+    const { icons } = getSimpleIconSet();
+    const map = Object.create(null) as Record<string, string>;
+    for (const key of Object.keys(icons)) {
+      const cleanKey = key.replace(BRAND_SLUG_CLEAN_RX, '');
+      if (cleanKey !== key) {
+        map[cleanKey] ??= key;
       }
     }
+    simpleIconsCleanSlugMap = map;
   }
-  return fileIconsCleanSlugMap.get(cleanSlug);
+  return simpleIconsCleanSlugMap[cleanSlug];
 }
 
 /** Resolve a Simple Icons alias slug (exact or `[-_.]`-cleaned) to its canonical parent slug (`undefined` when not an alias). */
 function resolveSimpleIconAlias(slug: string, cleanSlug: string): string | undefined {
-  const { aliases } = simpleIconSet;
-  if (!aliases) {
-    return undefined;
-  }
-  return getOwnValue(aliases, slug)?.parent ?? getOwnValue(aliases, cleanSlug)?.parent;
+  const { aliases } = getSimpleIconSet();
+  return getOwnValue(aliases, slug) ?? getOwnValue(aliases, cleanSlug);
 }
 
 /** Resolve a `[-_.]`-cleaned slug against brand-targeting entries in `ICON_SLUG_ALIASES` (`undefined` for UI aliases or non-aliases). */
 function resolveBrandSlugAlias(cleanSlug: string): string | undefined {
   if (brandSlugAliasMap === undefined) {
     deviconPreferredSlugsCache ??= new Set(DEVICON_PREFERRED_SLUG_LIST);
-    brandSlugAliasMap = new Map<string, string>();
+    const simpleIcons = getSimpleIconSet().icons;
+    const deviconIcons = getDeviconPlainSet();
+    const fileIcons = getFileIconSet();
+    const map = Object.create(null) as Record<string, string>;
     for (const [alias, target] of Object.entries(ICON_SLUG_ALIASES)) {
       if (
-        getOwnValue(simpleIconSet.icons, target) !== undefined ||
-        deviconPreferredSlugsCache.has(target)
+        getOwnValue(simpleIcons, target) !== undefined ||
+        deviconPreferredSlugsCache.has(target) ||
+        getOwnValue(deviconIcons, target) !== undefined ||
+        Object.hasOwn(fileIcons, target)
       ) {
         const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
-        if (!brandSlugAliasMap.has(cleanAlias)) {
-          brandSlugAliasMap.set(cleanAlias, target);
-        }
+        map[cleanAlias] ??= target;
       }
     }
+    brandSlugAliasMap = map;
   }
-  return brandSlugAliasMap.get(cleanSlug);
+  return brandSlugAliasMap[cleanSlug];
 }
 
-/** Canonicalize a normalized slug against Simple Icons' and brand slug alias tables when it is not a direct Simple Icons slug. */
+/** Canonicalize a normalized slug against Simple Icons' and brand slug alias tables. */
 function canonicalizeBrandSlug(slug: string): string {
-  const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-  if (
-    getOwnValue(simpleIconSet.icons, slug) !== undefined ||
-    getOwnValue(simpleIconSet.icons, normalized) !== undefined
-  ) {
+  const { icons } = getSimpleIconSet();
+  if (getOwnValue(icons, slug) !== undefined) {
     return slug;
   }
-  return resolveSimpleIconAlias(slug, normalized) ?? resolveBrandSlugAlias(normalized) ?? slug;
+  const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+  if (getOwnValue(icons, normalized) !== undefined) {
+    return normalized;
+  }
+  return (
+    resolveSimpleIconCleanSlug(normalized) ??
+    resolveSimpleIconAlias(slug, normalized) ??
+    resolveBrandSlugAlias(normalized) ??
+    slug
+  );
 }
 
-/** Read a `512`-unit icon body from `@iconify-json/file-icons`, scaled and centered to `24x24` (no ink bounds). */
+/** Read a `FILE_ICONS_DEFAULT_SIZE`-unit icon body from the packed File Icons set, scaled and centered to `24x24` (no ink bounds). */
 function getFileIconBody(slug: string): IconBody | undefined {
-  const matchedKey = Object.hasOwn(fileIconSet.icons, slug)
+  const fileIcons = getFileIconSet();
+  const matchedKey = Object.hasOwn(fileIcons, slug)
     ? slug
     : resolveFileIconCleanSlug(slug.replace(BRAND_SLUG_CLEAN_RX, ''));
-  const entry = matchedKey ? getOwnValue(fileIconSet.icons, matchedKey) : undefined;
-  if (!entry?.body) {
+  const entry = matchedKey ? getOwnValue(fileIcons, matchedKey) : undefined;
+  if (!entry) {
     return undefined;
   }
-  const width = entry.width ?? FILE_ICONS_DEFAULT_SIZE;
-  const height = entry.height ?? FILE_ICONS_DEFAULT_SIZE;
+  const isTuple = typeof entry !== 'string';
+  const cleanBody = isTuple ? entry[0] : entry;
+  const width = isTuple ? entry[1] : FILE_ICONS_DEFAULT_SIZE;
+  const height = isTuple ? entry[2] : FILE_ICONS_DEFAULT_SIZE;
   const boxSize = Math.max(width, height, FILE_ICONS_DEFAULT_SIZE);
   const coordScale =
     boxSize === FILE_ICONS_DEFAULT_SIZE ? FILE_ICONS_SCALE : roundScale(24 / boxSize);
   const coordOffsetX = width === boxSize ? 0 : roundCoord((24 - width * coordScale) / 2);
-  const offsetY = height === boxSize ? 0 : roundCoord((24 - height * coordScale) / 2);
+  const coordOffsetY = height === boxSize ? 0 : roundCoord((24 - height * coordScale) / 2);
   const transform =
-    coordOffsetX === 0 && offsetY === 0
+    coordOffsetX === 0 && coordOffsetY === 0
       ? `scale(${coordScale})`
-      : `translate(${coordOffsetX}, ${offsetY}) scale(${coordScale})`;
-  const cleanBody = entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim();
+      : `translate(${coordOffsetX}, ${coordOffsetY}) scale(${coordScale})`;
   return {
     coordOffsetX,
+    ...(coordOffsetY !== 0 ? { coordOffsetY } : {}),
     coordScale,
     innerSvg: `<g transform="${transform}">${cleanBody}</g>`,
     type: 'simple',
   };
 }
 
-/** Read a `128x128` icon body from `@iconify-json/devicon-plain`, normalized to `24x24` (no ink bounds). */
+/** Read a `128x128` icon body from the packed Devicon Plain set, normalized to `24x24` (no ink bounds). */
 function getDeviconPlainBody(slug: string): IconBody | undefined {
-  const entry =
-    getOwnValue(deviconPlainSet.icons, slug) ??
-    getOwnValue(deviconPlainSet.icons, slug.replace(BRAND_SLUG_CLEAN_RX, ''));
-  if (!entry?.body) {
+  const deviconIcons = getDeviconPlainSet();
+  const cleanBody =
+    getOwnValue(deviconIcons, slug) ??
+    getOwnValue(deviconIcons, slug.replace(BRAND_SLUG_CLEAN_RX, ''));
+  if (!cleanBody) {
     return undefined;
-  }
-  let cleanBody = entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim();
-  if (cleanBody.includes('<linearGradient')) {
-    const gradMatch = UNIFORM_CURRENT_COLOR_GRADIENT_RX.exec(cleanBody);
-    const gradId = gradMatch?.groups?.id;
-    if (gradMatch && gradId) {
-      cleanBody = cleanBody
-        .replace(gradMatch[0], '')
-        .replaceAll(` fill="url(#${gradId})"`, '')
-        .replaceAll(`fill="url(#${gradId})"`, '')
-        .trim();
-    }
   }
   return {
     coordScale: DEVICON_SCALE,
@@ -1110,22 +947,21 @@ function getDeviconPlainBody(slug: string): IconBody | undefined {
   };
 }
 
-/** Read a `24x24` icon body from `@iconify-json/simple-icons`, including its alias table (no ink bounds). */
+/** Read a `24x24` icon body from the packed Simple Icons set, including its alias table (no ink bounds). */
 function getSimpleIconBody(slug: string): IconBody | undefined {
+  const { icons } = getSimpleIconSet();
   const normalized = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+  const cleanKey = resolveSimpleIconCleanSlug(normalized);
   const aliasParent = resolveSimpleIconAlias(slug, normalized);
-  const entry =
-    getOwnValue(simpleIconSet.icons, slug) ??
-    getOwnValue(simpleIconSet.icons, normalized) ??
-    (aliasParent ? getOwnValue(simpleIconSet.icons, aliasParent) : undefined);
-  if (!entry?.body) {
+  const cleanBody =
+    getOwnValue(icons, slug) ??
+    getOwnValue(icons, normalized) ??
+    (cleanKey ? getOwnValue(icons, cleanKey) : undefined) ??
+    (aliasParent ? getOwnValue(icons, aliasParent) : undefined);
+  if (!cleanBody) {
     return undefined;
   }
-  return {
-    coordScale: 1,
-    innerSvg: entry.body.replace(CURRENT_COLOR_ATTR_RX, '').trim(),
-    type: 'simple',
-  };
+  return { coordScale: 1, innerSvg: cleanBody, type: 'simple' };
 }
 
 /** Read a brand or technology icon body across bundled icon sets, prioritizing `DEVICON_PREFERRED_SLUG_LIST` slugs. */
@@ -1137,10 +973,9 @@ function getBrandIconBody(slug: string): IconBody | undefined {
   return getSimpleIconBody(slug) ?? getDeviconPlainBody(slug) ?? getFileIconBody(slug);
 }
 
-/** Read a UI stroke icon body from `lucide-static` (no ink bounds). */
+/** Read a UI stroke icon body from the packed Lucide set (no ink bounds). */
 function getLucideIconBody(slug: string): IconBody | undefined {
-  const rawSvg = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
-  const innerContent = typeof rawSvg === 'string' ? extractInnerSvg(rawSvg) : undefined;
+  const innerContent = getOwnValue(getLucideIconMap(), capitalizeSlugParts(slug, ''));
   return innerContent ? { coordScale: 1, innerSvg: innerContent, type: 'lucide' } : undefined;
 }
 
@@ -1163,115 +998,31 @@ function measureIconBody(body: IconBody | undefined): ResolvedIcon | undefined {
   };
 }
 
-/** Convert a PascalCase `lucide-static` export name into its kebab-case slug (e.g., `'ArrowDown01'` -> `'arrow-down01'`). */
-function toLucideSlug(exportName: string): string {
-  return exportName.replace(PASCAL_BOUNDARY_RX, '$&-').toLowerCase();
-}
-
-/**
- * Merge a secondary brand icon set into `brandSlugs`, deduplicating by both exact and cleaned
- * (`[-_.]`-stripped) slug so preferred sets always win and hyphenated duplicates become aliases.
- */
-function mergeBrandIconSet(
-  slugs: readonly string[],
-  brandSlugs: Set<string>,
-  canonicalByCleanSlug: Map<string, string>,
-  brandAliases: Record<string, string>
-): void {
-  for (const slug of slugs) {
-    const cleanSlug = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-    const existingCanonical = canonicalByCleanSlug.get(cleanSlug);
-    if (existingCanonical === undefined) {
-      brandSlugs.add(slug);
-      canonicalByCleanSlug.set(cleanSlug, slug);
-    } else if (slug !== existingCanonical) {
-      brandAliases[slug] = existingCanonical;
-    }
+/** Trim, length-bound, lowercase, and resolve top-level `ICON_SLUG_ALIASES` for `slug`. */
+function normalizeBaseIconSlug(slug: string): {
+  baseKey: string;
+  isOverlong: boolean;
+  rawSlug: string;
+} {
+  const trimmed = slug.trim();
+  if (!trimmed) {
+    return { baseKey: '', isOverlong: false, rawSlug: '' };
   }
-}
-
-/** Build (once per isolate) the icon picker index: Distinct stroke glyphs, brand slugs, search tags, and every alias. */
-function buildIconPickerIndex(): IconPickerIndex {
-  const primaryByGlyph = new Map<string, string>();
-  const lucideSlugs: string[] = [];
-  const lucideAliases: Record<string, string> = {};
-  const lucideTags: Record<string, string> = {};
-
-  for (const [slug, tagList] of Object.entries(lucideTagMap)) {
-    const glyph = getOwnValue(LUCIDE_ICON_MAP, capitalizeSlugParts(slug, ''));
-    if (typeof glyph === 'string') {
-      const primarySlug = primaryByGlyph.get(glyph);
-      if (primarySlug === undefined) {
-        primaryByGlyph.set(glyph, slug);
-        lucideSlugs.push(slug);
-        if (tagList.length > 0) {
-          lucideTags[slug] = tagList.join(' ').toLowerCase();
-        }
-      } else {
-        lucideAliases[slug] = primarySlug;
-      }
-    }
+  if (trimmed.length > MAX_ICON_SLUG_LENGTH) {
+    const clamped = sliceAtCodePoint(trimmed, MAX_ICON_SLUG_LENGTH).toLowerCase();
+    return { baseKey: clamped, isOverlong: true, rawSlug: clamped };
   }
-
-  for (const [exportName, glyph] of Object.entries(LUCIDE_ICON_MAP)) {
-    const slug = toLucideSlug(exportName);
-    if (typeof glyph === 'string' && capitalizeSlugParts(slug, '') === exportName) {
-      const primarySlug = primaryByGlyph.get(glyph);
-      if (primarySlug === undefined) {
-        primaryByGlyph.set(glyph, slug);
-        lucideSlugs.push(slug);
-      } else if (slug !== primarySlug) {
-        lucideAliases[slug] = primarySlug;
-      }
-    }
-  }
-
-  const brandSlugs = new Set<string>();
-  const canonicalByCleanSlug = new Map<string, string>();
-  for (const slug of Object.keys(simpleIconSet.icons)) {
-    brandSlugs.add(slug);
-    canonicalByCleanSlug.set(slug.replace(BRAND_SLUG_CLEAN_RX, ''), slug);
-  }
-
-  const brandAliases: Record<string, string> = {};
-  for (const [alias, entry] of Object.entries(simpleIconSet.aliases ?? {})) {
-    brandAliases[alias] = entry.parent;
-    const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
-    if (!canonicalByCleanSlug.has(cleanAlias)) {
-      canonicalByCleanSlug.set(cleanAlias, entry.parent);
-    }
-  }
-  for (const [alias, target] of Object.entries(ICON_SLUG_ALIASES)) {
-    if (brandSlugs.has(target)) {
-      const cleanAlias = alias.replace(BRAND_SLUG_CLEAN_RX, '');
-      if (!canonicalByCleanSlug.has(cleanAlias)) {
-        canonicalByCleanSlug.set(cleanAlias, target);
-        brandAliases[cleanAlias] = target;
-      }
-    }
-  }
-
-  mergeBrandIconSet(
-    Object.keys(deviconPlainSet.icons),
-    brandSlugs,
-    canonicalByCleanSlug,
-    brandAliases
-  );
-  mergeBrandIconSet(Object.keys(fileIconSet.icons), brandSlugs, canonicalByCleanSlug, brandAliases);
-
+  const rawSlug = trimmed.toLowerCase();
   return {
-    aliases: { ...ICON_SLUG_ALIASES },
-    brandAliases,
-    lucideAliases,
-    lucideTags,
-    pageSize: ICON_PICKER_PAGE_SIZE,
-    sets: { brands: [...brandSlugs].toSorted(), lucide: lucideSlugs },
+    baseKey: getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug,
+    isOverlong: false,
+    rawSlug,
   };
 }
 
 /**
- * Look up one exact slug in one icon set, memoized under `<set>:<slug>` so a cached entry always
- * belongs to the slug it is keyed by (misses are never cached).
+ * Look up one exact slug in one icon set,
+ * memoized under `<set>:<slug>` so a cached entry always belongs to the slug it is keyed by (misses are never cached).
  */
 function lookupCachedIcon(slug: string, isBrand: boolean): ResolvedIcon | undefined {
   const effectiveSlug = isBrand ? canonicalizeBrandSlug(slug) : slug;
@@ -1310,22 +1061,20 @@ function getCircleFallbackIcon(): ResolvedIcon {
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+export { ALL_ICON_SOURCE_NAMES, ICON_SLUG_ALIASES } from '@/config/icons';
 export { computeIconXBounds };
-export { BRAND_SLUG_CLEAN_RX } from '@/svg/shared';
 
 /**
  * Normalize an icon slug to its canonical lookup key (trimmed, lowercase, alias-resolved).
  * @param slug      Raw icon slug (e.g., `' PY '`, `'cpp'`, `'rocket-launch'`).
- * @param isBrand   When `true`, also resolves Simple Icons aliases to their canonical parent slug.
+ * @param isBrand   When `true`, also resolves brand aliases to their canonical parent slug.
  * @returns Canonical slug (e.g., `'python'`, `'cplusplus'`, `'rocket'`).
  */
 export function normalizeIconSlug(slug: string, isBrand = false): string {
-  const trimmed = slug.trim();
-  if (trimmed.length > MAX_ICON_SLUG_LENGTH) {
-    return sliceAtCodePoint(trimmed, MAX_ICON_SLUG_LENGTH).toLowerCase();
+  const { baseKey, isOverlong, rawSlug } = normalizeBaseIconSlug(slug);
+  if (!rawSlug || isOverlong) {
+    return baseKey;
   }
-  const rawSlug = trimmed.toLowerCase();
-  const baseKey = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
   return isBrand ? canonicalizeBrandSlug(baseKey) : baseKey;
 }
 
@@ -1336,18 +1085,10 @@ export function normalizeIconSlug(slug: string, isBrand = false): string {
  * @returns Resolved icon data (`undefined` if `'none'`, empty, too long, or not found) and the canonical key.
  */
 export function resolveIconLookup(slug: string, isBrandFirst = false): IconLookup {
-  const trimmed = slug.trim();
-  if (!trimmed) {
-    return { data: undefined, key: '' };
+  const { baseKey, isOverlong, rawSlug } = normalizeBaseIconSlug(slug);
+  if (!rawSlug || isOverlong || rawSlug === 'none') {
+    return { data: undefined, key: rawSlug };
   }
-  if (trimmed.length > MAX_ICON_SLUG_LENGTH) {
-    return { data: undefined, key: sliceAtCodePoint(trimmed, MAX_ICON_SLUG_LENGTH).toLowerCase() };
-  }
-  const rawSlug = trimmed.toLowerCase();
-  if (rawSlug === 'none') {
-    return { data: undefined, key: 'none' };
-  }
-  const baseKey = getOwnValue(ICON_SLUG_ALIASES, rawSlug) ?? rawSlug;
   if (isBrandFirst) {
     const brandKey = canonicalizeBrandSlug(baseKey);
     const brandData = lookupInIconSet(brandKey, rawSlug, true);
@@ -1376,8 +1117,7 @@ export function resolveIcon(slug?: string, isBrandFirst = false): ResolvedIcon |
 }
 
 /**
- * Return the lazily built placeholder icon (translucent circle border + standalone `!`) used to flag
- * unknown icon slugs outside stack tiles.
+ * Return the lazily built placeholder icon (translucent circle border + standalone `!`) used to flag unknown icon slugs outside stack tiles.
  * @returns The resolved placeholder icon data (never `undefined`).
  */
 export function resolvePlaceholderIcon(): ResolvedIcon {
@@ -1386,8 +1126,7 @@ export function resolvePlaceholderIcon(): ResolvedIcon {
 }
 
 /**
- * Return the lazily built standalone `!` placeholder icon rendered inside the translucent frame of
- * unknown stack tiles.
+ * Return the lazily built standalone `!` placeholder icon rendered inside the translucent frame of unknown stack tiles.
  * @returns The resolved stack placeholder icon data (never `undefined`).
  */
 export function resolveStackPlaceholderIcon(): ResolvedIcon {
@@ -1419,11 +1158,11 @@ export function inspectResolvedIconCache(): Readonly<LruCache<ResolvedIcon>> {
 }
 
 /**
- * Build (once per isolate) the icon picker index asset.
+ * Parse and memoize (once per isolate) the pre-packed icon picker index asset.
  * @returns Distinct stroke glyph slugs, brand slugs, search tags, and slug aliases.
  */
 export function getIconPickerIndex(): IconPickerIndex {
-  iconPickerIndexCache ??= buildIconPickerIndex();
+  iconPickerIndexCache ??= JSON.parse(iconPickerIndexJson) as IconPickerIndex;
   return iconPickerIndexCache;
 }
 

@@ -1,5 +1,7 @@
 /**
- * Custom dropdown controller – Lazy option rendering, search filtering, keyboard navigation, and native `<select>` synchronization for `[data-select]` controls.
+ * Custom Dropdown Controller
+ *
+ * Lazy option rendering, search filtering, keyboard navigation, and native `<select>` synchronization for `[data-select]` controls.
  */
 
 import { bindPopoverFocusDismiss, bindPopoverToggle } from '@/site/client/builder/core';
@@ -66,10 +68,7 @@ function createSwatch(color: string): HTMLSpanElement {
   return swatch;
 }
 
-/**
- * Render the listbox options of a custom dropdown from its native `<select>`, filtered by the search query
- * (only while the menu is open).
- */
+/** Render the listbox options of a custom dropdown from its native `<select>`, filtered by the search query (only while the menu is open). */
 function renderSelectOptions(wrapper: Element): void {
   const { empty, list, search, select } = getSelectParts(wrapper);
   if (!list || !select) {
@@ -120,10 +119,20 @@ function moveOptionFocus(wrapper: Element, offset: number): void {
   const current = items.indexOf(document.activeElement ?? wrapper);
   let targetIndex = current + offset;
   if (current === -1 || !Number.isFinite(targetIndex)) {
-    targetIndex =
-      offset > 0
-        ? Math.min(offset, items.length) - 1
-        : items.length + Math.max(offset, -items.length);
+    const { search } = getSelectParts(wrapper);
+    const selectedOption =
+      offset === 1 && (!search || search.value.trim().length === 0)
+        ? wrapper.querySelector('.select-option[aria-selected="true"]')
+        : undefined;
+    const selectedIndex = selectedOption ? items.indexOf(selectedOption) : -1;
+    if (selectedIndex > 0) {
+      targetIndex = selectedIndex;
+    } else {
+      targetIndex =
+        offset > 0
+          ? Math.min(offset, items.length) - 1
+          : items.length + Math.max(offset, -items.length);
+    }
   }
   const next = items[Math.max(0, Math.min(items.length - 1, targetIndex))];
   if (next instanceof HTMLElement) {
@@ -150,10 +159,7 @@ function focusTypeaheadOption(wrapper: Element, key: string): void {
   }
 }
 
-/**
- * Sync a custom dropdown trigger (label and swatch) and its rendered options with the native `<select>`.
- * @param wrapper   `[data-select]` element.
- */
+/** Sync a custom dropdown trigger (label and swatch) and its rendered options with the native `<select>`. */
 function syncSelect(wrapper: Element): void {
   const { list, select, trigger } = getSelectParts(wrapper);
   if (!select || !trigger) {
@@ -222,13 +228,32 @@ function resolveSelectConfirmTarget(
   return wrapper.querySelector('.select-option');
 }
 
-/** Handle keys inside an open custom dropdown (arrows, `Home`/`End`, `Enter`/`Space`, and typeahead). */
+/** Close a custom dropdown menu and return focus to its trigger button. */
+function closeSelectMenu(wrapper: Element, site: SvgSite | undefined): void {
+  const { menu, trigger } = getSelectParts(wrapper);
+  if (menu) {
+    site?.closePopover(menu);
+  }
+  trigger?.focus();
+}
+
+/** Check whether `event` is a printable unmodified single-character typeahead keypress outside the search input. */
+function isSelectTypeaheadKey(event: KeyboardEvent, isSearch: boolean): boolean {
+  return !isSearch && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
+/** Handle keys inside an open custom dropdown (arrows, `Home`/`End`, `Enter`/`Space`, `Escape`, and typeahead). */
 function handleSelectKeydown(
   event: KeyboardEvent,
   wrapper: Element,
   site: SvgSite | undefined
 ): void {
   if (event.isComposing) {
+    return;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeSelectMenu(wrapper, site);
     return;
   }
   const { search } = getSelectParts(wrapper);
@@ -249,13 +274,8 @@ function handleSelectKeydown(
     if (item instanceof HTMLElement && item.dataset.value !== undefined) {
       chooseSelectOption(wrapper, item.dataset.value, site);
     }
-  } else if (
-    !isSearch &&
-    event.key.length === 1 &&
-    !event.ctrlKey &&
-    !event.metaKey &&
-    !event.altKey
-  ) {
+  } else if (isSelectTypeaheadKey(event, isSearch)) {
+    event.preventDefault();
     focusTypeaheadOption(wrapper, event.key.toLowerCase());
   }
 }

@@ -1,14 +1,16 @@
 /**
- * Hugging Face service presets – Live upstream metrics and redirect transformations.
+ * Hugging Face Service Presets
+ *
+ * Live upstream metrics and redirect transformations for Hugging Face models, datasets, and Spaces.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   createMetric,
   defineService,
   isJsonObject,
   pickFields,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   createCommunityMetric,
@@ -123,7 +125,7 @@ function projectHuggingFaceSpace(data: unknown): HuggingFaceSpaceProjection | un
   return {
     likes: readFiniteNumber(data.likes),
     sdk: readText(data.sdk),
-    stage: readText(asJsonObject(data.runtime)?.stage),
+    stage: readText(readJsonObject(data.runtime)?.stage),
   };
 }
 
@@ -132,7 +134,7 @@ function transformSpaceSdk(space: HuggingFaceSpaceProjection): Partial<MetricRes
   if (!space.sdk) {
     return { value: 'n/a' };
   }
-  const normalized = space.sdk.trim().toLowerCase();
+  const normalized = space.sdk.toLowerCase();
   return getOwnValue(SPACE_SDK_PRESENTATIONS, normalized) ?? { value: space.sdk };
 }
 
@@ -141,7 +143,7 @@ function transformSpaceStage(space: HuggingFaceSpaceProjection): Partial<MetricR
   if (!space.stage) {
     return { value: 'n/a' };
   }
-  const normalized = space.stage.trim().toUpperCase();
+  const normalized = space.stage.toUpperCase();
   return (
     getOwnValue(SPACE_STAGE_PRESENTATIONS, normalized) ?? {
       value: normalized.toLowerCase().replaceAll('_', ' '),
@@ -152,6 +154,7 @@ function transformSpaceStage(space: HuggingFaceSpaceProjection): Partial<MetricR
 /** Hugging Face Spaces endpoint (`?expand[]=likes,sdk,runtime`) with Space page redirect. */
 const HUGGING_FACE_SPACE_ENDPOINT = createEndpoint({
   api: `https://huggingface.co/api/spaces/{owner}/{target}${SPACE_EXPAND_QUERY}`,
+  extractKeys: ['likes', 'runtime', 'sdk'],
   missingStatuses: HUGGING_FACE_MISSING_STATUSES,
   page: 'https://huggingface.co/spaces/{owner}/{target}',
   project: projectHuggingFaceSpace,

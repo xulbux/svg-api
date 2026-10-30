@@ -1,11 +1,13 @@
 /**
- * Typing animation renderer – Renders realistic human-cadence SVG typing animations in Kumo 3D containers.
+ * Typing Animation Renderer
  *
- * Character glyphs are laid out with OpenType pair kerning, deduplicated in `<defs>` by content hash, and
- * animated with hardware-accelerated SMIL opacity fades and cursor motion. Inter-key intervals follow
- * human-computer interaction (HCI) keystroke dynamics: Fast alternating/rollover bigrams, double-letter bounce
- * penalties, word-start cognitive planning pauses, punctuation pauses, and optional QWERTY neighbor typos with
- * backspace self-correction.
+ * Renders realistic human-cadence SVG typing animations in Kumo 3D containers.
+ *
+ * Character glyphs are laid out with OpenType pair kerning, deduplicated in `<defs>` by content hash,
+ * and animated with hardware-accelerated SMIL opacity fades and cursor motion.
+ * Inter-key intervals follow human-computer interaction (HCI) keystroke dynamics:
+ * Fast alternating/rollover bigrams, double-letter bounce penalties, word-start cognitive planning pauses,
+ * punctuation pauses, and optional QWERTY neighbor typos with backspace self-correction.
  */
 
 import { WHITE } from '@/config/palette';
@@ -16,24 +18,27 @@ import {
   computeCenteredBaselineY,
   layoutTextGlyphs,
   measureTextWidth,
+  measureTextWidthUncached,
   renderTextPathMarkup,
   resolveCharGlyph,
 } from '@/svg/measure';
 import {
   ELLIPSIS,
   HINT_ICON_REST_RX,
-  PRIMARY_FOREGROUND_OPACITY,
   buildBottomCrescentPath,
+  buildIconBodyId,
   clampInt,
   computeIconTranslateX,
   createLruCache,
   getOwnValue,
   hashText,
   isAnimationDisabled,
+  isSharedIconDefNeeded,
   measureIconVisualWidth,
   prepareDisplayText,
   readLruCache,
   renderIconGroup,
+  renderInsetRingRect,
   renderKumoBoxSurface,
   renderSheenOverlay,
   renderSurfaceGradientDefs,
@@ -118,6 +123,8 @@ interface TypingStyleTokens {
 interface ResolvedTypingIconSlot {
   /** Resolved icon geometry and inner SVG markup. */
   data: ResolvedIcon;
+  /** Optional `<use href="#…" />` override when `icon` and `hint` share a deduplicated `<defs>` body. */
+  innerSvgOverride?: string;
   /** Whether the requested slug was unknown and fell back to the `!` placeholder icon. */
   isFallback: boolean;
 }
@@ -158,6 +165,8 @@ interface HintBadgeGeometry {
 
 /** Geometry and SVG markup of the leading icon and static prefix in the typing row. */
 interface LeadingPromptLayout {
+  /** Whether a body-row icon was rendered (`false` when omitted, placed in the header, or suppressed on narrow containers). */
+  hasRenderedIcon: boolean;
   /** Rendered SVG markup for the leading icon and static prefix (`''` when neither is present). */
   markup: string;
   /** X coordinate where the left-aligned typed text column begins in pixels. */
@@ -270,6 +279,8 @@ interface TypingBodyRenderContext {
   height: number;
   /** Rendered trailing 3D keycap badge markup. */
   hintMarkup: string;
+  /** Optional shared `<defs>` `<g>` element when `icon` and `hint` reuse the same icon body. */
+  iconDefs: string;
   /** Container layout style. */
   layout: TypingLayout;
   /** Leading icon and static prefix layout. */
@@ -280,6 +291,10 @@ interface TypingBodyRenderContext {
   options: TypingRenderOptions;
   /** Width-fitted, positioned lines with optional typo targets. */
   preparedLines: readonly PreparedTypingLine[];
+  /** Optional raw icon body inlined back when only one of two shared icon slots fits in `width`. */
+  sharedIconBody?: string;
+  /** Optional `<use href="#…" />` token marking whether `iconDefs` was referenced in the rendered body. */
+  sharedIconUse?: string;
   /** Variant- and layout-dependent paint tokens. */
   styleTokens: TypingStyleTokens;
   /** Rendered Kumo container surface and layout chrome markup. */
@@ -630,6 +645,16 @@ interface ResolvedTypingDefaults {
   variant: BadgeVariant;
 }
 
+/** Deduplicated `<defs>` markup and `<use>` snippet for a shared header/body icon + hint icon. */
+interface SharedTypingIconDefs {
+  /** `<g id="…">…</g>` definition markup (`''` when unshared). */
+  iconDefs: string;
+  /** Raw icon body inlined when only one of the two shared icon slots survives width clamping. */
+  sharedIconBody: string | undefined;
+  /** `<use href="#…" />` override markup (`undefined` when unshared). */
+  sharedIconUse: string | undefined;
+}
+
 // ---------------------------------------- CONSTS ---------------------------------------
 
 /** Container width bounds in pixels (auto-fits the longest line when omitted). */
@@ -800,6 +825,9 @@ let fastRolloverBigramsCache: ReadonlySet<string> | undefined = undefined;
 /** Maximum `pathData` length cached in `GLYPH_ID_CACHE` to bound key memory per isolate. */
 const MAX_CACHED_GLYPH_PATH_LENGTH = 2048;
 
+/** Prefix of content-addressed `<defs>` icon body IDs shared between leading and hint slots. */
+const TYPING_ICON_ID_PREFIX = 'typing-icon';
+
 /** Bounded LRU cache mapping serialized glyph `pathData` to its content-addressed `<defs>` ID. */
 const GLYPH_ID_CACHE = createLruCache<string>(256, (glyphId) => glyphId.length, 16_384);
 
@@ -960,9 +988,7 @@ function resolveTypingStyleTokens(
     iconPaint: resolveForegroundPaint(isOnPrimary, palette.iconColor),
     isBoldText: isOnPrimary,
     isOnPrimary,
-    mutedTextColor: isOnPrimary
-      ? `rgba(255,255,255,${PRIMARY_FOREGROUND_OPACITY})`
-      : BASE_DARK.textMuted,
+    mutedTextColor: resolveForegroundColor(isOnPrimary, BASE_DARK.textMuted),
     selectionColor: isOnPrimary ? WHITE : palette.iconColor,
     textColor: resolveSurfaceTextColor(variant),
   };
@@ -1092,10 +1118,16 @@ function clampLineGlyphsToWidth(
   isBold: boolean,
   fontFamily: TypingFont
 ): GlyphLineLayout {
-  if (layout.totalAdvance <= maxWidth || layout.glyphs.length === 0) {
+  if (maxWidth <= 0 || layout.glyphs.length === 0) {
+    return maxWidth <= 0 ? { glyphs: [], totalAdvance: 0 } : layout;
+  }
+  if (layout.totalAdvance <= maxWidth) {
     return layout;
   }
   const ellipsisGlyph = resolveCharGlyph(ELLIPSIS, fontSize, isBold, fontFamily);
+  if (ellipsisGlyph.advance > maxWidth) {
+    return { glyphs: [], totalAdvance: 0 };
+  }
   const targetWidth = Math.max(0, maxWidth - ellipsisGlyph.advance);
   const fitted: PositionedCharGlyph[] = [];
   let cursorX = 0;
@@ -1135,14 +1167,23 @@ function clampTextToWidth(
     return text;
   }
   const clamped = clampLineGlyphsToWidth(layout, maxWidth, fontSize, isBold, fontFamily);
-  if (clamped.totalAdvance > maxWidth) {
-    return '';
-  }
   let result = '';
   for (const glyph of clamped.glyphs) {
     result += glyph.char;
   }
   return result;
+}
+
+/** Measure bold chrome text width, touching `OUTLINE_CACHE` only for built-in default strings. */
+function measureChromeTextWidth(
+  text: string,
+  fontSize: number,
+  fontFamily: TypingFont,
+  isCached = false
+): number {
+  return isCached
+    ? measureTextWidth(text, fontSize, true, false, fontFamily)
+    : measureTextWidthUncached(text, fontSize, true, false, fontFamily);
 }
 
 /** Compute the relative HCI inter-key interval weight before typing `glyphs[index]`. */
@@ -1629,7 +1670,7 @@ function renderPositionedIconSlot(options: PositionedIconSlotOptions): RenderedI
   const markup = renderIconGroup({
     color,
     hasCurrentColor: resolvedIcon.hasCurrentColor,
-    innerSvg: resolvedIcon.innerSvg,
+    innerSvg: iconSlot.innerSvgOverride ?? resolvedIcon.innerSvg,
     isFallback: iconSlot.isFallback,
     isOnPrimary,
     opacity,
@@ -1685,6 +1726,7 @@ function renderHintBadgeInner(options: HintBadgeInnerOptions): string {
       font: 'mono',
       fontSize: hintFontSize,
       isBold: true,
+      isUncached: true,
     });
   }
 
@@ -1713,6 +1755,7 @@ function renderHintBadgeInner(options: HintBadgeInnerOptions): string {
     font: 'mono',
     fontSize: hintFontSize,
     isBold: true,
+    isUncached: true,
   });
   return `${iconMarkup}${textMarkup}`;
 }
@@ -1752,7 +1795,7 @@ function measureHintBadgeGeometry(
   const isHeaderBadge = layout === 'window' || layout === 'ide';
   const iconBoxSize = Math.round((isHeaderBadge ? 11.5 : 13) * scale);
   const iconVisualWidth = measureIconVisualWidth(hint.iconSlot?.data, iconBoxSize);
-  const textWidth = hint.text ? measureTextWidth(hint.text, hintFontSize, true, false, 'mono') : 0;
+  const textWidth = hint.text ? measureChromeTextWidth(hint.text, hintFontSize, 'mono') : 0;
   const iconTextGap =
     hint.iconSlot && hint.text ? Math.round((isHeaderBadge ? 4.5 : 5) * scale) : 0;
   const contentWidth = iconVisualWidth + iconTextGap + textWidth;
@@ -1862,7 +1905,14 @@ function renderHintBadge(options: RenderHintBadgeOptions): string {
 
   if (layout === 'window' || layout === 'ide') {
     const innerMarkup = renderHintBadgeInner({ ...baseInnerOptions, verticalNudge: 0 });
-    return `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`;
+    return `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" />${renderInsetRingRect(
+      badgeX,
+      badgeY,
+      badgeWidth,
+      badgeHeight,
+      badgeRadius,
+      `stroke="${keycapStroke}"`
+    )}${innerMarkup}`;
   }
 
   if (layout === 'browser') {
@@ -1884,13 +1934,20 @@ function renderHintBadge(options: RenderHintBadgeOptions): string {
   } else if (variant === '2') {
     crescentOpacity = '0.45';
   }
-  const ringGeometry = `x="${roundCoord(badgeX + 0.5)}" y="${roundCoord(badgeY + 0.5)}" width="${roundCoord(badgeWidth - 1)}" height="${roundCoord(badgeHeight - 1)}" rx="${roundCoord(badgeRadius - 0.5)}"`;
   const innerMarkup = renderHintBadgeInner({ ...baseInnerOptions, verticalNudge: -0.5 });
-  return (
-    `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" />` +
-    `<path d="${bottomCrescentPath}" fill="${crescentFill}" fill-opacity="${crescentOpacity}" />` +
-    `<rect ${ringGeometry} stroke="${keycapStroke}" stroke-width="1" />${innerMarkup}`
-  );
+  const bottomCrescent = bottomCrescentPath
+    ? `<path d="${bottomCrescentPath}" fill="${crescentFill}" fill-opacity="${crescentOpacity}" />`
+    : '';
+  return `<rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="${badgeRadius}" fill="${keycapFill}" />${
+    bottomCrescent
+  }${renderInsetRingRect(
+    badgeX,
+    badgeY,
+    badgeWidth,
+    badgeHeight,
+    badgeRadius,
+    `stroke="${keycapStroke}"`
+  )}${innerMarkup}`;
 }
 
 /** Compute traffic-light dot geometry, defaulting left X-padding to match vertical Y-padding in `bandHeight`. */
@@ -2007,7 +2064,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
   if (iconSlot && titleText.length > 0) {
     const iconProbeWidth = measureIconVisualWidth(iconSlot.data, headerIconSize);
     const gap = Math.round(6 * scale);
-    const rawTitleWidth = measureTextWidth(titleText, titleFontSize, true, false, 'mono');
+    const rawTitleWidth = measureChromeTextWidth(titleText, titleFontSize, 'mono');
     const isPairOverflowing = iconProbeWidth + gap + rawTitleWidth > availableHeaderWidth;
     const fittedTitle = isPairOverflowing
       ? clampTextToWidth(
@@ -2022,7 +2079,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
       const titleWidth =
         fittedTitle === titleText
           ? rawTitleWidth
-          : measureTextWidth(fittedTitle, titleFontSize, true, false, 'mono');
+          : measureChromeTextWidth(fittedTitle, titleFontSize, 'mono');
       const totalPairWidth = iconProbeWidth + gap + titleWidth;
       const idealPairX = (width - totalPairWidth) / 2;
       const pairStartX = roundCoord(
@@ -2047,6 +2104,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
         font: 'mono',
         fontSize: titleFontSize,
         isBold: true,
+        isUncached: true,
       });
       return markup;
     }
@@ -2072,7 +2130,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
   }
 
   if (titleText.length > 0) {
-    const rawTitleWidth = measureTextWidth(titleText, titleFontSize, true, false, 'mono');
+    const rawTitleWidth = measureChromeTextWidth(titleText, titleFontSize, 'mono');
     const fittedTitle =
       rawTitleWidth > availableHeaderWidth
         ? clampTextToWidth(titleText, availableHeaderWidth, titleFontSize, true, 'mono')
@@ -2081,7 +2139,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
       const fittedWidth =
         fittedTitle === titleText
           ? rawTitleWidth
-          : measureTextWidth(fittedTitle, titleFontSize, true, false, 'mono');
+          : measureChromeTextWidth(fittedTitle, titleFontSize, 'mono');
       const idealStartX = (width - fittedWidth) / 2;
       const isCenteredFit = idealStartX >= minCenterX && idealStartX + fittedWidth <= maxCenterX;
       const clampedTitleX = Math.max(minCenterX, Math.min(maxCenterX - fittedWidth, idealStartX));
@@ -2093,6 +2151,7 @@ function renderWindowHeaderChrome(options: WindowHeaderChromeOptions): string {
         font: 'mono',
         fontSize: titleFontSize,
         isBold: true,
+        isUncached: true,
       });
     }
   }
@@ -2118,7 +2177,9 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
   const tabHeight = headerHeight - tabTopY;
   const tabRadius = Math.max(5, Math.round(6 * scale));
   const titleWidth =
-    titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
+    titleText.length > 0
+      ? measureChromeTextWidth(titleText, titleFontSize, 'mono', titleText === DEFAULT_IDE_TITLE)
+      : 0;
   const { closeGap, closeSize, iconGap, tabIconSize, tabPadX, tabStartX, tabWidth } =
     computeIdeTabMetrics(rightEdgeX, scale, titleWidth, iconSlot);
   const rightClearance = Math.max(Math.round(24 * scale), reservedHeaderWidth);
@@ -2175,6 +2236,7 @@ function renderIdeHeaderAndGutterChrome(options: IdeHeaderChromeOptions): string
         font: 'mono',
         fontSize: titleFontSize,
         isBold: true,
+        isUncached: fittedTitle !== DEFAULT_IDE_TITLE,
       });
     }
   }
@@ -2305,7 +2367,14 @@ function renderTypingContainerSurface(options: TypingContainerSurfaceOptions): s
     const badgeFillOpacity = styleTokens.isOnPrimary ? '1' : '0.16';
     const badgeStroke = styleTokens.isOnPrimary ? 'rgba(255,255,255,0.22)' : palette.iconColor;
     const badgeStrokeOpacity = styleTokens.isOnPrimary ? '1' : '0.36';
-    markup += `<rect x="${avatarInset}" y="${avatarInset}" width="${avatarSize}" height="${avatarSize}" rx="${avatarRadius}" fill="${badgeFill}" fill-opacity="${badgeFillOpacity}" stroke="${badgeStroke}" stroke-opacity="${badgeStrokeOpacity}" stroke-width="1" />`;
+    markup += `<rect x="${avatarInset}" y="${avatarInset}" width="${avatarSize}" height="${avatarSize}" rx="${avatarRadius}" fill="${badgeFill}" fill-opacity="${badgeFillOpacity}" />${renderInsetRingRect(
+      avatarInset,
+      avatarInset,
+      avatarSize,
+      avatarSize,
+      avatarRadius,
+      `stroke="${badgeStroke}" stroke-opacity="${badgeStrokeOpacity}"`
+    )}`;
   }
 
   return markup;
@@ -2324,14 +2393,39 @@ function resolveBodyStartX(layout: TypingLayout, metrics: TypingMetrics): number
   return padX;
 }
 
+/** Resolve the horizontal X coordinate after the optional body-row icon (before any static prefix). */
+function measureLeadingIconEndX(
+  layout: TypingLayout,
+  metrics: TypingMetrics,
+  iconSlot: ResolvedTypingIconSlot | undefined
+): number {
+  const bodyStartX = resolveBodyStartX(layout, metrics);
+  if (!iconSlot) {
+    return bodyStartX;
+  }
+  const { bodyHeight, iconBoxSize, scale } = metrics;
+  if (layout === 'prompt') {
+    const avatarSize = Math.round(28 * scale);
+    const avatarInset = roundCoord((bodyHeight - avatarSize) / 2);
+    return roundCoord(avatarInset + avatarSize + Math.round(12 * scale));
+  }
+  if (layout === 'browser' || layout === 'none') {
+    const effectiveIconSize = layout === 'browser' ? Math.round(15 * scale) : iconBoxSize;
+    const renderedWidth = measureIconVisualWidth(iconSlot.data, effectiveIconSize);
+    return roundCoord(bodyStartX + renderedWidth + Math.round(10 * scale));
+  }
+  return bodyStartX;
+}
+
 /** Render the leading icon and static prefix in the body row and return `textStartX`. */
 function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout {
   const { baselineY, fontFamily, iconSlot, layout, metrics, prefixText, styleTokens } = options;
   const { bodyHeight, fontSize, headerHeight, iconBoxSize, scale } = metrics;
   let currentX = resolveBodyStartX(layout, metrics);
+  let hasRenderedIcon = false;
   let markup = '';
 
-  // Icons on `window` and `ide` live in the header/tab bar; on `prompt`, `browser`, and `none`, they live in the body row:
+  // Header-bar layouts place their icon in the top bar; single-bar layouts place it in the body row:
   if (layout === 'prompt' && iconSlot) {
     const avatarSize = Math.round(28 * scale);
     const avatarInset = roundCoord((bodyHeight - avatarSize) / 2);
@@ -2349,6 +2443,7 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
       opacity: styleTokens.iconPaint.opacity,
     }).markup;
     currentX = roundCoord(avatarInset + avatarSize + Math.round(12 * scale));
+    hasRenderedIcon = true;
   } else if ((layout === 'browser' || layout === 'none') && iconSlot) {
     const effectiveIconSize = layout === 'browser' ? Math.round(15 * scale) : iconBoxSize;
     const iconY = roundCoord(headerHeight + (bodyHeight - effectiveIconSize) / 2);
@@ -2363,10 +2458,12 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
     });
     markup += renderedIcon.markup;
     currentX = roundCoord(currentX + renderedIcon.renderedWidth + Math.round(10 * scale));
+    hasRenderedIcon = true;
   }
 
   if (prefixText.length > 0) {
-    const prefixWidth = measureTextWidth(prefixText, fontSize, true, false, fontFamily);
+    const isDefaultPrompt = prefixText === DEFAULT_WINDOW_PROMPT;
+    const prefixWidth = measureChromeTextWidth(prefixText, fontSize, fontFamily, isDefaultPrompt);
     markup += renderTextPathMarkup(prefixText, {
       align: 'left',
       anchorX: currentX,
@@ -2375,14 +2472,18 @@ function renderLeadingPrompt(options: LeadingPromptOptions): LeadingPromptLayout
       font: fontFamily,
       fontSize,
       isBold: true,
+      isUncached: !isDefaultPrompt,
     });
     currentX = roundCoord(currentX + prefixWidth + Math.round(9 * scale));
   }
 
-  return { markup, textStartX: currentX };
+  return { hasRenderedIcon, markup, textStartX: currentX };
 }
 
-/** Render a 6-keyframe spline opacity `<animate>` element fading in over `[appearStartMs, appearEndMs]` and out over `[eraseStartMs, eraseEndMs]`. */
+/**
+ * Render a 6-keyframe spline opacity `<animate>` element
+ * fading in over `[appearStartMs, appearEndMs]` and out over `[eraseStartMs, eraseEndMs]`.
+ */
 function renderOpacityWindowAnimate(
   appearStartMs: number,
   appearEndMs: number,
@@ -2428,14 +2529,30 @@ function assembleTypingSvgDocument(
           width,
         });
 
-  let defsMarkup = `${styleTokens.gradDefs}${sheen.clipDef}`;
+  let body = `${surfaceMarkup}${hintMarkup}${leading.markup}${foregroundBodyMarkup}${sheen.overlay}`;
+  let activeIconDefs = '';
+  if (context.sharedIconUse) {
+    const firstUseIndex = body.indexOf(context.sharedIconUse);
+    if (firstUseIndex !== -1) {
+      const hasSecondUse = body.includes(
+        context.sharedIconUse,
+        firstUseIndex + context.sharedIconUse.length
+      );
+      if (hasSecondUse) {
+        activeIconDefs = context.iconDefs;
+      } else if (context.sharedIconBody !== undefined) {
+        body = body.replace(context.sharedIconUse, context.sharedIconBody);
+      }
+    }
+  }
+  let defsMarkup = `${styleTokens.gradDefs}${activeIconDefs}${sheen.clipDef}`;
   for (const defMarkup of glyphDefsById.values()) {
     defsMarkup += defMarkup;
   }
 
   return renderSvgDocument({
     ariaLabel: ariaText,
-    body: `${surfaceMarkup}${hintMarkup}${leading.markup}${foregroundBodyMarkup}${sheen.overlay}`,
+    body,
     defs: defsMarkup,
     height,
     restTime,
@@ -2505,24 +2622,27 @@ function renderAnimatedTypingSvg(context: TypingBodyRenderContext): string {
     selectionFlashes: [],
   };
 
-  for (const [i, line] of preparedLines.entries()) {
-    const lengthRatio =
-      preparedLines.length === 1
-        ? 1
-        : Math.min(1.35, Math.max(0.55, line.glyphs.length / meanLineChars));
-    const lineDurationMs = Math.round(baseDurationMs * lengthRatio);
-    const nextLine = preparedLines[(i + 1) % preparedLines.length] ?? line;
-    const nextLineStartCursorX = roundCoord(nextLine.lineStartX + cursorGeometry.offsetX);
-    scheduleLineTimeline({
-      cursorGeometry,
-      eraseMode,
-      line,
-      lineDurationMs,
-      lineIndex: i,
-      nextLineStartCursorX,
-      pauseMs,
-      state: timelineState,
-    });
+  for (let i = 0; i < preparedLines.length; i += 1) {
+    const line = preparedLines[i];
+    if (line) {
+      const lengthRatio =
+        preparedLines.length === 1
+          ? 1
+          : Math.min(1.35, Math.max(0.55, line.glyphs.length / meanLineChars));
+      const lineDurationMs = Math.round(baseDurationMs * lengthRatio);
+      const nextLine = preparedLines[(i + 1) % preparedLines.length] ?? line;
+      const nextLineStartCursorX = roundCoord(nextLine.lineStartX + cursorGeometry.offsetX);
+      scheduleLineTimeline({
+        cursorGeometry,
+        eraseMode,
+        line,
+        lineDurationMs,
+        lineIndex: i,
+        nextLineStartCursorX,
+        pauseMs,
+        state: timelineState,
+      });
+    }
   }
 
   const totalCycleMs = Math.max(100, timelineState.currentTimeMs);
@@ -2617,29 +2737,32 @@ function buildPreparedTypingLines(options: BuildPreparedLinesOptions): PreparedT
   const preparedLines: PreparedTypingLine[] = [];
   const totalLines = rawLayouts.length;
 
-  for (const [i, rawLayout] of rawLayouts.entries()) {
-    const fitted = clampLineGlyphsToWidth(
-      rawLayout,
-      maxTextWidth,
-      fontSize,
-      isBoldText,
-      fontFamily
-    );
-    const lineStartX =
-      align === 'center'
-        ? roundCoord(Math.max(textStartX, centerAnchorX - fitted.totalAdvance / 2))
-        : textStartX;
-    const isTypoLine = hasTypo && isLineEligibleForTypo(i, totalLines, rawLayouts);
-    const resolvedTypo = isTypoLine
-      ? resolveLineTypo(fitted.glyphs, i, fontSize, isBoldText, fontFamily)
-      : undefined;
-    preparedLines.push({
-      glyphs: fitted.glyphs,
-      lineStartX,
-      totalAdvance: fitted.totalAdvance,
-      typoGlyph: resolvedTypo?.typoGlyph,
-      typoIndex: resolvedTypo ? resolvedTypo.typoIndex : -1,
-    });
+  for (let i = 0; i < totalLines; i += 1) {
+    const rawLayout = rawLayouts[i];
+    if (rawLayout) {
+      const fitted = clampLineGlyphsToWidth(
+        rawLayout,
+        maxTextWidth,
+        fontSize,
+        isBoldText,
+        fontFamily
+      );
+      const lineStartX =
+        align === 'center'
+          ? roundCoord(Math.max(textStartX, centerAnchorX - fitted.totalAdvance / 2))
+          : textStartX;
+      const isTypoLine = hasTypo && isLineEligibleForTypo(i, totalLines, rawLayouts);
+      const resolvedTypo = isTypoLine
+        ? resolveLineTypo(fitted.glyphs, i, fontSize, isBoldText, fontFamily)
+        : undefined;
+      preparedLines.push({
+        glyphs: fitted.glyphs,
+        lineStartX,
+        totalAdvance: fitted.totalAdvance,
+        typoGlyph: resolvedTypo?.typoGlyph,
+        typoIndex: resolvedTypo ? resolvedTypo.typoIndex : -1,
+      });
+    }
   }
   return preparedLines;
 }
@@ -2654,7 +2777,14 @@ function computeMinHeaderWidth(options: MinHeaderWidthOptions): number {
   const { headerHeight, scale, titleFontSize } = metrics;
   const { rightEdgeX } = computeTrafficLightLayout(headerHeight, scale);
   const titleWidth =
-    titleText.length > 0 ? measureTextWidth(titleText, titleFontSize, true, false, 'mono') : 0;
+    titleText.length > 0
+      ? measureChromeTextWidth(
+          titleText,
+          titleFontSize,
+          'mono',
+          layout === 'ide' && titleText === DEFAULT_IDE_TITLE
+        )
+      : 0;
 
   if (layout === 'window') {
     const headerIconSize = Math.round(14 * scale);
@@ -2675,7 +2805,8 @@ function isHintBadgeFittingWidth(
   geometry: HintBadgeGeometry,
   layout: TypingLayout,
   metrics: TypingMetrics,
-  width: number
+  width: number,
+  bodyMinStartX: number
 ): boolean {
   const badgeX = width - geometry.badgeRightInset - geometry.badgeWidth;
   const { fontSize, headerHeight, scale } = metrics;
@@ -2688,7 +2819,22 @@ function isHintBadgeFittingWidth(
     const minTabEndX = rightEdgeX + Math.round(12 * scale) + Math.round(84 * scale);
     return badgeX >= minTabEndX + Math.round(8 * scale);
   }
-  return badgeX >= resolveBodyStartX(layout, metrics) + fontSize * 2;
+  return badgeX >= bodyMinStartX + fontSize * 2;
+}
+
+/**
+ * Resolve the default horizontal text alignment for `layout` given whether a prefix or leading icon is present.
+ * @param layout      Container frame layout.
+ * @param hasPrefix   Whether a prompt prefix is rendered.
+ * @param hasIcon     Whether a leading icon is rendered.
+ * @returns Default horizontal text alignment (`'center'` or `DEFAULT_TYPING_ALIGN`).
+ */
+function resolveDefaultTypingAlign(
+  layout: TypingLayout,
+  hasPrefix: boolean,
+  hasIcon: boolean
+): TypingAlign {
+  return layout === 'none' && !hasPrefix && !hasIcon ? 'center' : DEFAULT_TYPING_ALIGN;
 }
 
 /** Resolve the effective horizontal text alignment of a typing card. */
@@ -2702,27 +2848,53 @@ function resolveTypingAlignment(
   }
   const trimmedPrefix = options.prefix?.trim();
   const hasPrefix = Boolean(trimmedPrefix && trimmedPrefix.toLowerCase() !== 'none');
-  const defaultAlign: TypingAlign =
-    layout === 'none' && !hasPrefix && !hasIcon ? 'center' : DEFAULT_TYPING_ALIGN;
-  return options.align ?? defaultAlign;
+  return options.align ?? resolveDefaultTypingAlign(layout, hasPrefix, hasIcon);
 }
 
-/** Clamp the leading prompt prefix when an explicit narrow `width` leaves less than two ems for typed text. */
+/** Clamp the leading prompt prefix or body-row icon when an explicit narrow `width` leaves insufficient room for text. */
 function fitLeadingPromptToWidth(
   leading: LeadingPromptLayout,
   promptOptions: LeadingPromptOptions,
   availableRightX: number
 ): LeadingPromptLayout {
-  const { fontFamily, metrics, prefixText } = promptOptions;
+  const { fontFamily, iconSlot, layout, metrics, prefixText } = promptOptions;
   const { fontSize, scale } = metrics;
-  if (prefixText.length === 0 || leading.textStartX + fontSize * 2 <= availableRightX) {
+  if (leading.textStartX + fontSize * 2 <= availableRightX) {
     return leading;
   }
-  const iconOnlyLeading = renderLeadingPrompt({ ...promptOptions, prefixText: '' });
-  const maxPrefixWidth =
-    availableRightX - fontSize * 2 - iconOnlyLeading.textStartX - Math.round(9 * scale);
-  const fittedPrefixText = clampTextToWidth(prefixText, maxPrefixWidth, fontSize, true, fontFamily);
-  return renderLeadingPrompt({ ...promptOptions, prefixText: fittedPrefixText });
+  if (prefixText.length > 0) {
+    const iconOnlyStartX = measureLeadingIconEndX(layout, metrics, iconSlot);
+    if (!iconSlot || iconOnlyStartX + fontSize <= availableRightX) {
+      const maxPrefixWidth =
+        availableRightX - fontSize * 2 - iconOnlyStartX - Math.round(9 * scale);
+      const fittedPrefixText = clampTextToWidth(
+        prefixText,
+        maxPrefixWidth,
+        fontSize,
+        true,
+        fontFamily
+      );
+      return renderLeadingPrompt({ ...promptOptions, prefixText: fittedPrefixText });
+    }
+    const noIconStartX = resolveBodyStartX(layout, metrics);
+    const maxPrefixWidth = availableRightX - fontSize * 2 - noIconStartX - Math.round(9 * scale);
+    const fittedPrefixText = clampTextToWidth(
+      prefixText,
+      maxPrefixWidth,
+      fontSize,
+      true,
+      fontFamily
+    );
+    return renderLeadingPrompt({
+      ...promptOptions,
+      iconSlot: undefined,
+      prefixText: fittedPrefixText,
+    });
+  }
+  if (iconSlot && leading.textStartX + fontSize > availableRightX) {
+    return renderLeadingPrompt({ ...promptOptions, iconSlot: undefined });
+  }
+  return leading;
 }
 
 /** Fill omitted optional fields on `TypingRenderOptions` with their canonical preset defaults. */
@@ -2739,8 +2911,35 @@ function resolveTypingDefaults(options: TypingRenderOptions): ResolvedTypingDefa
   };
 }
 
+/** Deduplicate identical heavy icon geometry shared between `iconSlot` and `resolvedHint.iconSlot`. */
+function deduplicateSharedTypingIcon(
+  layout: TypingLayout,
+  iconSlot: ResolvedTypingIconSlot | undefined,
+  resolvedHint: ResolvedTypingHint | undefined
+): SharedTypingIconDefs {
+  if (
+    layout !== 'none' &&
+    iconSlot !== undefined &&
+    resolvedHint?.iconSlot !== undefined &&
+    iconSlot.data === resolvedHint.iconSlot.data &&
+    isSharedIconDefNeeded(iconSlot.data, iconSlot.isFallback)
+  ) {
+    const bodyId = buildIconBodyId(iconSlot.data, TYPING_ICON_ID_PREFIX);
+    const sharedIconUse = `<use href="#${bodyId}" />`;
+    iconSlot.innerSvgOverride = sharedIconUse;
+    resolvedHint.iconSlot.innerSvgOverride = sharedIconUse;
+    return {
+      iconDefs: `<g id="${bodyId}">${iconSlot.data.innerSvg}</g>`,
+      sharedIconBody: iconSlot.data.innerSvg,
+      sharedIconUse,
+    };
+  }
+  return { iconDefs: '', sharedIconBody: undefined, sharedIconUse: undefined };
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
+export { resolveDefaultTypingAlign };
 export { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared/encoding';
 
 /**
@@ -2768,6 +2967,12 @@ export function renderTyping(options: TypingRenderOptions): string {
   const prefixText = resolveTypingPrefix(options.prefix, layout, align);
   const resolvedHint = resolveTypingHint(options.hint);
   const titleText = resolveTypingTitle(options.title, layout);
+  const { iconDefs, sharedIconBody, sharedIconUse } = deduplicateSharedTypingIcon(
+    layout,
+    iconSlot,
+    resolvedHint
+  );
+
   const { maxRawAdvance, rawLayouts } = measureRawTypingLines(
     lines,
     fontSize,
@@ -2808,8 +3013,13 @@ export function renderTyping(options: TypingRenderOptions): string {
   );
   const width = clampInt(options.width, TYPING_WIDTH_RANGE, idealWidth);
 
+  const bodyMinStartX =
+    prefixText.length === 0
+      ? leading.textStartX
+      : measureLeadingIconEndX(layout, metrics, iconSlot);
   const hintGeometry =
-    rawHintGeometry && isHintBadgeFittingWidth(rawHintGeometry, layout, metrics, width)
+    rawHintGeometry &&
+    isHintBadgeFittingWidth(rawHintGeometry, layout, metrics, width, bodyMinStartX)
       ? rawHintGeometry
       : undefined;
   const reservedBodyWidth = hintGeometry?.reservedBodyWidth ?? 0;
@@ -2843,10 +3053,12 @@ export function renderTyping(options: TypingRenderOptions): string {
     textStartX: leading.textStartX,
   });
 
+  const surfaceIconSlot =
+    layout === 'window' || layout === 'ide' || leading.hasRenderedIcon ? iconSlot : undefined;
   const surfaceMarkup = renderTypingContainerSurface({
     color,
     height,
-    iconSlot,
+    iconSlot: surfaceIconSlot,
     layout,
     metrics,
     palette,
@@ -2865,11 +3077,14 @@ export function renderTyping(options: TypingRenderOptions): string {
     eraseMode,
     height,
     hintMarkup,
+    iconDefs,
     layout,
     leading,
     metrics,
     options,
     preparedLines,
+    sharedIconBody,
+    sharedIconUse,
     styleTokens,
     surfaceMarkup,
     width,

@@ -1,18 +1,18 @@
 /**
- * GitHub service preset – Live upstream metrics and redirect transformations.
+ * GitHub Service Preset
  *
- * Repository metadata, latest releases, and weekly commit participation use conditional REST
- * requests (`ETag` / `304 Not Modified`), while open issue and pull request counts coalesce across
- * both metrics and up to `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories into a single 1-point
- * GraphQL v4 query when `GITHUB_TOKEN` is configured (short-circuiting at 0 cost when
- * `open_issues_count === 0`, and falling back to REST search without a token in local development).
+ * Live upstream metrics and redirect transformations for GitHub.
+ *
+ * Repository metadata, latest releases, and weekly commit participation use conditional REST requests (`ETag` / `304 Not Modified`),
+ * while open issue and pull request counts coalesce across both metrics and up to `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories
+ * into a single 1-point GraphQL v4 query when `GITHUB_TOKEN` is configured (short-circuiting at 0 cost when `open_issues_count === 0`,
+ * and falling back to REST search without a token in local development).
  */
 
 import {
   CACHE_TTL,
-  OWNER_REPO_ROUTE,
   UPSTREAM_TIMEOUT,
-  asJsonObject,
+  appendPageSuffix,
   cancelBody,
   createEndpoint,
   createMetric,
@@ -20,7 +20,7 @@ import {
   isJsonObject,
   pickFields,
   readBoundedResponseText,
-  withPageSuffix,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   FORKS,
@@ -28,7 +28,6 @@ import {
   LAST_COMMIT,
   LICENSE,
   PULL_REQUESTS,
-  RATIO_SPECIALS,
   SERIES_DELTA_SPECIALS,
   STARS,
   buildRatioSpecials,
@@ -39,6 +38,7 @@ import {
   formatCompactNumber,
   formatLicense,
   readFiniteNumber,
+  readText,
   sumSeries,
 } from '@/services/metrics';
 import { MIN_SERIES_POINTS } from '@/svg/renderer';
@@ -46,6 +46,7 @@ import type {
   CachedPayloadReader,
   Env,
   MetricResult,
+  PreparsedUpstreamResponse,
   ServiceRouteParams,
   UpstreamRequestInit,
 } from '@/types';
@@ -100,8 +101,8 @@ interface GraphQlBatchItem {
   owner: string;
   /** Rejects the item's promise on transport/timeout errors. */
   reject: (reason?: unknown) => void;
-  /** Resolves the item's promise with its demultiplexed `Response`. */
-  resolve: (response: Response) => void;
+  /** Resolves the item's promise with its `Response` or pre-parsed batch result. */
+  resolve: (response: Response | PreparsedUpstreamResponse) => void;
   /** Repository name. */
   target: string;
 }
@@ -112,7 +113,7 @@ interface GraphQlBatchItem {
 const ACTIVITY_WEEKS = 8;
 
 /** Fallback zero-filled weekly activity series when fewer than `MIN_SERIES_POINTS` weeks exist. */
-const ZERO_ACTIVITY_WEEKS: readonly number[] = Array.from({ length: ACTIVITY_WEEKS }, () => 0);
+const ZERO_ACTIVITY_WEEKS: readonly number[] = [0, 0, 0, 0, 0, 0, 0, 0];
 
 /** GitHub GraphQL v4 endpoint URL. */
 const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
@@ -133,6 +134,9 @@ const GITHUB_COUNTS_QUERY = `query($owner:String!,$name:String!){repository(owne
 /** Request headers added to authenticated GraphQL `POST` requests. */
 const GRAPHQL_HEADERS: Readonly<Record<string, string>> = { 'Content-Type': 'application/json' };
 
+/** Shared frozen empty headers map when `GITHUB_TOKEN` is absent. */
+const EMPTY_HEADERS: Readonly<Record<string, string>> = {};
+
 /** Upstream rate-limit headers preserved across demultiplexed GraphQL batch responses. */
 const FORWARDED_RATE_HEADERS: readonly string[] = [
   'ratelimit-limit',
@@ -144,13 +148,14 @@ const FORWARDED_RATE_HEADERS: readonly string[] = [
   'x-ratelimit-reset',
 ];
 
-/** Pre-serialized synthetic GraphQL payload returned at 0 API cost when `open_issues_count` is already known to be `0`. */
-const ZERO_COUNTS_BODY = JSON.stringify({
-  data: { repository: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } } },
-});
+/** Pre-parsed synthetic GraphQL payload returned at 0 API cost when `open_issues_count` is already known to be `0`. */
+const ZERO_COUNTS_RESPONSE: PreparsedUpstreamResponse = {
+  data: { data: { repository: { issues: { totalCount: 0 }, pullRequests: { totalCount: 0 } } } },
+  status: 200,
+};
 
 /** Memoized aliased GraphQL query documents keyed by batch size (`2`–`MAX_GRAPHQL_BATCH_SIZE`). */
-const BATCHED_QUERY_CACHE = new Map<number, string>();
+const BATCHED_QUERY_CACHE: Record<number, string> = Object.create(null) as Record<number, string>;
 
 /** Open microtask batches keyed by `Authorization` header value. */
 const PENDING_GRAPHQL_BATCHES = new Map<string, GraphQlBatchItem[]>();
@@ -171,7 +176,6 @@ const REPO_ENDPOINT = createEndpoint({
 /** GitHub latest release endpoint. */
 const RELEASE_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/repos/{owner}/{target}/releases/latest',
-  extractKeys: ['tag_name'],
   page: 'https://github.com/{owner}/{target}/releases',
   project: pickFields<GitHubReleasePayload>(['tag_name']),
 });
@@ -179,22 +183,29 @@ const RELEASE_ENDPOINT = createEndpoint({
 /** GitHub commit participation endpoint. */
 const PARTICIPATION_ENDPOINT = createEndpoint({
   api: 'https://api.github.com/repos/{owner}/{target}/stats/participation',
-  extractKeys: ['all'],
   page: 'https://github.com/{owner}/{target}/graphs/commit-activity',
   project: pickFields<GitHubParticipationPayload>(['all']),
   ttl: CACHE_TTL.slow,
 });
 
+// ------------------------------------ REGEX PATTERNS -----------------------------------
+
+/** Matches a valid GitHub user or organization login (`1`–`39` alphanumeric characters or single internal hyphens). */
+const GITHUB_OWNER_RX = /^[A-Za-z\d](?:[A-Za-z\d]|-(?=[A-Za-z\d])){0,38}$/;
+
+/** Matches a valid GitHub repository name (`1`–`100` word characters, dots, or hyphens, excluding `.` and `..`). */
+const GITHUB_REPO_RX = /^(?!\.\.?$)[\w.-]{1,100}$/;
+
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Build the `Authorization` header when a `GITHUB_TOKEN` secret is configured. */
 function buildGitHubHeaders(env: Env): Readonly<Record<string, string>> {
-  return env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {};
+  return env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : EMPTY_HEADERS;
 }
 
 /** Build (once per batch size `2`–`MAX_GRAPHQL_BATCH_SIZE`) a parameterized aliased GraphQL counts query. */
 function getBatchedCountsQuery(count: number): string {
-  let cached = BATCHED_QUERY_CACHE.get(count);
+  let cached = BATCHED_QUERY_CACHE[count];
   if (cached !== undefined) {
     return cached;
   }
@@ -205,7 +216,7 @@ function getBatchedCountsQuery(count: number): string {
     selections.push(`r${i}:repository(owner:$o${i},name:$n${i})${REPOSITORY_COUNTS_SELECTION}`);
   }
   cached = `query(${declarations.join(',')}){${selections.join('')}}`;
-  BATCHED_QUERY_CACHE.set(count, cached);
+  BATCHED_QUERY_CACHE[count] = cached;
   return cached;
 }
 
@@ -236,7 +247,7 @@ function buildAliasEnvelope(parsed: unknown, alias: string): Record<string, unkn
       }
     }
   }
-  const dataNode = asJsonObject(parsed.data);
+  const dataNode = readJsonObject(parsed.data);
   if (dataNode && Object.hasOwn(dataNode, alias)) {
     return itemErrors.length > 0
       ? { data: { repository: dataNode[alias] }, errors: itemErrors }
@@ -245,6 +256,24 @@ function buildAliasEnvelope(parsed: unknown, alias: string): Record<string, unkn
   return {
     errors: itemErrors.length > 0 ? itemErrors : [{ message: 'Missing GraphQL alias result' }],
   };
+}
+
+/** Resolve every queued item in `batch` with the same status and forwarded rate-limit headers. */
+function resolveBatchWithStatus(
+  batch: readonly GraphQlBatchItem[],
+  headers: Readonly<Record<string, string>>,
+  status: number
+): void {
+  for (const item of batch) {
+    item.resolve({ headers, status });
+  }
+}
+
+/** Reject every queued item in `batch` with `error`. */
+function rejectBatch(batch: readonly GraphQlBatchItem[], error: unknown): void {
+  for (const item of batch) {
+    item.reject(error);
+  }
 }
 
 /** Execute a multi-repository GraphQL batch (`2`–`MAX_GRAPHQL_BATCH_SIZE` items) and demultiplex each alias response. */
@@ -266,60 +295,46 @@ async function executeMultiRepoBatch(
       body: JSON.stringify({ query: getBatchedCountsQuery(batch.length), variables }),
       headers,
       method: 'POST',
+      redirect: 'manual',
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT),
     });
   } catch (error) {
-    for (const item of batch) {
-      item.reject(error);
-    }
+    rejectBatch(batch, error);
     return;
   }
   const forwardedHeaders = copyRateLimitHeaders(response);
-  if (response.url && !response.url.startsWith('https:')) {
+  const isUnsafeOrRedirect =
+    (response.url && !response.url.startsWith('https:')) ||
+    (response.status >= 300 && response.status < 400);
+  if (isUnsafeOrRedirect || !response.ok) {
     cancelBody(response.body);
-    for (const item of batch) {
-      item.resolve(new Response('', { headers: forwardedHeaders, status: 502 }));
-    }
-    return;
-  }
-  if (!response.ok) {
-    cancelBody(response.body);
-    for (const item of batch) {
-      item.resolve(new Response('', { headers: forwardedHeaders, status: response.status }));
-    }
+    resolveBatchWithStatus(batch, forwardedHeaders, isUnsafeOrRedirect ? 502 : response.status);
     return;
   }
   let parsed: unknown = undefined;
   try {
     const bodyText = await readBoundedResponseText(response);
     if (bodyText === undefined) {
-      for (const item of batch) {
-        item.resolve(new Response('', { headers: forwardedHeaders, status: 413 }));
-      }
+      resolveBatchWithStatus(batch, forwardedHeaders, 413);
       return;
     }
     parsed = JSON.parse(bodyText) as unknown;
   } catch (error) {
-    const isAbortOrTimeout =
-      error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
-    for (const item of batch) {
-      if (isAbortOrTimeout) {
-        item.reject(error);
-      } else {
-        item.resolve(new Response('invalid json', { headers: forwardedHeaders, status: 200 }));
-      }
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      rejectBatch(batch, error);
+    } else {
+      resolveBatchWithStatus(batch, forwardedHeaders, 502);
     }
     return;
   }
   for (let i = 0; i < batch.length; i += 1) {
     const item = batch[i];
     if (item) {
-      item.resolve(
-        Response.json(buildAliasEnvelope(parsed, `r${i}`), {
-          headers: forwardedHeaders,
-          status: 200,
-        })
-      );
+      item.resolve({
+        data: buildAliasEnvelope(parsed, `r${i}`),
+        headers: forwardedHeaders,
+        status: 200,
+      });
     }
   }
 }
@@ -350,6 +365,7 @@ function flushGraphQlBatch(
       }),
       headers,
       method: 'POST',
+      redirect: 'manual',
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT),
     }).then(single.resolve, single.reject);
     return;
@@ -361,9 +377,9 @@ function flushGraphQlBatch(
 function enqueueGitHubCountsQuery(
   params: ServiceRouteParams,
   headers: Readonly<Record<string, string>>
-): Promise<Response> {
+): Promise<Response | PreparsedUpstreamResponse> {
   const authKey = headers.Authorization ?? '';
-  return new Promise<Response>((resolve, reject) => {
+  return new Promise<Response | PreparsedUpstreamResponse>((resolve, reject) => {
     let batch = PENDING_GRAPHQL_BATCHES.get(authKey);
     if (!batch) {
       batch = [];
@@ -390,9 +406,9 @@ function hasZeroOpenIssuesAndPrs(
 }
 
 /**
- * Build a shared GraphQL request for open issue and pull request counts (micro-batched across up to
- * `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories when `GITHUB_TOKEN` is set, short-circuited at 0
- * cost when `open_issues_count === 0`, and falling back to REST `/search/issues` without a token).
+ * Build a shared GraphQL request for open issue and pull request counts
+ * (micro-batched across up to `MAX_GRAPHQL_BATCH_SIZE` concurrent repositories when `GITHUB_TOKEN` is set,
+ * short-circuited at 0 cost when `open_issues_count === 0`, and falling back to REST `/search/issues` without a token).
  */
 function buildGitHubCountsRequest(
   params: ServiceRouteParams,
@@ -404,8 +420,7 @@ function buildGitHubCountsRequest(
   if (hasZeroOpenIssuesAndPrs(params, peekCached)) {
     return {
       cacheKey: sharedCacheKey,
-      send: () =>
-        Promise.resolve(new Response(ZERO_COUNTS_BODY, { headers: GRAPHQL_HEADERS, status: 200 })),
+      send: () => Promise.resolve(ZERO_COUNTS_RESPONSE),
       url: GITHUB_GRAPHQL_URL,
     };
   }
@@ -427,12 +442,12 @@ function projectGitHubCounts(data: unknown): GitHubCountsProjection | undefined 
     return undefined;
   }
   if (Object.hasOwn(data, 'data')) {
-    const repo = asJsonObject(asJsonObject(data.data)?.repository);
+    const repo = readJsonObject(readJsonObject(data.data)?.repository);
     if (!repo) {
       return undefined;
     }
-    const issuesNode = asJsonObject(repo.issues);
-    const prsNode = asJsonObject(repo.pullRequests);
+    const issuesNode = readJsonObject(repo.issues);
+    const prsNode = readJsonObject(repo.pullRequests);
     return {
       issues: readFiniteNumber(issuesNode?.totalCount),
       prs: readFiniteNumber(prsNode?.totalCount),
@@ -444,11 +459,11 @@ function projectGitHubCounts(data: unknown): GitHubCountsProjection | undefined 
 
 /** Transform a GitHub repository into its SPDX license (`none` without license, `custom` when unrecognized). */
 function transformGitHubLicense(payload: Partial<GitHubRepoPayload>): Partial<MetricResult> {
-  const { license } = payload;
+  const license = readJsonObject(payload.license);
   if (!license) {
     return { value: 'none' };
   }
-  const spdxId = license.spdx_id;
+  const spdxId = readText(license.spdx_id);
   return { value: spdxId && spdxId !== 'NOASSERTION' ? formatLicense(spdxId) : 'custom' };
 }
 
@@ -533,13 +548,13 @@ export const GITHUB_SERVICE = defineService({
       transformGitHubActivity
     ),
     commit: createRelativeDateMetric(
-      withPageSuffix(REPO_ENDPOINT, '/commits'),
+      appendPageSuffix(REPO_ENDPOINT, '/commits'),
       LAST_COMMIT,
       (repo) => repo.pushed_at
     ),
     forks: createCountMetric(
-      withPageSuffix(REPO_ENDPOINT, '/network/members'),
-      { ...FORKS, autoSpecials: RATIO_SPECIALS },
+      appendPageSuffix(REPO_ENDPOINT, '/network/members'),
+      FORKS,
       (repo) => repo.forks_count,
       '',
       (repo) => buildRatioSpecials(repo.forks_count, repo.stargazers_count)
@@ -550,10 +565,13 @@ export const GITHUB_SERVICE = defineService({
     prs: createCountMetric(PRS_ENDPOINT, PULL_REQUESTS, (counts) => counts.prs ?? counts.total),
     release: createReleaseMetric(RELEASE_ENDPOINT, (release) => release.tag_name),
     stars: createCountMetric(
-      withPageSuffix(REPO_ENDPOINT, '/stargazers'),
+      appendPageSuffix(REPO_ENDPOINT, '/stargazers'),
       STARS,
       (repo) => repo.stargazers_count
     ),
   },
-  route: OWNER_REPO_ROUTE,
+  route: {
+    owner: { isRequired: true, pattern: GITHUB_OWNER_RX, placeholder: ':owner' },
+    target: { pattern: GITHUB_REPO_RX, placeholder: ':repo' },
+  },
 });

@@ -1,10 +1,13 @@
 /**
- * Text measurement & vector path rendering tests – Geist Sans OpenType glyph bounds, SVG `<path>` generation (`src/svg/measure.ts`), and the bounded LRU cache behind the outline cache.
+ * Text Measurement & Vector Path Rendering Tests
+ *
+ * Geist Sans OpenType glyph bounds, SVG `<path>` generation (`src/svg/measure.ts`), and the bounded LRU cache behind the outline cache.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
   computeCenteredBaselineY,
+  inspectOutlineCache,
   layoutTextGlyphs,
   measureTextAdvance,
   measureTextWidth,
@@ -17,6 +20,7 @@ import {
   createLruCache,
   deleteLruEntry,
   readLruCache,
+  sliceAtCodePoint,
   writeLruCache,
 } from '@/svg/shared';
 
@@ -277,6 +281,26 @@ describe('measureTextWidth & renderTextPathMarkup', () => {
       isBold: false,
     });
     expect(colonMarkupA).not.toBe(colonMarkupB);
+  });
+
+  it('computes true suppressed and fallback advances in measureTextAdvance when glyphs are missing from Geist Sans (regression: raw OpenType .notdef advance inflated emoji/symbol width)', () => {
+    expect(measureTextAdvance('😀', 14)).toBe(0);
+    const monoCmdAdvance = resolveCharGlyph('⌘', 14, true, 'mono').advance;
+    expect(monoCmdAdvance).toBeGreaterThan(0);
+    expect(Math.round(measureTextAdvance('⌘', 14, true) * 100) / 100).toBe(monoCmdAdvance);
+
+    // `measureTextWidthUncached` honors explicit `mono` font selection and matches cached `measureTextWidth`:
+    expect(measureTextWidthUncached('iMW', 14, false, false, 'mono')).toBe(
+      measureTextWidth('iMW', 14, false, false, 'mono')
+    );
+    expect(measureTextWidthUncached('iMW', 14, false, false, 'mono')).not.toBe(
+      measureTextWidthUncached('iMW', 14, false, false, 'sans')
+    );
+
+    // `sliceAtCodePoint` preserves short strings ending in a lone surrogate and drops split trailing high surrogates:
+    expect(sliceAtCodePoint('a\uD83D', 5)).toBe('a\uD83D');
+    expect(sliceAtCodePoint('a\uD83D\uDE80b', 2)).toBe('a');
+    expect(inspectOutlineCache().entries.size).toBeGreaterThan(0);
   });
 });
 

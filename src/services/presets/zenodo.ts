@@ -1,15 +1,17 @@
 /**
- * Zenodo service preset – Live upstream metrics and redirect transformations.
+ * Zenodo Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Zenodo.
  *
  * Statistics cover every version of the record; Concept record ids redirect to the latest version.
  */
 
 import {
   CACHE_TTL,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   RATIO_SPECIALS,
@@ -54,8 +56,8 @@ function projectZenodoRecord(data: unknown): ZenodoRecordProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const metadata = asJsonObject(data.metadata);
-  const stats = asJsonObject(data.stats);
+  const metadata = readJsonObject(data.metadata);
+  const stats = readJsonObject(data.stats);
   return {
     doi: readText(data.doi),
     downloads: readFiniteNumber(stats?.downloads),

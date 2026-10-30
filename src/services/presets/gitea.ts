@@ -1,26 +1,29 @@
 /**
- * Gitea & Forgejo service presets – Live upstream metrics and redirect transformations.
+ * Gitea & Codeberg Service Presets
  *
- * Codeberg runs Forgejo, a Gitea fork with an identical `/api/v1/repos` API, so both presets are
- * built by the same `createGiteaService` factory.
+ * Live upstream metrics and redirect transformations for Gitea and Codeberg.
+ *
+ * Codeberg runs Forgejo, a Gitea fork with an identical `/api/v1/repos` API, so both presets are built by the same `createGiteaService` factory.
  */
 
 import {
   OWNER_REPO_ROUTE,
+  appendPageSuffix,
   createEndpoint,
   defineService,
   pickFields,
-  withPageSuffix,
 } from '@/services/endpoint';
 import {
+  FORGE_ACTIVITY_ALIASES,
+  FORKS,
+  ISSUES,
+  LAST_ACTIVITY,
+  PULL_REQUESTS,
+  STARS,
+  buildRatioSpecials,
   createCountMetric,
   createRelativeDateMetric,
   createReleaseMetric,
-  FORKS,
-  ISSUES,
-  LAST_COMMIT,
-  PULL_REQUESTS,
-  STARS,
 } from '@/services/metrics';
 import type { ServiceDefinition } from '@/types';
 
@@ -76,7 +79,6 @@ function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefin
   });
   const releaseEndpoint = createEndpoint({
     api: `https://${host}/api/v1/repos/{owner}/{target}/releases/latest`,
-    extractKeys: ['tag_name'],
     page: `https://${host}/{owner}/{target}/releases`,
     project: pickFields<GiteaReleasePayload>(['tag_name']),
   });
@@ -86,32 +88,34 @@ function createGiteaService({ host, title }: GiteaInstanceOptions): ServiceDefin
         'Repository stars, forks, open issues, open pull requests, last activity, and latest release.',
       title,
     },
-    metricAliases: { commit: 'updated', 'last-commit': 'updated' },
+    metricAliases: FORGE_ACTIVITY_ALIASES,
     metrics: {
       forks: createCountMetric(
-        withPageSuffix(repoEndpoint, '/forks'),
+        appendPageSuffix(repoEndpoint, '/forks'),
         FORKS,
-        (repo) => repo.forks_count
+        (repo) => repo.forks_count,
+        '',
+        (repo) => buildRatioSpecials(repo.forks_count, repo.stars_count)
       ),
       issues: createCountMetric(
-        withPageSuffix(repoEndpoint, '/issues'),
+        appendPageSuffix(repoEndpoint, '/issues'),
         ISSUES,
         (repo) => repo.open_issues_count
       ),
       prs: createCountMetric(
-        withPageSuffix(repoEndpoint, '/pulls'),
+        appendPageSuffix(repoEndpoint, '/pulls'),
         PULL_REQUESTS,
         (repo) => repo.open_pr_counter
       ),
       release: createReleaseMetric(releaseEndpoint, (release) => release.tag_name),
       stars: createCountMetric(
-        withPageSuffix(repoEndpoint, '/stars'),
+        appendPageSuffix(repoEndpoint, '/stars'),
         STARS,
         (repo) => repo.stars_count
       ),
       updated: createRelativeDateMetric(
-        withPageSuffix(repoEndpoint, '/activity'),
-        { ...LAST_COMMIT, defaultLabel: 'Last Activity' },
+        appendPageSuffix(repoEndpoint, '/activity'),
+        LAST_ACTIVITY,
         (repo) => repo.updated_at
       ),
     },

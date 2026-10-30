@@ -1,5 +1,7 @@
 /**
- * Typing animation documentation catalog – Container layout, variant, cursor, and erase-mode showcase configs and parameter reference rows for `/docs/typing`.
+ * Typing Animation Documentation Catalog
+ *
+ * Container layout, variant, cursor, and erase-mode showcase configs and parameter reference rows for `/docs/typing`.
  */
 
 import { SITE_HOST, SITE_NAME } from '@/config/site';
@@ -38,158 +40,174 @@ import {
 } from '@/svg/typing';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Container layout showcase cards for `/docs/typing`. */
-export const TYPING_LAYOUT_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      {
-        alt: 'Terminal Window Typing',
-        path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
-      },
-    ],
-    subtitle: `Terminal window with traffic-light dots, centered title (?title=zsh), header pill (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt.`,
-    title: appendDefaultLabel(
-      'layout=window · Terminal Window',
-      DEFAULT_TYPING_LAYOUT === 'window'
-    ),
-  },
-  {
-    items: [
-      {
-        alt: 'Prompt Bar Typing',
-        path: '/typing/Search+components%E2%80%A6;Deploy+to+Cloudflare+Workers;Generate+live+SVG+badges?layout=prompt&color=cyan&icon=sparkles&hint=icon:command+K',
-      },
-    ],
-    subtitle:
-      'Command or AI prompt bar with an accent icon badge (?icon=sparkles) and keycap hint (?hint=icon:command+K).',
-    title: appendDefaultLabel(
-      'layout=prompt · Command / AI Prompt Bar',
-      DEFAULT_TYPING_LAYOUT === 'prompt'
-    ),
-  },
-  {
-    items: [
-      {
-        alt: 'IDE Code Editor Typing',
-        path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&title=${DEFAULT_IDE_TITLE}&icon=ts&hint=TS`,
-      },
-    ],
-    subtitle: `Code editor frame with an active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}) and line-number gutter.`,
-    title: appendDefaultLabel(
-      'layout=ide · Code Editor Tab & Line Gutter',
-      DEFAULT_TYPING_LAYOUT === 'ide'
-    ),
-  },
-  {
-    items: [
-      {
-        alt: 'Browser Omnibox Typing',
-        path: `/typing/${SITE_HOST}%2Ftyping;cloudflare.com%2Fworkers;github.com%2Fxulbux?layout=browser&color=sky&icon=search&hint=icon:corner-down-left`,
-      },
-    ],
-    subtitle:
-      'Browser toolbar with traffic-light dots, recessed URL bar (?icon=search), and keycap hint (?hint=icon:corner-down-left).',
-    title: appendDefaultLabel(
-      'layout=browser · Browser Search / URL Omnibox',
-      DEFAULT_TYPING_LAYOUT === 'browser'
-    ),
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: 'Frameless Typing',
-        path: '/typing/Passionate+Coder;UX+Design+Aficionado;Creative+Technologist?layout=none&color=indigo&size=xl',
-      },
-    ],
-    subtitle:
-      'Frameless transparent canvas (?size=xl), ready to drop in as a README hero headline.',
-    title: appendDefaultLabel(
-      'layout=none · Frameless Transparent Headline',
-      DEFAULT_TYPING_LAYOUT === 'none'
-    ),
-  },
-];
-
-/** Surface variant and cursor style showcase cards for `/docs/typing`. */
-export const TYPING_VARIANT_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      {
-        alt: 'Primary Brand Typing',
-        path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Crisp+Vector+Typography?variant=1&color=indigo&title=${SITE_NAME.replaceAll(' ', '+')}`,
-      },
-    ],
-    subtitle: 'Primary gradient window with white text and bar cursor.',
-    title: appendDefaultLabel('variant=1 · Primary Brand Gradient', DEFAULT_TYPING_VARIANT === '1'),
-  },
-  {
-    items: [
-      {
-        alt: 'Secondary Tinted Block Cursor',
-        path: '/typing/cargo+build+--release;cargo+test+--all-targets?variant=2&color=orange&title=cargo&icon=rust&cursor=block',
-      },
-    ],
-    subtitle:
-      'Tinted dark window with orange border, header icon (?icon=rust), and block cursor (?cursor=block).',
-    title: appendDefaultLabel(
-      'variant=2 · Secondary Tinted + Block Cursor',
-      DEFAULT_TYPING_VARIANT === '2'
-    ),
-  },
-  {
-    items: [
-      {
-        alt: 'Tertiary Neutral Underscore Cursor',
-        path: '/typing/git+commit+-m+"feat:+typing+svg";git+push+origin+main?variant=3&color=sky&title=git&cursor=underscore&anim=sheen',
-      },
-    ],
-    subtitle:
-      'Neutral dark surface with underscore cursor (?cursor=underscore) and diagonal sheen (?anim=sheen).',
-    title: appendDefaultLabel(
-      'variant=3 · Tertiary Neutral + Underscore Cursor',
-      DEFAULT_TYPING_VARIANT === '3'
-    ),
-  },
-];
-
-/** Erase modes and realistic human typo showcase cards for `/docs/typing`. */
-export const TYPING_BEHAVIOR_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      {
-        alt: 'Select Erase Mode',
-        path: '/typing/Select+All+%2B+Clear;Instant+Highlight+Erase;Clean+Transition?layout=prompt&color=violet&erase=select',
-      },
-    ],
-    subtitle: 'Highlights the whole line before clearing all at once.',
-    title: 'erase=select · Select & Clear',
-  },
-  {
-    items: [
-      {
-        alt: 'Fade Erase Mode',
-        path: '/typing/Smooth+Whole-Line+Fade;Proportional+Geist+Sans;Subtle+Editorial+Cadence?layout=prompt&color=rose&icon=wand-sparkles&erase=fade',
-      },
-    ],
-    subtitle: 'Smoothly fades out the finished line before typing the next.',
-    title: 'erase=fade · Whole-Line Dissolve',
-  },
-  {
-    items: [
-      {
-        alt: 'Realistic Human Typo',
-        path: '/typing/Building+resilient+systems;Crafting+delightful+interfaces?color=amber&title=human-typing.ts&typo=true',
-      },
-    ],
-    subtitle: 'Occasionally slips onto a neighboring key, pauses briefly, and backspaces.',
-    title: 'typo=true · Human Keystroke Slip',
-  },
-];
-
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Build the container layout showcase cards for `/docs/typing`.
+ * @returns Showcase card configurations.
+ */
+export function buildTypingLayoutCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Terminal Window Typing',
+          path: '/typing/Full-Stack+Developer;Design-Driven+Engineering;Edge+Systems+Architect?title=zsh&hint=UTF-8',
+        },
+      ],
+      subtitle: `Terminal window with traffic-light dots, centered title (?title=zsh), header pill (?hint=UTF-8), and ${DEFAULT_WINDOW_PROMPT} prompt.`,
+      title: appendDefaultLabel(
+        'layout=window · Terminal Window',
+        DEFAULT_TYPING_LAYOUT === 'window'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: 'Prompt Bar Typing',
+          path: '/typing/Search+components%E2%80%A6;Deploy+to+Cloudflare+Workers;Generate+live+SVG+badges?layout=prompt&color=cyan&icon=sparkles&hint=icon:command+K',
+        },
+      ],
+      subtitle:
+        'Command or AI prompt bar with an accent icon badge (?icon=sparkles) and keycap hint (?hint=icon:command+K).',
+      title: appendDefaultLabel(
+        'layout=prompt · Command / AI Prompt Bar',
+        DEFAULT_TYPING_LAYOUT === 'prompt'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: 'IDE Code Editor Typing',
+          path: `/typing/const/stack+%3D+["TypeScript",+"Rust",+"Cloudflare"];edgeLatency+%3D+"0ms+cold+start"?layout=ide&color=emerald&title=${DEFAULT_IDE_TITLE}&icon=ts&hint=TS`,
+        },
+      ],
+      subtitle: `Code editor frame with an active file tab (?icon=ts&title=${DEFAULT_IDE_TITLE}) and line-number gutter.`,
+      title: appendDefaultLabel(
+        'layout=ide · Code Editor Tab & Line Gutter',
+        DEFAULT_TYPING_LAYOUT === 'ide'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: 'Browser Omnibox Typing',
+          path: `/typing/${SITE_HOST}%2Ftyping;cloudflare.com%2Fworkers;github.com%2Fxulbux?layout=browser&color=sky&icon=search&hint=icon:corner-down-left`,
+        },
+      ],
+      subtitle:
+        'Browser toolbar with traffic-light dots, recessed URL bar (?icon=search), and keycap hint (?hint=icon:corner-down-left).',
+      title: appendDefaultLabel(
+        'layout=browser · Browser Search / URL Omnibox',
+        DEFAULT_TYPING_LAYOUT === 'browser'
+      ),
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: 'Frameless Typing',
+          path: '/typing/Passionate+Coder;UX+Design+Aficionado;Creative+Technologist?layout=none&color=indigo&size=xl',
+        },
+      ],
+      subtitle:
+        'Frameless transparent canvas (?size=xl), ready to drop in as a README hero headline.',
+      title: appendDefaultLabel(
+        'layout=none · Frameless Transparent Headline',
+        DEFAULT_TYPING_LAYOUT === 'none'
+      ),
+    },
+  ];
+}
+
+/**
+ * Build the surface variant and cursor style showcase cards for `/docs/typing`.
+ * @returns Showcase card configurations.
+ */
+export function buildTypingVariantCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Primary Brand Typing',
+          path: `/typing/Zero+Cold+Starts;Global+Edge+Caching;Crisp+Vector+Typography?variant=1&color=indigo&title=${SITE_NAME.replaceAll(' ', '+')}`,
+        },
+      ],
+      subtitle: 'Primary gradient window with white text and bar cursor.',
+      title: appendDefaultLabel(
+        'variant=1 · Primary Brand Gradient',
+        DEFAULT_TYPING_VARIANT === '1'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: 'Secondary Tinted Block Cursor',
+          path: '/typing/cargo+build+--release;cargo+test+--all-targets?variant=2&color=orange&title=cargo&icon=rust&cursor=block',
+        },
+      ],
+      subtitle:
+        'Tinted dark window with orange border, header icon (?icon=rust), and block cursor (?cursor=block).',
+      title: appendDefaultLabel(
+        'variant=2 · Secondary Tinted + Block Cursor',
+        DEFAULT_TYPING_VARIANT === '2'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: 'Tertiary Neutral Underscore Cursor',
+          path: '/typing/git+commit+-m+"feat:+typing+svg";git+push+origin+main?variant=3&color=sky&title=git&cursor=underscore&anim=sheen',
+        },
+      ],
+      subtitle:
+        'Neutral dark surface with underscore cursor (?cursor=underscore) and diagonal sheen (?anim=sheen).',
+      title: appendDefaultLabel(
+        'variant=3 · Tertiary Neutral + Underscore Cursor',
+        DEFAULT_TYPING_VARIANT === '3'
+      ),
+    },
+  ];
+}
+
+/**
+ * Build the erase modes and realistic human typo showcase cards for `/docs/typing`.
+ * @returns Showcase card configurations.
+ */
+export function buildTypingBehaviorCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Select Erase Mode',
+          path: '/typing/Select+All+%2B+Clear;Instant+Highlight+Erase;Clean+Transition?layout=prompt&color=violet&erase=select',
+        },
+      ],
+      subtitle: 'Highlights the whole line before clearing all at once.',
+      title: 'erase=select · Select & Clear',
+    },
+    {
+      items: [
+        {
+          alt: 'Fade Erase Mode',
+          path: '/typing/Smooth+Whole-Line+Fade;Proportional+Geist+Sans;Subtle+Editorial+Cadence?layout=prompt&color=rose&icon=wand-sparkles&erase=fade',
+        },
+      ],
+      subtitle: 'Smoothly fades out the finished line before typing the next.',
+      title: 'erase=fade · Whole-Line Dissolve',
+    },
+    {
+      items: [
+        {
+          alt: 'Realistic Human Typo',
+          path: '/typing/Building+resilient+systems;Crafting+delightful+interfaces?color=amber&title=human-typing.ts&typo=true',
+        },
+      ],
+      subtitle: 'Occasionally slips onto a neighboring key, pauses briefly, and backspaces.',
+      title: 'typo=true · Human Keystroke Slip',
+    },
+  ];
+}
 
 /**
  * Build the parameter reference rows for `/typing/*` and `/type/*` routes.

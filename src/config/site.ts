@@ -1,5 +1,7 @@
 /**
- * Site configuration – Public host, origin, repository and author metadata, fallback redirect destination, and default Worker bindings.
+ * Site Configuration
+ *
+ * Public host, origin, repository and author metadata, fallback redirect destination, and default Worker bindings.
  */
 
 import type { Env } from '@/types';

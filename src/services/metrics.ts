@@ -1,5 +1,8 @@
 /**
- * Service metric helpers – Compact number, byte size, date, version, and license formatting plus typed metric factories, the shared download period and community count tables, and badge presentations for service presets.
+ * Service Metric Helpers
+ *
+ * Compact number, byte size, date, version, and license formatting plus typed metric factories,
+ * the shared download period and community count tables, and badge presentations for service presets.
  */
 
 import {
@@ -54,6 +57,8 @@ interface CoverageServiceOptions<P extends object> {
   api: string;
   /** Docs description. */
   description: string;
+  /** Optional top-level JSON object keys to extract while streaming. */
+  extractKeys?: readonly (keyof P & string)[];
   /** Default icon slug of the coverage badge. */
   icon: string;
   /** Browser page URL template (`{owner}`, `{target}`). */
@@ -149,8 +154,8 @@ const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = { EUR: '€', GBP: '�
 const CURRENCY_CENTS_THRESHOLD = 1000;
 
 /**
- * Download period table (single source of truth for every download metric): Short periods are
- * sky, recent periods emerald, and long periods indigo.
+ * Download period table (single source of truth for every download metric):
+ * Short periods are sky, recent periods emerald, and long periods indigo.
  */
 export const DOWNLOAD_PERIODS: Readonly<Record<DownloadMetricKey, DownloadPeriodSpec>> = {
   dd: { color: 'sky', suffix: '/day' },
@@ -162,8 +167,8 @@ export const DOWNLOAD_PERIODS: Readonly<Record<DownloadMetricKey, DownloadPeriod
 };
 
 /**
- * Community count table (single source of truth for every community metric): Audience counts are
- * sky/indigo, appreciation counts rose, supporter counts pink, and live presence emerald.
+ * Community count table (single source of truth for every community metric):
+ * Audience counts are sky/indigo, appreciation counts rose, supporter counts pink, and live presence emerald.
  */
 const COMMUNITY_KINDS: Readonly<Record<CommunityMetricKind, ThemeColorName>> = {
   backers: 'pink',
@@ -238,11 +243,15 @@ export const DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['delta'];
 /** Automatic inline widget kinds supported by part-of-whole ratio metrics. */
 export const RATIO_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring'];
 
+/** Automatic inline widget kinds supported by part-of-whole ratio metrics with percentage delta. */
+export const RATIO_DELTA_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'delta'];
+
 /** Automatic inline widget kinds supported by part-of-whole ratio metrics with discrete steps. */
 export const RATIO_STEPS_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'steps'];
 
 /** Default presentation for repository fork metrics (`forks`). */
 export const FORKS: MetricPresentation = {
+  autoSpecials: RATIO_SPECIALS,
   defaultColor: 'sky',
   defaultIcon: 'git-fork',
   defaultLabel: 'Forks',
@@ -263,6 +272,15 @@ export const LAST_COMMIT: MetricPresentation = {
   defaultColor: 'rose',
   defaultIcon: 'git-commit-horizontal',
   defaultLabel: 'Last Commit',
+};
+
+/** Default presentation for repository last-activity metrics (`updated`). */
+export const LAST_ACTIVITY: MetricPresentation = { ...LAST_COMMIT, defaultLabel: 'Last Activity' };
+
+/** Shared `metricAliases` mapping `commit` and `last-commit` to `updated` on code forges. */
+export const FORGE_ACTIVITY_ALIASES: Readonly<Record<'commit' | 'last-commit', 'updated'>> = {
+  commit: 'updated',
+  'last-commit': 'updated',
 };
 
 /** Default presentation for license metrics (`license`). */
@@ -410,12 +428,38 @@ function readFiniteNumber(raw: unknown): number | undefined {
 }
 
 /**
- * Read a non-empty string from an unknown JSON value.
+ * Parse a numeric or numeric-string upstream value into a finite number.
+ * @param raw   Raw count (number or numeric string).
+ * @returns Finite number, or `undefined` for missing, blank, or non-numeric values.
+ */
+function parseFiniteNumber(raw: unknown): number | undefined {
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? raw : undefined;
+  }
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return undefined;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/** Parse a non-negative finite count (`< 0` resolves to `undefined` for unsigned metrics). */
+function readNonNegativeCount(raw: unknown): number | undefined {
+  const count = parseFiniteNumber(raw);
+  return count !== undefined && count >= 0 ? count : undefined;
+}
+
+/**
+ * Read a trimmed non-empty string from an unknown JSON value.
  * @param raw   Raw JSON value.
- * @returns Non-empty string value, or `undefined` for non-string or blank values.
+ * @returns Trimmed non-empty string value, or `undefined` for non-string or blank values.
  */
 function readText(raw: unknown): string | undefined {
-  return typeof raw === 'string' && raw.trim() !== '' ? raw : undefined;
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+  const trimmed = raw.trim();
+  return trimmed === '' ? undefined : trimmed;
 }
 
 /** Read a license name from an SPDX string, nested array, or `{ type }` / `{ id }` / `{ name }` object up to `MAX_LICENSE_DEPTH`. */
@@ -442,9 +486,9 @@ function readLicenseNameAtDepth(rawLicense: unknown, depth: number): string | un
 }
 
 /**
- * Compute an integer progress percentage (`0`–`100`) from `achieved / maximum`, keeping partial
- * progress (`0 < achieved < maximum`) strictly inside `[1, 99]` so non-zero progress never renders
- * empty and incomplete progress never closes to `100%`.
+ * Compute an integer progress percentage (`0`–`100`) from `achieved / maximum`,
+ * keeping partial progress (`0 < achieved < maximum`) strictly inside `[1, 99]`
+ * so non-zero progress never renders empty and incomplete progress never closes to `100%`.
  * @param achieved   Numerator or achieved score (`>= 0`).
  * @param maximum    Denominator or maximum score (`> 0`).
  * @returns Bounded integer percentage in `0`–`100`.
@@ -520,23 +564,14 @@ function buildScoreResult(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { SCORE_SPECIALS, computeProgressPercent, computeScaledSteps, readFiniteNumber, readText };
-
-/**
- * Convert a numeric or numeric-string upstream value into a finite number.
- * @param raw   Raw count (number or numeric string).
- * @returns Finite number, or `undefined` for missing, blank, or non-numeric values.
- */
-export function toFiniteNumber(raw: RawCount): number | undefined {
-  if (typeof raw === 'number') {
-    return Number.isFinite(raw) ? raw : undefined;
-  }
-  if (typeof raw !== 'string' || raw.trim() === '') {
-    return undefined;
-  }
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
+export {
+  SCORE_SPECIALS,
+  computeProgressPercent,
+  computeScaledSteps,
+  parseFiniteNumber,
+  readFiniteNumber,
+  readText,
+};
 
 /**
  * Format a number into a compact human-readable string (e.g., `1.2k`, `3.4M`, `1.1B`).
@@ -556,8 +591,8 @@ export function formatCompactNumber(num: number): string {
  * @param suffix   Optional unit suffix appended to the formatted count (e.g., `'/mo'`).
  * @returns Badge value (e.g., `'4.2M/mo'`), or `'n/a'` when the count is missing.
  */
-export function formatCount(raw: RawCount, suffix = ''): string {
-  const count = toFiniteNumber(raw);
+export function formatCount(raw: unknown, suffix = ''): string {
+  const count = parseFiniteNumber(raw);
   return count === undefined ? MISSING_VALUE : `${formatCompactNumber(count)}${suffix}`;
 }
 
@@ -566,8 +601,8 @@ export function formatCount(raw: RawCount, suffix = ''): string {
  * @param raw   Raw byte count (number or numeric string).
  * @returns Badge value, or `'n/a'` when the size is missing.
  */
-export function formatBytes(raw: RawCount): string {
-  const bytes = toFiniteNumber(raw);
+export function formatBytes(raw: unknown): string {
+  const bytes = parseFiniteNumber(raw);
   if (bytes === undefined || bytes < 0) {
     return MISSING_VALUE;
   }
@@ -584,19 +619,15 @@ export function formatPercent(percent: number): string {
 }
 
 /**
- * Format a raw currency amount compactly, prefixing known currency symbols (`CURRENCY_SYMBOLS`) and
- * appending any other ISO 4217 code (e.g., `'$177.5k/yr'`, `'€640.85/wk'`, `'1.2k CHF/mo'`).
+ * Format a raw currency amount compactly, prefixing known currency symbols (`CURRENCY_SYMBOLS`)
+ * and appending any other ISO 4217 code (e.g., `'$177.5k/yr'`, `'€640.85/wk'`, `'1.2k CHF/mo'`).
  * @param raw        Raw amount in major currency units (number or numeric string).
  * @param currency   ISO 4217 currency code (e.g., `'USD'`).
  * @param suffix     Optional period suffix appended to the formatted amount (e.g., `'/wk'`).
  * @returns Badge value, or `'n/a'` when the amount is missing.
  */
-export function formatCurrency(
-  raw: RawCount,
-  currency: string | null | undefined,
-  suffix = ''
-): string {
-  const amount = toFiniteNumber(raw);
+export function formatCurrency(raw: unknown, currency: unknown, suffix = ''): string {
+  const amount = parseFiniteNumber(raw);
   if (amount === undefined) {
     return MISSING_VALUE;
   }
@@ -606,7 +637,7 @@ export function formatCurrency(
     absAmount < CURRENCY_CENTS_THRESHOLD && !Number.isInteger(absAmount)
       ? absAmount.toFixed(2)
       : formatCompactNumber(absAmount);
-  const code = (currency ?? '').toUpperCase();
+  const code = readText(currency)?.toUpperCase() ?? '';
   const symbol = getOwnValue(CURRENCY_SYMBOLS, code);
   if (symbol !== undefined) {
     return `${sign}${symbol}${formatted}${suffix}`;
@@ -658,7 +689,7 @@ export function formatVersion(rawVersion: string | null | undefined): string {
 }
 
 /**
- * Build a version metric result that highlights an out-of-date flag in amber (e.g., AUR, Arch Linux).
+ * Build a version metric result that highlights an out-of-date flag in amber.
  * @param rawVersion    Upstream version string.
  * @param isOutOfDate   Whether the package is flagged out-of-date.
  * @returns Badge properties (e.g., `'v1.2.3'`, or amber `'v1.2.3 (outdated)'`).
@@ -668,41 +699,44 @@ export function buildFlaggedVersionResult(
   isOutOfDate: boolean
 ): Partial<MetricResult> {
   const version = formatVersion(rawVersion);
-  return isOutOfDate ? { color: 'amber', value: `${version} (outdated)` } : { value: version };
+  return isOutOfDate && version !== MISSING_VALUE
+    ? { color: 'amber', value: `${version} (outdated)` }
+    : { value: version };
 }
 
 /**
  * Join distribution package version parts in pacman/RPM notation (`[epoch:]version[-release]`),
  * omitting a zero or missing epoch and a missing release.
- * @param epoch     Raw epoch (number or numeric string, e.g., Arch Linux `2`, Fedora `'0'`).
+ * @param epoch     Raw epoch (number or numeric string).
  * @param version   Upstream version (e.g., `'9.0.2'`).
- * @param release   Upstream package release (e.g., Arch Linux `'1'`, Fedora `'1.fc46'`).
+ * @param release   Upstream package release (e.g., `'1'`, `'1.fc46'`).
  * @returns Joined version (e.g., `'2:9.0.2-1'`), or `undefined` when the version is missing.
  */
 export function buildPackageVersion(
-  epoch: RawCount,
+  epoch: unknown,
   version: unknown,
   release: unknown
 ): string | undefined {
   if (typeof version !== 'string' || version.trim() === '') {
     return undefined;
   }
-  const epochNumber = toFiniteNumber(epoch) ?? 0;
+  const epochNumber = parseFiniteNumber(epoch) ?? 0;
   const prefix = epochNumber > 0 ? `${epochNumber}:` : '';
-  const suffix = typeof release === 'string' && release !== '' ? `-${release}` : '';
+  const cleanRelease = typeof release === 'string' ? release.trim() : '';
+  const suffix = cleanRelease !== '' ? `-${cleanRelease}` : '';
   return `${prefix}${version.trim()}${suffix}`;
 }
 
 /**
- * Format a raw license string as a badge value, stripping one pair of enclosing parentheses and the
- * SPDX `LicenseRef-` prefix, and truncating overly long license texts with `..`.
+ * Format a raw license string as a badge value, stripping one pair of enclosing parentheses and the SPDX `LicenseRef-` prefix,
+ * and truncating overly long license texts with `..`.
  * @param rawLicense   Upstream SPDX expression or license name.
  * @returns Badge value (e.g., `'MIT OR Apache-2.0'`), or `'unknown'` when missing.
  */
 export function formatLicense(rawLicense: string | null | undefined): string {
-  const trimmed = stripOuterParentheses(
-    (typeof rawLicense === 'string' ? rawLicense : '').trim()
-  ).replace(LICENSE_REF_PREFIX_RX, '');
+  const trimmed = stripOuterParentheses((typeof rawLicense === 'string' ? rawLicense : '').trim())
+    .replace(LICENSE_REF_PREFIX_RX, '')
+    .trim();
   if (!trimmed) {
     return 'unknown';
   }
@@ -722,11 +756,11 @@ export function readLicenseName(rawLicense: unknown): string | undefined {
 
 /**
  * Convert a lowercase SPDX license key into its canonical casing (e.g., `'apache-2.0'` -> `'Apache-2.0'`).
- * @param key   Lowercase SPDX license key (e.g., GitLab `license.key`).
+ * @param key   Lowercase SPDX license key.
  * @returns Canonically cased license id, or `undefined` when `key` is missing or non-string.
  */
 export function formatSpdxKey(key: unknown): string | undefined {
-  const trimmed = readText(key)?.trim();
+  const trimmed = readText(key);
   if (!trimmed) {
     return undefined;
   }
@@ -817,7 +851,7 @@ export function readDateKeyedSeries(dates: unknown): number[] {
   }
   const values: number[] = [];
   for (const dateKey of Object.keys(dates).toSorted()) {
-    values.push(readFiniteNumber(dates[dateKey]) ?? 0);
+    values.push(Math.max(0, readFiniteNumber(dates[dateKey]) ?? 0));
   }
   return values;
 }
@@ -833,7 +867,7 @@ export function readStarHistogram(rawVotes: unknown): number[] | undefined {
   }
   const counts: number[] = [];
   for (const key of STAR_KEYS) {
-    counts.push(Math.max(0, toFiniteNumber(rawVotes[key] as RawCount) ?? 0));
+    counts.push(Math.max(0, parseFiniteNumber(rawVotes[key]) ?? 0));
   }
   return sumSeries(counts) > 0 ? counts : undefined;
 }
@@ -856,9 +890,9 @@ export function formatPointDelta(delta: number | undefined): string | undefined 
  * @param previous   Previous period count or baseline value (must be `> 0`).
  * @returns Formatted delta string, or `undefined` when either value is missing or `previous <= 0`.
  */
-export function formatDeltaPercent(current: RawCount, previous: RawCount): string | undefined {
-  const currentValue = toFiniteNumber(current);
-  const previousValue = toFiniteNumber(previous);
+export function formatDeltaPercent(current: unknown, previous: unknown): string | undefined {
+  const currentValue = parseFiniteNumber(current);
+  const previousValue = parseFiniteNumber(previous);
   if (currentValue === undefined || previousValue === undefined || previousValue <= 0) {
     return undefined;
   }
@@ -881,13 +915,13 @@ export function formatDeltaPercent(current: RawCount, previous: RawCount): strin
  * @returns Candidate widget map with `delta`, or `undefined` when unavailable.
  */
 export function buildWindowDeltaSpecials(
-  shorterCount: RawCount,
+  shorterCount: unknown,
   shorterDays: number,
-  longerCount: RawCount,
+  longerCount: unknown,
   longerDays: number
 ): BadgeSpecialMap | undefined {
-  const recent = toFiniteNumber(shorterCount);
-  const cumulative = toFiniteNumber(longerCount);
+  const recent = parseFiniteNumber(shorterCount);
+  const cumulative = parseFiniteNumber(longerCount);
   const priorDays = longerDays - shorterDays;
   if (
     recent === undefined ||
@@ -912,12 +946,12 @@ export function buildWindowDeltaSpecials(
  * @returns Candidate widget map, or `undefined` when the ratio cannot be computed.
  */
 export function buildRatioSpecials(
-  part: RawCount,
-  whole: RawCount,
+  part: unknown,
+  whole: unknown,
   hasSteps = false
 ): BadgeSpecialMap | undefined {
-  const partValue = toFiniteNumber(part);
-  const wholeValue = toFiniteNumber(whole);
+  const partValue = parseFiniteNumber(part);
+  const wholeValue = parseFiniteNumber(whole);
   if (partValue === undefined || partValue < 0 || wholeValue === undefined || wholeValue <= 0) {
     return undefined;
   }
@@ -974,11 +1008,12 @@ export function buildTrailingSeriesSpecials(
 
 /**
  * Create a metric that formats a numeric count compactly.
- * @param endpoint        Upstream endpoint.
- * @param presentation    Default color, icon, and label.
- * @param readCount       Reads the raw count from the projected payload.
- * @param suffix          Optional unit suffix (e.g., `' followers'`).
- * @param buildSpecials   Optional builder for automatic inline widgets from the projected payload.
+ * @param endpoint          Upstream endpoint.
+ * @param presentation      Default color, icon, and label.
+ * @param readCount         Reads the raw count from the projected payload.
+ * @param suffix            Optional unit suffix (e.g., `' followers'`).
+ * @param buildSpecials     Optional builder for automatic inline widgets from the projected payload.
+ * @param isSignedAllowed   Whether negative counts are preserved (`false` rejects `< 0` as `'n/a'`).
  * @returns Metric rendering (e.g., `'4.2M'`), or `'n/a'` when the count is missing.
  */
 export function createCountMetric<P>(
@@ -986,12 +1021,14 @@ export function createCountMetric<P>(
   presentation: MetricPresentation,
   readCount: (payload: P) => RawCount,
   suffix = '',
-  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined
+  buildSpecials?: (payload: P) => BadgeSpecialMap | undefined,
+  isSignedAllowed = false
 ): ServiceMetricConfig {
-  return createMetric(endpoint, presentation, (payload) => ({
-    specials: buildSpecials?.(payload),
-    value: formatCount(readCount(payload), suffix),
-  }));
+  return createMetric(endpoint, presentation, (payload) => {
+    const raw = readCount(payload);
+    const count = isSignedAllowed ? parseFiniteNumber(raw) : readNonNegativeCount(raw);
+    return { specials: buildSpecials?.(payload), value: formatCount(count, suffix) };
+  });
 }
 
 /**
@@ -1159,7 +1196,7 @@ export function createRelativeDateMetric<P>(
 /**
  * Create a rating metric on a 5-star scale (e.g., `'4.8/5'`), or `'unrated'` when missing or zero.
  * @param endpoint        Upstream endpoint.
- * @param readRating      Reads `[rating, maximum]` from the projected payload (e.g., `[94, 100]` for WordPress).
+ * @param readRating      Reads `[rating, maximum]` from the projected payload (e.g., `[94, 100]`).
  * @param readHistogram   Optional reader returning star vote counts (1-star through 5-star) for `bars` and `sparkline`.
  * @returns Metric rendering the rating scaled to 5 stars.
  */
@@ -1173,7 +1210,7 @@ export function createRatingMetric<P>(
     : RATING;
   return createMetric(endpoint, presentation, (payload) => {
     const [rawRating, maximum] = readRating(payload);
-    const rating = toFiniteNumber(rawRating as RawCount) ?? 0;
+    const rating = parseFiniteNumber(rawRating) ?? 0;
     if (rating <= 0 || maximum <= 0) {
       return { value: 'unrated' };
     }
@@ -1259,7 +1296,7 @@ export function createPercentScoreMetric<P>(
 /**
  * Create a test coverage metric (`coverage`) with a ring gauge, colored by `COVERAGE_THRESHOLDS`.
  * @param endpoint      Upstream endpoint.
- * @param icon          Default icon slug (e.g., `'codecov'`).
+ * @param icon          Default icon slug.
  * @param readPercent   Reads the raw coverage percentage from the projected payload.
  * @param readDelta     Optional reader for signed coverage percentage-point change (adds `delta` widget).
  * @returns Metric rendering (e.g., `'96.4%'`) plus ring, or `'n/a'` when missing.
@@ -1349,12 +1386,13 @@ export function createScorecardMetric<P>(
       return base;
     }
     const states: StripTickState[] = [];
-    for (const score of checks.slice(0, MAX_STRIP_TICKS)) {
-      const digit = Math.min(9, Math.max(0, Math.round((score / MAX_SCORECARD_SCORE) * 9)));
-      states.push(String(digit) as StripTickState);
-    }
     let passedChecks = 0;
-    for (const score of checks) {
+    for (let i = 0; i < checks.length; i += 1) {
+      const score = checks[i] ?? 0;
+      if (i < MAX_STRIP_TICKS) {
+        const digit = Math.min(9, Math.max(0, Math.round((score / MAX_SCORECARD_SCORE) * 9)));
+        states.push(String(digit) as StripTickState);
+      }
       if (score >= 7) {
         passedChecks += 1;
       }
@@ -1375,8 +1413,7 @@ export function createScorecardMetric<P>(
 }
 
 /**
- * Create a test coverage service preset for a repository (`/badge/:service/:owner/:repo/coverage`),
- * colored by `COVERAGE_THRESHOLDS`.
+ * Create a test coverage service preset for a repository (`/badge/:service/:owner/:repo/coverage`), colored by `COVERAGE_THRESHOLDS`.
  * @param options   Upstream URL templates, coverage reader, icon, and docs metadata.
  * @returns Coverage service definition.
  */
@@ -1385,16 +1422,15 @@ export function createCoverageService<P extends object>(
 ): ServiceDefinition {
   const endpoint = createEndpoint<CoveragePayload>({
     api: options.api,
+    extractKeys: options.extractKeys,
     page: options.page,
     project: (data) => {
       if (!isJsonObject(data)) {
         return undefined;
       }
       const typed = data as Partial<P>;
-      const percent = toFiniteNumber(options.readPercent(typed) as RawCount);
-      const delta = options.readDelta
-        ? toFiniteNumber(options.readDelta(typed) as RawCount)
-        : undefined;
+      const percent = parseFiniteNumber(options.readPercent(typed));
+      const delta = options.readDelta ? parseFiniteNumber(options.readDelta(typed)) : undefined;
       return delta === undefined ? { percent } : { delta, percent };
     },
   });

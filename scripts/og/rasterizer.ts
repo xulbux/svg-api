@@ -1,5 +1,8 @@
 /**
- * Vector SVG rasterizer – Paints rounded `<rect>` and `<circle>` SDFs, `4x4` supersampled filled `<path>` outlines, stroked `<g>` groups, and embedded PNG `<image>` elements onto an RGBA canvas.
+ * Vector SVG Rasterizer
+ *
+ * Paints rounded `<rect>` and `<circle>` SDFs, `4x4` super-sampled filled `<path>` outlines,
+ * stroked `<g>` groups, and embedded PNG `<image>` elements onto an RGBA canvas.
  */
 
 import {
@@ -74,8 +77,8 @@ const PNG_DATA_URI_PREFIX = 'data:image/png;base64,';
 /** Matches the opening `<svg …>` tag to read `viewBox` or `width` dimensions. */
 const SVG_OPEN_TAG_RX = /<svg\s+(?<attrs>[^>]+)>/;
 
-/** Matches `<defs>…</defs>` so it can be stripped before walking painted body elements. */
-const DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/;
+/** Matches `<defs>…</defs>` blocks so they can be stripped before walking painted body elements. */
+const DEFS_BLOCK_RX = /<defs>[\s\S]*?<\/defs>/g;
 
 /** Matches painted top-level SVG body primitives (`<g>…</g>`, `<rect>`, `<circle>`, `<path>`, or `<image>`). */
 const BODY_PRIMITIVE_RX =
@@ -229,7 +232,7 @@ function paintRect(scene: RasterScene, attrs: Readonly<Record<string, string>>):
   const rectY = Number.parseFloat(attrs.y ?? '0') * scene.rootScale;
   const rectWidth = Number.parseFloat(attrs.width ?? '0') * scene.rootScale;
   const rectHeight = Number.parseFloat(attrs.height ?? '0') * scene.rootScale;
-  const cornerRadius = Number.parseFloat(attrs.rx ?? '0') * scene.rootScale;
+  const cornerRadius = Number.parseFloat(attrs.rx ?? attrs.ry ?? '0') * scene.rootScale;
   if (rectWidth <= 0 || rectHeight <= 0) {
     return;
   }

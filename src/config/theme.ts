@@ -1,5 +1,7 @@
 /**
- * Theme tokens – Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers.
+ * Theme Tokens
+ *
+ * Tailwind v4 OKLCH color palettes and Cloudflare Kumo 3D token helpers.
  */
 
 import { DARK_CARBON_BOTTOM, ISOLUX_GRAY, ISOLUX_UI } from '@/config/palette';
@@ -184,10 +186,10 @@ const TAILWIND_V4_SCALES: Readonly<Record<ThemeColorName, TailwindFamilyScale>> 
 };
 
 /**
- * Every Tailwind v4 theme color name in canonical rainbow + neutral order (a literal tuple, so
- * tests can assert at the type level that it covers every `ThemeColorName`).
+ * Every Tailwind v4 theme color name in canonical rainbow + neutral order
+ * (a literal tuple, so tests can assert at the type level that it covers every `ThemeColorName`).
  */
-export const THEME_COLOR_NAMES = [
+const THEME_COLOR_NAMES = [
   'red',
   'orange',
   'amber',
@@ -217,23 +219,23 @@ const PALETTE_CACHE: Partial<Record<ThemeColorName, ThemePalette>> = {};
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Convert a linear-light sRGB channel (`0`–`1`) to gamma-encoded sRGB (`0`–`1`). */
-function fromLinearChannel(channel: number): number {
+/** Encode a linear-light sRGB channel (`0`–`1`) into gamma-encoded sRGB (`0`–`1`). */
+function encodeSrgbChannel(channel: number): number {
   return channel <= 0.0031308 ? channel * 12.92 : 1.055 * channel ** (1 / 2.4) - 0.055;
 }
 
 /** Convert a `0`–`1` channel value into a clamped `0`–`255` integer byte. */
-function toByte(channel: number): number {
+function clampColorByte(channel: number): number {
   return Math.round(Math.min(1, Math.max(0, channel)) * 255);
 }
 
 /** Convert a `0`–`1` channel value into a 2-digit upper-case hex byte. */
-function toHexByte(channel: number): string {
-  return toByte(channel).toString(16).padStart(2, '0').toUpperCase();
+function formatHexByte(channel: number): string {
+  return clampColorByte(channel).toString(16).padStart(2, '0').toUpperCase();
 }
 
 /** Convert OKLCH coordinates to linear-light sRGB channels (may exceed `[0, 1]` outside sRGB gamut). */
-function oklchToLinearRgb(color: OklchColor): RgbTuple {
+function convertOklchToLinearRgb(color: OklchColor): RgbTuple {
   const unitLightness = color.lightness / 100;
   const hueRadians = (color.hue * Math.PI) / 180;
   const okA = color.chroma * Math.cos(hueRadians);
@@ -268,7 +270,7 @@ function findMaxSrgbChroma(lightness: number, hue: number): number {
   let high = MAX_SEARCH_CHROMA;
   for (let step = 0; step < CHROMA_SEARCH_STEPS; step += 1) {
     const mid = (low + high) / 2;
-    if (isInSrgbGamut(oklchToLinearRgb({ chroma: mid, hue, lightness }))) {
+    if (isInSrgbGamut(convertOklchToLinearRgb({ chroma: mid, hue, lightness }))) {
       low = mid;
     } else {
       high = mid;
@@ -278,32 +280,32 @@ function findMaxSrgbChroma(lightness: number, hue: number): number {
 }
 
 /** Convert an OKLCH color to sRGB gamma-encoded channels (`0`–`1`), gamut-mapping chroma if needed. */
-function oklchToSrgbChannels(color: OklchColor): RgbTuple {
-  const initialLinear = oklchToLinearRgb(color);
+function convertOklchToSrgbChannels(color: OklchColor): RgbTuple {
+  const initialLinear = convertOklchToLinearRgb(color);
   const inGamutLinear = isInSrgbGamut(initialLinear)
     ? initialLinear
-    : oklchToLinearRgb({
+    : convertOklchToLinearRgb({
         chroma: findMaxSrgbChroma(color.lightness, color.hue),
         hue: color.hue,
         lightness: color.lightness,
       });
 
   return [
-    fromLinearChannel(inGamutLinear[0]),
-    fromLinearChannel(inGamutLinear[1]),
-    fromLinearChannel(inGamutLinear[2]),
+    encodeSrgbChannel(inGamutLinear[0]),
+    encodeSrgbChannel(inGamutLinear[1]),
+    encodeSrgbChannel(inGamutLinear[2]),
   ];
 }
 
 /** Convert an OKLCH color to a `#rrggbb` sRGB hex string. */
-function oklchToHex(color: OklchColor): string {
-  const [red, green, blue] = oklchToSrgbChannels(color);
-  return `#${toHexByte(red)}${toHexByte(green)}${toHexByte(blue)}`;
+function convertOklchToHex(color: OklchColor): string {
+  const [red, green, blue] = convertOklchToSrgbChannels(color);
+  return `#${formatHexByte(red)}${formatHexByte(green)}${formatHexByte(blue)}`;
 }
 
 /** Format gamma-encoded sRGB channels (`0`–`1`) and an alpha opacity as a CSS `rgba(r, g, b, alpha)` string. */
 function formatRgba(channels: RgbTuple, alpha: number): string {
-  return `rgba(${toByte(channels[0])}, ${toByte(channels[1])}, ${toByte(channels[2])}, ${alpha})`;
+  return `rgba(${clampColorByte(channels[0])}, ${clampColorByte(channels[1])}, ${clampColorByte(channels[2])}, ${alpha})`;
 }
 
 /**
@@ -341,17 +343,17 @@ function getOrBuildPalette(colorName: ThemeColorName): ThemePalette {
 
   const scale = TAILWIND_V4_SCALES[colorName];
   const { 600: brand, isNeutral = false } = scale;
-  const tintChannels = oklchToSrgbChannels(isNeutral ? scale[400] : scale[500]);
+  const tintChannels = convertOklchToSrgbChannels(isNeutral ? scale[400] : scale[500]);
 
   const palette: ThemePalette = {
-    accentText: oklchToHex(isNeutral ? scale[300] : scale[400]),
+    accentText: convertOklchToHex(isNeutral ? scale[300] : scale[400]),
     borderColor: formatRgba(tintChannels, isNeutral ? 0.35 : 0.45),
-    emphasisBg: oklchToHex(mixOklchWithWhite(brand, 0.3)),
-    emphasisRing: oklchToHex(mixOklchWithBlack(brand, 0.1)),
-    glowColor: oklchToHex(scale[500]),
-    gradEnd: oklchToHex(brand),
-    gradStart: oklchToHex(mixOklchWithWhite(brand, 0.15)),
-    iconColor: oklchToHex(scale[400]),
+    emphasisBg: convertOklchToHex(mixOklchWithWhite(brand, 0.3)),
+    emphasisRing: convertOklchToHex(mixOklchWithBlack(brand, 0.1)),
+    glowColor: convertOklchToHex(scale[500]),
+    gradEnd: convertOklchToHex(brand),
+    gradStart: convertOklchToHex(mixOklchWithWhite(brand, 0.15)),
+    iconColor: convertOklchToHex(scale[400]),
     tintBg: formatRgba(tintChannels, isNeutral ? 0.14 : 0.16),
   };
 
@@ -377,6 +379,8 @@ function createLazyPaletteMap<T>(
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { THEME_COLOR_NAMES };
 
 /** Base neutral dark carbon surface tokens. */
 export const BASE_DARK: BaseDarkPalette = {

@@ -1,5 +1,7 @@
 /**
- * URL builder client entry point – Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
+ * URL Builder Client Entry Point
+ *
+ * Wires state synchronization, preview/snippet output, and modular field, select, icon, stack, and typing controllers for `/builder/:kind`.
  */
 
 import {
@@ -29,9 +31,9 @@ import type { BuilderField, BuilderSchema, BuilderState } from '@/types';
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/** Re-measure all segmented `.builder-tabs` and `.icon-picker-tabs` selection pills without animation. */
+/** Re-measure all segmented `.builder-tabs` selection pills without animation. */
 function syncAllTabPills(): void {
-  for (const container of document.querySelectorAll('.builder-tabs, .icon-picker-tabs')) {
+  for (const container of document.querySelectorAll('.builder-tabs')) {
     syncTabPill(container, false);
   }
 }
@@ -50,9 +52,7 @@ function bindTabPills(): void {
         }
       }
     });
-    for (const tab of document.querySelectorAll(
-      '.builder-tab, .stack-mode-tab, .icon-picker-tab'
-    )) {
+    for (const tab of document.querySelectorAll('.builder-tab')) {
       tabObserver.observe(tab);
     }
   }
@@ -177,6 +177,7 @@ function initBuilderDom(): void {
     pickerEmpty: document.getElementById('icon-picker-empty'),
     pickerGrid: document.getElementById('icon-picker-grid'),
     pickerSearch: document.getElementById('icon-picker-search') as HTMLInputElement | null,
+    pickerSlug: document.getElementById('icon-picker-slug'),
     pickerStatus: document.getElementById('icon-picker-status'),
     schema,
     site,
@@ -228,13 +229,17 @@ function initBuilderDom(): void {
     }
   }
 
-  function applyState(nextState: BuilderState): void {
+  function hydrateFormState(nextState: BuilderState): void {
     state = { ...nextState };
     if (schema.kind === 'service' && !findService(schema, state.service)) {
       state.service = schema.services?.[0]?.key ?? '';
     }
     writeState();
     syncStateFromForm();
+  }
+
+  function applyState(nextState: BuilderState): void {
+    hydrateFormState(nextState);
     update(form);
   }
 
@@ -269,8 +274,9 @@ function initBuilderDom(): void {
     const pageParams = locationUrl.searchParams;
     const sharedPath = extractBuilderPrefillPath(locationUrl.href, schema);
     const parsedState = sharedPath ? parsePath(schema, sharedPath) : undefined;
+    hydrateFormState(parsedState ?? schema.initialState);
     const hasCustomMeta = applyHydratedMeta(
-      parsedState,
+      parsedState ? state : undefined,
       pageParams.get('alt') ?? '',
       pageParams.get('link') ?? ''
     );
@@ -288,7 +294,7 @@ function initBuilderDom(): void {
           : 'The shared URL does not match a valid preset or route; Showing the example instead.';
     }
     outputController.setCrossBuilderNotice(notice);
-    applyState(parsedState ?? schema.initialState);
+    update(form);
     if (schema.kind === 'stack' && parsedState) {
       stackCatalogController?.syncModeForPrefill(
         parsedState.groups ?? '',
@@ -347,10 +353,11 @@ function initBuilderDom(): void {
     }
     setImportError('');
     importInput.value = '';
-    applyHydratedMeta(nextState, imported.alt, imported.link);
+    hydrateFormState(nextState);
+    applyHydratedMeta(state, imported.alt, imported.link);
     outputController.clearCrossBuilderNotice();
     outputController.enableUrlSync();
-    applyState(nextState);
+    update(form);
     if (schema.kind === 'stack') {
       stackCatalogController?.syncModeForPrefill(nextState.groups ?? '', nextState.perline ?? '');
     }

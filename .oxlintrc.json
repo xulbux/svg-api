@@ -14,6 +14,7 @@
   "plugins": ["eslint", "import", "oxc", "typescript", "unicorn"],
   "rules": {
     "capitalized-comments": "off",
+    "eqeqeq": "error",
     "eslint/no-ternary": "off",
     "func-style": ["error", "declaration"],
     "id-length": [
@@ -33,7 +34,8 @@
     "import/unambiguous": "off",
     "max-params": "off",
     "max-statements": "off",
-    "no-duplicate-imports": "off",
+    "no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
+    "no-inner-declarations": "error",
     "no-magic-numbers": "off",
     "no-plusplus": "error",
     "no-undefined": "off",
@@ -42,6 +44,7 @@
     "oxc/no-async-await": "off",
     "oxc/no-optional-chaining": "off",
     "oxc/no-rest-spread-properties": "off",
+    "require-await": "error",
     "sort-imports": "off",
     "sort-keys": ["warn", "asc", { "caseSensitive": true, "natural": true }],
     "typescript/ban-ts-comment": [
@@ -64,10 +67,20 @@
     "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
     "typescript/no-explicit-any": "error",
     "unicorn/filename-case": ["error", { "cases": { "camelCase": true, "pascalCase": true } }],
-    "unicorn/number-literal-case": "off"
+    "unicorn/number-literal-case": "off",
+    "unicorn/prefer-import-meta-properties": "error"
   },
   "overrides": [
     { "env": { "browser": true, "serviceworker": false }, "files": ["src/site/client/**"] },
+    {
+      "files": ["src/site/client/**", "src/site/shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          { "patterns": ["@/routes/*", "@/services/*", "@/svg/*", "hono", "hono/*", "opentype.js"] }
+        ]
+      }
+    },
     { "files": ["src/site/jsx/jsx-*runtime.ts"], "rules": { "unicorn/filename-case": "off" } },
     { "files": ["src/index.ts", "*.config.*"], "rules": { "import/no-default-export": "off" } },
     {

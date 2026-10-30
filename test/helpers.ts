@@ -1,10 +1,11 @@
 /**
- * Shared test helpers – Worker environment bindings, SVG attribute extraction, client bundle evaluation, and an in-memory edge cache stub shared by the test suites.
+ * Shared Test Helpers
+ *
+ * Worker environment bindings, SVG attribute extraction, client bundle evaluation, and an in-memory edge cache stub shared by the test suites.
  */
 
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { vi } from 'vitest';
 import type { Env } from '@/types';
 
@@ -83,8 +84,8 @@ export function countOccurrences(haystack: string, needle: string): number {
 }
 
 /**
- * Create an in-memory edge cache stub keyed by request URL; Install it with
- * `vi.stubGlobal('caches', { default: stub.cache })` and undo it with `vi.unstubAllGlobals()`.
+ * Create an in-memory edge cache stub keyed by request URL.
+ * Install it with `vi.stubGlobal('caches', { default: stub.cache })` and undo it with `vi.unstubAllGlobals()`.
  * @returns Edge cache stub with its backing store and call logs.
  */
 export function createEdgeCacheStub(): EdgeCacheStub {
@@ -161,11 +162,7 @@ export function readClientModuleSources(clientKind: 'builder' | 'site'): string 
   if (cached !== undefined) {
     return cached;
   }
-  const clientDir = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '../src/site/client',
-    clientKind
-  );
+  const clientDir = path.resolve(import.meta.dirname, '../src/site/client', clientKind);
   const filenames = readdirSync(clientDir)
     .filter((filename) => filename.endsWith('.ts'))
     .toSorted();

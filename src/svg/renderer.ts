@@ -1,5 +1,7 @@
 /**
- * SVG renderer – Single Source of Truth generator for badges, micro-buttons, and standalone icons.
+ * SVG Renderer
+ *
+ * Single Source of Truth generator for badges, micro-buttons, and standalone icons.
  */
 
 import { STRIP_DARK_COLORS, STRIP_SOLID_COLORS, WHITE } from '@/config/palette';
@@ -14,6 +16,7 @@ import {
 import { computeCenteredBaselineY, measureTextWidth, renderTextPathMarkup } from '@/svg/measure';
 import {
   BADGE_FONT_SIZE,
+  MAX_LABEL_LENGTH,
   PRIMARY_FOREGROUND_OPACITY,
   SHEEN_SWEEP_TIMING,
   buildIconBodyId,
@@ -23,6 +26,7 @@ import {
   getOwnValue,
   hasOwnKey,
   isAnimationDisabled,
+  isSharedIconDefNeeded,
   isSheenMode,
   isStripTickState,
   measureIconVisualWidth,
@@ -80,7 +84,10 @@ interface CapsuleLayoutInput {
   gap: number;
   /** Whether a status dot is rendered. */
   hasDot: boolean;
-  /** Whether a single-segment capsule with a status dot places only the dot in the left compartment and `[leftIcon, label, rightIcon]` in the right compartment. */
+  /**
+   * Whether a single-segment capsule with a status dot places only the dot in the left compartment
+   * and `[leftIcon, label, rightIcon]` in the right compartment.
+   */
   isDotAloneInLeftCap?: boolean;
   /** Measured label ink width in pixels. */
   labelWidth: number;
@@ -192,7 +199,7 @@ interface SpecialElementContext {
   fontSize: number;
   /** Badge height in pixels. */
   height: number;
-  /** Whether the element sits on a vivid primary (`variant=1`) capsule. */
+  /** Whether the element sits on a vivid primary capsule. */
   isOnPrimary: boolean;
   /** Resolved theme palette of `color`. */
   palette: ThemePalette;
@@ -374,7 +381,7 @@ interface CapsuleBodyMarkup {
 interface AriaLabelParts {
   /** Optional status dot state (named when nothing else is visible). */
   dot: DotState | undefined;
-  /** Generic name used when nothing is visible (`'badge'` or `'button'`). */
+  /** Generic name used when nothing is visible (e.g., `'badge'`). */
   fallbackName: string;
   /** Resolved icon slots (the first visible icon is named when there is no text). */
   icons: ResolvedIconPair;
@@ -417,9 +424,6 @@ export const ICON_STROKE_RANGE: NumericRange = {
 /** Custom pixel height bounds for CTA buttons. */
 export const BUTTON_HEIGHT_RANGE: NumericRange = { default: 30, max: 48, min: 22 };
 
-/** Maximum badge/button label, value, and delta length in UTF-16 code units before ellipsis truncation. */
-export const MAX_LABEL_LENGTH = 128;
-
 /** Minimum number of data points required by `sparkline:` and `bars:` series widgets. */
 export const MIN_SERIES_POINTS = 2;
 
@@ -444,10 +448,7 @@ export const PERCENT_RANGE: NumericRange = { default: 0, max: 100, min: 0 };
 /** Bounds of `steps:` total step count. */
 const STEPS_TOTAL_RANGE: NumericRange = { default: 1, max: MAX_STEPS_COUNT, min: 1 };
 
-/**
- * Largest absolute sparkline value; Keeps `max - min` finite (`1e308 - -1e308` overflows to `Infinity`
- * and would turn every point into `NaN`).
- */
+/** Largest absolute sparkline value; Keeps `max - min` finite (`1e308 - -1e308` overflows to `Infinity` and would turn every point into `NaN`). */
 const MAX_SPARKLINE_MAGNITUDE = 1e12;
 
 /** Default size preset for CTA buttons when `size` is omitted or unrecognized. */
@@ -513,6 +514,9 @@ const ICON_BODY_ID_PREFIX = 'icon-body';
 
 /** Empty icon slot for missing left/right icons. */
 const EMPTY_ICON_SLOT: Readonly<IconSlot> = { data: undefined, key: '', slug: '' };
+
+/** Empty 3-slot packed compartment reused when a capsule has no right compartment. */
+const EMPTY_RIGHT_COMPARTMENT: PackedCompartment = { offsets: [0, 0, 0], width: 0 };
 
 /** Rendered special element without definitions or markup. */
 const EMPTY_SPECIAL_ELEMENT: Readonly<SpecialElementMarkup> = { defs: '', markup: '' };
@@ -742,10 +746,10 @@ function sanitizeStripStates(states: readonly string[]): StripTickState[] {
 }
 
 /**
- * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON): Series
- * values become finite and bounded, gauge percentages are clamped to `PERCENT_RANGE` (`NaN` becomes `0`),
- * step pills clamp `total` and `done`, strips keep at most `MAX_STRIP_TICKS` valid ticks, and delta text
- * is normalized, trimmed, and capped (an empty delta renders no special element).
+ * Sanitize a special element before layout, whatever its source (query DSL or upstream JSON):
+ * Series values become finite and bounded, gauge percentages are clamped to `PERCENT_RANGE` (`NaN` becomes `0`),
+ * step pills clamp `total` and `done`, strips keep at most `MAX_STRIP_TICKS` valid ticks,
+ * and delta text is normalized, trimmed, and capped (an empty delta renders no special element).
  */
 function sanitizeSpecialElement(
   special: BadgeSpecialElement | undefined
@@ -787,8 +791,8 @@ function sanitizeSpecialElement(
 
 /**
  * Describe a rendered (sanitized, non-empty) special element in a few words for the `aria-label`
- * (e.g., `'85%'`, `'+14%'`, `'4/5'`, `'5 checks'`, `'histogram'`, `'trend'`); Bar/ring gauges and
- * step pills are omitted (`''`) when the value already states the percentage or fraction.
+ * (e.g., `'85%'`, `'+14%'`, `'4/5'`, `'5 checks'`, `'histogram'`, `'trend'`);
+ * Bar/ring gauges and step pills are omitted (`''`) when the value already states the percentage or fraction.
  */
 function describeSpecialElement(special: BadgeSpecialElement, valueText: string): string {
   switch (special.type) {
@@ -836,7 +840,8 @@ function buildSparklinePoints(
   const strokeTopY = startY + 1;
   let linePoints = '';
 
-  for (const [i, value] of values.entries()) {
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i] ?? 0;
     const pointX = startX + (i / (values.length - 1)) * width;
     // Flat series (all values equal) are drawn through the vertical center instead of the bottom edge:
     const normalized = range > 0 ? (value - minValue) / range : 0.5;
@@ -1156,9 +1161,9 @@ function renderBarShimmerDef(isOnPrimary: boolean): string {
 
 /**
  * Render an inline horizontal progress/capacity bar from a sanitized percentage.
- * The empty track uses a dark translucent accent color, and the rightward shimmer wave is applied
- * directly as a fill on the filled `<rect>` so it can never enter the empty part of the bar; Its
- * gradient definition goes into the root `<defs>`.
+ * The empty track uses a dark translucent accent color, and the rightward shimmer wave is applied directly
+ * as a fill on the filled `<rect>` so it can never enter the empty part of the bar;
+ * Its gradient definition goes into the root `<defs>`.
  */
 function renderBarWidget(
   percentValue: number,
@@ -1205,7 +1210,8 @@ function renderBarsWidgetMarkup(values: readonly number[], context: SpecialEleme
   const isAnimated = !isAnimationDisabled(context.animMode);
   let barsMarkup = '';
 
-  for (const [i, value] of values.entries()) {
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i] ?? 0;
     let normalized = 0.5;
     if (minValue >= 0) {
       normalized = maxValue > 0 ? value / maxValue : 0;
@@ -1303,7 +1309,8 @@ function renderStripWidgetMarkup(
   const tickGeometry = `y="${(context.height - tickHeight) / 2}" width="${tickWidth}" height="${tickHeight}" rx="${tickWidth / 2}"`;
   const isAnimated = !isAnimationDisabled(context.animMode);
   let ticksMarkup = '';
-  for (const [i, state] of states.entries()) {
+  for (let i = 0; i < states.length; i += 1) {
+    const state = states[i] ?? '9';
     const tickX = roundCoord(context.specialX + i * (tickWidth + tickGap));
     const tickColor = resolveStripTickColor(state, context.isOnPrimary);
     const isAnimatedLast = isAnimated && i === states.length - 1;
@@ -1315,9 +1322,9 @@ function renderStripWidgetMarkup(
 }
 
 /**
- * Render an inline trend delta arrow and readout from sanitized delta text: Up for positive, down for
- * negative, and flat for zero or non-numeric readouts (e.g., `'-0%'`, `'0.0'`, `'n/a'`). On primary
- * capsules the arrow carries the single foreground opacity, and a flat readout is secondary text.
+ * Render an inline trend delta arrow and readout from sanitized delta text:
+ * Up for positive, down for negative, and flat for zero or non-numeric readouts (e.g., `'-0%'`, `'0.0'`, `'n/a'`).
+ * On primary capsules the arrow carries the single foreground opacity, and a flat readout is secondary text.
  */
 function renderDeltaWidgetMarkup(deltaText: string, context: SpecialElementContext): string {
   const { height, isOnPrimary, specialX } = context;
@@ -1498,7 +1505,8 @@ function packCompartment(
   const width = activeCount === 0 ? 0 : Math.round(paddedWidth);
   let cursor = activeCount === 0 ? leftPad : leftPad + (width - paddedWidth) / 2;
   const offsets: number[] = [];
-  for (const [i, itemWidth] of itemWidths.entries()) {
+  for (let i = 0; i < itemWidths.length; i += 1) {
+    const itemWidth = itemWidths[i] ?? 0;
     offsets.push(roundCoord(cursor));
     if (itemWidth > 0) {
       cursor += itemWidth + gap + (i === 0 ? extraFirstGap : 0);
@@ -1536,10 +1544,10 @@ function buildDotSplitLayout(
 
 /**
  * Compute horizontal compartment widths and coordinate offsets for a badge or button.
- * The left compartment packs `[dot, leftIcon, label, rightIcon]` (the trailing icon moves right when a
- * right compartment exists), and the right compartment packs `[special, value, rightIcon]`.
- * When `isDotAloneInLeftCap` is set on a single-segment capsule with a status dot, only `dot` is packed
- * into the dark left compartment while `[leftIcon, label, rightIcon]` stay together in the right compartment.
+ * The left compartment packs `[dot, leftIcon, label, rightIcon]` (the trailing icon moves right when a right compartment exists),
+ * and the right compartment packs `[special, value, rightIcon]`.
+ * When `isDotAloneInLeftCap` is set on a single-segment capsule with a status dot,
+ * only `dot` is packed into the dark left compartment while `[leftIcon, label, rightIcon]` stay together in the right compartment.
  */
 function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
   const { gap, labelWidth, padX, rightIconWidth, specialWidth, valueWidth } = input;
@@ -1565,13 +1573,9 @@ function computeCapsuleLayout(input: CapsuleLayoutInput): CapsuleLayout {
     gap,
     padX
   );
-  const rightPack = packCompartment(
-    hasRightCompartment ? [specialWidth, valueWidth, rightIconWidth] : [0, 0, 0],
-    gap,
-    padX,
-    padX,
-    1
-  );
+  const rightPack = hasRightCompartment
+    ? packCompartment([specialWidth, valueWidth, rightIconWidth], gap, padX, padX, 1)
+    : EMPTY_RIGHT_COMPARTMENT;
   // `packCompartment` returns one offset per item, so the defaults never apply:
   const [dotX = 0, leftIconX = 0, labelX = 0, trailingIconX = 0] = leftPack.offsets;
   const [specialOffsetX = 0, valueOffsetX = 0, rightIconOffsetX = 0] = rightPack.offsets;
@@ -1606,7 +1610,7 @@ function renderCapsuleBody(options: CapsuleBodyOptions): CapsuleBodyMarkup {
   if (
     icons.left.data !== undefined &&
     icons.left.data === icons.right.data &&
-    icons.left.data.innerSvg.includes('id="')
+    isSharedIconDefNeeded(icons.left.data, icons.left.isFallback)
   ) {
     const bodyId = buildIconBodyId(icons.left.data, ICON_BODY_ID_PREFIX);
     iconDefs = `<g id="${bodyId}">${icons.left.data.innerSvg}</g>`;
@@ -1655,8 +1659,8 @@ function renderCapsuleBody(options: CapsuleBodyOptions): CapsuleBodyMarkup {
 }
 
 /**
- * Build the raw accessible `aria-label` text: `label: <special> <value>`, either side alone, or the
- * first visible icon/dot name, falling back to the generic element name (`'badge'` or `'button'`).
+ * Build the raw accessible `aria-label` text: `label: <special> <value>`, either side alone,
+ * or the first visible icon/dot name, falling back to the generic element name (e.g., `'badge'`).
  * Exact duplicates between the special description and `valueText` are skipped (e.g., `delta:+5%` next to `'+5%'`).
  */
 function buildAriaLabel(parts: AriaLabelParts): string {
@@ -1685,22 +1689,41 @@ function buildAriaLabel(parts: AriaLabelParts): string {
   return parts.dot ?? parts.fallbackName;
 }
 
-/** Build the content-addressed ID of the standalone icon sheen gradient (`'icon-sheen'`, or suffixed for scaled icon bodies). */
-function buildIconSheenId(coordScale: number): string {
-  return coordScale === 1 ? 'icon-sheen' : `icon-sheen-s${Math.round(1000 / coordScale)}`;
+/** Build the content-addressed ID of the standalone icon sheen gradient (`'icon-sheen'`, or suffixed for scaled/translated icon bodies). */
+function buildIconSheenId(coordScale: number, coordOffsetX = 0, coordOffsetY = 0): string {
+  if (coordScale === 1 && coordOffsetX === 0 && coordOffsetY === 0) {
+    return 'icon-sheen';
+  }
+  let sheenId = `icon-sheen-s${Math.round(1000 / coordScale)}`;
+  if (coordOffsetX !== 0) {
+    sheenId += `-x${Math.round(coordOffsetX * 100)}`;
+  }
+  if (coordOffsetY !== 0) {
+    sheenId += `-y${Math.round(coordOffsetY * 100)}`;
+  }
+  return sheenId;
 }
 
 /**
- * Render (memoized per coordinate scale) the standalone icon sheen `<linearGradient>`.
- * The gradient uses `userSpaceOnUse` coordinates of the painted paths, so icon bodies drawn in a scaled
- * coordinate space get an inverse `gradientTransform` to sweep the full `24x24` box.
+ * Render (memoized per content-addressed `sheenId`) the standalone icon sheen `<linearGradient>`.
+ * The gradient uses `userSpaceOnUse` coordinates of the painted paths, so icon bodies drawn inside a
+ * `translate(coordOffsetX, coordOffsetY) scale(coordScale)` group get the exact inverse `gradientTransform`
+ * (`scale(1 / coordScale) translate(-coordOffsetX, -coordOffsetY)`) to sweep the full `24x24` box.
  */
-function renderIconSheenGradientDef(coordScale: number): string {
-  const scaleKey = String(coordScale);
-  let gradientDef = ICON_SHEEN_DEF_CACHE[scaleKey];
+function renderIconSheenGradientDef(
+  coordScale: number,
+  coordOffsetX: number,
+  coordOffsetY: number,
+  sheenId: string
+): string {
+  let gradientDef = ICON_SHEEN_DEF_CACHE[sheenId];
   if (gradientDef === undefined) {
-    const transformAttr =
-      coordScale === 1 ? '' : ` gradientTransform="scale(${roundScale(1 / coordScale)})"`;
+    let transformAttr = '';
+    if (coordOffsetX !== 0 || coordOffsetY !== 0) {
+      transformAttr = ` gradientTransform="scale(${roundScale(1 / coordScale)}) translate(${-coordOffsetX || 0}, ${-coordOffsetY || 0})"`;
+    } else if (coordScale !== 1) {
+      transformAttr = ` gradientTransform="scale(${roundScale(1 / coordScale)})"`;
+    }
     const sweepX1 = renderSweepAnimation(
       'animate',
       'attributeName="x1"',
@@ -1715,13 +1738,15 @@ function renderIconSheenGradientDef(coordScale: number): string {
       '84',
       ICON_SHEEN_SWEEP_TIMING
     );
-    gradientDef = `<linearGradient id="${buildIconSheenId(coordScale)}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"${transformAttr}>${renderWhiteBandStops(ICON_SHEEN_BAND_STOPS)}${sweepX1}${sweepX2}</linearGradient>`;
-    ICON_SHEEN_DEF_CACHE[scaleKey] = gradientDef;
+    gradientDef = `<linearGradient id="${sheenId}" gradientUnits="userSpaceOnUse" x1="-58" y1="0" x2="-32" y2="26"${transformAttr}>${renderWhiteBandStops(ICON_SHEEN_BAND_STOPS)}${sweepX1}${sweepX2}</linearGradient>`;
+    ICON_SHEEN_DEF_CACHE[sheenId] = gradientDef;
   }
   return gradientDef;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { MAX_LABEL_LENGTH } from '@/svg/shared';
 
 /**
  * Render a complete badge SVG string from `BadgeRenderOptions`.
@@ -1735,8 +1760,12 @@ export function renderBadge(options: BadgeRenderOptions): string {
   const metrics = BADGE_METRICS;
   const { fontSize, height, iconSize, padX, radius } = metrics;
 
-  const labelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
-  const valueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const rawLabelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
+  const rawValueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const labelWidth = measureTextWidth(rawLabelText, fontSize, false);
+  const valueWidth = measureTextWidth(rawValueText, fontSize, true);
+  const labelText = labelWidth > 0 ? rawLabelText : '';
+  const valueText = valueWidth > 0 ? rawValueText : '';
   const special = sanitizeSpecialElement(options.special);
   const icons = resolveIconPair(options.icon);
   const specialWidth = measureSpecialElementWidth(special, fontSize);
@@ -1746,12 +1775,12 @@ export function renderBadge(options: BadgeRenderOptions): string {
     gap: 6,
     hasDot,
     isDotAloneInLeftCap: variant === '1',
-    labelWidth: measureTextWidth(labelText, fontSize, false),
+    labelWidth,
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
     padX,
     rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
     specialWidth,
-    valueWidth: measureTextWidth(valueText, fontSize, true),
+    valueWidth,
   });
 
   // A dot-only badge with no text or right compartment also uses the dark carbon surface so status dots never sit on a primary gradient:
@@ -1819,18 +1848,22 @@ export function renderButton(options: ButtonRenderOptions): string {
   const metrics = resolveButtonMetrics(options.size);
   const { fontSize, height, iconSize, padX, radius } = metrics;
 
-  const labelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
-  const valueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const rawLabelText = prepareDisplayText(options.label, MAX_LABEL_LENGTH);
+  const rawValueText = prepareDisplayText(options.value ?? '', MAX_LABEL_LENGTH);
+  const labelWidth = measureTextWidth(rawLabelText, fontSize, true);
+  const valueWidth = measureTextWidth(rawValueText, fontSize, true);
+  const labelText = labelWidth > 0 ? rawLabelText : '';
+  const valueText = valueWidth > 0 ? rawValueText : '';
   const icons = resolveIconPair(options.icon);
   const layout = computeCapsuleLayout({
     gap: Math.max(6, Math.round(height * 0.24)),
     hasDot: false,
-    labelWidth: measureTextWidth(labelText, fontSize, true),
+    labelWidth,
     leftIconWidth: measureIconVisualWidth(icons.left.data, iconSize),
     padX,
     rightIconWidth: measureIconVisualWidth(icons.right.data, iconSize),
     specialWidth: 0,
-    valueWidth: measureTextWidth(valueText, fontSize, true),
+    valueWidth,
   });
 
   const isPrimary = variant === '1';
@@ -1897,19 +1930,26 @@ export function renderIcon(options: IconRenderOptions): string {
   const lookup = resolveIconLookup(slug);
   const iconData = lookup.data ?? resolvePlaceholderIcon();
   const iconColor = lookup.data ? THEMES[options.color].iconColor : THEMES.red.iconColor;
-  const slot: IconSlot = { data: iconData, key: lookup.key, slug };
+  const slot: IconSlot = {
+    data: iconData,
+    isFallback: !lookup.data,
+    key: lookup.data ? lookup.key : FALLBACK_ICON_SLUG,
+    slug,
+  };
   // Per-icon pairs (e.g., `nudge,shake`) apply their first motion to the single standalone icon:
   const { leftMotion } = resolveIconAnimationPair(animMode, { left: slot, right: EMPTY_ICON_SLOT });
 
   let sheenDef = '';
   let body = iconData.innerSvg;
   if (isSheenMode(animMode)) {
+    const coordOffsetX = iconData.coordOffsetX ?? 0;
+    const coordOffsetY = iconData.coordOffsetY ?? 0;
     // The sheen and body IDs depend only on content, never on the (untrusted) slug:
-    const sheenId = buildIconSheenId(iconData.coordScale);
+    const sheenId = buildIconSheenId(iconData.coordScale, coordOffsetX, coordOffsetY);
     const bodyId = buildIconBodyId(iconData, ICON_BODY_ID_PREFIX);
     const sheenPaint =
       iconData.type === 'lucide' ? `stroke="url(#${sheenId})"` : `fill="url(#${sheenId})"`;
-    sheenDef = renderIconSheenGradientDef(iconData.coordScale);
+    sheenDef = renderIconSheenGradientDef(iconData.coordScale, coordOffsetX, coordOffsetY, sheenId);
     // Reference the body instead of inlining it twice (bodies may carry their own `id` attributes):
     body = `<g id="${bodyId}">${iconData.innerSvg}</g><use href="#${bodyId}" ${sheenPaint} />`;
   }

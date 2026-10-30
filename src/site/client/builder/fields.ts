@@ -1,5 +1,7 @@
 /**
- * Builder field controls – Reads, writes, and normalizes scalar and composite DOM form controls.
+ * Builder Field Controls
+ *
+ * Reads, writes, and normalizes scalar and composite DOM form controls.
  */
 
 import {
@@ -8,6 +10,7 @@ import {
   composeIconPair,
   composeSpecial,
   findOption,
+  isValidSpecialPayload,
   resolveActiveServiceMetric,
   resolveEffectiveFieldDefault,
   splitAnim,
@@ -19,6 +22,7 @@ import {
 import { setSelectOptions } from '@/site/client/builder/select';
 import type {
   BuilderField,
+  BuilderFieldsController as SharedBuilderFieldsController,
   BuilderOption,
   BuilderSchema,
   BuilderServiceMetric,
@@ -48,41 +52,15 @@ interface BuilderFieldsOptions {
 }
 
 /** Public controller interface returned by `createBuilderFieldsController`. */
-export interface BuilderFieldsController {
-  /** Return the active auto-supported widget kinds for the selected service metric. */
-  getActiveAutoSpecials: () => readonly string[];
-  /** Return the currently selected service metric option on `/builder/service`. */
-  getActiveServiceMetric: () => BuilderServiceMetric | undefined;
-  /** Look up and memoize `#field-<id>` as a native form control. */
-  getControl: (id: string) => FieldControl | undefined;
-  /** Omit values that match the effective default of `field` under the current state. */
-  normalizeDefaultSelection: (
-    field: BuilderField,
-    rawValue: string,
-    isCustomSize?: boolean
-  ) => string;
-  /** Serialize the current DOM state of `field` into a builder state string. */
-  readFieldValue: (field: BuilderField, fieldElement: Element) => string;
-  /** Keep interdependent sub-controls synchronized right after user input on `fieldElement`. */
-  syncControlPartsOnInput: (
-    field: BuilderField,
-    fieldElement: Element,
-    target: EventTarget | undefined
-  ) => void;
-  /** Synchronize the payload input, modifier select, and hint text of a `special` field. */
-  syncSpecialParts: (field: BuilderField, fieldElement: Element, modifier: string) => void;
-  /** Write a builder state string into the DOM control(s) of `field`. */
-  writeFieldValue: (field: BuilderField, value: string) => void;
-}
+export type BuilderFieldsController = SharedBuilderFieldsController<
+  FieldControl,
+  Element,
+  EventTarget
+>;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Find a `[data-part="<part>"]` control inside a composite field wrapper element.
- * @param fieldElement   Composite field wrapper element.
- * @param part           Sub-control `data-part` name.
- * @returns Matching form control, or `undefined`.
- */
+/** Find a `[data-part="<part>"]` control inside a composite field wrapper element. */
 function getPart(fieldElement: Element, part: string): FieldControl | undefined {
   const control = fieldElement.querySelector<FieldControl>(`[data-part="${part}"]`);
   return control ?? undefined;
@@ -108,6 +86,34 @@ function setRadioGroupValue(fieldElement: Element, value: string): void {
     if (radio instanceof HTMLInputElement) {
       radio.checked = radio.value === value;
     }
+  }
+}
+
+/** Read a composite `[data-part]` control's string value inside `fieldElement`. */
+function readPartValue(fieldElement: Element, part: string): string {
+  return getPart(fieldElement, part)?.value ?? '';
+}
+
+/** Toggle `.is-invalid` and `aria-invalid` on a `special` field's payload input when non-empty and malformed. */
+function syncSpecialPayloadValidity(kind: string, fieldElement: Element): void {
+  const payload = getPart(fieldElement, 'payload');
+  const payloadPart = fieldElement.querySelector('[data-special-part="payload"]');
+  if (!(payload instanceof HTMLInputElement)) {
+    return;
+  }
+  const cleanPayload = payload.value.trim();
+  const isPayloadInvalid = Boolean(
+    kind &&
+    kind !== 'none' &&
+    cleanPayload &&
+    cleanPayload.toLowerCase() !== 'auto' &&
+    !isValidSpecialPayload(kind, cleanPayload)
+  );
+  payloadPart?.classList?.toggle?.('is-invalid', isPayloadInvalid);
+  if (isPayloadInvalid) {
+    payload.setAttribute?.('aria-invalid', 'true');
+  } else if (!payload.closest?.('.is-missing')) {
+    payload.removeAttribute?.('aria-invalid');
   }
 }
 
@@ -169,16 +175,13 @@ export function createBuilderFieldsController(
   }
 
   function readFieldValue(field: BuilderField, fieldElement: Element): string {
-    function readPartValue(part: string): string {
-      return getPart(fieldElement, part)?.value ?? '';
-    }
     switch (field.control) {
       case 'anim': {
         const sheen = getPart(fieldElement, 'sheen');
         return composeAnim(
           sheen instanceof HTMLInputElement && sheen.checked,
-          readPartValue('left'),
-          readPartValue('right')
+          readPartValue(fieldElement, 'left'),
+          readPartValue(fieldElement, 'right')
         );
       }
       case 'color': {
@@ -187,25 +190,32 @@ export function createBuilderFieldsController(
         return normalizeDefaultSelection(field, checkedValue);
       }
       case 'hint': {
-        return composeHint(readPartValue('icon'), readPartValue('text'));
+        return composeHint(
+          readPartValue(fieldElement, 'icon'),
+          readPartValue(fieldElement, 'text')
+        );
       }
       case 'icon': {
-        return readPartValue('main').trim();
+        return readPartValue(fieldElement, 'main').trim();
       }
       case 'iconPair': {
-        return composeIconPair(readPartValue('left'), readPartValue('right'), hasPresetIcon);
+        return composeIconPair(
+          readPartValue(fieldElement, 'left'),
+          readPartValue(fieldElement, 'right'),
+          hasPresetIcon
+        );
       }
       case 'size': {
-        const preset = readPartValue('preset');
-        const rawSize = preset === 'custom' ? readPartValue('custom').trim() : preset;
+        const preset = readPartValue(fieldElement, 'preset');
+        const rawSize = preset === 'custom' ? readPartValue(fieldElement, 'custom').trim() : preset;
         return normalizeDefaultSelection(field, rawSize, preset === 'custom');
       }
       case 'special': {
-        const kind = readPartValue('kind');
+        const kind = readPartValue(fieldElement, 'kind');
         const composedSpecial = composeSpecial(
           kind,
-          readPartValue('payload'),
-          readPartValue('modifier'),
+          readPartValue(fieldElement, 'payload'),
+          readPartValue(fieldElement, 'modifier'),
           Boolean(kind && getActiveAutoSpecials().includes(kind))
         );
         return normalizeDefaultSelection(field, composedSpecial);
@@ -273,6 +283,7 @@ export function createBuilderFieldsController(
     fieldElement
       .querySelector('[data-special-part="modifier"]')
       ?.toggleAttribute('hidden', modifiers.length === 0);
+    syncSpecialPayloadValidity(kind, fieldElement);
   }
 
   function resolveWritableEffectiveValue(field: BuilderField, value: string): string {
@@ -374,7 +385,12 @@ export function createBuilderFieldsController(
     fieldElement: Element,
     target: EventTarget | undefined
   ): void {
-    if (field.control === 'anim' && field.animScope !== 'pair' && target instanceof Element) {
+    if (
+      field.control === 'anim' &&
+      field.animScope !== 'pair' &&
+      field.animScope !== 'typing' &&
+      target instanceof Element
+    ) {
       const sheen = getPart(fieldElement, 'sheen');
       const left = getPart(fieldElement, 'left');
       if (
@@ -392,12 +408,12 @@ export function createBuilderFieldsController(
         left.value = '';
       }
     }
-    if (
-      field.control === 'special' &&
-      target instanceof Element &&
-      target.matches('[data-part="kind"]')
-    ) {
-      syncSpecialParts(field, fieldElement, '');
+    if (field.control === 'special' && target instanceof Element) {
+      if (target.matches('[data-part="kind"]')) {
+        syncSpecialParts(field, fieldElement, '');
+      } else if (target.matches('[data-part="payload"]')) {
+        syncSpecialPayloadValidity(readPartValue(fieldElement, 'kind'), fieldElement);
+      }
     }
     if (field.control === 'size') {
       syncSizeParts(fieldElement);

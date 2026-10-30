@@ -1,8 +1,10 @@
 /**
- * Firefox Add-ons service preset – Live upstream metrics and redirect transformations.
+ * Firefox Add-ons Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Firefox Add-ons.
  */
 
-import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, readJsonObject } from '@/services/endpoint';
 import {
   createCountMetric,
   createDownloadsMetric,
@@ -36,9 +38,9 @@ function projectAmoAddon(data: unknown): AmoAddonProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const currentVersion = asJsonObject(data.current_version);
-  const license = asJsonObject(currentVersion?.license);
-  const ratings = asJsonObject(data.ratings);
+  const currentVersion = readJsonObject(data.current_version);
+  const license = readJsonObject(currentVersion?.license);
+  const ratings = readJsonObject(data.ratings);
   return {
     dailyUsers: readFiniteNumber(data.average_daily_users),
     license: readText(license?.slug) || (license?.is_custom === true ? 'custom' : undefined),
@@ -51,6 +53,7 @@ function projectAmoAddon(data: unknown): AmoAddonProjection | undefined {
 /** AMO add-on endpoint (`lang=en-US` shrinks the payload from `~130 KB` to `~8 KB`) with listing redirect. */
 const AMO_ENDPOINT = createEndpoint({
   api: 'https://addons.mozilla.org/api/v5/addons/addon/{target}/?lang=en-US',
+  extractKeys: ['average_daily_users', 'current_version', 'ratings', 'weekly_downloads'],
   page: 'https://addons.mozilla.org/firefox/addon/{target}/',
   project: projectAmoAddon,
 });

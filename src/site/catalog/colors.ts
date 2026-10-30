@@ -1,5 +1,7 @@
 /**
- * Colors documentation catalog – Primary and secondary theme color swatch cards for `/docs/colors`.
+ * Colors Documentation Catalog
+ *
+ * Primary and secondary theme color swatch cards for `/docs/colors`.
  */
 
 import { THEME_COLOR_NAMES } from '@/config/theme';

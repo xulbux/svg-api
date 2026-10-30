@@ -1,5 +1,7 @@
 /**
- * Theme, preview stage background & reduced-motion controller – Color-scheme toggle, preview stage inversion toggle, `localStorage` persistence, and SMIL animation pausing.
+ * Theme, Preview Stage Background & Reduced-Motion Controller
+ *
+ * Color-scheme toggle, preview stage inversion toggle, `localStorage` persistence, and SMIL animation pausing.
  */
 
 import type { SiteClientConfig } from '@/site/client/site/types';
@@ -57,8 +59,8 @@ export function initThemeAndMotion(
   }
 
   /**
-   * Apply an explicit color scheme (or follow the system with `undefined`) to the color-scheme and
-   * theme-color meta tags, and sync the theme switch state.
+   * Apply an explicit color scheme (or follow the system with `undefined`) to the color-scheme and theme-color meta tags,
+   * and sync the theme switch state.
    */
   function applyScheme(storedScheme: 'dark' | 'light' | undefined): void {
     if (schemeMeta) {

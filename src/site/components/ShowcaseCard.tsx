@@ -1,5 +1,8 @@
 /**
- * Showcase card components – Live SVG preview cards (`<ShowcaseCard />`) and grids (`<CardGrid />`) with scoped inline SVG IDs, builder links, and syntax-highlighted Markdown code drawers.
+ * Showcase Card Components
+ *
+ * Live SVG preview cards (`<ShowcaseCard />`) and grids (`<CardGrid />`) with scoped inline SVG IDs,
+ * builder links, and syntax-highlighted Markdown code drawers.
  */
 
 import { SITE_ORIGIN } from '@/config/site';
@@ -70,9 +73,7 @@ function splitTrailingParenthetical(text: string): TrailingParenthetical | undef
   return { main, paren };
 }
 
-/**
- * Format a card title string into hierarchical JSX with a primary heading, optional leading code badge, and optional trailing meta/status pills.
- */
+/** Format a card title string into hierarchical JSX with a primary heading, optional leading code badge, and optional trailing meta/status pills. */
 function renderCardTitleChildren(rawTitle: string): HtmlFragment {
   let remainder = rawTitle.trim();
   const trailingPills: HtmlFragment[] = [];
@@ -112,7 +113,7 @@ function renderCardTitleChildren(rawTitle: string): HtmlFragment {
   return (
     <>
       {prefixBadge}
-      <span class="card-title-text">{remainder}</span>
+      {remainder}
       {trailingPills}
     </>
   );
@@ -123,8 +124,8 @@ function renderCardTitleChildren(rawTitle: string): HtmlFragment {
 export { splitTrailingParenthetical };
 
 /**
- * Render a showcase card containing SVG previews (rendered from each item's documented path through the
- * live route dispatcher, each linking to its prefilled builder) and an expandable `<details>` Markdown drawer.
+ * Render a showcase card containing SVG previews (rendered from each item's documented path through the live route dispatcher,
+ * each linking to its prefilled builder) and an expandable `<details>` Markdown drawer.
  * @param card   Showcase card configuration with items and titles.
  * @returns Rendered `<div class="card-container">` JSX fragment.
  */
@@ -135,33 +136,40 @@ export function ShowcaseCard(card: ShowcaseCardConfig): HtmlFragment {
   const previewNodes: HtmlFragment[] = [];
   const markdownLines: string[] = [];
 
-  for (const [i, item] of card.items.entries()) {
-    const svg = scopeSvgIds(renderSvgPath(item.path, item.sample), `${scopePrefix}-${i}`);
-    const builderTarget = resolveBuilderTarget(item.path);
-    previewNodes.push(
-      builderTarget ? (
-        <>
-          <a
-            class="preview-link"
-            href={builderTarget.href}
-            rel="nofollow"
-            aria-label={`Open “${item.alt}” in the Builder`}
-            title="Open in Builder"
-            tabindex="0">
+  for (let i = 0; i < card.items.length; i += 1) {
+    const item = card.items[i];
+    if (item) {
+      const svg = scopeSvgIds(renderSvgPath(item.path, item.sample), `${scopePrefix}-${i}`);
+      const builderTarget = resolveBuilderTarget(item.path);
+      previewNodes.push(
+        builderTarget ? (
+          <>
+            <a
+              class="preview-link"
+              href={builderTarget.href}
+              rel="nofollow"
+              aria-label={`Open “${item.alt}” in the Builder`}
+              title="Open in Builder"
+              tabindex="0">
+              {raw(svg)}
+            </a>
+            {'\n'}
+          </>
+        ) : (
+          <>
             {raw(svg)}
-          </a>
-          {'\n'}
-        </>
-      ) : (
-        <>
-          {raw(svg)}
-          {'\n'}
-        </>
-      )
-    );
-    const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
-    const snippetTokens = buildMarkdownSnippetTokens(`${SITE_ORIGIN}${item.path}`, item.alt, href);
-    markdownLines.push(serializeHighlightTokenLine(snippetTokens));
+            {'\n'}
+          </>
+        )
+      );
+      const href = item.href ?? resolveSvgPathRedirectUrl(item.path);
+      const snippetTokens = buildMarkdownSnippetTokens(
+        `${SITE_ORIGIN}${item.path}`,
+        item.alt,
+        href
+      );
+      markdownLines.push(serializeHighlightTokenLine(snippetTokens));
+    }
   }
 
   const stageClass = card.isCentered ? 'preview-stage is-centered' : 'preview-stage';

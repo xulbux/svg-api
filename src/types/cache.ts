@@ -1,5 +1,7 @@
 /**
- * Cache types – Bounded, weight-budgeted in-isolate LRU cache state.
+ * Cache Types
+ *
+ * Bounded, weight-budgeted in-isolate LRU cache state.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------

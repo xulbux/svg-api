@@ -1,5 +1,7 @@
 /**
- * Service presets – Registry of all upstream service presets (`/badge/:service/…`).
+ * Service Presets
+ *
+ * Registry of all upstream service presets (`/badge/:service/…`).
  *
  * Each service lives in its own preset module and is registered here as the single source of truth
  * for routing, upstream fetching, builder options, and documentation reference tables.

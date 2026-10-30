@@ -1,5 +1,7 @@
 /**
- * Vitest configuration – Mirrors Wrangler's `Data` and `Text` module rules (`wrangler.jsonc`) and path aliases (`tsconfig.json`) for the test suite.
+ * Vitest Configuration
+ *
+ * Mirrors Wrangler's `Data` and `Text` module rules (`wrangler.jsonc`) and path aliases (`tsconfig.json`) for the test suite.
  */
 
 import { readFileSync } from 'node:fs';
@@ -17,7 +19,7 @@ const TEXT_MODULE_SUFFIX = '.text-module';
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
 /** Matches module IDs bundled as plain text by Wrangler (`rules` in `wrangler.jsonc`). */
-const TEXT_MODULE_RX = /\.(?:css|client\.js)$/;
+const TEXT_MODULE_RX = /\.(?:css|client\.js|iconpack)$/;
 
 // ----------------------------------------- MAIN ----------------------------------------
 

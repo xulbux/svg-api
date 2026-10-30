@@ -1,5 +1,7 @@
 /**
- * F-Droid service preset – Live upstream metrics and redirect transformations.
+ * F-Droid Service Preset
+ *
+ * Live upstream metrics and redirect transformations for F-Droid.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -40,6 +42,7 @@ function projectFdroidPackage(data: unknown): FdroidPackageProjection | undefine
 /** F-Droid package endpoint with f-droid.org app page redirect. */
 const FDROID_ENDPOINT = createEndpoint({
   api: 'https://f-droid.org/api/v1/packages/{target}',
+  extractKeys: ['packages', 'suggestedVersionCode'],
   page: 'https://f-droid.org/packages/{target}/',
   project: projectFdroidPackage,
 });

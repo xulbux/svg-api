@@ -1,10 +1,11 @@
 /**
- * Builder client core – Pure URL, snippet, grid focus, async cache, and icon resolver helpers shared across the builder modules.
+ * Builder Client Core
+ *
+ * Pure URL, snippet, grid focus, async cache, and icon resolver helpers shared across the builder modules.
  */
 
 import { filterIconCatalog } from '@/site/client/builder/iconSearch';
 import { createTypingLinesController } from '@/site/client/builder/typingLines';
-import type { TypingLinesControllerOptions } from '@/site/client/builder/typingLines';
 import type { SvgSite } from '@/site/client/site/types';
 import {
   BRAND_SLUG_CLEAN_RX,
@@ -51,17 +52,14 @@ import type {
 
 /**
  * Measure the active tab inside `tabList` and sync its sliding selection pill CSS custom properties.
- * @param tabList         Segmented `.builder-tabs` or `.icon-picker-tabs` container element.
- * @param shouldAnimate   Whether to slide the pill from its previous position (`false` on initial/layout sync).
+ * @param tabList      Segmented `.builder-tabs` container element.
+ * @param isAnimated   Whether to slide the pill from its previous position (`false` on initial/layout sync).
  */
-export function syncTabPill(tabList: Element | null | undefined, shouldAnimate = false): void {
+export function syncTabPill(tabList: Element | null | undefined, isAnimated = false): void {
   if (!(tabList instanceof HTMLElement) || typeof tabList.style?.setProperty !== 'function') {
     return;
   }
-  const checkedInput = tabList.querySelector('input:checked');
-  const activeTab =
-    tabList.querySelector('.is-active') ??
-    (checkedInput instanceof Element ? checkedInput.closest('.icon-picker-tab') : undefined);
+  const activeTab = tabList.querySelector('.is-active');
   if (
     !(activeTab instanceof HTMLElement) ||
     typeof activeTab.offsetWidth !== 'number' ||
@@ -69,7 +67,7 @@ export function syncTabPill(tabList: Element | null | undefined, shouldAnimate =
   ) {
     return;
   }
-  if (shouldAnimate && tabList.classList.contains('has-pill')) {
+  if (isAnimated && tabList.classList.contains('has-pill')) {
     if (!tabList.classList.contains('is-animated')) {
       // Flush the pre-animation pill geometry before enabling CSS transitions:
       tabList.getBoundingClientRect?.();
@@ -88,14 +86,14 @@ export function syncTabPill(tabList: Element | null | undefined, shouldAnimate =
 /**
  * Mark `selectedTab` as the active roving tab (`is-active`, `aria-selected`, `tabindex`) across `tabs`
  * and update its parent container's sliding selection pill.
- * @param tabs            All tab elements in the `tablist`.
- * @param selectedTab     Newly selected tab element.
- * @param shouldAnimate   Whether to animate the selection pill transition (defaults to `true`).
+ * @param tabs          All tab elements in the `tablist`.
+ * @param selectedTab   Newly selected tab element.
+ * @param isAnimated    Whether to animate the selection pill transition (defaults to `true`).
  */
 export function activateRovingTab(
   tabs: Iterable<Element>,
   selectedTab: Element,
-  shouldAnimate = true
+  isAnimated = true
 ): void {
   for (const tab of tabs) {
     const isSelected = tab === selectedTab;
@@ -103,7 +101,7 @@ export function activateRovingTab(
     tab.setAttribute('aria-selected', String(isSelected));
     tab.setAttribute('tabindex', isSelected ? '0' : '-1');
   }
-  syncTabPill(selectedTab.parentElement, shouldAnimate);
+  syncTabPill(selectedTab.parentElement, isAnimated);
 }
 
 /**
@@ -270,20 +268,26 @@ export function createAsyncCache<T>(
 export function createIconResolver(index: IconPickerIndex, maxSlugLength: number): IconResolver {
   const lucideByKey = new Map<string, string>();
   const lucidePositions = new Map<string, number>();
-  for (const [i, slug] of index.sets.lucide.entries()) {
-    lucideByKey.set(capitalizeSlugParts(slug), slug);
-    lucidePositions.set(slug, i);
+  for (let i = 0; i < index.sets.lucide.length; i += 1) {
+    const slug = index.sets.lucide[i];
+    if (slug !== undefined) {
+      lucideByKey.set(capitalizeSlugParts(slug), slug);
+      lucidePositions.set(slug, i);
+    }
   }
   for (const [alias, primary] of Object.entries(index.lucideAliases)) {
     lucideByKey.set(capitalizeSlugParts(alias), primary);
   }
   const brandByClean = new Map<string, string>();
   const brandPositions = new Map<string, number>();
-  for (const [i, slug] of index.sets.brands.entries()) {
-    brandPositions.set(slug, i);
-    const cleanKey = slug.replace(BRAND_SLUG_CLEAN_RX, '');
-    if (!brandByClean.has(cleanKey)) {
-      brandByClean.set(cleanKey, slug);
+  for (let i = 0; i < index.sets.brands.length; i += 1) {
+    const slug = index.sets.brands[i];
+    if (slug !== undefined) {
+      brandPositions.set(slug, i);
+      const cleanKey = slug.replace(BRAND_SLUG_CLEAN_RX, '');
+      if (!brandByClean.has(cleanKey)) {
+        brandByClean.set(cleanKey, slug);
+      }
     }
   }
 
@@ -363,7 +367,9 @@ export const core: BuilderClientCore = {
   createAsyncCache,
   createIconResolver,
   createTypingLinesController(options) {
-    return createTypingLinesController(options as TypingLinesControllerOptions);
+    return createTypingLinesController(
+      options as Parameters<typeof createTypingLinesController>[0]
+    );
   },
   decodeSegment,
   encodeSegment,
@@ -390,7 +396,6 @@ export {
   buildPath,
   buildPreviewPath,
   buildShareUrl,
-  buildSnippets,
   buildSnippetTokens,
   collectStackSlugs,
   collectStackTileTokens,
@@ -399,15 +404,12 @@ export {
   composeHint,
   composeIconPair,
   composeSpecial,
-  decodeSegment,
-  encodeSegment,
   extractBuilderPrefillPath,
-  findField,
   findOption,
   findService,
   getOwnValue,
   isTypingFieldActiveForLayout,
-  normalizeStackGroups,
+  isValidSpecialPayload,
   parseImportedSnippet,
   parsePath,
   readState,

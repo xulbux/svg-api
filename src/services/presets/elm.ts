@@ -1,5 +1,7 @@
 /**
- * Elm service preset – Live upstream metrics and redirect transformations.
+ * Elm Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Elm.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

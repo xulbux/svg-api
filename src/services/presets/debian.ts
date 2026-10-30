@@ -1,8 +1,9 @@
 /**
- * Debian service preset – Live upstream metrics and redirect transformations.
+ * Debian Service Preset
  *
- * The optional suite segment falls back to `DEFAULT_DEBIAN_SUITE` and resolves release aliases via
- * `DEBIAN_SUITE_ALIASES`.
+ * Live upstream metrics and redirect transformations for Debian.
+ *
+ * The optional suite segment falls back to `DEFAULT_DEBIAN_SUITE` and resolves release aliases via `DEBIAN_SUITE_ALIASES`.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -37,20 +38,23 @@ function projectDebianSource(data: unknown): DebianSourceProjection | undefined 
   if (!isJsonObject(data) || data.error !== undefined || !Array.isArray(data.versions)) {
     return undefined;
   }
-  const bySuite: Record<string, string> = {};
+  const bySuite: Record<string, string> = Object.create(null) as Record<string, string>;
+  let hasSuites = false;
   for (const entry of data.versions) {
     if (isJsonObject(entry) && Array.isArray(entry.suites)) {
       const version = readText(entry.version);
       if (version) {
         for (const rawSuite of entry.suites) {
-          if (typeof rawSuite === 'string' && !Object.hasOwn(bySuite, rawSuite)) {
-            bySuite[rawSuite] = version;
+          const suite = readText(rawSuite);
+          if (suite !== undefined && !(suite in bySuite)) {
+            bySuite[suite] = version;
+            hasSuites = true;
           }
         }
       }
     }
   }
-  return Object.keys(bySuite).length > 0 ? { bySuite } : undefined;
+  return hasSuites ? { bySuite } : undefined;
 }
 
 /** Read the package version for the requested Debian suite (or its release alias). */
@@ -60,12 +64,13 @@ function readDebianSuiteVersion(
 ): string | undefined {
   const normalized = rawSuite.toLowerCase();
   const suite = getOwnValue(DEBIAN_SUITE_ALIASES, normalized) ?? normalized;
-  return getOwnValue(source.bySuite, suite);
+  return source.bySuite[suite];
 }
 
 /** Debian Sources API endpoint with Debian Package Tracker redirect. */
 const DEBIAN_ENDPOINT = createEndpoint({
   api: 'https://sources.debian.org/api/src/{target}/',
+  extractKeys: ['versions'],
   page: 'https://tracker.debian.org/pkg/{target}',
   project: projectDebianSource,
 });

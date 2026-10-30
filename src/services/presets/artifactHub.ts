@@ -1,9 +1,11 @@
 /**
- * Artifact Hub service preset – Live upstream metrics and redirect transformations.
+ * Artifact Hub Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Artifact Hub.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createCountMetric, createVersionMetric, STARS } from '@/services/metrics';
+import { STARS, createCountMetric, createVersionMetric } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 

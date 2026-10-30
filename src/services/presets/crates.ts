@@ -1,5 +1,7 @@
 /**
- * crates.io service preset – Live upstream metrics and redirect transformations.
+ * crates.io Service Preset
+ *
+ * Live upstream metrics and redirect transformations for crates.io.
  *
  * `?include=default_version,downloads` shrinks the crate document from `~440 KB` (every version)
  * to `~3 KB` (only the default version and recent download counters).
@@ -7,11 +9,11 @@
 
 import {
   CACHE_TTL,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -61,14 +63,14 @@ interface CratesDownloadsProjection {
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Accumulate daily `{ date, downloads }` entries into `byDate`. */
-function addDailyEntries(entries: unknown, byDate: Map<string, number>): void {
+function addDailyEntries(entries: unknown, byDate: Record<string, number>): void {
   if (!Array.isArray(entries)) {
     return;
   }
   for (const entry of entries) {
     if (isJsonObject(entry) && typeof entry.date === 'string') {
-      const count = readFiniteNumber(entry.downloads) ?? 0;
-      byDate.set(entry.date, (byDate.get(entry.date) ?? 0) + count);
+      const count = Math.max(0, readFiniteNumber(entry.downloads) ?? 0);
+      byDate[entry.date] = (byDate[entry.date] ?? 0) + count;
     }
   }
 }
@@ -78,18 +80,19 @@ function projectCratesDownloads(data: unknown): CratesDownloadsProjection | unde
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const byDate = new Map<string, number>();
+  const byDate: Record<string, number> = Object.create(null) as Record<string, number>;
   addDailyEntries(data.version_downloads, byDate);
-  addDailyEntries(asJsonObject(data.meta)?.extra_downloads, byDate);
-  if (byDate.size === 0) {
+  addDailyEntries(readJsonObject(data.meta)?.extra_downloads, byDate);
+  const dateKeys = Object.keys(byDate).toSorted();
+  if (dateKeys.length === 0) {
     if (Array.isArray(data.version_downloads)) {
       return { recentDownloads: 0 };
     }
-    return { recentDownloads: readFiniteNumber(asJsonObject(data.crate)?.recent_downloads) };
+    return { recentDownloads: readFiniteNumber(readJsonObject(data.crate)?.recent_downloads) };
   }
   const daily: number[] = [];
-  for (const dateKey of [...byDate.keys()].toSorted()) {
-    daily.push(byDate.get(dateKey) ?? 0);
+  for (const dateKey of dateKeys) {
+    daily.push(byDate[dateKey] ?? 0);
   }
   const totalDays = daily.length;
   const [currWindow, prevWindow] = compareTrailingWindows(daily, 30);
@@ -123,7 +126,7 @@ function projectCratesPayload(data: unknown): CratesIoProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const crate = asJsonObject(data.crate);
+  const crate = readJsonObject(data.crate);
   const defaultVersion =
     readText(crate?.default_version) ??
     readText(crate?.max_stable_version) ??
@@ -142,6 +145,7 @@ function projectCratesPayload(data: unknown): CratesIoProjection | undefined {
 /** crates.io crate metadata endpoint (default version only) with crate page redirect. */
 const CRATES_ENDPOINT = createEndpoint({
   api: 'https://crates.io/api/v1/crates/{target}?include=default_version,downloads',
+  extractKeys: ['crate', 'versions'],
   page: 'https://crates.io/crates/{target}',
   project: projectCratesPayload,
 });
@@ -149,6 +153,7 @@ const CRATES_ENDPOINT = createEndpoint({
 /** crates.io 90-day daily downloads endpoint (refreshed daily) with crate page redirect. */
 const CRATES_DOWNLOADS_ENDPOINT = createEndpoint({
   api: 'https://crates.io/api/v1/crates/{target}/downloads',
+  extractKeys: ['meta', 'version_downloads'],
   page: 'https://crates.io/crates/{target}',
   project: projectCratesDownloads,
   ttl: CACHE_TTL.daily,

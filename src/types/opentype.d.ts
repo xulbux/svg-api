@@ -1,5 +1,7 @@
 /**
- * OpenType & binary module declarations – Ambient TypeScript declarations for `opentype.js` and bundled Worker `Data` binary modules.
+ * OpenType & Binary Module Declarations
+ *
+ * Ambient TypeScript declarations for `opentype.js` and bundled Worker `Data` binary modules.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------

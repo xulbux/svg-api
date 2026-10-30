@@ -1,5 +1,7 @@
 /**
- * Hackage service preset – Live upstream metrics and redirect transformations.
+ * Hackage Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Hackage.
  */
 
 import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

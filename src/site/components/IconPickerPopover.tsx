@@ -1,5 +1,7 @@
 /**
- * Icon picker popover component – Shared searchable icon picker dialog (`<IconPickerPopover />`) with icon set tabs, virtualized grid, and glyph templates.
+ * Icon Picker Popover Component
+ *
+ * Shared searchable icon picker dialog (`<IconPickerPopover />`) with icon set tabs, virtualized grid, and glyph templates.
  */
 
 import { getSiteAssetUrl } from '@/site/assets';
@@ -41,15 +43,27 @@ let iconPickerHtmlCache: string | undefined = undefined;
 function renderIconPickerHtml(): string {
   if (iconPickerHtmlCache === undefined) {
     const tabs: HtmlFragment[] = [];
-    for (const [i, tab] of ICON_PICKER_TABS.entries()) {
-      tabs.push(
-        <label class="icon-picker-tab">
-          <input type="radio" name="icon-picker-set" value={tab.id} checked={i === 0} />
-          <span data-picker-tab-label={tab.id} data-label={tab.label}>
+    for (let i = 0; i < ICON_PICKER_TABS.length; i += 1) {
+      const tab = ICON_PICKER_TABS[i];
+      if (tab) {
+        const isSelected = i === 0;
+        tabs.push(
+          <button
+            type="button"
+            class={
+              isSelected ? 'builder-tab icon-picker-tab is-active' : 'builder-tab icon-picker-tab'
+            }
+            role="tab"
+            aria-selected={String(isSelected)}
+            aria-controls="icon-picker-grid"
+            tabindex={isSelected ? '0' : '-1'}
+            data-picker-set={tab.id}
+            data-picker-tab-label={tab.id}
+            data-label={tab.label}>
             {tab.label}
-          </span>
-        </label>
-      );
+          </button>
+        );
+      }
     }
     const glyphTemplates: HtmlFragment[] = [];
     for (const [set, paintAttrs] of Object.entries(GLYPH_PAINT_ATTRS)) {
@@ -78,7 +92,7 @@ function renderIconPickerHtml(): string {
               autocomplete="off"
             />
           </div>
-          <div class="icon-picker-tabs" role="radiogroup" aria-label="Icon set">
+          <div class="builder-tabs icon-picker-tabs" role="tablist" aria-label="Icon set">
             {tabs}
           </div>
         </div>
@@ -89,9 +103,12 @@ function renderIconPickerHtml(): string {
           aria-label="Icons"
           tabindex="-1"></div>
         <div class="icon-picker-empty" id="icon-picker-empty" hidden={true}></div>
-        <p class="icon-picker-foot" id="icon-picker-status" aria-live="polite">
-          Loading icons…
-        </p>
+        <div class="icon-picker-foot">
+          <span class="icon-picker-status" id="icon-picker-status" aria-live="polite">
+            Loading icons…
+          </span>
+          <span class="icon-picker-slug" id="icon-picker-slug" aria-hidden="true"></span>
+        </div>
         <template id="icon-glyph-templates">{glyphTemplates}</template>
       </div>
     );

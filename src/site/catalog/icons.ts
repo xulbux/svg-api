@@ -1,5 +1,7 @@
 /**
- * Icons documentation catalog – Standalone UI/brand icon showcase cards and parameter reference rows for `/docs/icons`.
+ * Icons Documentation Catalog
+ *
+ * Standalone UI/brand icon showcase cards and parameter reference rows for `/docs/icons`.
  */
 
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
@@ -9,53 +11,56 @@ import { FALLBACK_ICON_SLUG } from '@/svg/icons';
 import { ICON_SIZE_RANGE, ICON_STROKE_RANGE } from '@/svg/renderer';
 import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Showcase cards for the dedicated `/docs/icons` page. */
-export const ICON_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      { alt: 'Website', path: '/icon/globe-code?size=16&stroke=2.5' },
-      { alt: 'Code', path: '/icon/code-xml?size=16&stroke=2.5' },
-      { alt: 'Docs', path: '/icon/square-text?size=16&stroke=2.5' },
-      { alt: 'Worm', path: '/icon/snake?size=16' },
-      { alt: 'Terminal', path: '/icon/square-terminal?color=sky&size=20' },
-      { alt: 'Package', path: '/icon/package?color=emerald' },
-      { alt: 'Quick Start', path: '/icon/zap?color=amber&size=28' },
-      { alt: 'Feedback', path: '/icon/heart-handshake?color=rose&size=28' },
-    ],
-    subtitle: 'Crisp stroke icons for section headers (size=28) and inline lists (size=16).',
-    title: 'UI Stroke Icons (size=16 to 28)',
-  },
-  {
-    items: [
-      { alt: 'Arch Linux', path: '/icon/archlinux?color=cyan&size=28' },
-      { alt: 'Python', path: '/icon/python?color=amber&size=28' },
-      { alt: 'Rust', path: '/icon/rust?color=orange&size=28' },
-      { alt: 'TypeScript', path: '/icon/ts?color=blue&size=28' },
-      { alt: 'Cloudflare', path: '/icon/cloudflare?color=orange&size=28' },
-      { alt: 'GitHub', path: '/icon/github?color=slate&size=28' },
-    ],
-    subtitle: 'Technology, language, and platform logos tinted with any theme color.',
-    title: 'Brand & Tech Logos',
-  },
-  {
-    items: [
-      { alt: 'Sheen', path: '/icon/sparkles?color=amber&size=28&anim=sheen' },
-      { alt: 'Auto Motion', path: '/icon/loader?color=sky&size=28&anim=auto' },
-      { alt: 'Turn', path: '/icon/compass?color=cyan&size=28&anim=turn' },
-      { alt: 'Whirl', path: '/icon/orbit?color=indigo&size=28&anim=whirl' },
-      { alt: 'Breathe', path: '/icon/flame?color=orange&size=28&anim=breathe' },
-      { alt: 'Pulse', path: '/icon/heart?color=rose&size=28&anim=pulse' },
-      { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
-      { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
-    ],
-    subtitle: `Diagonal sheen, icon motions (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or sheen,<motion>; Unknown slugs render the fallback icon.`,
-    title: 'Animations & Fallback (?anim=)',
-  },
-];
-
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Build the showcase cards for the dedicated `/docs/icons` page.
+ * @returns Showcase card configurations.
+ */
+export function buildIconCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        { alt: 'Website', path: '/icon/globe-code?size=16&stroke=2.5' },
+        { alt: 'Code', path: '/icon/code-xml?size=16&stroke=2.5' },
+        { alt: 'Docs', path: '/icon/square-text?size=16&stroke=2.5' },
+        { alt: 'Worm', path: '/icon/snake?size=16' },
+        { alt: 'Terminal', path: '/icon/square-terminal?color=sky&size=20' },
+        { alt: 'Package', path: '/icon/package?color=emerald' },
+        { alt: 'Quick Start', path: '/icon/zap?color=amber&size=28' },
+        { alt: 'Feedback', path: '/icon/heart-handshake?color=rose&size=28' },
+      ],
+      subtitle: 'Crisp stroke icons for section headers (size=28) and inline lists (size=16).',
+      title: 'UI Stroke Icons (size=16 to 28)',
+    },
+    {
+      items: [
+        { alt: 'Arch Linux', path: '/icon/archlinux?color=cyan&size=28' },
+        { alt: 'Python', path: '/icon/python?color=amber&size=28' },
+        { alt: 'Rust', path: '/icon/rust?color=orange&size=28' },
+        { alt: 'TypeScript', path: '/icon/ts?color=blue&size=28' },
+        { alt: 'Cloudflare', path: '/icon/cloudflare?color=orange&size=28' },
+        { alt: 'GitHub', path: '/icon/github?color=slate&size=28' },
+      ],
+      subtitle: 'Technology, language, and platform logos tinted with any theme color.',
+      title: 'Brand & Tech Logos',
+    },
+    {
+      items: [
+        { alt: 'Sheen', path: '/icon/sparkles?color=amber&size=28&anim=sheen' },
+        { alt: 'Auto Motion', path: '/icon/loader?color=sky&size=28&anim=auto' },
+        { alt: 'Turn', path: '/icon/compass?color=cyan&size=28&anim=turn' },
+        { alt: 'Whirl', path: '/icon/orbit?color=indigo&size=28&anim=whirl' },
+        { alt: 'Breathe', path: '/icon/flame?color=orange&size=28&anim=breathe' },
+        { alt: 'Pulse', path: '/icon/heart?color=rose&size=28&anim=pulse' },
+        { alt: 'Sheen + Float', path: '/icon/rocket?color=violet&size=28&anim=sheen,float' },
+        { alt: 'Unknown Icon', path: '/icon/not-a-real-icon?color=slate&size=28' },
+      ],
+      subtitle: `Diagonal sheen, icon motions (${ACTIVE_ICON_MOTION_TOKENS.join('/')}), or sheen,<motion>; Unknown slugs render the fallback icon.`,
+      title: 'Animations & Fallback (?anim=)',
+    },
+  ];
+}
 
 /**
  * Build the parameter reference rows for `/icon/:icon` routes.

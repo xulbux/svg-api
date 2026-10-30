@@ -1,11 +1,14 @@
 /**
- * Shared URL builder & parser – Synthesizes root-relative SVG paths, alt text, link targets, and shareable links, and parses existing routes into builder state.
+ * Shared URL Builder & Parser
+ *
+ * Synthesizes root-relative SVG paths, alt text, link targets, and shareable links, and parses existing routes into builder state.
  */
 
 import {
   isTypingFieldActiveForLayout,
   normalizeOptionValue,
   normalizeQueryFieldValue,
+  normalizeSpecialFieldValue,
 } from '@/site/shared/defaults';
 import {
   decodeRouteSegments,
@@ -43,6 +46,12 @@ interface ParsedRoute {
 
 /** Query parameter pair appended to reduced-motion previews (stops sheens, icon motions, widgets, and dots). */
 const STATIC_ANIM_PAIR = 'anim=none';
+
+/** Isomorphic map of short SVG route alias prefixes to their canonical route prefixes (verified against `SVG_ROUTES` in tests). */
+export const ROUTE_PREFIX_ALIASES: Readonly<Record<string, string>> = {
+  btn: 'button',
+  type: 'typing',
+};
 
 /** Cached compiled regex for `BuilderSchema.redirectValuePattern` (`undefined` until first used). */
 let cachedRedirectPatternRx: RegExp | undefined = undefined;
@@ -275,12 +284,12 @@ function parseTypingSegments(state: BuilderState, schema: BuilderSchema, route: 
 
 /** Resolve the builder element kind matching `route`'s prefix and decoded segment count. */
 function resolveRouteBuilderKind(route: ParsedRoute): BuilderKind | undefined {
-  const { prefix, segments } = route;
-  switch (prefix) {
+  const { segments } = route;
+  const canonicalPrefix = getOwnValue(ROUTE_PREFIX_ALIASES, route.prefix) ?? route.prefix;
+  switch (canonicalPrefix) {
     case 'badge': {
       return segments.length <= 2 ? 'badge' : 'service';
     }
-    case 'btn':
     case 'button': {
       return segments.length <= 2 ? 'button' : undefined;
     }
@@ -293,7 +302,6 @@ function resolveRouteBuilderKind(route: ParsedRoute): BuilderKind | undefined {
     case 'stack': {
       return segments.length <= 1 ? 'stack' : undefined;
     }
-    case 'type':
     case 'typing': {
       return segments.length <= 2 ? 'typing' : undefined;
     }
@@ -402,11 +410,15 @@ function setOptionalSearchParam(params: URLSearchParams, name: string, value: st
 
 /** Replace route alias prefixes with their canonical SVG route prefixes. */
 function canonicalizeSvgPathPrefix(rawPath: string): string {
-  if (rawPath === '/btn' || rawPath.startsWith('/btn/') || rawPath.startsWith('/btn?')) {
-    return `/button${rawPath.slice(4)}`;
-  }
-  if (rawPath === '/type' || rawPath.startsWith('/type/') || rawPath.startsWith('/type?')) {
-    return `/typing${rawPath.slice(5)}`;
+  for (const [alias, canonical] of Object.entries(ROUTE_PREFIX_ALIASES)) {
+    const aliasPrefix = `/${alias}`;
+    if (
+      rawPath === aliasPrefix ||
+      rawPath.startsWith(`${aliasPrefix}/`) ||
+      rawPath.startsWith(`${aliasPrefix}?`)
+    ) {
+      return `/${canonical}${rawPath.slice(aliasPrefix.length)}`;
+    }
   }
   return rawPath;
 }
@@ -499,7 +511,16 @@ export function parsePath(schema: BuilderSchema, rawPath: string): BuilderState 
       : '';
     state[field.id] = normalizeOptionValue(field, raw);
   }
-  return parsePathSegments(state, route, schema) ? state : undefined;
+  if (!parsePathSegments(state, route, schema)) {
+    return undefined;
+  }
+  if (schema.kind === 'service' && state.special) {
+    const specialField = findField(schema, 'special');
+    if (specialField) {
+      state.special = normalizeSpecialFieldValue(schema, state, specialField, state.special);
+    }
+  }
+  return state;
 }
 
 /**
@@ -543,9 +564,9 @@ export function buildAltText(schema: BuilderSchema, state: BuilderState): string
 }
 
 /**
- * Build the default link target wrapped around the image when the link field is empty: Service badges link to
- * their upstream page (filled from the metric's redirect template) or, without a template, to their query-free
- * badge path; Other elements stay unlinked.
+ * Build the default link target wrapped around the image when the link field is empty:
+ * Service badges link to their upstream page (filled from the metric's redirect template) or, without a template, to their query-free badge path;
+ * Other elements stay unlinked.
  * @param schema   Builder schema.
  * @param state    Current builder state.
  * @param url      Absolute SVG URL.

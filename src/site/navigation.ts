@@ -1,5 +1,8 @@
 /**
- * Site navigation – Single source of truth for the header tabs, the grouped documentation and builder sidebars, page titles, meta descriptions, and the docs pager order.
+ * Site Navigation
+ *
+ * Single source of truth for the header tabs, the grouped documentation and builder sidebars,
+ * page titles, meta descriptions, and the docs pager order.
  */
 
 import { SITE_NAME } from '@/config/site';

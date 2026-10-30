@@ -1,5 +1,7 @@
 /**
- * Bundlephobia service preset – Live upstream metrics and redirect transformations.
+ * Bundlephobia Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Bundlephobia.
  */
 
 import {
@@ -10,12 +12,13 @@ import {
   pickFields,
 } from '@/services/endpoint';
 import {
+  RATIO_DELTA_SPECIALS,
   buildRatioSpecials,
   createBytesMetric,
   createCountMetric,
   formatDeltaPercent,
 } from '@/services/metrics';
-import type { BadgeSpecialKind, BadgeSpecialMap } from '@/types';
+import type { BadgeSpecialMap } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -30,9 +33,6 @@ interface BundlephobiaSizePayload {
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-/** Automatic inline widget kinds supported by Bundlephobia size metrics (`bar`, `ring`, `delta`). */
-const SIZE_SPECIALS: readonly BadgeSpecialKind[] = ['bar', 'ring', 'delta'];
 
 /** Bundlephobia size endpoint (URL-encoded package name; Sizes only change with new releases). */
 const BUNDLEPHOBIA_ENDPOINT = createEndpoint({
@@ -75,7 +75,7 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
     gzip: createBytesMetric(
       BUNDLEPHOBIA_ENDPOINT,
       {
-        autoSpecials: SIZE_SPECIALS,
+        autoSpecials: RATIO_DELTA_SPECIALS,
         defaultColor: 'emerald',
         defaultIcon: 'weight',
         defaultLabel: 'Minzipped',
@@ -86,7 +86,7 @@ export const BUNDLEPHOBIA_SERVICE = defineService({
     min: createBytesMetric(
       BUNDLEPHOBIA_ENDPOINT,
       {
-        autoSpecials: SIZE_SPECIALS,
+        autoSpecials: RATIO_DELTA_SPECIALS,
         defaultColor: 'sky',
         defaultIcon: 'weight',
         defaultLabel: 'Minified',

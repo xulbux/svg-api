@@ -1,5 +1,8 @@
 /**
- * Service preset tests – Upstream metric transforms for every service, request validation, error handling, request coalescing, caching, streaming, and the typed service definition helpers (`src/services/`, `src/config/services.ts`).
+ * Service Preset Tests
+ *
+ * Upstream metric transforms for every service, request validation, error handling, request coalescing,
+ * caching, streaming, and the typed service definition helpers (`src/services/`, `src/config/services.ts`).
  */
 
 /* oxlint-disable unicorn/no-null -- Upstream JSON payloads legitimately contain `null` values. */
@@ -52,10 +55,10 @@ import {
   formatRelativeDate,
   formatSpdxKey,
   formatVersion,
+  parseFiniteNumber,
   readDateKeyedSeries,
   readScorecardCheckScores,
   readStarHistogram,
-  toFiniteNumber,
 } from '@/services/metrics';
 import { resolveIcon } from '@/svg/icons';
 import { MAX_BARS_POINTS } from '@/svg/renderer';
@@ -173,14 +176,10 @@ function resolveFetchUrl(input: RequestInfo | URL): string {
   return input instanceof URL ? input.href : input;
 }
 
-/**
- * Mock `fetch` to answer with JSON payloads keyed by URL fragment (the longest matching fragment wins;
- * Unmatched URLs return `404`).
- * @returns Live list of every requested upstream URL.
- */
+/** Mock `fetch` to answer with JSON payloads keyed by URL fragment (the longest matching fragment wins; Unmatched URLs return `404`). */
 function mockUpstream(payloadsByFragment: Record<string, unknown>): string[] {
   const requestedUrls: string[] = [];
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
     const url = resolveFetchUrl(input);
     requestedUrls.push(url);
     let bestFragment: string | undefined = undefined;
@@ -189,17 +188,16 @@ function mockUpstream(payloadsByFragment: Record<string, unknown>): string[] {
         bestFragment = fragment;
       }
     }
-    return bestFragment === undefined
-      ? new Response('not found', { status: 404 })
-      : Response.json(payloadsByFragment[bestFragment]);
+    return Promise.resolve(
+      bestFragment === undefined
+        ? new Response('not found', { status: 404 })
+        : Response.json(payloadsByFragment[bestFragment])
+    );
   });
   return requestedUrls;
 }
 
-/**
- * Create a body stream that serves `head` in `headChunkSize`-byte chunks, followed by `tailChunks`
- * lazily generated chunks of `tailChunk`.
- */
+/** Create a body stream that serves `head` in `headChunkSize`-byte chunks, followed by `tailChunks` lazily generated chunks of `tailChunk`. */
 function createChunkedBody(
   head: string,
   headChunkSize: number,
@@ -254,10 +252,7 @@ function parseServiceRequest(path: string): ServiceRequest {
 }
 
 /** Resolve a service badge path through the route parser and fetcher (no SVG rendering). */
-async function resolvePathMetric(
-  path: string,
-  env: Env = TEST_ENV
-): Promise<ResolvedServiceMetric> {
+function resolvePathMetric(path: string, env: Env = TEST_ENV): Promise<ResolvedServiceMetric> {
   return resolveServiceMetric(parseServiceRequest(path), env);
 }
 
@@ -466,20 +461,13 @@ describe('service registry integrity', () => {
 
   it('resolves every metric default icon, redirect URL, and effective metric alias target across SERVICES_CONFIG', () => {
     for (const [key, service] of Object.entries(SERVICES_CONFIG)) {
-      const owner = service.route.owner ? 'example' : undefined;
-      const sampleSegment =
-        service.route.target.pattern && !service.route.target.pattern.test('example')
-          ? '12345'
-          : 'example';
-      const target = Array.from(
-        { length: service.route.target.minSegments ?? 1 },
-        () => sampleSegment
-      ).join('/');
+      const { owner, target } = buildSampleRouteParams(service);
+      const effectiveOwner = owner || undefined;
       for (const [metricKey, metric] of Object.entries(service.metrics)) {
         expect(resolveIcon(metric.defaultIcon), `${key}/${metricKey} icon`).toBeDefined();
         const redirectUrl = resolveServiceRedirectUrl({
           metric: metricKey,
-          owner,
+          owner: effectiveOwner,
           service: key,
           target,
         });
@@ -490,9 +478,16 @@ describe('service registry integrity', () => {
         expect(Object.hasOwn(service.metrics, canonical), `${key} alias ${alias}`).toBe(true);
         expect(Object.hasOwn(service.metrics, alias), `${key} alias ${alias} shadowed`).toBe(false);
         expect(
-          resolveServiceRedirectUrl({ metric: alias, owner, service: key, target }),
+          resolveServiceRedirectUrl({ metric: alias, owner: effectiveOwner, service: key, target }),
           `${key} alias ${alias} redirect`
-        ).toBe(resolveServiceRedirectUrl({ metric: canonical, owner, service: key, target }));
+        ).toBe(
+          resolveServiceRedirectUrl({
+            metric: canonical,
+            owner: effectiveOwner,
+            service: key,
+            target,
+          })
+        );
       }
     }
   });
@@ -1340,13 +1335,8 @@ describe('upstream error handling', () => {
 
 describe('upstream response size cap', () => {
   it('rejects oversized bodies via content-length and while streaming (regression: unbounded upstream bodies)', async () => {
-    const declared = createChunkedBody('{}', 2);
-    const streamed = createChunkedBody(
-      '{"version":"1.0.0","padding":"',
-      65_536,
-      'x'.repeat(65_536),
-      40
-    );
+    const declared = createChunkedBody('42', 2);
+    const streamed = createChunkedBody('1', 1, '0'.repeat(65_536), 40);
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
       if (url.includes('/declared/')) {
@@ -1356,11 +1346,11 @@ describe('upstream response size cap', () => {
       }
       return Promise.resolve(new Response(streamed.body));
     });
-    const declaredBadge = await resolvePathMetric('/badge/npm/declared/v');
+    const declaredBadge = await resolvePathMetric('/badge/hn/declared/karma');
     expect(declaredBadge.status).toBe(413);
     expect(declaredBadge.result.value).toBe('too large');
     expect(declared.stats.pulledChunks).toBeLessThanOrEqual(1);
-    const streamedBadge = await resolvePathMetric('/badge/npm/streamed/v');
+    const streamedBadge = await resolvePathMetric('/badge/hn/streamed/karma');
     expect(streamedBadge.result.value).toBe('too large');
     expect(streamed.stats.isCancelled).toBe(true);
     expect(streamed.stats.pulledChunks).toBeLessThan(40);
@@ -2095,9 +2085,9 @@ describe('metric formatting helpers', () => {
   });
 
   it('treats blank numeric strings as missing (regression: "  " rendered as 0)', () => {
-    expect(toFiniteNumber('  ')).toBeUndefined();
-    expect(toFiniteNumber('')).toBeUndefined();
-    expect(toFiniteNumber(' 12 ')).toBe(12);
+    expect(parseFiniteNumber('  ')).toBeUndefined();
+    expect(parseFiniteNumber('')).toBeUndefined();
+    expect(parseFiniteNumber(' 12 ')).toBe(12);
     expect(formatCount('  ')).toBe('n/a');
   });
 
@@ -2277,19 +2267,23 @@ describe('developer, AI, quality & app presets (Homebrew, Hugging Face, docs.rs,
 
   it('resolves Hugging Face Spaces runtime stages, SDKs, and likes, and maps 401 private/missing Spaces to not found', async () => {
     const requestedUrls: string[] = [];
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
       requestedUrls.push(url);
       if (url.includes('/spaces/black-forest-labs/FLUX.1-dev?')) {
-        return Response.json({ likes: 5210, runtime: { stage: 'RUNNING' }, sdk: 'gradio' });
+        return Promise.resolve(
+          Response.json({ likes: 5210, runtime: { stage: 'RUNNING' }, sdk: 'gradio' })
+        );
       }
       if (url.includes('/spaces/acme/sleeping-app?')) {
-        return Response.json({ likes: 12, runtime: { stage: 'SLEEPING' }, sdk: 'streamlit' });
+        return Promise.resolve(
+          Response.json({ likes: 12, runtime: { stage: 'SLEEPING' }, sdk: 'streamlit' })
+        );
       }
       if (url.includes('/spaces/acme/broken-app?')) {
-        return Response.json({ runtime: { stage: 'BUILD_ERROR' }, sdk: 'docker' });
+        return Promise.resolve(Response.json({ runtime: { stage: 'BUILD_ERROR' }, sdk: 'docker' }));
       }
-      return new Response('Unauthorized', { status: 401 });
+      return Promise.resolve(new Response('Unauthorized', { status: 401 }));
     });
 
     expect(await describeMetric('/badge/hf-space/black-forest-labs/FLUX.1-dev/likes')).toBe(
@@ -2604,44 +2598,48 @@ describe('package registry presets (CocoaPods, Snapcraft, Clojars, Hackage, Elm)
   it('sends the required Snap-Device-Series header and picks the stable amd64 default-track build', async () => {
     const requestedHeaders: Record<string, string>[] = [];
     vi.spyOn(globalThis, 'fetch').mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
+      (input: RequestInfo | URL, init?: RequestInit) => {
         requestedHeaders.push((init?.headers ?? {}) as Record<string, string>);
         const url = resolveFetchUrl(input);
         if (url.includes('/snaps/info/firefox?')) {
-          return Response.json({
-            'channel-map': [
-              {
-                channel: { architecture: 'arm64', risk: 'stable', track: 'latest' },
-                version: '157.0-1',
-              },
-              {
-                channel: { architecture: 'amd64', risk: 'beta', track: 'latest' },
-                version: '159.0b3-1',
-              },
-              {
-                channel: { architecture: 'amd64', risk: 'stable', track: 'esr' },
-                version: '153.5.0esr-1',
-              },
-              {
-                channel: { architecture: 'amd64', risk: 'stable', track: 'latest' },
-                version: '158.0-2',
-              },
-            ],
-            snap: { license: 'MPL-2.0' },
-          });
+          return Promise.resolve(
+            Response.json({
+              'channel-map': [
+                {
+                  channel: { architecture: 'arm64', risk: 'stable', track: 'latest' },
+                  version: '157.0-1',
+                },
+                {
+                  channel: { architecture: 'amd64', risk: 'beta', track: 'latest' },
+                  version: '159.0b3-1',
+                },
+                {
+                  channel: { architecture: 'amd64', risk: 'stable', track: 'esr' },
+                  version: '153.5.0esr-1',
+                },
+                {
+                  channel: { architecture: 'amd64', risk: 'stable', track: 'latest' },
+                  version: '158.0-2',
+                },
+              ],
+              snap: { license: 'MPL-2.0' },
+            })
+          );
         }
         if (url.includes('/snaps/info/armonly?')) {
-          return Response.json({
-            'channel-map': [
-              {
-                channel: { architecture: 'arm64', risk: 'stable', track: '2.x' },
-                version: '2.4.1',
-              },
-            ],
-            'default-track': '2.x',
-          });
+          return Promise.resolve(
+            Response.json({
+              'channel-map': [
+                {
+                  channel: { architecture: 'arm64', risk: 'stable', track: '2.x' },
+                  version: '2.4.1',
+                },
+              ],
+              'default-track': '2.x',
+            })
+          );
         }
-        return new Response('not found', { status: 404 });
+        return Promise.resolve(new Response('not found', { status: 404 }));
       }
     );
     expect(await describeMetric('/badge/snap/firefox/v')).toBe('Snapcraft: v158.0-2');
@@ -3334,19 +3332,21 @@ describe('distribution & community presets (Arch Linux, MetaCPAN, MacPorts, Fedo
 
   it('resolves Fedora branch versions (rawhide by default) and reports mdapi 400 answers as not found', async () => {
     const requestedUrls: string[] = [];
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
       const url = resolveFetchUrl(input);
       requestedUrls.push(url);
       if (url.endsWith('/rawhide/pkg/python3')) {
-        return Response.json({ arch: 'i686', epoch: '0', release: '1.fc46', version: '3.15.0' });
+        return Promise.resolve(
+          Response.json({ arch: 'i686', epoch: '0', release: '1.fc46', version: '3.15.0' })
+        );
       }
       if (url.endsWith('/f43/pkg/python3')) {
-        return Response.json({ epoch: '0', release: '1.fc43', version: '3.14.8' });
+        return Promise.resolve(Response.json({ epoch: '0', release: '1.fc43', version: '3.14.8' }));
       }
       if (url.endsWith('/rawhide/pkg/ed')) {
-        return Response.json({ epoch: '1', release: '3.fc46', version: '2.0' });
+        return Promise.resolve(Response.json({ epoch: '1', release: '3.fc46', version: '2.0' }));
       }
-      return new Response('400: Bad Request', { status: 400 });
+      return Promise.resolve(new Response('400: Bad Request', { status: 400 }));
     });
     expect(await describeMetric('/badge/fedora/python3/v')).toBe('Fedora: v3.15.0-1.fc46');
     expect(await describeMetric('/badge/fedora/f43/python3/v')).toBe('Fedora: v3.14.8-1.fc43');
@@ -3750,15 +3750,6 @@ describe('inline widget & preset regressions', () => {
     mockUpstream({
       'api.npmjs.org/downloads/range/last-year/full-pkg': { downloads: fullYearDownloads },
       'api.npmjs.org/downloads/range/last-year/young-pkg': { downloads: youngDownloads },
-      'clickpy.clickhouse.com/dashboard/rich': {
-        data: [
-          {
-            data: [100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340, 360, 380],
-            id: 'downloads_over_time',
-          },
-          { data: { total: 45_000_000 }, id: 'summary' },
-        ],
-      },
       'crates.io/api/v1/crates/tokio/downloads': {
         meta: { extra_downloads: cratesNinetyDays },
         version_downloads: [],
@@ -3781,9 +3772,31 @@ describe('inline widget & preset regressions', () => {
           { attributes: { downloads: 200, 'published-at': '' } },
         ],
       },
+      'sql-clickhouse.clickhouse.com': {
+        row_1: {
+          last_month: '3000000',
+          monthly_12m: [
+            '100',
+            '120',
+            '140',
+            '160',
+            '180',
+            '200',
+            '220',
+            '240',
+            '260',
+            '280',
+            '300',
+            '320',
+          ],
+          prev_month: '2000000',
+          total: '45000000',
+        },
+      },
     });
 
-    // Young npm package with 20 days of data sums all 20 days (`2k/mo`) instead of `sumWindow` slicing half, and aligns `dl`/`dy` deltas (`1500` vs `500` = `+200%`):
+    // Young npm package with 20 days of data sums all 20 days (`2k/mo`) instead of `sumWindow` slicing half,
+    // and aligns `dl`/`dy` deltas (`1500` vs `500` = `+200%`):
     const youngDl = await resolvePathMetric('/badge/npm/young-pkg/dl');
     const youngDy = await resolvePathMetric('/badge/npm/young-pkg/dy');
     expect(youngDl.result.value).toBe('2k/mo');
@@ -3812,9 +3825,10 @@ describe('inline widget & preset regressions', () => {
     }
 
     const pypiDt = await resolvePathMetric('/badge/pypi/rich/dt');
-    if (pypiDt.result.specials?.bars?.type === 'bars') {
-      expect(pypiDt.result.specials.bars.values).toHaveLength(MAX_BARS_POINTS);
-    }
+    expect(pypiDt.result.specials?.bars).toMatchObject({ type: 'bars' });
+    expect(
+      pypiDt.result.specials?.bars?.type === 'bars' ? pypiDt.result.specials.bars.values : []
+    ).toHaveLength(MAX_BARS_POINTS);
 
     // `pypi` prefers deeper `License :: OSI Approved :: MIT License` over trailing generic `License :: OSI Approved`:
     expect(await describeMetric('/badge/pypi/classifier-pkg/license')).toBe('License: MIT License');
@@ -3836,7 +3850,8 @@ describe('inline widget & preset regressions', () => {
     expect(resolvePathRedirect('/badge/gh//repo/stars')).toBe(FALLBACK_REDIRECT_URL);
     expect(fetchSpy).not.toHaveBeenCalled();
 
-    // [2] Global `dl: 'dt'` alias resolves across every service defining `dt` without explicit `dl` (while `crates` keeps `dl: 'dq'` and `pypi` keeps direct `dl`):
+    // [2] Global `dl: 'dt'` alias resolves across every service defining `dt` without explicit `dl`
+    // (while `crates` keeps `dl: 'dq'` and `pypi` keeps direct `dl`):
     const cratesAliases = new Map(listServiceMetricAliases(getService('crates')));
     const pypiAliases = new Map(listServiceMetricAliases(getService('pypi')));
     expect(cratesAliases.get('dl')).toBe('dq');
@@ -3900,5 +3915,411 @@ describe('inline widget & preset regressions', () => {
     expect(archFlagged.result.color).toBe('amber');
     expect(aurZero.result.color).toBe('sky');
     expect(aurFlagged.result.color).toBe('amber');
+  });
+
+  it('infers projection extractKeys, serves Tier-1 edge hits under MAX_IN_FLIGHT_LOADS saturation, validates epoch Expires and streaming JSON boundaries, and handles preset/metric edge cases (regressions: manual extractKeys drift, edge cache blocked by in-flight cap, epoch 0 Expires hit, >1 KB root array 502 / >2 MB root array OOM / trailing JSON garbage, cdnjs/wordpress empty 200, github invalid handle, missing flagged version color)', async () => {
+    // [1] `createEndpoint` infers `extractKeys` automatically from `pickFields` and `projectFirstEntry`:
+    const pickedEndpoint = createEndpoint<{ license?: string; version?: string }>({
+      api: 'https://example.com/pkg',
+      page: 'https://example.com',
+      project: pickFields(['version', 'license']),
+    });
+    const firstEntryEndpoint = createEndpoint<{ version?: string }>({
+      api: 'https://example.com/search',
+      page: 'https://example.com',
+      project: projectFirstEntry('results', ['version']),
+    });
+    expect(pickedEndpoint.extractKeys).toEqual(['version', 'license']);
+    expect(firstEntryEndpoint.extractKeys).toEqual(['results']);
+
+    // [2] Cold Tier-1 edge cache hits and stale rescues succeed even when 64 slow loads saturate `MAX_IN_FLIGHT_LOADS`:
+    const stub = installEdgeCacheStub();
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    const resolvers: ((response: Response) => void)[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementationOnce(() => Promise.resolve(Response.json({ version: '1.9.0' })))
+      .mockImplementationOnce(() => Promise.resolve(Response.json({ version: '2.1.0' })))
+      .mockImplementation(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolvers.push(resolve);
+          })
+      );
+
+    expect(await describeMetric('/badge/npm/edge-stale/v')).toBe('npm: v1.9.0');
+    nowSpy.mockReturnValue(REFERENCE_NOW + 500_000);
+    expect(await describeMetric('/badge/npm/edge-fresh/v')).toBe('npm: v2.1.0');
+
+    // Clear Tier-0 memory and advance past `edge-stale` TTL (`900s`) while `edge-fresh` remains valid:
+    resetUpstreamCaches();
+    nowSpy.mockReturnValue(REFERENCE_NOW + 901_000);
+    const pendingLoads = Array.from({ length: 64 }, (_unused, index) =>
+      resolvePathMetric(`/badge/npm/busy-${index}/v`)
+    );
+    await vi.waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledTimes(66);
+    });
+
+    const coldEdgeHit = await resolvePathMetric('/badge/npm/edge-fresh/v');
+    expect(coldEdgeHit.status).toBe(200);
+    expect(coldEdgeHit.result.value).toBe('v2.1.0');
+
+    const coldEdgeRescue = await resolvePathMetric('/badge/npm/edge-stale/v');
+    expect(coldEdgeRescue.status).toBe(200);
+    expect(coldEdgeRescue.result.value).toBe('v1.9.0');
+
+    const shedUncached = await resolvePathMetric('/badge/npm/uncached-overflow/v');
+    expect(shedUncached.status).toBe(429);
+    expect(shedUncached.result.value).toBe('rate limited');
+
+    for (const resolve of resolvers) {
+      resolve(Response.json({ version: '1.0.0' }));
+    }
+    await Promise.all(pendingLoads);
+    resetUpstreamCaches();
+
+    // [3] Edge cache entries with `Expires: Thu, 01 Jan 1970 00:00:00 GMT` (`rawExpiresAt <= 0`) are ignored:
+    const [epochKey = ''] = stub.storedKeys;
+    stub.store.set(
+      epochKey,
+      Response.json({ version: '0.0.1' }, { headers: { Expires: 'Thu, 01 Jan 1970 00:00:00 GMT' } })
+    );
+    fetchSpy.mockImplementationOnce(() => Promise.resolve(Response.json({ version: '3.0.0' })));
+    expect(await describeMetric('/badge/npm/edge-stale/v')).toBe('npm: v3.0.0');
+    resetUpstreamCaches();
+
+    // [4] Streaming JSON scanner; >1 KB root array -> `404`, >2 MB root array -> `413` + stream cancel, trailing garbage -> `502`:
+    const oversizedArrayChunk = createChunkedBody('[', 1, '1111111111,', 220_000);
+    fetchSpy.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/large-array/')) {
+        return Promise.resolve(
+          new Response(`[${'1,'.repeat(800)}1]`, {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          })
+        );
+      }
+      if (url.includes('/huge-array/')) {
+        return Promise.resolve(
+          new Response(oversizedArrayChunk.body, {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          })
+        );
+      }
+      if (url.includes('/trailing-garbage/')) {
+        return Promise.resolve(
+          new Response('{"version":"1.0.0"}garbage', {
+            headers: { 'content-type': 'application/json' },
+            status: 200,
+          })
+        );
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }));
+    });
+
+    const largeRootArray = await resolvePathMetric('/badge/npm/large-array/v');
+    expect(largeRootArray.status).toBe(404);
+    expect(largeRootArray.result.value).toBe('not found');
+
+    const hugeRootArray = await resolvePathMetric('/badge/npm/huge-array/v');
+    expect(hugeRootArray.status).toBe(413);
+    expect(hugeRootArray.result.value).toBe('too large');
+    expect(oversizedArrayChunk.stats.isCancelled).toBe(true);
+
+    const trailingGarbage = await resolvePathMetric('/badge/npm/trailing-garbage/v');
+    expect(trailingGarbage.status).toBe(502);
+    expect(trailingGarbage.result.value).toBe('api error');
+    resetUpstreamCaches();
+
+    // [5] Preset & metric edge cases (`cdnjs` `{}`, `wordpress` `{ error }`, `github` `-bad`,
+    // missing flagged `arch`, whitespace `release` / `LicenseRef-`):
+    const presetUrls = mockUpstream({
+      'api.cdnjs.com/libraries/ghost?fields=version,license': {},
+      'archlinux.org/packages/search/json/?name=nameless-flag': {
+        results: [{ flag_date: '2026-10-01' }],
+      },
+      'plugins/info/1.2/?action=plugin_information&request%5Bslug%5D=closed-plugin': {
+        error: 'closed',
+      },
+    });
+    const cdnjsGhost = await resolvePathMetric('/badge/cdnjs/ghost/v');
+    expect(cdnjsGhost.status).toBe(404);
+    expect(cdnjsGhost.result.value).toBe('not found');
+
+    const wpClosed = await resolvePathMetric('/badge/wp/closed-plugin/v');
+    expect(wpClosed.status).toBe(404);
+    expect(wpClosed.result.value).toBe('not found');
+
+    const ghCountBefore = presetUrls.length;
+    const ghInvalidOwner = await resolvePathMetric('/badge/gh/-bad/repo/stars');
+    expect(ghInvalidOwner.status).toBe(400);
+    expect(ghInvalidOwner.result.value).toBe('invalid name');
+    expect(presetUrls).toHaveLength(ghCountBefore);
+
+    const archNamelessFlag = await resolvePathMetric('/badge/arch/nameless-flag/v');
+    expect(archNamelessFlag.result.color).toBe('sky');
+    expect(archNamelessFlag.result.value).toBe('n/a');
+
+    expect(buildPackageVersion(0, '1.0', '   ')).toBe('1.0');
+    expect(formatLicense('LicenseRef-   ')).toBe('unknown');
+  });
+
+  it('validates upstream redirect hops before fetching, strips cross-origin Authorization, falls through Retry-After: 0, and guards negative/mismatched preset metrics (regressions: automatic http:// redirect follow, cross-origin token leak, Retry-After: 0 masking reset, negative counts, npm array exports, liberapay currency mismatch, gitea forks ratio)', async () => {
+    // [1] `302 -> http://...` is rejected without issuing a second `fetch`,
+    // while `302 -> https://...` strips `Authorization` across origins and keeps it same-origin:
+    const seenRequests: { auth: string | null; url: string }[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const headers = new Headers(init?.headers);
+        seenRequests.push({ auth: headers.get('authorization'), url });
+        if (url === 'https://api.github.com/repos/org/http-hop') {
+          return Promise.resolve(
+            new Response('', { headers: { Location: 'http://evil.example/repo' }, status: 302 })
+          );
+        }
+        if (url === 'https://api.github.com/repos/org/cross-hop') {
+          return Promise.resolve(
+            new Response('', { headers: { Location: 'https://cdn.example.com/repo' }, status: 302 })
+          );
+        }
+        if (url === 'https://cdn.example.com/repo') {
+          return Promise.resolve(Response.json({ stargazers_count: 42 }));
+        }
+        if (url === 'https://api.github.com/repos/org/same-hop') {
+          return Promise.resolve(
+            new Response('', {
+              headers: { Location: 'https://api.github.com/repositories/1' },
+              status: 302,
+            })
+          );
+        }
+        if (url === 'https://api.github.com/repositories/1') {
+          return Promise.resolve(Response.json({ stargazers_count: 99 }));
+        }
+        if (url.includes('/zero-retry/')) {
+          const futureEpoch = String(Math.ceil(Date.now() / 1000) + 120);
+          return Promise.resolve(
+            new Response('rate limited', {
+              headers: { 'Retry-After': '0', 'x-ratelimit-reset': futureEpoch },
+              status: 429,
+            })
+          );
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }));
+      });
+
+    const authEnv = { ...TEST_ENV, GITHUB_TOKEN: 'ghp_secret_test_token' };
+    const blockedHttpHop = await resolveServiceMetric(
+      { metric: 'stars', owner: 'org', service: 'gh', target: 'http-hop' },
+      authEnv
+    );
+    expect(blockedHttpHop.status).toBe(502);
+    expect(seenRequests.some((entry) => entry.url.startsWith('http://'))).toBe(false);
+
+    const crossOriginHop = await resolveServiceMetric(
+      { metric: 'stars', owner: 'org', service: 'gh', target: 'cross-hop' },
+      authEnv
+    );
+    expect(crossOriginHop.status).toBe(200);
+    expect(crossOriginHop.result.value).toBe('42');
+    expect(
+      seenRequests.find((entry) => entry.url === 'https://cdn.example.com/repo')?.auth
+    ).toBeNull();
+
+    const sameOriginHop = await resolveServiceMetric(
+      { metric: 'stars', owner: 'org', service: 'gh', target: 'same-hop' },
+      authEnv
+    );
+    expect(sameOriginHop.status).toBe(200);
+    expect(sameOriginHop.result.value).toBe('99');
+    expect(
+      seenRequests.find((entry) => entry.url === 'https://api.github.com/repositories/1')?.auth
+    ).toBe('Bearer ghp_secret_test_token');
+
+    // [2] `Retry-After: 0` falls through to `x-ratelimit-reset` so adaptive backoff outlives the 30s default:
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(REFERENCE_NOW);
+    const rateLimited = await resolvePathMetric('/badge/npm/zero-retry/v');
+    expect(rateLimited.status).toBe(429);
+    const callsAfterFirst429 = seenRequests.length;
+    nowSpy.mockReturnValue(REFERENCE_NOW + 45_000);
+    const cachedRateLimited = await resolvePathMetric('/badge/npm/zero-retry/v');
+    expect(cachedRateLimited.status).toBe(429);
+    expect(seenRequests).toHaveLength(callsAfterFirst429);
+    nowSpy.mockRestore();
+    fetchSpy.mockRestore();
+    resetUpstreamCaches();
+
+    // [3] Negative download/community counts, `npm` array `exports`, `liberapay` mismatched currencies, `gitea` forks, and whitespace strings:
+    mockUpstream({
+      'api.npmjs.org/downloads/range/last-year/neg-dl': { downloads: -5 },
+      'gitea.com/api/v1/repos/gitea/act': { forks_count: 25, stars_count: 100 },
+      'liberapay.com/mix-curr/public.json': {
+        goal: { amount: '100.00', currency: 'EUR' },
+        receiving: { amount: '50.00', currency: 'USD' },
+      },
+      'registry.npmjs.org/array-types/latest': {
+        exports: [{ default: './index.js', types: './index.d.ts' }],
+        license: '   ',
+        version: '1.0.0',
+      },
+      'registry.npmjs.org/empty-types/latest': {
+        exports: { '.': { types: '   ' } },
+        version: '1.0.0',
+      },
+    });
+    expect(await describeMetric('/badge/npm/neg-dl/dw')).toBe('Downloads: n/a');
+    expect(await describeMetric('/badge/npm/array-types/types')).toBe('Types: included');
+    expect(await describeMetric('/badge/npm/array-types/l')).toBe('License: unknown');
+    expect(await describeMetric('/badge/npm/empty-types/types')).toBe('Types: none');
+
+    const mismatchedGoal = await resolvePathMetric('/badge/liberapay/mix-curr/receives');
+    expect(mismatchedGoal.result.value).toBe('$50/wk');
+    expect(mismatchedGoal.result.specials).toBeUndefined();
+
+    const giteaForks = await resolvePathMetric('/badge/gitea/gitea/act/forks');
+    expect(giteaForks.result.value).toBe('25');
+    expect(giteaForks.result.specials).toEqual({
+      bar: { type: 'bar', value: 25 },
+      ring: { type: 'ring', value: 25 },
+    });
+  });
+
+  it('streams extracted keys across npm/jsDelivr/pub/crates/homebrew/wordpress/debian, rejects Steam result != 1, caps multibyte UTF-8 streams, and blocks SSRF redirect hosts/ports', async () => {
+    // [1] Newly extracted-key endpoints cancel multi-megabyte trailing sections immediately after reading target keys:
+    const trailingMegabytes = `"trailing":"${'z'.repeat(65_536)}"}`;
+    const npmStream = createChunkedBody(
+      '{"exports":{},"license":"MIT","types":"./index.d.ts","typings":"","version":"4.0.0",',
+      32,
+      trailingMegabytes,
+      40
+    );
+    const jsdelivrStream = createChunkedBody(
+      '{"hits":{"total":1200,"dates":{"2026-10-18":500,"2026-10-19":700}},',
+      64,
+      trailingMegabytes,
+      40
+    );
+    const cratesStream = createChunkedBody(
+      '{"meta":{"extra_downloads":[{"date":"2026-10-19","downloads":10}]},"version_downloads":[],',
+      64,
+      trailingMegabytes,
+      40
+    );
+    const brewStream = createChunkedBody(
+      '{"analytics":{"install":{"30d":{"jq":250}}},"license":"MIT","versions":{"stable":"1.7.1"},',
+      64,
+      trailingMegabytes,
+      40
+    );
+    const wpStream = createChunkedBody(
+      '{"active_installs":50000,"downloaded":100000,"rating":90,"ratings":{},"requires":"6.0","requires_php":"8.1","version":"2.1.0",',
+      64,
+      trailingMegabytes,
+      40
+    );
+    const debianStream = createChunkedBody(
+      '{"versions":[{"suites":["sid","trixie"],"version":"1.2.3"}],',
+      64,
+      trailingMegabytes,
+      40
+    );
+
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: RequestInfo | URL) => {
+        const url = resolveFetchUrl(input);
+        if (url.includes('registry.npmjs.org/stream-pkg/latest')) {
+          return Promise.resolve(new Response(npmStream.body));
+        }
+        if (url.includes('data.jsdelivr.com/v1/stats/packages/npm/stream-pkg')) {
+          return Promise.resolve(new Response(jsdelivrStream.body));
+        }
+        if (url.includes('crates.io/api/v1/crates/stream-pkg/downloads')) {
+          return Promise.resolve(new Response(cratesStream.body));
+        }
+        if (url.includes('formulae.brew.sh/api/formula/stream-pkg.json')) {
+          return Promise.resolve(new Response(brewStream.body));
+        }
+        if (url.includes('api.wordpress.org/plugins/info/1.2/')) {
+          return Promise.resolve(new Response(wpStream.body));
+        }
+        if (url.includes('sources.debian.org/api/src/stream-pkg/')) {
+          return Promise.resolve(new Response(debianStream.body));
+        }
+        if (url.includes('GetNumberOfCurrentPlayers')) {
+          return Promise.resolve(Response.json({ response: { player_count: 0, result: 42 } }));
+        }
+        if (url.includes('registry.npmjs.org/multibyte-overflow/latest')) {
+          const multibyteBody = createChunkedBody('{"version":"', 16, '€'.repeat(30_000), 30);
+          return Promise.resolve(new Response(multibyteBody.body));
+        }
+        if (url.includes('/ssrf-self/')) {
+          return Promise.resolve(
+            new Response('', { headers: { location: `${SITE_ORIGIN}/badge/test/ok` }, status: 302 })
+          );
+        }
+        if (url.includes('/ssrf-ip/')) {
+          return Promise.resolve(
+            new Response('', {
+              headers: { location: 'https://169.254.169.254/latest' },
+              status: 302,
+            })
+          );
+        }
+        if (url.includes('/ssrf-port/')) {
+          return Promise.resolve(
+            new Response('', { headers: { location: 'https://example.com:8443/api' }, status: 302 })
+          );
+        }
+        if (url.includes('/neg-hn/')) {
+          return Promise.resolve(Response.json(-7));
+        }
+        if (url.includes('/neg-stars')) {
+          return Promise.resolve(Response.json({ stargazers_count: -12 }));
+        }
+        return Promise.resolve(new Response('not found', { status: 404 }));
+      });
+
+    expect(await describeMetric('/badge/npm/stream-pkg/v')).toBe('npm: v4.0.0');
+    expect(npmStream.stats.isCancelled).toBe(true);
+    expect(jsdelivrStream.stats.isCancelled).toBe(false);
+    expect(await describeMetric('/badge/jsdelivr/stream-pkg/hm')).toBe('jsDelivr: 1.2k/mo');
+    expect(jsdelivrStream.stats.isCancelled).toBe(true);
+    expect(await describeMetric('/badge/crates/stream-pkg/dl')).toBe('Downloads: 10/90d');
+    expect(cratesStream.stats.isCancelled).toBe(true);
+    expect(await describeMetric('/badge/brew/stream-pkg/dl')).toBe('Installs: 250/mo');
+    expect(brewStream.stats.isCancelled).toBe(true);
+    expect(await describeMetric('/badge/wp/stream-pkg/v')).toBe('WordPress: v2.1.0');
+    expect(wpStream.stats.isCancelled).toBe(true);
+    expect(await describeMetric('/badge/debian/stream-pkg/v')).toBe('Debian: v1.2.3');
+    expect(debianStream.stats.isCancelled).toBe(true);
+
+    // [2] Steam `result !== 1` resolves to `404 not found` instead of `0`:
+    const missingSteam = await resolvePathMetric('/badge/steam/999999999/players');
+    expect(missingSteam.status).toBe(404);
+    expect(missingSteam.result.value).toBe('not found');
+
+    // [3] Multibyte UTF-8 wire bytes (`30_000 * 30 * 3 = 2.7 MB > MAX_UPSTREAM_BYTES`, `< 1M` UTF-16 code units) trigger `413`:
+    const multibyteOverflow = await resolvePathMetric('/badge/npm/multibyte-overflow/v');
+    expect(multibyteOverflow.status).toBe(413);
+    expect(multibyteOverflow.result.value).toBe('too large');
+
+    // [4] Self-origin, private/link-local IP literal, and non-443 port redirects fail closed (`502`):
+    const ssrfSelf = await resolvePathMetric('/badge/npm/ssrf-self/v');
+    const ssrfIp = await resolvePathMetric('/badge/npm/ssrf-ip/v');
+    const ssrfPort = await resolvePathMetric('/badge/npm/ssrf-port/v');
+    expect(ssrfSelf.status).toBe(502);
+    expect(ssrfIp.status).toBe(502);
+    expect(ssrfPort.status).toBe(502);
+
+    // [5] Negative Hacker News karma is preserved while unsigned community counts reject negative numbers:
+    expect(await describeMetric('/badge/hn/neg-hn/karma')).toBe('Karma: -7');
+    expect(await describeMetric('/badge/gh/org/neg-stars/stars')).toBe('Stars: n/a');
+    fetchSpy.mockRestore();
   });
 });

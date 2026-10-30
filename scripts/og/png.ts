@@ -1,5 +1,7 @@
 /**
- * PNG codec & resampler – Decodes PNG images to straight RGBA, resamples with premultiplied box area averaging, and encodes Bayer-dithered RGB/RGBA PNG buffers.
+ * PNG Codec & Resampler
+ *
+ * Decodes PNG images to straight RGBA, resamples with premultiplied box area averaging, and encodes Bayer-dithered RGB/RGBA PNG buffers.
  */
 
 /* oxlint-disable no-bitwise -- PNG CRC-32, bit-depth unpacking, scanline filtering, and 4x4 Bayer indexing require bitwise integer operations. */
@@ -164,6 +166,20 @@ function encodePngBuffer(
   ]);
 }
 
+/** Check whether `(colorType, bitDepth)` is a legal combination in the PNG specification. */
+function isValidPngBitDepth(colorType: number, bitDepth: number): boolean {
+  if (colorType === 0) {
+    return bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8 || bitDepth === 16;
+  }
+  if (colorType === 3) {
+    return bitDepth === 1 || bitDepth === 2 || bitDepth === 4 || bitDepth === 8;
+  }
+  if (colorType === 2 || colorType === 4 || colorType === 6) {
+    return bitDepth === 8 || bitDepth === 16;
+  }
+  return false;
+}
+
 /** Resolve the sample channel count of a PNG `colorType`. */
 function getPngChannelCount(colorType: number): number {
   switch (colorType) {
@@ -297,9 +313,11 @@ function expandGrayscaleScanlines(
   rgba: Uint8Array
 ): void {
   const { bitDepth, height, transparency, width } = header;
-  const maxSubByteSample = (1 << bitDepth) - 1;
+  const maxSampleValue = (1 << bitDepth) - 1;
   const transGray =
-    transparency && transparency.byteLength >= 2 ? readUint16BE(transparency, 0) : -1;
+    transparency && transparency.byteLength >= 2
+      ? readUint16BE(transparency, 0) & maxSampleValue
+      : -1;
 
   for (let row = 0; row < height; row += 1) {
     const rowOffset = row * rowBytes;
@@ -312,7 +330,7 @@ function expandGrayscaleScanlines(
       const grayByte =
         bitDepth === 16
           ? (rawGray * 255 + 32_895) >>> 16
-          : Math.round((rawGray * 255) / maxSubByteSample);
+          : Math.round((rawGray * 255) / maxSampleValue);
       rgba[outOffset] = grayByte;
       rgba[outOffset + 1] = grayByte;
       rgba[outOffset + 2] = grayByte;
@@ -353,10 +371,11 @@ function expandRgbScanlines(
 ): void {
   const { bitDepth, height, transparency, width } = header;
   const bytesPerSample = bitDepth === 16 ? 2 : 1;
+  const sampleMask = (1 << bitDepth) - 1;
   const hasRgbKey = transparency !== undefined && transparency.byteLength >= 6;
-  const keyRed = hasRgbKey ? readUint16BE(transparency, 0) : -1;
-  const keyGreen = hasRgbKey ? readUint16BE(transparency, 2) : -1;
-  const keyBlue = hasRgbKey ? readUint16BE(transparency, 4) : -1;
+  const keyRed = hasRgbKey ? readUint16BE(transparency, 0) & sampleMask : -1;
+  const keyGreen = hasRgbKey ? readUint16BE(transparency, 2) & sampleMask : -1;
+  const keyBlue = hasRgbKey ? readUint16BE(transparency, 4) & sampleMask : -1;
 
   for (let row = 0; row < height; row += 1) {
     const rowOffset = row * rowBytes;
@@ -451,18 +470,28 @@ function parsePngChunks(pngBytes: Uint8Array): { header: PngHeaderSpec; idatData
     if (chunkEnd + 4 > pngBytes.byteLength) {
       throw new Error('Truncated PNG chunk');
     }
-    const chunkType = Buffer.from(pngBytes.buffer, pngBytes.byteOffset + offset + 4, 4).toString(
-      'ascii'
-    );
-    const chunkData = pngBytes.subarray(offset + 8, chunkEnd);
+    const typeBuffer = Buffer.from(pngBytes.buffer, pngBytes.byteOffset + offset + 4, 4);
+    const chunkType = typeBuffer.toString('ascii');
+    const chunkData = Buffer.from(pngBytes.buffer, pngBytes.byteOffset + offset + 8, chunkLength);
+    if (computePngChunkCrc(typeBuffer, chunkData) !== view.getUint32(chunkEnd)) {
+      throw new Error(`Invalid PNG ${chunkType} chunk CRC`);
+    }
 
     if (chunkType === 'IHDR') {
+      if (chunkData.byteLength < 13) {
+        throw new Error('Truncated PNG IHDR chunk');
+      }
       if ((chunkData[12] ?? 0) !== 0) {
         throw new Error('Interlaced PNG images are not supported; save as non-interlaced');
       }
+      const bitDepth = chunkData[8] ?? 0;
+      const colorType = chunkData[9] ?? 0;
+      if (!isValidPngBitDepth(colorType, bitDepth)) {
+        throw new Error(`Unsupported PNG colorType=${colorType} bitDepth=${bitDepth}`);
+      }
       header = {
-        bitDepth: chunkData[8] ?? 0,
-        colorType: chunkData[9] ?? 0,
+        bitDepth,
+        colorType,
         height: view.getUint32(offset + 12),
         palette: undefined,
         transparency: undefined,
@@ -473,7 +502,7 @@ function parsePngChunks(pngBytes: Uint8Array): { header: PngHeaderSpec; idatData
     } else if (chunkType === 'tRNS') {
       transparency = chunkData;
     } else if (chunkType === 'IDAT') {
-      idatChunks.push(Buffer.from(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength));
+      idatChunks.push(chunkData);
     } else if (chunkType === 'IEND') {
       break;
     }

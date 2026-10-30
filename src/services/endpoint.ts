@@ -1,8 +1,10 @@
 /**
- * Service endpoint helpers – URL templates with per-segment encoding, cache payload projections, and the typed `defineService` / `createMetric` entry points of every service preset.
+ * Service Endpoint Helpers
  *
- * URL templates substitute `encodeURIComponent`-encoded route params, so presets never
- * interpolate raw route input into upstream URLs:
+ * URL templates with per-segment encoding, cache payload projections,
+ * and the typed `defineService` / `createMetric` entry points of every service preset.
+ *
+ * URL templates substitute `encodeURIComponent`-encoded route params, so presets never interpolate raw route input into upstream URLs:
  * - `{owner}` / `{target}`: Owner and target (multi-segment targets are encoded per segment and keep their `/` separators).
  * - `{scope}`: Scope (`owner` with an optional leading `@` stripped), encoded as one component.
  * - `{path}`: `[owner/]target`, encoded per segment (e.g., Clojars `[:group/]:artifact`).
@@ -54,6 +56,26 @@ export const UPSTREAM_TIMEOUT = 8000;
 
 /** Maximum upstream response body size in bytes (larger bodies resolve to a `too large` badge). */
 export const MAX_UPSTREAM_BYTES = 2_097_152;
+
+/** Tier-1 JSON cache TTL presets in seconds for normal, rate-limited, and daily-refreshed upstreams. */
+export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const satisfies Readonly<
+  Record<string, number>
+>;
+
+/** Shared route schema for `:owner/:repo` repository services. */
+export const OWNER_REPO_ROUTE: ServiceRoute = {
+  owner: { isRequired: true, placeholder: ':owner' },
+  target: { placeholder: ':repo' },
+};
+
+/** Shared route schema for single-segment `:pkg` package services. */
+export const PACKAGE_ROUTE: ServiceRoute = { target: { placeholder: ':pkg' } };
+
+/** Shared route schema for `[:scope/]:pkg` package services. */
+export const NPM_PACKAGE_ROUTE: ServiceRoute = {
+  owner: { isRequired: false, placeholder: ':scope' },
+  target: { placeholder: ':pkg' },
+};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -142,13 +164,13 @@ function compileUrlTemplate(template: string): ServiceUrlBuilder {
 }
 
 /** Resolve a URL template or builder into a builder. */
-function toUrlBuilder(source: UrlSource): ServiceUrlBuilder {
+function resolveUrlBuilder(source: UrlSource): ServiceUrlBuilder {
   return typeof source === 'string' ? compileUrlTemplate(source) : source;
 }
 
 /** Derive an endpoint that shares the upstream API URL, TTL, and projection but redirects to another page. */
-function withPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoint<P> {
-  return { ...endpoint, buildPageUrl: toUrlBuilder(page) };
+function replaceEndpointPage<P>(endpoint: MetricEndpoint<P>, page: UrlSource): MetricEndpoint<P> {
+  return { ...endpoint, buildPageUrl: resolveUrlBuilder(page) };
 }
 
 /** Ignore a stream cancellation failure (the stream is discarded either way). */
@@ -159,8 +181,38 @@ function ignoreCancelError(): void {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Cancel a response body stream without awaiting it: Cancelling one branch of a tee'd body
- * (e.g., a cloned cache response) only settles once every branch is cancelled.
+ * Count the UTF-8 wire bytes of `text.slice(start, end)` without allocating a `Uint8Array`.
+ * @param text    Source UTF-16 string.
+ * @param start   Inclusive start UTF-16 index.
+ * @param end     Exclusive end UTF-16 index.
+ * @returns UTF-8 encoded byte length of the slice.
+ */
+export function countUtf8Bytes(text: string, start = 0, end: number = text.length): number {
+  let bytes = 0;
+  for (let i = start; i < end; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x8_00) {
+      bytes += 2;
+    } else if (code >= 0xd8_00 && code <= 0xdb_ff && i + 1 < end) {
+      const next = text.charCodeAt(i + 1);
+      if (next >= 0xdc_00 && next <= 0xdf_ff) {
+        bytes += 4;
+        i += 1;
+      } else {
+        bytes += 3;
+      }
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
+
+/**
+ * Cancel a response body stream without awaiting it:
+ * Cancelling one branch of a tee'd body (e.g., a cloned cache response) only settles once every branch is cancelled.
  * @param body   Readable stream or stream reader to cancel.
  */
 export function cancelBody(
@@ -183,7 +235,12 @@ export async function readBoundedResponseText(response: Response): Promise<strin
   const { body } = response;
   if (!body) {
     const text = await response.text();
-    return text.length > MAX_UPSTREAM_BYTES ? undefined : text;
+    if (text.length > MAX_UPSTREAM_BYTES) {
+      return undefined;
+    }
+    return text.length * 3 <= MAX_UPSTREAM_BYTES || countUtf8Bytes(text) <= MAX_UPSTREAM_BYTES
+      ? text
+      : undefined;
   }
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -205,26 +262,6 @@ export async function readBoundedResponseText(response: Response): Promise<strin
   return buffer + decoder.decode();
 }
 
-/** Tier-1 JSON cache TTL presets in seconds for normal, rate-limited, and daily-refreshed upstreams. */
-export const CACHE_TTL = { daily: 3600, default: 600, slow: 1800 } as const satisfies Readonly<
-  Record<string, number>
->;
-
-/** Shared route schema for `:owner/:repo` repository services. */
-export const OWNER_REPO_ROUTE: ServiceRoute = {
-  owner: { isRequired: true, placeholder: ':owner' },
-  target: { placeholder: ':repo' },
-};
-
-/** Shared route schema for single-segment `:pkg` package services. */
-export const PACKAGE_ROUTE: ServiceRoute = { target: { placeholder: ':pkg' } };
-
-/** Shared route schema for `[:scope/]:pkg` package services. */
-export const NPM_PACKAGE_ROUTE: ServiceRoute = {
-  owner: { isRequired: false, placeholder: ':scope' },
-  target: { placeholder: ':pkg' },
-};
-
 /**
  * Check whether a JSON value is a plain (non-array) object.
  * @param value   Parsed JSON value.
@@ -239,7 +276,7 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
  * @param value   Parsed JSON value.
  * @returns Plain object record, or `undefined` for primitives, `null`, or arrays.
  */
-export function asJsonObject(value: unknown): Record<string, unknown> | undefined {
+export function readJsonObject(value: unknown): Record<string, unknown> | undefined {
   return isJsonObject(value) ? value : undefined;
 }
 
@@ -249,7 +286,7 @@ export function asJsonObject(value: unknown): Record<string, unknown> | undefine
  * @returns First object element, or `undefined`.
  */
 export function readFirstObjectEntry(entries: unknown): Record<string, unknown> | undefined {
-  return Array.isArray(entries) ? asJsonObject(entries[0]) : undefined;
+  return Array.isArray(entries) ? readJsonObject(entries[0]) : undefined;
 }
 
 /**
@@ -261,10 +298,10 @@ export function createEndpoint<P = Record<string, unknown>>(
   options: EndpointOptions<P>
 ): MetricEndpoint<P> {
   return {
-    buildApiUrl: toUrlBuilder(options.api),
-    buildPageUrl: toUrlBuilder(options.page),
+    buildApiUrl: resolveUrlBuilder(options.api),
+    buildPageUrl: resolveUrlBuilder(options.page),
     buildRequest: options.buildRequest,
-    extractKeys: options.extractKeys,
+    extractKeys: options.extractKeys ?? options.project?.extractKeys,
     missingStatuses: options.missingStatuses,
     project: options.project,
     ttl: options.ttl ?? CACHE_TTL.default,
@@ -277,9 +314,12 @@ export function createEndpoint<P = Record<string, unknown>>(
  * @param suffix     Literal path suffix appended to the base page URL.
  * @returns Endpoint with the suffixed page URL builder.
  */
-export function withPageSuffix<P>(endpoint: MetricEndpoint<P>, suffix: string): MetricEndpoint<P> {
+export function appendPageSuffix<P>(
+  endpoint: MetricEndpoint<P>,
+  suffix: string
+): MetricEndpoint<P> {
   const buildBasePageUrl = endpoint.buildPageUrl;
-  return withPage(endpoint, (params) => `${buildBasePageUrl(params)}${suffix}`);
+  return replaceEndpointPage(endpoint, (params) => `${buildBasePageUrl(params)}${suffix}`);
 }
 
 /**
@@ -290,7 +330,7 @@ export function withPageSuffix<P>(endpoint: MetricEndpoint<P>, suffix: string): 
 export function pickFields<T extends object>(
   fields: readonly (keyof T & string)[]
 ): PayloadProjection<Partial<T>> {
-  return function projectFields(data: unknown): Partial<T> | undefined {
+  function projectFields(data: unknown): Partial<T> | undefined {
     if (!isJsonObject(data)) {
       return undefined;
     }
@@ -301,12 +341,12 @@ export function pickFields<T extends object>(
       }
     }
     return picked as Partial<T>;
-  };
+  }
+  return Object.assign(projectFields, { extractKeys: fields });
 }
 
 /**
- * Create a projection that keeps the first object entry of an upstream result list, reporting an empty
- * or missing list as not found.
+ * Create a projection that keeps the first object entry of an upstream result list, reporting an empty or missing list as not found.
  * @param listKey   Key of the result list in the payload object, or `undefined` when the payload is the list itself.
  * @param fields    Optional entry fields to keep (all fields when omitted).
  * @returns Projection returning the (picked) first entry, or `undefined` when there is none.
@@ -316,17 +356,20 @@ export function projectFirstEntry<E extends object>(
   fields?: readonly (keyof E & string)[]
 ): PayloadProjection<Partial<E>> {
   const pickEntryFields = fields ? pickFields<E>(fields) : undefined;
-  return function projectFirst(data: unknown): Partial<E> | undefined {
+  function projectFirst(data: unknown): Partial<E> | undefined {
     let entries: unknown = data;
     if (listKey !== undefined) {
-      entries = asJsonObject(data)?.[listKey];
+      entries = readJsonObject(data)?.[listKey];
     }
     const entry = readFirstObjectEntry(entries);
     if (!entry) {
       return undefined;
     }
     return pickEntryFields ? pickEntryFields(entry) : (entry as Partial<E>);
-  };
+  }
+  return listKey !== undefined
+    ? Object.assign(projectFirst, { extractKeys: [listKey] })
+    : projectFirst;
 }
 
 /**

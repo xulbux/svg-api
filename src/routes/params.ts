@@ -1,9 +1,16 @@
 /**
- * Route parameter parsing – Decodes path segments and resolves query parameters into typed render options.
+ * Route Parameter Parsing
+ *
+ * Decodes path segments and resolves query parameters into typed render options.
  */
 
 import { isThemeColorName } from '@/config/theme';
-import { isTruthyFlagToken, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
+import {
+  isTruthyFlagToken,
+  LIST_SEPARATOR_RX,
+  MAX_ANIMATION_INPUT_LENGTH,
+} from '@/site/shared/encoding';
+import { parsePerLineValues } from '@/site/shared/stackDsl';
 import { DEFAULT_QUOTE_LAYOUT } from '@/svg/quote';
 import {
   MAX_BARS_POINTS,
@@ -109,7 +116,7 @@ export const STACK_MOTION_ALIASES: Readonly<Record<string, StackTileMotion>> = {
 };
 
 /** Maximum trimmed `?anim=` length in characters; Longer inputs cannot be valid and are rejected before splitting. */
-const MAX_ANIMATION_INPUT_LENGTH = 64;
+export { MAX_ANIMATION_INPUT_LENGTH } from '@/site/shared/encoding';
 
 /** Falsy boolean query tokens accepted as explicit disable aliases in builder forms. */
 export const FALSY_FLAG_LIST = ['0', 'false', 'no'] as const;
@@ -292,8 +299,8 @@ function parseStepsPayload(rawPayload: string): { done: number; total: number } 
 }
 
 /**
- * Parse a trimmed strip payload (e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]`
- * in a single pass: Separated payloads keep only single-digit tokens; Compact payloads keep every valid character.
+ * Parse a trimmed strip payload (e.g., `'9876425789'` or `'9,8,7,5,3,1'`) into `StripTickState[]` in a single pass:
+ * Separated payloads keep only single-digit tokens; Compact payloads keep every valid character.
  */
 function parseStripStates(rawPayload: string): StripTickState[] | undefined {
   const isSeparated = LIST_SEPARATOR_RX.test(rawPayload);
@@ -515,27 +522,66 @@ export function parseSpecialParam(
 }
 
 /**
- * Check whether a raw `?special=` query parameter is `'none'`, a valid manual `<kind>:<payload>`,
- * or a valid automatic `<kind>[:<modifier>]` request (unrecognized values fall back to the default).
+ * Canonicalize a `?special=` query parameter into a deterministic string (`'none'`, a normalized `<kind>:<payload>`,
+ * or a normalized automatic `<kind>[:pulse|:static]`), or `undefined` when unrecognized.
  * @param specialRaw   Raw `?special=` query parameter value.
- * @returns `true` when `specialRaw` changes or selects a special widget.
+ * @returns Canonical `?special=` string, or `undefined` when unrecognized (falls back to the default).
  */
-export function isRecognizedSpecialParam(specialRaw: string | null | undefined): boolean {
+export function canonicalizeSpecialParam(
+  specialRaw: string | null | undefined
+): string | undefined {
   const trimmed = (specialRaw ?? '').trim();
   if (!trimmed) {
-    return false;
+    return undefined;
   }
-  return (
-    trimmed.toLowerCase() === 'none' ||
-    parseSpecialParam(trimmed) !== undefined ||
-    parseAutoSpecialRequest(trimmed) !== undefined
-  );
+  if (trimmed.toLowerCase() === 'none') {
+    return 'none';
+  }
+  const manual = parseSpecialParam(trimmed);
+  if (manual) {
+    switch (manual.type) {
+      case 'sparkline': {
+        return `sparkline:${manual.values.join(',')}`;
+      }
+      case 'bars': {
+        return `bars:${manual.values.join(',')}`;
+      }
+      case 'bar': {
+        return `bar:${manual.value}${manual.hasPulse === false ? ':static' : ''}`;
+      }
+      case 'ring': {
+        return `ring:${manual.value}${manual.hasPulse === true ? ':pulse' : ''}`;
+      }
+      case 'steps': {
+        return `steps:${manual.done}/${manual.total}`;
+      }
+      case 'strip': {
+        return `strip:${manual.states.join('')}`;
+      }
+      case 'delta': {
+        return `delta:${manual.value}`;
+      }
+      default: {
+        return undefined;
+      }
+    }
+  }
+  const autoRequest = parseAutoSpecialRequest(trimmed);
+  if (!autoRequest) {
+    return undefined;
+  }
+  if (autoRequest.hasPulse === true) {
+    return `${autoRequest.kind}:pulse`;
+  }
+  if (autoRequest.hasPulse === false) {
+    return `${autoRequest.kind}:static`;
+  }
+  return autoRequest.kind;
 }
 
 /**
- * Resolve `?special=` query overrides, supporting manual `<kind>:<payload>` values, `'none'` to hide a
- * preset widget, and bare `<kind>` (or `<kind>:static` / `<kind>:pulse`) to select automatic upstream
- * widget data from a service preset.
+ * Resolve `?special=` query overrides, supporting manual `<kind>:<payload>` values, `'none'` to hide a preset widget,
+ * and bare `<kind>` (or `<kind>:static` / `<kind>:pulse`) to select automatic upstream widget data from a service preset.
  * @param specialRaw       Raw `?special=` query parameter value.
  * @param defaultSpecial   Default preset widget rendered when `?special=` is omitted.
  * @param autoSpecials     Candidate automatic widgets derived from upstream service data.
@@ -670,27 +716,15 @@ export function resolveSizeToken(raw: string | null | undefined): SizePreset | n
 
 /**
  * Parse a single number or comma-separated list of numbers for `?perline=` (e.g., `8` or `8,6,6,4,3,3`).
- * Entries keep their group positions: Invalid entries (`0`, `x`) become `undefined` holes, so that
- * group falls back to the default instead of shifting later values onto the wrong groups.
+ * Entries keep their group positions: Invalid entries (`0`, `x`) become `undefined` holes,
+ * so that group falls back to the default instead of shifting later values onto the wrong groups.
  * @param raw   Raw `?perline=` query parameter value.
  * @returns Positional list of positive integers and holes (trailing holes dropped), or `undefined` when no entry is valid.
  */
 export function parsePerLineList(
   raw: string | null | undefined
 ): (number | undefined)[] | undefined {
-  const cleaned = (raw ?? '').trim();
-  if (!cleaned) {
-    return undefined;
-  }
-  const values: (number | undefined)[] = [];
-  for (const part of cleaned.split(LIST_SEPARATOR_RX)) {
-    const parsed = parseOptionalNumber(part);
-    values.push(parsed !== undefined && parsed >= 1 ? Math.round(parsed) : undefined);
-  }
-  // Drop trailing holes, so the last valid value keeps applying to every remaining group:
-  while (values.length > 0 && values.at(-1) === undefined) {
-    values.pop();
-  }
+  const values = parsePerLineValues(raw ?? '');
   return values.length > 0 ? values : undefined;
 }
 

@@ -1,5 +1,7 @@
 /**
- * Clojars service preset – Live upstream metrics and redirect transformations.
+ * Clojars Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Clojars.
  *
  * The group segment may be omitted for artifacts whose group equals the artifact name (e.g., `hiccup`).
  */
@@ -15,6 +17,7 @@ import {
   readLicenseName,
   readText,
 } from '@/services/metrics';
+import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -39,7 +42,7 @@ function projectClojarsArtifact(data: unknown): ClojarsArtifactProjection | unde
   }
   const series: number[] = [];
   if (Array.isArray(data.recent_versions)) {
-    for (let i = Math.min(data.recent_versions.length, 12) - 1; i >= 0; i -= 1) {
+    for (let i = Math.min(data.recent_versions.length, MAX_BARS_POINTS) - 1; i >= 0; i -= 1) {
       const entry = data.recent_versions[i];
       const count = isJsonObject(entry) ? readFiniteNumber(entry.downloads) : undefined;
       if (count !== undefined) {
@@ -50,7 +53,7 @@ function projectClojarsArtifact(data: unknown): ClojarsArtifactProjection | unde
   return {
     downloads: readFiniteNumber(data.downloads),
     license: readLicenseName(data.licenses),
-    recentDownloads: series.length >= 2 ? series : undefined,
+    recentDownloads: series.length >= MIN_SERIES_POINTS ? series : undefined,
     version: readText(data.latest_release) ?? readText(data.latest_version),
   };
 }
@@ -58,6 +61,7 @@ function projectClojarsArtifact(data: unknown): ClojarsArtifactProjection | unde
 /** Clojars artifact endpoint (`{path}` omits an empty group) with clojars.org artifact page redirect. */
 const CLOJARS_ENDPOINT = createEndpoint({
   api: 'https://clojars.org/api/artifacts/{path}',
+  extractKeys: ['downloads', 'latest_release', 'latest_version', 'licenses', 'recent_versions'],
   page: 'https://clojars.org/{path}',
   project: projectClojarsArtifact,
 });

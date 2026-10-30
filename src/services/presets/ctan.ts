@@ -1,13 +1,15 @@
 /**
- * CTAN service preset – Live upstream metrics and redirect transformations.
+ * CTAN Service Preset
+ *
+ * Live upstream metrics and redirect transformations for CTAN.
  */
 
 import {
   PACKAGE_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   createLicenseMetric,
@@ -39,7 +41,7 @@ function formatCtanLicense(rawKey: string | undefined): string | undefined {
   if (!rawKey) {
     return undefined;
   }
-  const match = CTAN_VERSIONED_LICENSE_RX.exec(rawKey.trim());
+  const match = CTAN_VERSIONED_LICENSE_RX.exec(rawKey);
   if (match?.groups?.name && match.groups.ver) {
     return `${formatSpdxKey(match.groups.name) ?? match.groups.name}-${match.groups.ver}`;
   }
@@ -53,13 +55,14 @@ function projectCtanPackage(data: unknown): CtanPackageProjection | undefined {
   }
   return {
     license: formatCtanLicense(readLicenseName(data.license)),
-    version: readText(asJsonObject(data.version)?.number),
+    version: readText(readJsonObject(data.version)?.number),
   };
 }
 
 /** CTAN JSON 2.0 package endpoint with ctan.org package page redirect. */
 const CTAN_ENDPOINT = createEndpoint({
   api: 'https://ctan.org/json/2.0/pkg/{target}',
+  extractKeys: ['license', 'version'],
   page: 'https://ctan.org/pkg/{target}',
   project: projectCtanPackage,
 });

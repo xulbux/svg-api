@@ -1,5 +1,7 @@
 /**
- * SVG route dispatcher – Maps every registered SVG endpoint URL onto its SSOT renderer.
+ * SVG Route Dispatcher
+ *
+ * Maps every registered SVG endpoint URL onto its SSOT renderer.
  *
  * The `SVG_ROUTES` table is the single source of the route prefixes, alias mappings, segment limits,
  * builder targets, and the query parameters each route reads (which also form its normalized edge cache key).
@@ -7,14 +9,15 @@
 
 import { SERVICES_CONFIG } from '@/config/services';
 import { SITE_ORIGIN } from '@/config/site';
-import { resolveColor, resolveOptionalColor } from '@/config/theme';
+import { DEFAULT_THEME_COLOR, resolveColor, resolveOptionalColor } from '@/config/theme';
 import {
+  canonicalizeSpecialParam,
   isBadgeVariant,
-  isRecognizedSpecialParam,
   isTruthyFlagParam,
   normalizeDotParam,
   parseOptionalNumber,
   parsePerLineList,
+  parseSpecialParam,
   resolveAnimationMode,
   resolveDotState,
   resolveIconQueryParam,
@@ -29,26 +32,67 @@ import {
   resolveTypingLayout,
   resolveVariant,
 } from '@/routes/params';
-import { resolveServicePreview, resolveServiceRedirectUrl } from '@/services/fetcher';
+import {
+  resolveMetricKey,
+  resolveServicePreview,
+  resolveServiceRedirectUrl,
+} from '@/services/fetcher';
 import { decodeRouteSegments } from '@/site/shared/encoding';
+import { STACK_PER_LINE_RANGE } from '@/site/shared/stackDsl';
 import {
+  DEFAULT_HORIZONTAL_QUOTE_SIZE,
   DEFAULT_QUOTE_LAYOUT,
+  DEFAULT_VERTICAL_QUOTE_SIZE,
   DEFAULT_QUOTE_VARIANT as QUOTE_DEFAULT_VARIANT,
+  QUOTE_FONT_SIZE_RANGE,
+  QUOTE_SIZE_MAP,
+  QUOTE_WIDTH_RANGE,
   renderQuote,
+  resolveDefaultQuoteWidth,
 } from '@/svg/quote';
-import { renderBadge, renderButton, renderIcon } from '@/svg/renderer';
-import { getOwnValue, sliceAtCodePoint } from '@/svg/shared';
 import {
-  DEFAULT_STACK_VARIANT as STACK_DEFAULT_VARIANT,
+  BUTTON_HEIGHT_RANGE,
+  DEFAULT_BUTTON_SIZE,
+  ICON_SIZE_RANGE,
+  ICON_STROKE_RANGE,
+  renderBadge,
+  renderButton,
+  renderIcon,
+} from '@/svg/renderer';
+import {
+  clampInt,
+  clampNumber,
+  getOwnValue,
+  prepareDisplayText,
+  resolveScaledFontSize,
+  roundCoord,
+  sliceAtCodePoint,
+} from '@/svg/shared';
+import {
   parseStackGroups,
   renderStack,
+  resolveDefaultStackGroupGap,
+  DEFAULT_STACK_VARIANT as STACK_DEFAULT_VARIANT,
+  STACK_GAP_RANGE,
+  STACK_GROUP_GAP_RANGE,
+  STACK_TILE_SIZE_RANGE,
 } from '@/svg/stack';
 import {
+  DEFAULT_IDE_TITLE,
+  DEFAULT_LAYOUT_FONTS,
   DEFAULT_TYPING_CURSOR,
   DEFAULT_TYPING_ERASE,
   DEFAULT_TYPING_LAYOUT,
-  DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT,
+  DEFAULT_TYPING_SIZE,
+  MAX_TYPING_TITLE_LENGTH,
   renderTyping,
+  resolveDefaultTypingAlign,
+  DEFAULT_TYPING_VARIANT as TYPING_DEFAULT_VARIANT,
+  TYPING_DURATION_RANGE,
+  TYPING_FONT_SIZE_RANGE,
+  TYPING_PAUSE_RANGE,
+  TYPING_SIZE_MAP,
+  TYPING_WIDTH_RANGE,
 } from '@/svg/typing';
 import type {
   BadgeSpecialElement,
@@ -56,6 +100,7 @@ import type {
   BadgeVariant,
   DotState,
   MetricResult,
+  NumericRange,
   ResolvedSvgRequest,
   ServicePreviewSample,
   StaticSvgRouteMatch,
@@ -114,6 +159,15 @@ export const DEFAULT_STACK_VARIANT: BadgeVariant = STACK_DEFAULT_VARIANT;
 
 /** Default visual hierarchy variant for animated typing banners. */
 export const DEFAULT_TYPING_VARIANT: BadgeVariant = TYPING_DEFAULT_VARIANT;
+
+/** Default visual hierarchy variant keyed by canonical route prefix. */
+const DEFAULT_VARIANT_BY_PREFIX: Readonly<Record<string, BadgeVariant>> = {
+  badge: DEFAULT_BADGE_VARIANT,
+  button: DEFAULT_BUTTON_VARIANT,
+  quote: DEFAULT_QUOTE_VARIANT,
+  stack: DEFAULT_STACK_VARIANT,
+  typing: DEFAULT_TYPING_VARIANT,
+};
 
 /** Maximum length in code points kept for `?icon=` query values in normalized cache keys. */
 const MAX_ICON_QUERY_LENGTH = 160;
@@ -228,11 +282,11 @@ function buildStaticMatch(
   return { kind: 'static', render, ttl };
 }
 
-/** Serialize a parsed `?perline=` list (`undefined` holes become `'0'` to preserve group positions). */
+/** Serialize a parsed `?perline=` list (`undefined` holes become `'0'`, and a lone default is omitted). */
 function serializePerLineList(
   list: readonly (number | undefined)[] | undefined
 ): string | undefined {
-  if (!list) {
+  if (!list || (list.length === 1 && list[0] === STACK_PER_LINE_RANGE.default)) {
     return undefined;
   }
   let serialized = '';
@@ -250,10 +304,14 @@ function capOptionalTextQuery(value: string | undefined): string | undefined {
   return value ? sliceAtCodePoint(value, MAX_TEXT_QUERY_LENGTH) : undefined;
 }
 
-/** Canonicalize a finite numeric query parameter (`undefined` when invalid). */
-function normalizeNumericParam(rawValue: string): string | undefined {
+/** Clamp an integer query parameter to `range`, omitting values equal to `range.default` (`undefined` when invalid). */
+function clampNormalizedInt(rawValue: string, range: NumericRange): string | undefined {
   const parsed = parseOptionalNumber(rawValue);
-  return parsed === undefined ? undefined : String(parsed);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const clamped = clampInt(parsed, range);
+  return clamped === range.default ? undefined : String(clamped);
 }
 
 /** Canonicalize `?anim=` across stack and badge/quote/typing elements (`undefined` for `'default'`). */
@@ -271,24 +329,73 @@ function normalizeCursorParam(rawValue: string): string | undefined {
   return cursor === DEFAULT_TYPING_CURSOR ? undefined : cursor;
 }
 
-/** Canonicalize `?icon=` with whitespace trimmed and code-point length capped. */
-function normalizeIconParam(rawValue: string): string | undefined {
+/** Canonicalize `?icon=` (lowercased, length-capped, and `<left>,<right>` slots normalized while preserving leading `,`). */
+function normalizeIconParam(rawValue: string, canonicalPrefix: string): string | undefined {
   const trimmed = rawValue.trim();
-  return trimmed ? sliceAtCodePoint(trimmed, MAX_ICON_QUERY_LENGTH) : undefined;
+  if (!trimmed) {
+    return undefined;
+  }
+  const capped = sliceAtCodePoint(trimmed, MAX_ICON_QUERY_LENGTH).toLowerCase();
+  if (canonicalPrefix === 'typing') {
+    return capped === 'none' ? undefined : capped;
+  }
+  const commaIndex = capped.indexOf(',');
+  if (commaIndex === -1) {
+    return capped;
+  }
+  const left = capped.slice(0, commaIndex).trim();
+  const right = capped.slice(commaIndex + 1).trim();
+  if (right === '' || right === 'none') {
+    return left || undefined;
+  }
+  return left ? `${left},${right}` : `,${right}`;
 }
 
-/** Canonicalize `?size=` across numeric (`icon`/`stack`) and preset-token (`badge`/`quote`/`typing`) routes. */
+/** Canonicalize `?size=` across `icon`, `stack`, `button`, and `typing` routes (`quote` resolves in `resolveQuoteAliasOverrides`). */
 function normalizeSizeParam(rawValue: string, canonicalPrefix: string): string | undefined {
-  const resolved =
-    canonicalPrefix === 'icon' || canonicalPrefix === 'stack'
-      ? parseOptionalNumber(rawValue)
-      : resolveSizeToken(rawValue);
-  return resolved === undefined ? undefined : String(resolved);
+  if (canonicalPrefix === 'icon') {
+    return clampNormalizedInt(rawValue, ICON_SIZE_RANGE);
+  }
+  if (canonicalPrefix === 'stack') {
+    return clampNormalizedInt(rawValue, STACK_TILE_SIZE_RANGE);
+  }
+  const resolved = resolveSizeToken(rawValue);
+  if (resolved === undefined) {
+    return undefined;
+  }
+  if (canonicalPrefix === 'button') {
+    if (resolved === DEFAULT_BUTTON_SIZE) {
+      return undefined;
+    }
+    return typeof resolved === 'string'
+      ? resolved
+      : String(clampInt(resolved, BUTTON_HEIGHT_RANGE));
+  }
+  const fontSize = resolveScaledFontSize(
+    resolved,
+    TYPING_SIZE_MAP,
+    TYPING_FONT_SIZE_RANGE,
+    DEFAULT_TYPING_SIZE
+  );
+  if (fontSize === TYPING_SIZE_MAP[DEFAULT_TYPING_SIZE]) {
+    return undefined;
+  }
+  return typeof resolved === 'string' ? resolved : String(fontSize);
 }
 
 /** Canonicalize `?special=` (`undefined` when unrecognized). */
 function normalizeSpecialParam(rawValue: string): string | undefined {
-  return isRecognizedSpecialParam(rawValue) ? rawValue.trim() : undefined;
+  return capOptionalTextQuery(canonicalizeSpecialParam(rawValue));
+}
+
+/** Canonicalize standalone icon `?stroke=`, clamping to `ICON_STROKE_RANGE` and omitting the default. */
+function normalizeStrokeParam(rawValue: string): string | undefined {
+  const parsed = parseOptionalNumber(rawValue);
+  if (parsed === undefined) {
+    return undefined;
+  }
+  const clamped = roundCoord(clampNumber(parsed, ICON_STROKE_RANGE));
+  return clamped === ICON_STROKE_RANGE.default ? undefined : String(clamped);
 }
 
 /** Canonicalize `?typo=` (`'true'` when enabled, `undefined` otherwise). */
@@ -296,10 +403,19 @@ function normalizeTypoParam(rawValue: string): string | undefined {
   return isTruthyFlagParam(rawValue) ? 'true' : undefined;
 }
 
-/** Canonicalize `?variant=` (`undefined` when unrecognized). */
-function normalizeVariantParam(rawValue: string): string | undefined {
+/** Canonicalize `?variant=`, omitting unrecognized values and the route's default variant. */
+function normalizeVariantParam(rawValue: string, canonicalPrefix: string): string | undefined {
   const trimmed = rawValue.trim();
-  return isBadgeVariant(trimmed) ? trimmed : undefined;
+  if (!isBadgeVariant(trimmed)) {
+    return undefined;
+  }
+  return trimmed === getOwnValue(DEFAULT_VARIANT_BY_PREFIX, canonicalPrefix) ? undefined : trimmed;
+}
+
+/** Canonicalize typing `?width=`, clamping to `TYPING_WIDTH_RANGE` without omitting explicit widths (omitted width auto-fits). */
+function normalizeTypingWidthParam(rawValue: string): string | undefined {
+  const parsed = parseOptionalNumber(rawValue);
+  return parsed === undefined ? undefined : String(clampInt(parsed, TYPING_WIDTH_RANGE));
 }
 
 /** Canonicalizers keyed by single-parameter query key (free-text keys fall back to `capOptionalTextQuery`). */
@@ -308,18 +424,17 @@ const PARAM_NORMALIZERS: Readonly<Record<string, QueryParamNormalizer>> = {
   color: (rawValue) => resolveOptionalColor(rawValue),
   cursor: normalizeCursorParam,
   dot: (rawValue) => normalizeDotParam(rawValue),
-  duration: normalizeNumericParam,
-  font: (rawValue) => resolveTypingFont(rawValue),
-  gap: normalizeNumericParam,
+  duration: (rawValue) => clampNormalizedInt(rawValue, TYPING_DURATION_RANGE),
+  gap: (rawValue) => clampNormalizedInt(rawValue, STACK_GAP_RANGE),
   icon: normalizeIconParam,
-  pause: normalizeNumericParam,
+  pause: (rawValue) => clampNormalizedInt(rawValue, TYPING_PAUSE_RANGE),
   perline: (rawValue) => serializePerLineList(parsePerLineList(rawValue)),
   size: normalizeSizeParam,
   special: normalizeSpecialParam,
-  stroke: normalizeNumericParam,
+  stroke: normalizeStrokeParam,
   typo: normalizeTypoParam,
   variant: normalizeVariantParam,
-  width: normalizeNumericParam,
+  width: normalizeTypingWidthParam,
 };
 
 /** Canonicalize a single non-aliased query parameter value (`undefined` drops invalid/default values). */
@@ -332,7 +447,7 @@ function normalizeSingleQueryParam(
   return normalizer ? normalizer(rawValue, canonicalPrefix) : capOptionalTextQuery(rawValue);
 }
 
-/** Resolve quote route query aliases (`quote`, `layout`/`type`/`center`, and path-shadowed `author`/`text`). */
+/** Resolve quote route query aliases (`quote`, `layout`/`type`/`center`, layout-aware `size`/`width`, and path-shadowed `author`/`text`). */
 function resolveQuoteAliasOverrides(
   rawQuery: URLSearchParams,
   segments: readonly string[]
@@ -349,17 +464,40 @@ function resolveQuoteAliasOverrides(
     rawQuery.get('type'),
     rawQuery.get('center')
   );
+  const defaultSizePreset =
+    layout === 'vertical' ? DEFAULT_VERTICAL_QUOTE_SIZE : DEFAULT_HORIZONTAL_QUOTE_SIZE;
+  const defaultFontSize = QUOTE_SIZE_MAP[defaultSizePreset];
+  const rawSize = resolveSizeToken(rawQuery.get('size'));
+  const fontSize = resolveScaledFontSize(
+    rawSize,
+    QUOTE_SIZE_MAP,
+    QUOTE_FONT_SIZE_RANGE,
+    defaultSizePreset
+  );
+  let normalizedSize: string | undefined = undefined;
+  if (rawSize !== undefined && fontSize !== defaultFontSize) {
+    normalizedSize = typeof rawSize === 'string' ? rawSize : String(fontSize);
+  }
+  const defaultWidth = resolveDefaultQuoteWidth(layout, fontSize);
+  const parsedWidth = parseOptionalNumber(rawQuery.get('width'));
+  const clampedWidth =
+    parsedWidth === undefined ? undefined : clampInt(parsedWidth, QUOTE_WIDTH_RANGE);
   return {
     author: capOptionalTextQuery(rawAuthor),
     center: undefined,
     layout: layout === DEFAULT_QUOTE_LAYOUT ? undefined : layout,
     quote: undefined,
+    size: normalizedSize,
     text: capOptionalTextQuery(text),
     type: undefined,
+    width:
+      clampedWidth === undefined || clampedWidth === defaultWidth
+        ? undefined
+        : String(clampedWidth),
   };
 }
 
-/** Resolve stack route query aliases (`groups`/`icons`/`i` and `groupgap`/`ggap`). */
+/** Resolve stack route query aliases (`groups`/`icons`/`i` and `groupgap`/`ggap` against effective `gap`). */
 function resolveStackAliasOverrides(
   rawQuery: URLSearchParams,
   segments: readonly string[]
@@ -368,19 +506,81 @@ function resolveStackAliasOverrides(
   const groups = hasPathGroups
     ? undefined
     : pickNonBlank(rawQuery.get('groups'), rawQuery.get('icons'), rawQuery.get('i')) || undefined;
-  const groupGap = normalizeNumericParam(
+  const effectiveGap = clampInt(parseOptionalNumber(rawQuery.get('gap')), STACK_GAP_RANGE);
+  const defaultGroupGap = resolveDefaultStackGroupGap(effectiveGap);
+  const parsedGroupGap = parseOptionalNumber(
     pickNonBlank(rawQuery.get('groupgap'), rawQuery.get('ggap'))
   );
+  const clampedGroupGap =
+    parsedGroupGap === undefined ? undefined : clampInt(parsedGroupGap, STACK_GROUP_GAP_RANGE);
   return {
     ggap: undefined,
-    groupgap: groupGap,
+    groupgap:
+      clampedGroupGap === undefined || clampedGroupGap === defaultGroupGap
+        ? undefined
+        : String(clampedGroupGap),
     groups: capOptionalTextQuery(groups),
     i: undefined,
     icons: undefined,
   };
 }
 
-/** Resolve typing route query aliases (`lines`/`text`, `prefix`/`prompt`, `align`/`center`, `erase`/`delete`, `layout`/`frame`/`type`). */
+/** Normalize typing `?title=` given the resolved container `layout` (`undefined` when hidden or matching the layout default). */
+function normalizeTypingTitle(
+  rawTitle: string | null,
+  layout: ReturnType<typeof resolveTypingLayout>
+): string | undefined {
+  if (rawTitle === null || layout === 'browser' || layout === 'prompt' || layout === 'none') {
+    return undefined;
+  }
+  const trimmed = rawTitle.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (layout === 'window') {
+    return trimmed.toLowerCase() === 'none' ? undefined : capOptionalTextQuery(rawTitle);
+  }
+  if (trimmed.toLowerCase() !== 'none') {
+    const sanitized = prepareDisplayText(trimmed, MAX_TYPING_TITLE_LENGTH).trim();
+    if (sanitized === DEFAULT_IDE_TITLE) {
+      return undefined;
+    }
+  }
+  return capOptionalTextQuery(rawTitle);
+}
+
+/** Normalize typing `?hint=` given the resolved container `layout` (`undefined` when hidden, blank, or `'none'`). */
+function normalizeTypingHint(
+  rawHint: string | null,
+  layout: ReturnType<typeof resolveTypingLayout>
+): string | undefined {
+  const trimmedHint = rawHint?.trim();
+  if (layout === 'none' || !trimmedHint || trimmedHint.toLowerCase() === 'none') {
+    return undefined;
+  }
+  return capOptionalTextQuery(rawHint ?? undefined);
+}
+
+/** Normalize typing `?align=` given `layout`, effective `prefix`, and `icon` (`undefined` when hidden or matching the layout default). */
+function normalizeTypingAlign(
+  rawQuery: URLSearchParams,
+  layout: ReturnType<typeof resolveTypingLayout>,
+  effectivePrefix: string | undefined
+): string | undefined {
+  if (layout === 'browser' || layout === 'ide') {
+    return undefined;
+  }
+  const align = resolveTypingAlign(rawQuery.get('align'), rawQuery.get('center'));
+  const hasPrefix = Boolean(effectivePrefix && effectivePrefix.toLowerCase() !== 'none');
+  const hasIcon = normalizeIconParam(rawQuery.get('icon') ?? '', 'typing') !== undefined;
+  const defaultAlign = resolveDefaultTypingAlign(layout, hasPrefix, hasIcon);
+  return align === defaultAlign ? undefined : align;
+}
+
+/**
+ * Resolve typing route query aliases and layout-dependent defaults
+ * (`lines`/`text`, `prefix`/`prompt`, `align`/`center`, `erase`/`delete`, `layout`/`frame`/`type`, `font`, `hint`, `title`).
+ */
 function resolveTypingAliasOverrides(
   rawQuery: URLSearchParams,
   segments: readonly string[]
@@ -394,24 +594,28 @@ function resolveTypingAliasOverrides(
   const prefix = hasPrefixSegment
     ? undefined
     : pickNonBlank(rawQuery.get('prefix'), rawQuery.get('prompt')) || undefined;
-  const align = resolveTypingAlign(rawQuery.get('align'), rawQuery.get('center'));
-  const erase = resolveTypingEraseMode(rawQuery.get('erase'), rawQuery.get('delete'));
   const layout = resolveTypingLayout(
     rawQuery.get('layout'),
     rawQuery.get('frame'),
     rawQuery.get('type')
   );
+  const erase = resolveTypingEraseMode(rawQuery.get('erase'), rawQuery.get('delete'));
+  const font = resolveTypingFont(rawQuery.get('font'));
+  const effectivePrefix = (hasPrefixSegment ? segments[0] : prefix)?.trim();
   return {
-    align,
+    align: normalizeTypingAlign(rawQuery, layout, effectivePrefix),
     center: undefined,
     delete: undefined,
     erase: erase === DEFAULT_TYPING_ERASE ? undefined : erase,
+    font: font === DEFAULT_LAYOUT_FONTS[layout] ? undefined : font,
     frame: undefined,
+    hint: normalizeTypingHint(rawQuery.get('hint'), layout),
     layout: layout === DEFAULT_TYPING_LAYOUT ? undefined : layout,
     lines: capOptionalTextQuery(lines),
     prefix: capOptionalTextQuery(prefix),
     prompt: undefined,
     text: undefined,
+    title: normalizeTypingTitle(rawQuery.get('title'), layout),
     type: undefined,
   };
 }
@@ -484,6 +688,24 @@ function renderBadgeFromQuery(
   });
 }
 
+/** Render a service preset badge from a resolved metric result, applying canonical query overrides (incl. `?label=`). */
+function renderServiceBadge(result: MetricResult, query: URLSearchParams): string {
+  return renderBadgeFromQuery(
+    query,
+    {
+      color: result.color,
+      dot: result.dot,
+      icon: result.icon,
+      label: result.label,
+      special: result.special,
+      specials: result.specials,
+      value: result.value,
+      variant: DEFAULT_BADGE_VARIANT,
+    },
+    true
+  );
+}
+
 /** Dispatch `/badge/*` segments onto static or service preset badges. */
 function resolveBadgeRoute(
   segments: readonly string[],
@@ -506,15 +728,19 @@ function resolveBadgeRoute(
   if (!service) {
     return undefined;
   }
+  function render(result: MetricResult): string {
+    return renderServiceBadge(result, query);
+  }
   if ((service.route.target.maxSegments ?? 1) > 1) {
     // Multi-segment targets (e.g., Go module paths); every middle segment belongs to the target,
     // except a leading required owner segment when at least 4 segments are present:
     const hasOwnerSegment = service.route.owner?.isRequired === true && segments.length >= 4;
     return {
       kind: 'service',
+      render,
       request: {
-        metric: segments.at(-1) ?? '',
-        owner: hasOwnerSegment ? second : undefined,
+        metric: resolveMetricKey(service, (segments.at(-1) ?? '').toLowerCase()),
+        ...(hasOwnerSegment && second !== undefined ? { owner: second } : {}),
         service: firstLower,
         target: segments.slice(hasOwnerSegment ? 2 : 1, -1).join('/'),
       },
@@ -523,13 +749,24 @@ function resolveBadgeRoute(
   if (segments.length === 3) {
     return {
       kind: 'service',
-      request: { metric: third ?? '', service: firstLower, target: second ?? '' },
+      render,
+      request: {
+        metric: resolveMetricKey(service, (third ?? '').toLowerCase()),
+        service: firstLower,
+        target: second ?? '',
+      },
     };
   }
   if (segments.length === 4) {
     return {
       kind: 'service',
-      request: { metric: fourth ?? '', owner: second, service: firstLower, target: third ?? '' },
+      render,
+      request: {
+        metric: resolveMetricKey(service, (fourth ?? '').toLowerCase()),
+        owner: second,
+        service: firstLower,
+        target: third ?? '',
+      },
     };
   }
 
@@ -645,6 +882,54 @@ function resolveTypingRoute(segments: readonly string[], query: URLSearchParams)
   );
 }
 
+/** Strip static-only redundant query defaults (`label`, `dot=none`, payload-less `special`, default `color`, and `icon`). */
+function pruneStaticRouteDefaults(query: URLSearchParams, canonicalPrefix: string): void {
+  if (canonicalPrefix === 'badge') {
+    query.delete('label');
+    if (query.get('dot') === 'none') {
+      query.delete('dot');
+    }
+    if (!parseSpecialParam(query.get('special'))) {
+      query.delete('special');
+    }
+  }
+  if (canonicalPrefix !== 'stack' && query.get('color') === DEFAULT_THEME_COLOR) {
+    query.delete('color');
+  }
+  const normalizedIcon = query.get('icon');
+  if (normalizedIcon === 'none') {
+    query.delete('icon');
+  } else if (
+    normalizedIcon?.startsWith(',') &&
+    (canonicalPrefix === 'badge' || canonicalPrefix === 'button')
+  ) {
+    query.set('icon', `none${normalizedIcon}`);
+  }
+}
+
+/** Normalize the request pathname (trimming trailing `/`, folding route prefix aliases, and canonicalizing service/metric segments). */
+function canonicalizeRequestPathname(
+  urlPathname: string,
+  route: SvgRouteDefinition,
+  match: SvgRouteMatch
+): string {
+  const rawPathname =
+    urlPathname.length > 1 && urlPathname.endsWith('/') ? urlPathname.slice(0, -1) : urlPathname;
+  const pathname = route.aliasOf
+    ? `/${route.aliasOf}${rawPathname.slice(route.prefix.length + 1)}`
+    : rawPathname;
+  if (match.kind !== 'service') {
+    return pathname;
+  }
+  const rawParts = pathname.split('/');
+  rawParts[2] = match.request.service;
+  const service = getOwnValue(SERVICES_CONFIG, match.request.service);
+  if (service && Object.hasOwn(service.metrics, match.request.metric)) {
+    rawParts[rawParts.length - 1] = match.request.metric;
+  }
+  return rawParts.join('/');
+}
+
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /** SVG route table sorted by prefix: The single source of the Hono registrations, the dispatcher, and the edge cache keys. */
@@ -744,19 +1029,19 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
   if (!match) {
     return undefined;
   }
-  // Static badges ignore `?label=`, so strip it before forming the Tier-2 edge cache key:
-  if (match.kind === 'static' && route.prefix === 'badge') {
-    query.delete('label');
+  const canonicalPrefix = route.aliasOf ?? route.prefix;
+  // Static SVG routes have no upstream preset overrides, so strip redundant static defaults:
+  if (match.kind === 'static') {
+    pruneStaticRouteDefaults(query, canonicalPrefix);
   }
-  const rawPathname =
-    url.pathname.length > 1 && url.pathname.endsWith('/')
-      ? url.pathname.slice(0, -1)
-      : url.pathname;
-  const pathname = route.aliasOf
-    ? `/${route.aliasOf}${rawPathname.slice(route.prefix.length + 1)}`
-    : rawPathname;
+  const pathname = canonicalizeRequestPathname(url.pathname, route, match);
   const queryString = query.toString();
-  return { cacheKey: `${url.origin}${pathname}${queryString ? `?${queryString}` : ''}`, match };
+  const canonicalPathAndQuery = `${pathname}${queryString ? `?${queryString}` : ''}`;
+  return {
+    cacheKey: `${url.origin}${canonicalPathAndQuery}`,
+    ...(route.aliasOf ? { canonicalPath: canonicalPathAndQuery } : {}),
+    match,
+  };
 }
 
 /**
@@ -766,29 +1051,6 @@ export function resolveSvgRequest(url: URL): ResolvedSvgRequest | undefined {
  */
 export function resolveSvgRoute(url: URL): SvgRouteMatch | undefined {
   return resolveSvgRequest(url)?.match;
-}
-
-/**
- * Render a service preset badge from a resolved metric result, applying the canonical query overrides (incl. `?label=`).
- * @param result   Resolved metric result (upstream data, sample preview, or error badge).
- * @param query    Request query parameters.
- * @returns Complete badge SVG markup.
- */
-export function renderServiceBadge(result: MetricResult, query: URLSearchParams): string {
-  return renderBadgeFromQuery(
-    query,
-    {
-      color: result.color,
-      dot: result.dot,
-      icon: result.icon,
-      label: result.label,
-      special: result.special,
-      specials: result.specials,
-      value: result.value,
-      variant: DEFAULT_BADGE_VARIANT,
-    },
-    true
-  );
 }
 
 /**
@@ -821,7 +1083,7 @@ export function renderSvgPath(path: string, sample: ServicePreviewSample = 'n/a'
   if (match.kind === 'static') {
     return match.render();
   }
-  return renderServiceBadge(resolveServicePreview(match.request, sample), url.searchParams);
+  return match.render(resolveServicePreview(match.request, sample));
 }
 
 /**

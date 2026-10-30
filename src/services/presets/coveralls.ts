@@ -1,5 +1,7 @@
 /**
- * Coveralls service preset – Live upstream metrics and redirect transformations.
+ * Coveralls Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Coveralls.
  */
 
 import { createCoverageService } from '@/services/metrics';
@@ -20,6 +22,7 @@ interface CoverallsRepoPayload {
 export const COVERALLS_SERVICE = createCoverageService<CoverallsRepoPayload>({
   api: 'https://coveralls.io/github/{owner}/{target}.json',
   description: 'Latest-build test coverage of a GitHub repository (ring gauge, colored by %).',
+  extractKeys: ['coverage_change', 'covered_percent'],
   icon: 'coveralls',
   page: 'https://coveralls.io/github/{owner}/{target}',
   readDelta: (repo) => repo.coverage_change,

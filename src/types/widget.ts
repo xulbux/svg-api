@@ -1,9 +1,11 @@
 /**
- * Widget types – Tech stack grid, quote card, and typing animation rendering options.
+ * Widget Types
+ *
+ * Tech stack grid, quote card, and typing animation rendering options.
  */
 
-import type { AnimationMode } from './badge';
-import type { BadgeVariant, SizePreset, ThemeColorName } from './theme';
+import type { AnimationMode } from '@/types/badge';
+import type { BadgeVariant, SizePreset, ThemeColorName } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -40,6 +42,32 @@ export interface GlyphLineLayout {
   glyphs: PositionedCharGlyph[];
   /** Total horizontal advance width of the line in pixels. */
   totalAdvance: number;
+}
+
+/** Ink bounding box metrics of a text string laid out at the `(0, 0)` baseline. */
+export interface InkMetrics {
+  /** Whether the path contains zero visible contours (e.g., empty or whitespace-only text). */
+  isEmpty: boolean;
+  /** Visible ink width (`x2 - x1`) or advance width for whitespace-only strings, in pixels. */
+  width: number;
+  /** Leftmost visible ink X coordinate relative to the `x = 0` origin. */
+  x1: number;
+  /** Rightmost visible ink X coordinate relative to the `x = 0` origin. */
+  x2: number;
+}
+
+/** Cached ink metrics and serialized outline of a text string at the `(0, 0)` baseline. */
+export interface TextOutline extends InkMetrics {
+  /** Serialized SVG path data at the `(0, 0)` baseline. */
+  pathData: string;
+}
+
+/** Base icon slug and optional raw `@<color>` suffix of a single `/stack` tile token. */
+export interface StackTileColorParts {
+  /** Raw color suffix after `@` (`undefined` when no `@<color>` suffix is present). */
+  colorSuffix: string | undefined;
+  /** Base icon slug before `@<color>`. */
+  slug: string;
 }
 
 /** Horizontal text alignment for typing animations. */

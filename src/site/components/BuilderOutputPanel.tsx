@@ -1,5 +1,8 @@
 /**
- * Builder output panel component – Sticky right-hand live preview, snippet format tabs, syntax-highlighted code output, alt/link inputs, and action buttons (`<BuilderOutputPanel />`).
+ * Builder Output Panel Component
+ *
+ * Sticky right-hand live preview, snippet format tabs, syntax-highlighted code output,
+ * alt/link inputs, and action buttons (`<BuilderOutputPanel />`).
  */
 
 import { CopyButton, UiIcon } from '@/site/components/UiIcon';

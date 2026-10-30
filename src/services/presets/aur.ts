@@ -1,5 +1,7 @@
 /**
- * AUR service preset – Live upstream metrics and redirect transformations.
+ * AUR Service Preset
+ *
+ * Live upstream metrics and redirect transformations for AUR.
  */
 
 import {
@@ -75,9 +77,7 @@ export const AUR_SERVICE = defineService({
     title: 'AUR',
   },
   metrics: {
-    license: createLicenseMetric(AUR_ENDPOINT, (info) =>
-      Array.isArray(info.License) ? info.License : undefined
-    ),
+    license: createLicenseMetric(AUR_ENDPOINT, (info) => info.License),
     popularity: createMetric(
       AUR_ENDPOINT,
       { defaultColor: 'violet', defaultIcon: 'trending-up', defaultLabel: 'Popularity' },

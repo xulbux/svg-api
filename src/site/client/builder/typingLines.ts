@@ -1,8 +1,16 @@
 /**
- * Typing lines controller – Interactive line-by-line list editor for the `/builder/typing` URL builder.
+ * Typing Lines Controller
+ *
+ * Interactive line-by-line list editor for the `/builder/typing` URL builder.
  */
 
-import { MAX_TYPING_LINE_LENGTH, MAX_TYPING_LINES } from '@/site/shared';
+import {
+  MAX_TYPING_LINE_LENGTH,
+  MAX_TYPING_LINES,
+  sliceCodeUnitSafe,
+  splitTypingLines,
+  TYPING_LINE_SPLIT_RX,
+} from '@/site/shared';
 import type { TypingLinesController, TypingLinesMountOptions } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -30,7 +38,7 @@ interface RowFlipSnapshot {
 }
 
 /** Options for initializing the `/builder/typing` interactive line list controller. */
-export type TypingLinesControllerOptions = TypingLinesMountOptions<
+type TypingLinesControllerOptions = TypingLinesMountOptions<
   HTMLButtonElement,
   HTMLElement,
   HTMLInputElement
@@ -48,9 +56,6 @@ const REORDER_FLIP_DURATION_MS = 180;
 const REORDER_FLIP_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
-
-/** Matches `;` or newline separators when splitting a serialized or pasted lines list. */
-const LINE_SPLIT_RX = /[\r\n;]+/;
 
 /** Matches pasted text that contains a line break or semicolon separator. */
 const MULTI_LINE_PASTE_RX = /[\r\n;]/;
@@ -173,13 +178,41 @@ function trySwapDraggedRowOnce(draggedRow: HTMLElement, visualCenterY: number): 
 /** Split pasted clipboard text into non-empty trimmed lines. */
 function splitPastedLines(pastedText: string): string[] {
   const pastedLines: string[] = [];
-  for (const part of pastedText.split(LINE_SPLIT_RX)) {
+  for (const part of pastedText.split(TYPING_LINE_SPLIT_RX)) {
     const trimmedLine = part.trim();
     if (trimmedLine) {
       pastedLines.push(trimmedLine);
     }
   }
   return pastedLines;
+}
+
+/** Check whether a keyboard event carries no Shift/Ctrl/Meta/Alt modifiers. */
+function hasNoKeyModifiers(event: KeyboardEvent): boolean {
+  return !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
+/** Add `.is-entering` to `row` and strip it after `transitionend` or a fallback timeout. */
+function attachEnteringClass(row: HTMLElement): void {
+  row.classList.add('is-entering');
+  let isCleanedUp = false;
+  function clearEnteringClass(): void {
+    if (!isCleanedUp) {
+      isCleanedUp = true;
+      row.classList.remove('is-entering');
+    }
+  }
+  function handleTransitionEnd(event: Event): void {
+    if (event.target === row) {
+      clearEnteringClass();
+      row.removeEventListener?.('transitionend', handleTransitionEnd);
+    }
+  }
+  row.addEventListener('transitionend', handleTransitionEnd);
+  globalThis.setTimeout?.(() => {
+    clearEnteringClass();
+    row.removeEventListener?.('transitionend', handleTransitionEnd);
+  }, REORDER_FLIP_DURATION_MS + 60);
 }
 
 /** Run `mutateDom` inside `parent` and FLIP-animate only non-excluded rows whose layout slot changed. */
@@ -260,8 +293,11 @@ export function createTypingLinesController(
   const maxLines = Number(editorElement?.dataset.maxLines) || MAX_TYPING_LINES;
   const maxLength = Number(editorElement?.dataset.maxLength) || MAX_TYPING_LINE_LENGTH;
   const firstRow = listElement?.querySelector('[data-typing-line-row]');
-  const isEditorRequired =
-    firstRow?.querySelector('.typing-line-input')?.getAttribute('aria-required') === 'true';
+  const firstRowInput = firstRow?.querySelector('.typing-line-input');
+  const firstRowPlaceholder =
+    (firstRowInput instanceof HTMLInputElement && firstRowInput.placeholder) ||
+    'e.g., Full-Stack Developer';
+  const isEditorRequired = firstRowInput?.getAttribute('aria-required') === 'true';
   const rowTemplate =
     firstRow instanceof HTMLElement ? (firstRow.cloneNode(true) as HTMLElement) : undefined;
 
@@ -286,15 +322,10 @@ export function createTypingLinesController(
     row.classList.remove('is-dragging', 'is-entering', 'is-settling');
     const input = row.querySelector('.typing-line-input');
     if (input instanceof HTMLInputElement) {
-      input.value = lineValue.replace(SEMICOLON_RX, ' ').slice(0, maxLength);
+      input.value = sliceCodeUnitSafe(lineValue.replace(SEMICOLON_RX, ' '), maxLength);
     }
     if (isEntering && !hasReducedMotionPreference()) {
-      row.classList.add('is-entering');
-      row.addEventListener('transitionend', (event) => {
-        if (event.target === row) {
-          row.classList.remove('is-entering');
-        }
-      });
+      attachEnteringClass(row);
     }
     return row;
   }
@@ -321,7 +352,7 @@ export function createTypingLinesController(
         }
         const input = row.querySelector('.typing-line-input');
         if (input instanceof HTMLInputElement) {
-          input.placeholder = i === 0 ? 'e.g., Full-Stack Developer' : `Line ${lineNumber}…`;
+          input.placeholder = i === 0 ? firstRowPlaceholder : `Line ${lineNumber}…`;
           input.setAttribute('aria-label', `Line ${lineNumber}`);
           if (isEditorRequired && i === 0) {
             input.setAttribute('aria-required', 'true');
@@ -363,7 +394,7 @@ export function createTypingLinesController(
           }
         }
         const trimmedLine = input.value.trim();
-        if (trimmedLine) {
+        if (trimmedLine && nonEmptyLines.length < maxLines) {
           nonEmptyLines.push(trimmedLine);
         }
       }
@@ -384,16 +415,7 @@ export function createTypingLinesController(
     if (!listElement || !rowTemplate) {
       return;
     }
-    const parsedLines: string[] = [];
-    for (const segment of rawValue.split(LINE_SPLIT_RX)) {
-      const trimmedLine = segment.trim();
-      if (trimmedLine && parsedLines.length < maxLines) {
-        parsedLines.push(trimmedLine);
-      }
-    }
-    if (parsedLines.length === 0) {
-      parsedLines.push('');
-    }
+    const parsedLines = splitTypingLines(rawValue, maxLines);
     const fragment = document.createDocumentFragment();
     for (const lineText of parsedLines) {
       const row = createRow(lineText);
@@ -460,6 +482,45 @@ export function createTypingLinesController(
     }
   }
 
+  function insertRowAfter(row: HTMLElement): void {
+    const newRow = createRow('', true);
+    if (!newRow) {
+      return;
+    }
+    if (listElement) {
+      runWithRowFlip(
+        listElement,
+        () => {
+          row.after(newRow);
+          return true;
+        },
+        newRow
+      );
+    } else {
+      row.after(newRow);
+    }
+    refreshRowMetadata();
+    focusRowInput(newRow);
+  }
+
+  function removeRowWithFlip(row: HTMLElement, rowIndex: number): void {
+    if (listElement) {
+      runWithRowFlip(
+        listElement,
+        () => {
+          row.remove();
+          return true;
+        },
+        row
+      );
+    } else {
+      row.remove();
+    }
+    refreshRowMetadata();
+    focusRowInput(getRows()[Math.max(0, rowIndex - 1)], true);
+    notifyChange();
+  }
+
   function handleLineInputKeydown(event: KeyboardEvent, input: HTMLInputElement): void {
     const row = input.closest<HTMLElement>('[data-typing-line-row]');
     if (!row) {
@@ -473,47 +534,21 @@ export function createTypingLinesController(
     } else if (event.key === 'Enter') {
       event.preventDefault();
       if (rows.length < maxLines) {
-        const newRow = createRow('', true);
-        if (newRow) {
-          if (listElement) {
-            runWithRowFlip(
-              listElement,
-              () => {
-                row.after(newRow);
-                return true;
-              },
-              newRow
-            );
-          } else {
-            row.after(newRow);
-          }
-          refreshRowMetadata();
-          focusRowInput(newRow);
-        }
+        insertRowAfter(row);
       } else if (rowIndex + 1 < rows.length) {
         focusRowInput(rows[rowIndex + 1]);
       }
     } else if (event.key === 'Backspace' && input.value === '' && rows.length > 1) {
       event.preventDefault();
-      if (listElement) {
-        runWithRowFlip(
-          listElement,
-          () => {
-            row.remove();
-            return true;
-          },
-          row
-        );
-      } else {
-        row.remove();
-      }
-      refreshRowMetadata();
-      focusRowInput(getRows()[Math.max(0, rowIndex - 1)], true);
-      notifyChange();
-    } else if (event.key === 'ArrowUp' && rowIndex > 0) {
+      removeRowWithFlip(row, rowIndex);
+    } else if (hasNoKeyModifiers(event) && event.key === 'ArrowUp' && rowIndex > 0) {
       event.preventDefault();
       focusRowInput(rows[rowIndex - 1], true);
-    } else if (event.key === 'ArrowDown' && rowIndex + 1 < rows.length) {
+    } else if (
+      hasNoKeyModifiers(event) &&
+      event.key === 'ArrowDown' &&
+      rowIndex + 1 < rows.length
+    ) {
       event.preventDefault();
       focusRowInput(rows[rowIndex + 1], true);
     }
@@ -590,7 +625,7 @@ export function createTypingLinesController(
     const afterSelection = input.value.slice(endOffset);
     const insertCount = Math.min(pastedLines.length - 1, Math.max(0, maxLines - getRows().length));
     const firstMerged = `${beforeSelection}${pastedLines[0] ?? ''}${insertCount === 0 ? afterSelection : ''}`;
-    input.value = firstMerged.replace(SEMICOLON_RX, ' ').trim().slice(0, maxLength);
+    input.value = sliceCodeUnitSafe(firstMerged.replace(SEMICOLON_RX, ' ').trim(), maxLength);
     const lastRow = appendPastedRows(row, pastedLines, insertCount, afterSelection);
     refreshRowMetadata();
     focusRowInput(lastRow, true);

@@ -1,5 +1,7 @@
 /**
- * Code drawer scroll controller – Manages horizontal scroll buttons and resize observation for expandable `<details class="code-drawer">` blocks.
+ * Code Drawer Scroll Controller
+ *
+ * Manages horizontal scroll buttons and resize observation for expandable `<details class="code-drawer">` blocks.
  */
 
 // ---------------------------------------- CONSTS ---------------------------------------

@@ -1,5 +1,7 @@
 /**
- * Builder preview & snippet output controller – Manages live SVG preview debouncing, required-field status notices, syntax-highlighted code tabs, and shareable builder URLs.
+ * Builder Preview & Snippet Output Controller
+ *
+ * Manages live SVG preview debouncing, required-field status notices, syntax-highlighted code tabs, and shareable builder URLs.
  */
 
 import {
@@ -40,7 +42,7 @@ interface BuilderOutputOptions {
   getState: () => BuilderState;
   /** Custom click-through link `<input>` element. */
   linkInput: HTMLInputElement | null;
-  /** `#builder-open` "Open SVG" anchor element. */
+  /** `#builder-open` `Open SVG` anchor element. */
   openLink: HTMLAnchorElement | null;
   /** `.builder-output` aside container element. */
   outputElement: Element | null;
@@ -378,13 +380,17 @@ export function createBuilderOutputController(
   function selectTab(tab: HTMLElement): void {
     const { format } = tab.dataset;
     snippetFormat = format === 'html' || format === 'url' ? format : 'markdown';
-    activateRovingTab(document.querySelectorAll('.builder-tab'), tab);
+    activateRovingTab(outputElement?.querySelectorAll('.builder-tab') ?? [], tab);
     document.getElementById('builder-code')?.setAttribute('aria-labelledby', tab.id);
     renderOutputs();
   }
 
   function handleTabKeydown(event: KeyboardEvent): void {
-    handleRovingTabKeydown(event, [...document.querySelectorAll('.builder-tab')], selectTab);
+    handleRovingTabKeydown(
+      event,
+      [...(outputElement?.querySelectorAll('.builder-tab') ?? [])],
+      selectTab
+    );
   }
 
   function copyShareLink(): void {

@@ -1,13 +1,15 @@
 /**
- * GitLab service preset – Live upstream metrics and redirect transformations.
+ * GitLab Service Preset
+ *
+ * Live upstream metrics and redirect transformations for GitLab.
  */
 
-import { createEndpoint, defineService, pickFields, withPageSuffix } from '@/services/endpoint';
+import { appendPageSuffix, createEndpoint, defineService, pickFields } from '@/services/endpoint';
 import {
+  FORGE_ACTIVITY_ALIASES,
   FORKS,
   ISSUES,
-  LAST_COMMIT,
-  RATIO_SPECIALS,
+  LAST_ACTIVITY,
   RATIO_STEPS_SPECIALS,
   STARS,
   buildRatioSpecials,
@@ -93,7 +95,6 @@ const ISSUES_ENDPOINT = createEndpoint({
 /** GitLab latest release endpoint. */
 const RELEASE_ENDPOINT = createEndpoint({
   api: 'https://gitlab.com/api/v4/projects/{id}/releases/permalink/latest',
-  extractKeys: ['tag_name'],
   page: 'https://gitlab.com/{owner}/{target}/-/releases',
   project: pickFields<GitLabReleasePayload>(['tag_name']),
 });
@@ -106,11 +107,11 @@ export const GITLAB_SERVICE = defineService({
     description: 'Project stars, forks, open issues, license, last activity, and latest release.',
     title: 'GitLab',
   },
-  metricAliases: { commit: 'updated', 'last-commit': 'updated' },
+  metricAliases: FORGE_ACTIVITY_ALIASES,
   metrics: {
     forks: createCountMetric(
-      withPageSuffix(PROJECT_ENDPOINT, '/-/forks'),
-      { ...FORKS, autoSpecials: RATIO_SPECIALS },
+      appendPageSuffix(PROJECT_ENDPOINT, '/-/forks'),
+      FORKS,
       (project) => project.forks_count,
       '',
       (project) => buildRatioSpecials(project.forks_count, project.star_count)
@@ -132,13 +133,13 @@ export const GITLAB_SERVICE = defineService({
     ),
     release: createReleaseMetric(RELEASE_ENDPOINT, (release) => release.tag_name),
     stars: createCountMetric(
-      withPageSuffix(PROJECT_ENDPOINT, '/-/starrers'),
+      appendPageSuffix(PROJECT_ENDPOINT, '/-/starrers'),
       STARS,
       (project) => project.star_count
     ),
     updated: createRelativeDateMetric(
-      withPageSuffix(PROJECT_ENDPOINT, '/-/activity'),
-      { ...LAST_COMMIT, defaultLabel: 'Last Activity' },
+      appendPageSuffix(PROJECT_ENDPOINT, '/-/activity'),
+      LAST_ACTIVITY,
       (project) => project.last_activity_at
     ),
   },

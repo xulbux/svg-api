@@ -1,9 +1,10 @@
 /**
- * Go modules service preset – Live upstream metrics and redirect transformations.
+ * Go Modules Service Preset
  *
- * Module paths span multiple path segments (`route.target.maxSegments`); Every segment is validated
- * individually, and uppercase letters are escaped as `!` + lowercase for the proxy (Go module
- * proxy protocol case-encoding).
+ * Live upstream metrics and redirect transformations for Go modules.
+ *
+ * Module paths span multiple path segments (`route.target.maxSegments`); every segment is validated individually,
+ * and uppercase letters are escaped as `!` + lowercase for the proxy (Go module proxy protocol case-encoding).
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

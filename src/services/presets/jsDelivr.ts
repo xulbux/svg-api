@@ -1,14 +1,16 @@
 /**
- * jsDelivr service preset – Live upstream metrics and redirect transformations.
+ * jsDelivr Service Preset
+ *
+ * Live upstream metrics and redirect transformations for jsDelivr.
  */
 
 import {
   CACHE_TTL,
   NPM_PACKAGE_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -55,8 +57,8 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const hits = asJsonObject(data.hits) ?? data;
-  const prev = asJsonObject(hits.prev);
+  const hits = readJsonObject(data.hits) ?? data;
+  const prev = readJsonObject(hits.prev);
   const total = readFiniteNumber(hits.total);
   const prevTotal = readFiniteNumber(prev?.total);
   const daily = readDateKeyedSeries(hits.dates);
@@ -78,6 +80,7 @@ function projectJsDelivrHits(data: unknown): JsDelivrHitsProjection | undefined 
 function createJsDelivrEndpoint(period: string): MetricEndpoint<JsDelivrHitsProjection> {
   return createEndpoint({
     api: `https://data.jsdelivr.com/v1/stats/packages/npm/{npm}?period=${period}`,
+    extractKeys: ['hits'],
     page: 'https://www.jsdelivr.com/package/npm/{npm}',
     project: projectJsDelivrHits,
     ttl: CACHE_TTL.daily,

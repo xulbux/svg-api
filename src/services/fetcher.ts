@@ -1,11 +1,13 @@
 /**
- * Upstream service fetcher – Validates service preset requests and resolves metrics with request coalescing,
+ * Upstream Service Fetcher
+ *
+ * Validates service preset requests and resolves metrics with request coalescing,
  * an in-isolate memory cache, conditional `ETag` revalidation, `stale-if-error` fallback, and Tier-1 JSON edge caching.
  *
- * Lookup order per upstream key: in-isolate memory cache -> in-flight request -> Cloudflare edge
- * cache -> conditional or fresh upstream `fetch` (with timeout and a response size cap).
- * Positive projections stay physically retained at the edge beyond their logical TTL so expired entries
- * can revalidate via `If-None-Match` (`304 Not Modified`) and survive transient `429` / `5xx` errors.
+ * Lookup order per upstream key: in-isolate memory cache -> in-flight request -> Cloudflare edge cache
+ * -> conditional or fresh upstream `fetch` (with timeout and a response size cap).
+ * Positive projections stay physically retained at the edge beyond their logical TTL
+ * so expired entries can revalidate via `If-None-Match` (`304 Not Modified`) and survive transient `429` / `5xx` errors.
  */
 
 import { SERVICES_CONFIG } from '@/config/services';
@@ -15,6 +17,7 @@ import {
   MAX_UPSTREAM_BYTES,
   UPSTREAM_TIMEOUT,
   cancelBody,
+  countUtf8Bytes,
   isJsonObject,
   readBoundedResponseText,
 } from '@/services/endpoint';
@@ -30,6 +33,7 @@ import type {
   Env,
   MetricEndpoint,
   MetricResult,
+  PreparsedUpstreamResponse,
   ResolvedServiceMetric,
   ServiceDefinition,
   ServiceMetricConfig,
@@ -85,6 +89,16 @@ interface EdgeCacheReadResult {
   rawText?: string;
 }
 
+/** Result of looking up an entry in the Tier-1 JSON edge cache. */
+interface EdgeCacheLookup {
+  /** Synthetic cache key `Request` when the edge cache is available. */
+  cacheKey?: Request;
+  /** Active edge `Cache` instance when available. */
+  edgeCache?: Cache;
+  /** Decoded positive or negative cache entry when found and valid. */
+  entry?: EdgeCacheReadResult;
+}
+
 /** Stale positive projection candidate retained across revalidation (`304` and `stale-if-error`). */
 interface StaleCandidate {
   /** Expired positive outcome with non-empty `data`. */
@@ -131,12 +145,12 @@ interface ErrorResultOptions {
   redirectUrl?: string;
 }
 
-/** Merged upstream request headers of a service, memoized by authentication token. */
+/** Merged upstream request headers of a service, memoized by serialized dynamic headers. */
 interface MergedHeadersEntry {
+  /** Serialized dynamic headers the entry was built for. */
+  cacheKey: string;
   /** Default headers merged with the service headers. */
   headers: Readonly<Record<string, string>>;
-  /** Normalized `GITHUB_TOKEN` value the headers were built for (`''` when unset). */
-  token: string;
 }
 
 /** Phase of the streaming top-level JSON object key extractor. */
@@ -149,6 +163,7 @@ type JsonScanPhase =
   | 'mismatch'
   | 'next-key'
   | 'root'
+  | 'root-end'
   | 'root-non-object'
   | 'value-container'
   | 'value-primitive'
@@ -157,7 +172,7 @@ type JsonScanPhase =
 
 /** Mutable state of the streaming top-level JSON object key extractor across chunks. */
 interface JsonStreamScanner {
-  /** Summed length in UTF-16 code units of all already parsed wanted values. */
+  /** Summed length in UTF-8 wire bytes of all already parsed wanted values. */
   capturedSize: number;
   /** Current object/array nesting depth inside a `value-container`. */
   depth: number;
@@ -183,6 +198,8 @@ interface JsonStreamScanner {
   targetKeys: ReadonlySet<string>;
   /** Buffer accumulating the JSON slice of a matched key's value (`''` while skipping unwanted keys). */
   valueBuffer: string;
+  /** Length in UTF-8 wire bytes of `valueBuffer`. */
+  valueBytes: number;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -198,7 +215,7 @@ const RATE_LIMIT_CACHE_TTL = { max: 900, min: 60 } as const;
 
 /**
  * Smallest `x-ratelimit-reset` value read as an epoch timestamp in seconds (September 2001);
- * Smaller values are seconds until the reset, larger ones epochs (GitHub).
+ * Smaller values are seconds until the reset, larger ones Unix epochs.
  */
 const RATE_LIMIT_RESET_EPOCH_THRESHOLD = 1_000_000_000;
 
@@ -230,7 +247,13 @@ const MAX_MEMORY_CACHE_WEIGHT = 4_000_000;
 const JSON_CACHE_ORIGIN = `https://internal-json-cache.${SITE_HOST}/v3/`;
 
 /** Physical edge cache retention in seconds for positive projections, preserving `ETag` and `stale-if-error` data past logical expiry. */
-const POSITIVE_EDGE_RETENTION_SECONDS = 604_800;
+const POSITIVE_EDGE_RETENTION = 604_800;
+
+/** Maximum number of HTTPS redirect hops followed per upstream `fetch` call. */
+const MAX_UPSTREAM_REDIRECTS = 5;
+
+/** HTTP redirect statuses handled manually so scheme and origin changes are validated per hop. */
+const REDIRECT_STATUSES: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 
 /** Remaining-quota fraction at or below which positive logical TTLs stretch toward the rate-limit reset. */
 const LOW_QUOTA_RATIO = 0.1;
@@ -294,6 +317,9 @@ const MEMORY_CACHE = createLruCache<UpstreamOutcome>(
 /** Pending upstream loads keyed by API URL, so concurrent badge requests share one upstream call. */
 const IN_FLIGHT_LOADS = new Map<string, Promise<UpstreamOutcome>>();
 
+/** Pending Tier-1 edge cache reads keyed by API URL, coalescing concurrent lookups during saturation. */
+const IN_FLIGHT_EDGE_READS = new Map<string, Promise<EdgeCacheLookup>>();
+
 /** Memoized merged request headers for services with static `service.headers`. */
 const STATIC_MERGED_HEADERS = new WeakMap<ServiceDefinition, Readonly<Record<string, string>>>();
 
@@ -307,13 +333,19 @@ const EXTRACT_KEY_SETS = new WeakMap<readonly string[], ReadonlySet<string>>();
 
 /**
  * Matches a safe owner or target path segment:
- * Word characters, dots, colons, hyphens, `@`, and `+`, rejecting dot-only (`..` path traversal),
- * colon-only, and bare `@` / `@@…` segments. Slashes never match, so every segment stays atomic.
+ * Word characters, dots, colons, hyphens, `@`, and `+`, rejecting dot-only (`..` path traversal), colon-only, and bare `@` / `@@…` segments.
+ * Slashes never match, so every segment stays atomic.
  */
 const SAFE_SEGMENT_RX = /^(?!\.+$)(?!:+$)(?!@(?:$|@))[\w.:@+-]{1,214}$/;
 
 /** Matches a non-negative integer or decimal number (e.g., `Retry-After` and `x-ratelimit-*` headers). */
 const NON_NEGATIVE_NUMBER_RX = /^\d+(?:\.\d+)?$/;
+
+/** Matches a canonical dotted-quad IPv4 literal hostname produced by `URL.hostname`. */
+const IPV4_LITERAL_RX = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+
+/** Matches trailing DNS root dots on a hostname (`example.com.` -> `example.com`). */
+const TRAILING_DOTS_RX = /\.+$/;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -362,7 +394,12 @@ function isTargetValid(service: ServiceDefinition, target: string): boolean {
   return segmentCount >= minSegments;
 }
 
-/** Resolve a requested metric slug to its canonical metric key (metrics, then service aliases, then global aliases). */
+/**
+ * Resolve a requested metric slug to its canonical metric key on `service` (metrics, then service aliases, then applicable global aliases).
+ * @param service     Service definition.
+ * @param metricKey   Lowercased requested metric slug.
+ * @returns Canonical metric key on `service`, or `metricKey` unchanged when unknown.
+ */
 function resolveMetricKey(service: ServiceDefinition, metricKey: string): string {
   if (Object.hasOwn(service.metrics, metricKey)) {
     return metricKey;
@@ -370,15 +407,16 @@ function resolveMetricKey(service: ServiceDefinition, metricKey: string): string
   const serviceAlias = service.metricAliases
     ? getOwnValue(service.metricAliases, metricKey)
     : undefined;
-  return serviceAlias ?? getOwnValue(DEFAULT_METRIC_ALIASES, metricKey) ?? metricKey;
+  if (serviceAlias !== undefined) {
+    return serviceAlias;
+  }
+  const defaultAlias = getOwnValue(DEFAULT_METRIC_ALIASES, metricKey);
+  return defaultAlias !== undefined && Object.hasOwn(service.metrics, defaultAlias)
+    ? defaultAlias
+    : metricKey;
 }
 
-/**
- * Resolve a requested metric slug (or alias) to its metric configuration on `service`.
- * @param service   Service definition.
- * @param metric    Raw requested metric slug or alias.
- * @returns Matching `ServiceMetricConfig`, or `undefined` when unknown.
- */
+/** Resolve a requested metric slug (or alias) to its metric configuration on `service`. */
 function resolveServiceMetricConfig(
   service: ServiceDefinition,
   metric: string
@@ -436,7 +474,7 @@ function isResolvedError(
   return 'status' in candidate;
 }
 
-/** Resolve the upstream request headers of a service (memoized per service and token). */
+/** Resolve the upstream request headers of a service (memoized per service and dynamic header set). */
 function resolveRequestHeaders(
   service: ServiceDefinition,
   env: Env
@@ -452,66 +490,112 @@ function resolveRequestHeaders(
     }
     return cachedStatic;
   }
-  const token = env.GITHUB_TOKEN ?? '';
+  const dynamicHeaders = service.buildHeaders(env);
+  let cacheKey = '';
+  const keys = Object.keys(dynamicHeaders);
+  if (keys.length === 1) {
+    const singleKey = keys[0] ?? '';
+    cacheKey = `${singleKey}\0${dynamicHeaders[singleKey] ?? ''}`;
+  } else if (keys.length > 1) {
+    keys.sort();
+    for (const key of keys) {
+      cacheKey += `${key}\0${dynamicHeaders[key] ?? ''}\0`;
+    }
+  }
   const cachedDynamic = DYNAMIC_MERGED_HEADERS.get(service);
-  if (cachedDynamic?.token === token) {
+  if (cachedDynamic?.cacheKey === cacheKey) {
     return cachedDynamic.headers;
   }
-  const headers = { ...DEFAULT_HEADERS, ...service.headers, ...service.buildHeaders(env) };
-  DYNAMIC_MERGED_HEADERS.set(service, { headers, token });
+  const headers = { ...DEFAULT_HEADERS, ...service.headers, ...dynamicHeaders };
+  DYNAMIC_MERGED_HEADERS.set(service, { cacheKey, headers });
   return headers;
 }
 
+/** Read a lowercase response header value from a `Headers` instance or plain header record. */
+function readHeaderValue(
+  headers: Headers | Readonly<Record<string, string>> | undefined,
+  lowerName: string
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+  if (headers instanceof Headers) {
+    return headers.get(lowerName) ?? undefined;
+  }
+  return getOwnValue(headers, lowerName);
+}
+
 /** Check whether a response signals an exhausted rate limit (`429`, or `403` with `x-ratelimit-remaining: 0` / `ratelimit-remaining: 0`). */
-function isRateLimited(response: Response): boolean {
-  if (response.status === RATE_LIMITED_STATUS) {
+function isRateLimited(
+  status: number,
+  headers: Headers | Readonly<Record<string, string>> | undefined
+): boolean {
+  if (status === RATE_LIMITED_STATUS) {
     return true;
   }
-  if (response.status !== 403) {
+  if (status !== 403) {
     return false;
   }
   const remaining =
-    response.headers.get('x-ratelimit-remaining') ?? response.headers.get('ratelimit-remaining');
+    readHeaderValue(headers, 'x-ratelimit-remaining') ??
+    readHeaderValue(headers, 'ratelimit-remaining');
   return remaining === '0';
 }
 
 /**
  * Read the seconds until a rate limit resets from `Retry-After` (seconds or HTTP date) or `x-ratelimit-reset` / `ratelimit-reset`
- * (epoch seconds like GitHub, or delta seconds; Values below `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas);
+ * (epoch seconds, millisecond epochs, or delta seconds; Values below `RATE_LIMIT_RESET_EPOCH_THRESHOLD` are deltas);
  * `now` is a timestamp in milliseconds.
  */
-function readRetryAfter(response: Response, now: number): number | undefined {
-  const retryAfter = response.headers.get('retry-after')?.trim();
+function readRetryAfter(
+  headers: Headers | Readonly<Record<string, string>> | undefined,
+  now: number
+): number | undefined {
+  const retryAfter = readHeaderValue(headers, 'retry-after')?.trim();
   if (retryAfter) {
     if (NON_NEGATIVE_NUMBER_RX.test(retryAfter)) {
-      return Number(retryAfter);
+      const retryDelta = Number(retryAfter);
+      if (retryDelta > 0) {
+        return retryDelta;
+      }
+    } else {
+      const retryAt = Date.parse(retryAfter);
+      if (Number.isFinite(retryAt) && retryAt > now) {
+        return (retryAt - now) / 1000;
+      }
     }
-    const retryAt = Date.parse(retryAfter);
-    return Number.isFinite(retryAt) ? (retryAt - now) / 1000 : undefined;
   }
   const resetHeader = (
-    response.headers.get('x-ratelimit-reset') ?? response.headers.get('ratelimit-reset')
+    readHeaderValue(headers, 'x-ratelimit-reset') ?? readHeaderValue(headers, 'ratelimit-reset')
   )?.trim();
   if (!resetHeader || !NON_NEGATIVE_NUMBER_RX.test(resetHeader)) {
     return undefined;
   }
   const resetValue = Number(resetHeader);
+  let resetDelta = resetValue;
   if (resetValue >= RATE_LIMIT_RESET_EPOCH_MS_THRESHOLD) {
-    return (resetValue - now) / 1000;
+    resetDelta = (resetValue - now) / 1000;
+  } else if (resetValue >= RATE_LIMIT_RESET_EPOCH_THRESHOLD) {
+    resetDelta = resetValue - now / 1000;
   }
-  return resetValue < RATE_LIMIT_RESET_EPOCH_THRESHOLD ? resetValue : resetValue - now / 1000;
+  return resetDelta > 0 ? resetDelta : undefined;
 }
 
 /**
  * Compute an extended logical TTL in seconds up to the rate-limit window reset
  * (capped at `MAX_ADAPTIVE_TTL`) when an upstream bucket has at most `LOW_QUOTA_RATIO` remaining.
  */
-function readAdaptiveTtlSeconds(response: Response, now: number): number | undefined {
+function readAdaptiveTtl(
+  headers: Headers | Readonly<Record<string, string>> | undefined,
+  now: number,
+  precomputedRetryAfter?: number
+): number | undefined {
   const rawLimit = (
-    response.headers.get('x-ratelimit-limit') ?? response.headers.get('ratelimit-limit')
+    readHeaderValue(headers, 'x-ratelimit-limit') ?? readHeaderValue(headers, 'ratelimit-limit')
   )?.trim();
   const rawRemaining = (
-    response.headers.get('x-ratelimit-remaining') ?? response.headers.get('ratelimit-remaining')
+    readHeaderValue(headers, 'x-ratelimit-remaining') ??
+    readHeaderValue(headers, 'ratelimit-remaining')
   )?.trim();
   if (
     !rawLimit ||
@@ -526,11 +610,11 @@ function readAdaptiveTtlSeconds(response: Response, now: number): number | undef
   if (limit <= 0 || remaining > limit * LOW_QUOTA_RATIO) {
     return undefined;
   }
-  const resetSeconds = readRetryAfter(response, now);
-  if (resetSeconds === undefined || resetSeconds <= 0) {
+  const resetDelta = precomputedRetryAfter ?? readRetryAfter(headers, now);
+  if (resetDelta === undefined || resetDelta <= 0) {
     return undefined;
   }
-  return Math.min(MAX_ADAPTIVE_TTL, Math.ceil(resetSeconds));
+  return Math.min(MAX_ADAPTIVE_TTL, Math.ceil(resetDelta));
 }
 
 /** Resolve the cache TTL in seconds of a failed upstream outcome. */
@@ -539,10 +623,10 @@ function resolveFailureTtl(status: number, retryAfter: number | undefined): numb
     return NOT_FOUND_CACHE_TTL;
   }
   if (status === RATE_LIMITED_STATUS) {
-    const seconds = retryAfter ?? RATE_LIMIT_CACHE_TTL.min;
+    const retryWindow = retryAfter ?? RATE_LIMIT_CACHE_TTL.min;
     return Math.min(
       RATE_LIMIT_CACHE_TTL.max,
-      Math.max(RATE_LIMIT_CACHE_TTL.min, Math.ceil(seconds))
+      Math.max(RATE_LIMIT_CACHE_TTL.min, Math.ceil(retryWindow))
     );
   }
   return ERROR_CACHE_TTL;
@@ -584,12 +668,14 @@ function hasAppendedCapturedSlice(
   if (scanner.matchedKey === undefined || end <= start) {
     return true;
   }
-  if (scanner.capturedSize + scanner.valueBuffer.length + (end - start) > MAX_UPSTREAM_BYTES) {
+  const sliceBytes = countUtf8Bytes(chunk, start, end);
+  if (scanner.capturedSize + scanner.valueBytes + sliceBytes > MAX_UPSTREAM_BYTES) {
     scanner.isTooLarge = true;
     scanner.phase = 'mismatch';
     return false;
   }
   scanner.valueBuffer += chunk.slice(start, end);
+  scanner.valueBytes += sliceBytes;
   return true;
 }
 
@@ -601,8 +687,9 @@ function finishScannedValue(scanner: JsonStreamScanner): void {
   }
   try {
     scanner.extracted[scanner.matchedKey] = JSON.parse(scanner.valueBuffer) as unknown;
-    scanner.capturedSize += scanner.valueBuffer.length;
+    scanner.capturedSize += scanner.valueBytes;
     scanner.valueBuffer = '';
+    scanner.valueBytes = 0;
     scanner.foundKeys.add(scanner.matchedKey);
     scanner.matchedKey = undefined;
     scanner.phase = scanner.foundKeys.size >= scanner.targetKeys.size ? 'done' : 'comma-or-end';
@@ -713,14 +800,17 @@ function scanValuePrimitive(chunk: string, startIndex: number, scanner: JsonStre
 
 /** Begin scanning a top-level value at `chunk[index]` according to its leading token. */
 function startValueScan(char: string, index: number, scanner: JsonStreamScanner): number {
+  const isMatched = scanner.matchedKey !== undefined;
   if (char === '"') {
-    scanner.valueBuffer = scanner.matchedKey === undefined ? '' : '"';
+    scanner.valueBuffer = isMatched ? '"' : '';
+    scanner.valueBytes = isMatched ? 1 : 0;
     scanner.isEscaped = false;
     scanner.phase = 'value-string';
     return index + 1;
   }
   if (char === '{' || char === '[') {
-    scanner.valueBuffer = scanner.matchedKey === undefined ? '' : char;
+    scanner.valueBuffer = isMatched ? char : '';
+    scanner.valueBytes = isMatched ? 1 : 0;
     scanner.depth = 1;
     scanner.isInString = false;
     scanner.isEscaped = false;
@@ -732,6 +822,7 @@ function startValueScan(char: string, index: number, scanner: JsonStreamScanner)
     return index + 1;
   }
   scanner.valueBuffer = '';
+  scanner.valueBytes = 0;
   scanner.phase = 'value-primitive';
   return index;
 }
@@ -766,7 +857,7 @@ function advanceStructuralPhase(char: string, index: number, scanner: JsonStream
     }
     case 'first-key-or-end': {
       if (char === '}') {
-        scanner.phase = 'done';
+        scanner.phase = 'root-end';
       } else if (char === '"') {
         scanner.hasKeyEscape = false;
         scanner.isEscaped = false;
@@ -779,7 +870,7 @@ function advanceStructuralPhase(char: string, index: number, scanner: JsonStream
     }
     case 'comma-or-end': {
       if (char === '}') {
-        scanner.phase = 'done';
+        scanner.phase = 'root-end';
       } else if (char === ',') {
         scanner.phase = 'next-key';
       } else {
@@ -813,12 +904,22 @@ function advanceJsonScanner(chunk: string, scanner: JsonStreamScanner): void {
   let index = 0;
   while (index < chunk.length && scanner.phase !== 'done' && scanner.phase !== 'mismatch') {
     switch (scanner.phase) {
+      case 'root-end': {
+        index = skipJsonWhitespace(chunk, index);
+        if (index < chunk.length) {
+          scanner.phase = 'mismatch';
+        }
+        return;
+      }
       case 'root-non-object': {
-        if (scanner.valueBuffer.length + (chunk.length - index) > MAX_JSON_KEY_LENGTH) {
+        const sliceBytes = countUtf8Bytes(chunk, index, chunk.length);
+        if (scanner.valueBytes + sliceBytes > MAX_UPSTREAM_BYTES) {
+          scanner.isTooLarge = true;
           scanner.phase = 'mismatch';
           return;
         }
         scanner.valueBuffer += chunk.slice(index);
+        scanner.valueBytes += sliceBytes;
         return;
       }
       case 'key': {
@@ -875,12 +976,15 @@ function createJsonStreamScanner(extractKeys: readonly string[]): JsonStreamScan
     phase: 'root',
     targetKeys: getExtractKeySet(extractKeys),
     valueBuffer: '',
+    valueBytes: 0,
   };
 }
 
-/** Resolve the top-level JSON keys to extract while streaming (`undefined` when the full body is read). */
-function resolveExtractKeys(endpoint: MetricEndpoint): readonly string[] | undefined {
-  return endpoint.extractKeys && endpoint.extractKeys.length > 0 ? endpoint.extractKeys : undefined;
+/** Normalize an optional `extractKeys` list (`undefined` when unset or empty so the full body is read). */
+function normalizeExtractKeys(
+  extractKeys: readonly string[] | undefined
+): readonly string[] | undefined {
+  return extractKeys && extractKeys.length > 0 ? extractKeys : undefined;
 }
 
 /**
@@ -924,7 +1028,7 @@ async function readExtractedResponseBody(
   if (scanner.isTooLarge) {
     return { status: TOO_LARGE_STATUS };
   }
-  if (scanner.phase === 'done') {
+  if (scanner.phase === 'done' || scanner.phase === 'root-end') {
     return { data: scanner.extracted, status };
   }
   if (scanner.phase === 'root-non-object') {
@@ -939,19 +1043,14 @@ async function readExtractedResponseBody(
 
 /**
  * Read a response body with a byte cap;
- * With `extractKeys`, skip unneeded keys in `O(1)` memory and stop reading
- * (cancelling the stream) as soon as all target keys are complete.
+ * With `extractKeys`, skip unneeded keys in `O(1)` memory and stop reading (cancelling the stream) as soon as all target keys are complete.
  */
 async function readResponseBody(
   response: Response,
   extractKeys: readonly string[] | undefined
 ): Promise<UpstreamBody> {
-  if (extractKeys !== undefined) {
-    const { body } = response;
-    if (!body) {
-      return { status: response.status, text: await response.text() };
-    }
-    return readExtractedResponseBody(body.getReader(), response.status, extractKeys);
+  if (extractKeys !== undefined && response.body) {
+    return readExtractedResponseBody(response.body.getReader(), response.status, extractKeys);
   }
   const text = await readBoundedResponseText(response);
   return text === undefined ? { status: TOO_LARGE_STATUS } : { status: response.status, text };
@@ -981,7 +1080,7 @@ function resolveFetchTarget(
     const apiUrl = endpoint.buildApiUrl(params);
     return {
       cacheKeyUrl: apiUrl,
-      extractKeys: resolveExtractKeys(endpoint),
+      extractKeys: normalizeExtractKeys(endpoint.extractKeys),
       headers: serviceHeaders,
       method: 'GET',
       url: apiUrl,
@@ -990,7 +1089,7 @@ function resolveFetchTarget(
   return {
     body: custom.body,
     cacheKeyUrl: custom.cacheKey ?? custom.url,
-    extractKeys: custom.extractKeys,
+    extractKeys: normalizeExtractKeys(custom.extractKeys),
     headers: custom.headers ? { ...serviceHeaders, ...custom.headers } : serviceHeaders,
     method: custom.method ?? 'GET',
     send: custom.send,
@@ -1002,6 +1101,142 @@ function resolveFetchTarget(
 function buildFetchErrorBody(error: unknown): UpstreamBody {
   const isTimeout = error instanceof Error && error.name === 'TimeoutError';
   return { status: isTimeout ? 504 : 502 };
+}
+
+/** Convert a pre-parsed custom transport result into an `UpstreamBody` without stream re-parsing. */
+function buildPreparsedUpstreamBody(
+  result: PreparsedUpstreamResponse,
+  endpoint: MetricEndpoint
+): UpstreamBody {
+  const { data, headers, status } = result;
+  if (status < 200 || status >= 300) {
+    if (isRateLimited(status, headers)) {
+      return { retryAfter: readRetryAfter(headers, Date.now()), status: RATE_LIMITED_STATUS };
+    }
+    return { status: endpoint.missingStatuses?.includes(status) ? 404 : status };
+  }
+  if (status === 202 || !headers) {
+    return { data, status };
+  }
+  const now = Date.now();
+  const retryAfter = readRetryAfter(headers, now);
+  return { adaptiveTtl: readAdaptiveTtl(headers, now, retryAfter), data, retryAfter, status };
+}
+
+/** Check whether a redirect destination is a public HTTPS DNS origin outside `SITE_HOST`. */
+function isSafeRedirectUrl(url: URL): boolean {
+  if (url.protocol !== 'https:' || url.port !== '' || url.username !== '' || url.password !== '') {
+    return false;
+  }
+  const host = url.hostname.toLowerCase().replace(TRAILING_DOTS_RX, '');
+  if (
+    host === '' ||
+    host === 'localhost' ||
+    host === SITE_HOST ||
+    host.endsWith(`.${SITE_HOST}`) ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.startsWith('[') ||
+    IPV4_LITERAL_RX.test(host)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Return a copy of `headers` without `Authorization` when following a cross-origin redirect. */
+function stripCrossOriginAuthHeaders(
+  headers: Readonly<Record<string, string>>
+): Readonly<Record<string, string>> {
+  if (!('Authorization' in headers) && !('authorization' in headers)) {
+    return headers;
+  }
+  const stripped: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() !== 'authorization') {
+      stripped[key] = value;
+    }
+  }
+  return stripped;
+}
+
+/** Strip request body headers (`Content-Type`, `Content-Length`) when a redirect downgrades `POST` to `GET`. */
+function stripPostBodyHeaders(
+  headers: Readonly<Record<string, string>>
+): Readonly<Record<string, string>> {
+  const stripped: Record<string, string> = {};
+  let hasRemoved = false;
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (lower === 'content-type' || lower === 'content-length') {
+      hasRemoved = true;
+    } else {
+      stripped[key] = value;
+    }
+  }
+  return hasRemoved ? stripped : headers;
+}
+
+/** Follow up to `MAX_UPSTREAM_REDIRECTS` validated HTTPS redirects manually, stripping cross-origin `Authorization` headers. */
+async function fetchWithSafeRedirects(
+  url: string,
+  method: 'GET' | 'POST',
+  headers: Readonly<Record<string, string>>,
+  body: string | undefined
+): Promise<Response | undefined> {
+  const signal = AbortSignal.timeout(UPSTREAM_TIMEOUT);
+  let currentUrl = url;
+  let currentOrigin: string | undefined = undefined;
+  let currentMethod: 'GET' | 'POST' = method;
+  let currentHeaders = headers;
+  let currentBody = body;
+
+  for (let hop = 0; hop <= MAX_UPSTREAM_REDIRECTS; hop += 1) {
+    // oxlint-disable-next-line no-await-in-loop -- Redirect hops depend on the preceding `Location` header.
+    const response = await fetch(currentUrl, {
+      body: currentBody,
+      headers: currentHeaders,
+      method: currentMethod,
+      redirect: 'manual',
+      signal,
+    });
+    if (!REDIRECT_STATUSES.has(response.status)) {
+      return response;
+    }
+    cancelBody(response.body);
+    if (hop === MAX_UPSTREAM_REDIRECTS) {
+      return undefined;
+    }
+    const location = response.headers.get('location')?.trim();
+    if (!location) {
+      return undefined;
+    }
+    let resolvedUrl: URL | undefined = undefined;
+    try {
+      resolvedUrl = new URL(location, currentUrl);
+    } catch {
+      return undefined;
+    }
+    if (!isSafeRedirectUrl(resolvedUrl)) {
+      return undefined;
+    }
+    currentOrigin ??= new URL(currentUrl).origin;
+    if (resolvedUrl.origin !== currentOrigin) {
+      currentHeaders = stripCrossOriginAuthHeaders(currentHeaders);
+      currentOrigin = resolvedUrl.origin;
+    }
+    if (
+      response.status === 303 ||
+      ((response.status === 301 || response.status === 302) && currentMethod === 'POST')
+    ) {
+      currentMethod = 'GET';
+      currentBody = undefined;
+      currentHeaders = stripPostBodyHeaders(currentHeaders);
+    }
+    currentUrl = resolvedUrl.href;
+  }
+  return undefined;
 }
 
 /**
@@ -1017,38 +1252,46 @@ async function fetchUpstreamBody(
     ifNoneMatch && target.method === 'GET'
       ? { ...target.headers, 'If-None-Match': ifNoneMatch }
       : target.headers;
-  const signal = AbortSignal.timeout(UPSTREAM_TIMEOUT);
 
-  let response: Response | undefined = undefined;
+  let transportResult: Response | PreparsedUpstreamResponse | undefined = undefined;
   try {
-    response = target.send
-      ? await target.send(requestHeaders, signal)
-      : await fetch(target.url, {
-          body: target.body,
-          headers: requestHeaders,
-          method: target.method,
-          signal,
-        });
+    transportResult = target.send
+      ? await target.send(requestHeaders)
+      : await fetchWithSafeRedirects(target.url, target.method, requestHeaders, target.body);
   } catch (error) {
     return buildFetchErrorBody(error);
   }
 
-  if (response.url && !response.url.startsWith('https:')) {
+  if (transportResult === undefined) {
+    return { status: 502 };
+  }
+  if (!(transportResult instanceof Response)) {
+    return buildPreparsedUpstreamBody(transportResult, endpoint);
+  }
+  const response = transportResult;
+
+  if (
+    (response.url && !response.url.startsWith('https:')) ||
+    REDIRECT_STATUSES.has(response.status)
+  ) {
     cancelBody(response.body);
     return { status: 502 };
   }
   if (response.status === NOT_MODIFIED_STATUS) {
     cancelBody(response.body);
     return {
-      adaptiveTtl: readAdaptiveTtlSeconds(response, Date.now()),
+      adaptiveTtl: readAdaptiveTtl(response.headers, Date.now()),
       etag: readBoundedEtag(response, 'etag'),
       status: NOT_MODIFIED_STATUS,
     };
   }
   if (!response.ok) {
     cancelBody(response.body);
-    if (isRateLimited(response)) {
-      return { retryAfter: readRetryAfter(response, Date.now()), status: RATE_LIMITED_STATUS };
+    if (isRateLimited(response.status, response.headers)) {
+      return {
+        retryAfter: readRetryAfter(response.headers, Date.now()),
+        status: RATE_LIMITED_STATUS,
+      };
     }
     return { status: endpoint.missingStatuses?.includes(response.status) ? 404 : response.status };
   }
@@ -1058,9 +1301,9 @@ async function fetchUpstreamBody(
   }
 
   const now = Date.now();
-  const adaptiveTtl = readAdaptiveTtlSeconds(response, now);
+  const retryAfter = readRetryAfter(response.headers, now);
+  const adaptiveTtl = readAdaptiveTtl(response.headers, now, retryAfter);
   const etag = readBoundedEtag(response, 'etag');
-  const retryAfter = readRetryAfter(response, now);
   try {
     const body = await readResponseBody(response, target.extractKeys);
     return { ...body, adaptiveTtl, etag, retryAfter };
@@ -1193,7 +1436,7 @@ function resolveRevalidatedOutcome(
   }
   const [freshOutcome, freshEdgeBody] = buildFetchedOutcome(fetched, endpoint);
   if (stale && stale.outcome.data !== undefined && isStaleRescuable(freshOutcome)) {
-    const backoffSeconds =
+    const backoff =
       freshOutcome.status === 202
         ? ERROR_CACHE_TTL
         : resolveFailureTtl(freshOutcome.status, fetched.retryAfter);
@@ -1202,7 +1445,7 @@ function resolveRevalidatedOutcome(
       {
         data: stale.outcome.data,
         etag: stale.outcome.etag,
-        expiresAt: Date.now() + backoffSeconds * 1000,
+        expiresAt: Date.now() + backoff * 1000,
         size: edgeBody.length,
         status: 200,
       },
@@ -1218,10 +1461,14 @@ async function readEdgeCacheEntry(
   now: number
 ): Promise<EdgeCacheReadResult | undefined> {
   const rawExpiresAt = Number(cached.headers.get(EXPIRES_AT_HEADER) ?? '0') || 0;
+  if (rawExpiresAt <= 0) {
+    cancelBody(cached.body);
+    return undefined;
+  }
   const markerStatus = Number(cached.headers.get(STATUS_HEADER) ?? '0');
   if (markerStatus > 0) {
     cancelBody(cached.body);
-    if (rawExpiresAt > 0 && rawExpiresAt <= now) {
+    if (rawExpiresAt <= now) {
       return undefined;
     }
     return {
@@ -1236,7 +1483,7 @@ async function readEdgeCacheEntry(
   const etag = readBoundedEtag(cached, ETAG_HEADER);
   try {
     const text = await cached.text();
-    const isFresh = rawExpiresAt === 0 || rawExpiresAt > now;
+    const isFresh = rawExpiresAt > now;
     const expiresAt = isFresh ? Math.max(rawExpiresAt, now + MIN_MEMORY_LIFETIME) : rawExpiresAt;
     return {
       isFresh,
@@ -1267,9 +1514,7 @@ async function writeEdgeCacheEntry(
     return;
   }
   const logicalMaxAge = Math.max(1, Math.ceil((outcome.expiresAt - Date.now()) / 1000));
-  const cacheMaxAge = isPositive
-    ? Math.max(logicalMaxAge, POSITIVE_EDGE_RETENTION_SECONDS)
-    : logicalMaxAge;
+  const cacheMaxAge = isPositive ? Math.max(logicalMaxAge, POSITIVE_EDGE_RETENTION) : logicalMaxAge;
   const headers: Record<string, string> = {
     'Cache-Control': `public, max-age=${cacheMaxAge}, s-maxage=${cacheMaxAge}`,
     'Content-Type': 'application/json',
@@ -1281,15 +1526,46 @@ async function writeEdgeCacheEntry(
   if (!isPositive) {
     headers[STATUS_HEADER] = String(outcome.status);
   }
+  await putInEdgeCache(
+    edgeCache,
+    cacheKey,
+    new Response(edgeBody ?? '', { headers }),
+    executionCtx
+  );
+}
+
+/** Perform one Tier-1 edge cache lookup for `cacheKeyUrl`. */
+async function readEdgeCacheLookup(cacheKeyUrl: string): Promise<EdgeCacheLookup> {
+  const edgeCache = getEdgeCache();
+  if (!edgeCache) {
+    return {};
+  }
+  const cacheKey = new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(cacheKeyUrl)}`);
+  let cached: Response | undefined = undefined;
   try {
-    await putInEdgeCache(
-      edgeCache,
-      cacheKey,
-      new Response(edgeBody ?? '', { headers }),
-      executionCtx
-    );
+    cached = await edgeCache.match(cacheKey);
   } catch {
-    // Edge cache writes are best-effort.
+    // A failing edge cache falls through to an upstream fetch.
+  }
+  const entry = cached ? await readEdgeCacheEntry(cached, Date.now()) : undefined;
+  return { cacheKey, edgeCache, entry };
+}
+
+/** Look up a Tier-1 edge cache entry for `cacheKeyUrl`, coalescing concurrent lookups per URL. */
+async function matchEdgeCacheEntry(cacheKeyUrl: string): Promise<EdgeCacheLookup> {
+  const pendingRead = IN_FLIGHT_EDGE_READS.get(cacheKeyUrl);
+  if (pendingRead) {
+    return pendingRead;
+  }
+  const lookupPromise = readEdgeCacheLookup(cacheKeyUrl);
+  if (IN_FLIGHT_EDGE_READS.size >= MAX_IN_FLIGHT_LOADS) {
+    return lookupPromise;
+  }
+  IN_FLIGHT_EDGE_READS.set(cacheKeyUrl, lookupPromise);
+  try {
+    return await lookupPromise;
+  } finally {
+    IN_FLIGHT_EDGE_READS.delete(cacheKeyUrl);
   }
 }
 
@@ -1300,29 +1576,11 @@ async function loadThroughEdgeCache(
   staleMemory: StaleCandidate | undefined,
   executionCtx?: WaitUntilContext
 ): Promise<UpstreamOutcome> {
-  const edgeCache = getEdgeCache();
-  const cacheKey = edgeCache
-    ? new Request(`${JSON_CACHE_ORIGIN}?url=${encodeURIComponent(target.cacheKeyUrl)}`)
-    : undefined;
-  let staleEdge: StaleCandidate | undefined = undefined;
-
-  if (edgeCache && cacheKey) {
-    let cached: Response | undefined = undefined;
-    try {
-      cached = await edgeCache.match(cacheKey);
-    } catch {
-      // A failing edge cache falls through to an upstream fetch.
-    }
-    const edgeEntry = cached ? await readEdgeCacheEntry(cached, Date.now()) : undefined;
-    if (edgeEntry?.isFresh) {
-      return edgeEntry.outcome;
-    }
-    if (edgeEntry) {
-      staleEdge = { outcome: edgeEntry.outcome, rawText: edgeEntry.rawText };
-    }
+  const { cacheKey, edgeCache, entry } = await matchEdgeCacheEntry(target.cacheKeyUrl);
+  if (entry?.isFresh) {
+    return entry.outcome;
   }
-
-  const stale = staleEdge ?? staleMemory;
+  const stale = entry ? { outcome: entry.outcome, rawText: entry.rawText } : staleMemory;
   const fetched = await fetchUpstreamBody(target, endpoint, stale?.outcome.etag);
   const [outcome, edgeBody] = resolveRevalidatedOutcome(fetched, endpoint, stale);
   if (edgeCache && cacheKey) {
@@ -1352,10 +1610,20 @@ async function loadUpstreamJson(
       ? memoryEntry
       : undefined;
   if (IN_FLIGHT_LOADS.size >= MAX_IN_FLIGHT_LOADS) {
-    if (staleMemory) {
+    // Serve fresh or retained Tier-1 edge cache entries before shedding load on upstream saturating bursts:
+    const { entry: edgeEntry } = await matchEdgeCacheEntry(cacheKeyUrl);
+    if (edgeEntry?.isFresh) {
+      writeLruCache(MEMORY_CACHE, cacheKeyUrl, edgeEntry.outcome);
+      return edgeEntry.outcome;
+    }
+    const staleOutcome =
+      edgeEntry && edgeEntry.outcome.status === 200 && edgeEntry.outcome.data !== undefined
+        ? edgeEntry.outcome
+        : staleMemory;
+    if (staleOutcome) {
       const rescued: UpstreamOutcome = {
-        ...staleMemory,
-        expiresAt: now + RATE_LIMIT_CACHE_TTL.min * 1000,
+        ...staleOutcome,
+        expiresAt: Date.now() + RATE_LIMIT_CACHE_TTL.min * 1000,
       };
       writeLruCache(MEMORY_CACHE, cacheKeyUrl, rescued);
       return rescued;
@@ -1461,9 +1729,10 @@ function resolveTransformedMetric(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+export { resolveMetricKey };
+
 /**
- * Check whether a parsed service preset request matches a registered service, metric (or alias),
- * owner segment rule, and target segment pattern.
+ * Check whether a parsed service preset request matches a registered service, metric (or alias), owner segment rule, and target segment pattern.
  * @param request   Parsed service preset route.
  * @returns `true` when `request` passes route and segment validation.
  */
@@ -1471,11 +1740,10 @@ export function isValidServiceRequest(request: ServiceRequest): boolean {
   return !isResolvedError(resolveServiceContext(request));
 }
 
-/**
- * Clear the in-isolate memory cache and the in-flight request registry.
- */
+/** Clear the in-isolate memory cache and the in-flight request registry. */
 export function resetUpstreamCaches(): void {
   clearLruCache(MEMORY_CACHE);
+  IN_FLIGHT_EDGE_READS.clear();
   IN_FLIGHT_LOADS.clear();
 }
 

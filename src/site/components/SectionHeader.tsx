@@ -1,5 +1,7 @@
 /**
- * Section header components – Page and section headers (`<SectionHeader />`) and icon-prefixed subheadings (`<SectionSubhead />`).
+ * Section Header Components
+ *
+ * Page and section headers (`<SectionHeader />`) and icon-prefixed subheadings (`<SectionSubhead />`).
  */
 
 import {

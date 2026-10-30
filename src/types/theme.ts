@@ -1,5 +1,7 @@
 /**
- * Theme types – Theme color tokens, shared visual variants, size presets, highlight band stops and sweep timings, foreground paints, and palette shapes.
+ * Theme Types
+ *
+ * Theme color tokens, shared visual variants, size presets, highlight band stops and sweep timings, foreground paints, and palette shapes.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------

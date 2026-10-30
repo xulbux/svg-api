@@ -1,8 +1,10 @@
 /**
- * Arch Linux service preset – Live upstream metrics and redirect transformations.
+ * Arch Linux Service Preset
  *
- * The exact-name package search is restricted to the configured stable repositories, so packages
- * currently in testing never shadow the released version.
+ * Live upstream metrics and redirect transformations for Arch Linux.
+ *
+ * The exact-name package search is restricted to the configured stable repositories,
+ * so packages currently in testing never shadow the released version.
  */
 
 import {

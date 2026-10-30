@@ -1,8 +1,9 @@
 /**
- * CocoaPods service preset – Live upstream metrics and redirect transformations.
+ * CocoaPods Service Preset
  *
- * Trunk answers with a `303` redirect to the commit-pinned podspec JSON on GitHub, which `fetch`
- * follows transparently.
+ * Live upstream metrics and redirect transformations for CocoaPods.
+ *
+ * Trunk answers with a `303` redirect to the commit-pinned podspec JSON on GitHub, which `fetch` follows transparently.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';

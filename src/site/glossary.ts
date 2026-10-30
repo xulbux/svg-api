@@ -1,5 +1,7 @@
 /**
- * Glossary – Shared documentation and builder vocabulary, variant tiers, inline data widget details, and list formatters.
+ * Glossary
+ *
+ * Shared documentation and builder vocabulary, variant tiers, inline data widget details, and list formatters.
  */
 
 import { SPECIAL_ELEMENT_KINDS, VARIANT_TOKENS } from '@/routes/params';

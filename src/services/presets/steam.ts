@@ -1,11 +1,13 @@
 /**
- * Steam service preset – Live upstream metrics and redirect transformations.
+ * Steam Service Preset
  *
- * The app id must be numeric; The Steam Web API answers non-numeric ids with the global player
- * count of every game instead of an error, so they are rejected before any fetch.
+ * Live upstream metrics and redirect transformations for Steam.
+ *
+ * The app id must be numeric;
+ * The Steam Web API answers non-numeric ids with the global player count of every game instead of an error, so they are rejected before any fetch.
  */
 
-import { asJsonObject, createEndpoint, defineService } from '@/services/endpoint';
+import { createEndpoint, defineService, readJsonObject } from '@/services/endpoint';
 import { createCommunityMetric, readFiniteNumber } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -24,10 +26,14 @@ const STEAM_PLAYERS_TTL = 300;
 /** Steam current players endpoint (unknown apps are a `404`) with store page redirect. */
 const STEAM_PLAYERS_ENDPOINT = createEndpoint<SteamPlayersPayload>({
   api: 'https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/?appid={target}',
+  extractKeys: ['response'],
   page: 'https://store.steampowered.com/app/{target}/',
   project: (data) => {
-    const response = asJsonObject(asJsonObject(data)?.response);
-    return response ? { playerCount: readFiniteNumber(response.player_count) } : undefined;
+    const response = readJsonObject(readJsonObject(data)?.response);
+    if (!response || (response.result !== undefined && response.result !== 1)) {
+      return undefined;
+    }
+    return { playerCount: readFiniteNumber(response.player_count) };
   },
   ttl: STEAM_PLAYERS_TTL,
 });

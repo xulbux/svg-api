@@ -1,13 +1,15 @@
 /**
- * DUB service preset – Live upstream metrics and redirect transformations.
+ * DUB Service Preset
+ *
+ * Live upstream metrics and redirect transformations for DUB.
  */
 
 import {
   PACKAGE_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
@@ -60,7 +62,7 @@ function projectDubInfo(data: unknown): DubInfoProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  return { license: readText(asJsonObject(data.info)?.license), version: readText(data.version) };
+  return { license: readText(readJsonObject(data.info)?.license), version: readText(data.version) };
 }
 
 /** Project a DUB `/stats` response into its download windows and score. */
@@ -68,7 +70,7 @@ function projectDubStats(data: unknown): DubStatsProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = asJsonObject(data.downloads);
+  const downloads = readJsonObject(data.downloads);
   return {
     daily: readFiniteNumber(downloads?.daily),
     monthly: readFiniteNumber(downloads?.monthly),
@@ -89,6 +91,7 @@ const DUB_INFO_ENDPOINT = createEndpoint({
 /** DUB package download and score statistics endpoint. */
 const DUB_STATS_ENDPOINT = createEndpoint({
   api: 'https://code.dlang.org/api/packages/{target}/stats',
+  extractKeys: ['downloads', 'score'],
   page: DUB_PAGE,
   project: projectDubStats,
 });

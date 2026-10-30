@@ -1,9 +1,3 @@
-/**
- * Website UI components barrel – Re-exports layout shell, navigation chrome, showcase cards, parameter tables, builder controls, and UI icons from `src/site/components/`.
- */
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 export { BuilderFieldView } from '@/site/components/BuilderControls';
 export { BuilderOutputPanel } from '@/site/components/BuilderOutputPanel';
 export { DocsPager } from '@/site/components/DocsPager';

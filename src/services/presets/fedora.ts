@@ -1,8 +1,10 @@
 /**
- * Fedora service preset – Live upstream metrics and redirect transformations.
+ * Fedora Service Preset
  *
- * The optional branch segment falls back to `DEFAULT_FEDORA_BRANCH`; Mdapi answers unknown
- * packages and branches with `400`, which is reported as not found.
+ * Live upstream metrics and redirect transformations for Fedora.
+ *
+ * The optional branch segment falls back to `DEFAULT_FEDORA_BRANCH`;
+ * Mdapi answers unknown packages and branches with `400`, which is reported as not found.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

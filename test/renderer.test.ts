@@ -1,17 +1,23 @@
 /**
- * SSOT SVG renderer tests – Element renderers, surface tiers, Kumo 3D crescents, micro-animations, inline data widgets, and size/DoS bounds (`src/svg/`).
+ * SSOT SVG Renderer Tests
+ *
+ * Element renderers, surface tiers, Kumo 3D crescents, micro-animations, inline data widgets, and size/DoS bounds (`src/svg/`).
  */
 
 import { describe, expect, it } from 'vitest';
 import { BASE_DARK, DOT_COLORS, THEMES } from '@/config/theme';
 import { renderSvgPath } from '@/routes/svg';
-import { resolveIcon } from '@/svg/icons';
+import { getIconPickerIndex, resolveIcon } from '@/svg/icons';
+import { inspectOutlineCache } from '@/svg/measure';
 import { renderQuote } from '@/svg/quote';
 import { MAX_LABEL_LENGTH, renderBadge, renderButton, renderIcon } from '@/svg/renderer';
 import {
   ACTIVE_ICON_MOTION_TOKENS,
+  buildBottomCrescentPath,
   escapeXml,
   prepareDisplayText,
+  renderInsetRingRect,
+  renderKumoBoxSurface,
   roundCoord,
   sliceAtCodePoint,
 } from '@/svg/shared';
@@ -73,6 +79,19 @@ const TRAFFIC_LIGHT_CIRCLE_RX =
 /** Matches the recessed omnibox well `<rect>` in `browser` typing layout and captures its X coordinate. */
 const BROWSER_OMNIBOX_RECT_RX =
   /<rect x="(?<wellX>[\d.]+)" y="[\d.]+" width="[\d.]+" height="[\d.]+" rx="[\d.]+" fill="rgba\(9,10,15,0\.52\)" stroke=/;
+
+/** Matches a ring widget `stroke-dasharray` attribute and captures its dash and circumference lengths. */
+const RING_DASHARRAY_RX = /stroke-dasharray="(?<dash>[\d.]+) (?<circ>[\d.]+)"/;
+
+/** Matches the active fill `<rect>` of a primary progress bar widget and captures its width. */
+const PRIMARY_BAR_WIDTH_RX =
+  /width="(?<fill>[\d.]+)" height="6" rx="3" fill="rgba\(255,255,255,0\.85\)"/;
+
+/** Matches every `id="…"` attribute inside an SVG document. */
+const SVG_ID_ATTR_RX = /\sid="(?<id>[^"]+)"/g;
+
+/** Matches `<rect>` horizontal `x` and `width` attributes inside an SVG document. */
+const RECT_BOUNDS_RX = /<rect x="(?<x>[\d.-]+)" y="[\d.-]+" width="(?<width>[\d.-]+)"/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -1626,7 +1645,8 @@ describe('renderTyping', () => {
     expect(countOccurrences(windowSvg, '<circle cx="')).toBe(3);
     expect(windowSvg).toContain('height="18" rx="9" fill="rgba(9,10,15,0.62)"');
 
-    // Without `?icon=`, no icon or squircle box is rendered on any layout; with `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`:
+    // Without `?icon=`, no icon or squircle box is rendered on any layout;
+    // with `?icon=sparkles` on `prompt`, the squircle badge (`x=10..38`, center `24`) centers its icon at `x=24`:
     const barePromptSvg = renderTyping({ color: 'cyan', layout: 'prompt', lines: 'Search' });
     expect(barePromptSvg).not.toContain('scale(');
     expect(barePromptSvg).not.toContain('width="28" height="28"');
@@ -1994,7 +2014,8 @@ describe('cross-renderer regressions', () => {
   });
 
   it('passes CSS color to currentColor icons without emitting invalid url() color on sheen, deduplicates dual icons with internal IDs, honors uppercase ?icon=NONE, labels unknown icon-only elements, keeps negative delta readable on variant=1, and collapses empty /button//value left caps (regressions: missing color on stop-color/stroke currentColor icons, invalid color="url(#sheen-fg)", duplicate SVG IDs on dual icons, case-sensitive icon=NONE, opaque fallback icon aria-label, dark rose delta on variant=1, phantom 25px empty left cap on /button//v2.0)', () => {
-    // [1] `currentColor` bundled icons inherit `color="..."` on solid fills, but never receive invalid `color="url(#...)"` paint servers on `/icon/*?anim=sheen`:
+    // [1] `currentColor` bundled icons inherit `color="..."` on solid fills,
+    // but never receive invalid `color="url(#...)"` paint servers on `/icon/*?anim=sheen`:
     const keyRoundBadge = renderBadge({
       color: 'amber',
       icon: 'key-round',
@@ -2006,7 +2027,8 @@ describe('cross-renderer regressions', () => {
     const sheenCurrentColorIcon = renderIcon({ anim: 'sheen', color: 'indigo', icon: 'key-round' });
     expect(sheenCurrentColorIcon).not.toContain(' color="url(');
 
-    // [2] Identical left + right icons containing internal `id="..."` attributes deduplicate into `<defs>` + `<use>` without duplicate SVG `id` values:
+    // [2] Identical left + right icons containing internal `id="..."` attributes
+    // deduplicate into `<defs>` + `<use>` without duplicate SVG `id` values:
     for (const dualSvg of [
       renderBadge({
         color: 'indigo',
@@ -2031,7 +2053,8 @@ describe('cross-renderer regressions', () => {
       expect(collectUseIds(dualSvg).size).toBeGreaterThan(0);
     }
 
-    // [3] Uppercase `?icon=NONE` hides default/preset icons just like lowercase `?icon=none`, and unknown icon-only elements announce `unknown icon: <slug>`:
+    // [3] Uppercase `?icon=NONE` hides default/preset icons just like lowercase `?icon=none`,
+    // and unknown icon-only elements announce `unknown icon: <slug>`:
     expect(renderSvgPath('/badge/status/ok?icon=NONE')).toBe(
       renderSvgPath('/badge/status/ok?icon=none')
     );
@@ -2067,7 +2090,8 @@ describe('cross-renderer regressions', () => {
     });
     expect(negativeSecondaryDelta).toContain(`fill="${THEMES.rose.accentText}"`);
 
-    // [5] `/button//v2.0` (empty label, non-empty value, no left icon/dot) collapses the empty left compartment instead of emitting a `25px` empty dark cap:
+    // [5] `/button//v2.0` (empty label, non-empty value, no left icon/dot)
+    // collapses the empty left compartment instead of emitting a `25px` empty dark cap:
     const valueOnlyButton = renderButton({
       color: 'indigo',
       label: '',
@@ -2105,7 +2129,8 @@ describe('cross-renderer regressions', () => {
       `<linearGradient id="spark-fill-emerald" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${emeraldAccent}" stop-opacity="0.52" /><stop offset="60%" stop-color="${emeraldAccent}" stop-opacity="0.25" /><stop offset="100%" stop-color="${emeraldAccent}" stop-opacity="0" /></linearGradient>`
     );
 
-    // Incomplete rings (`94%`, `98%`, `99.9%`) preserve at least `1.6px` of clear track between the `2px` round endcaps, while `100%` closes seamlessly:
+    // Incomplete rings (`94%`, `98%`, `99.9%`) preserve at least `1.6px` of clear track between the `2px` round endcaps,
+    // while `100%` closes seamlessly:
     for (const incompletePct of [94, 98, 99.9]) {
       const incompleteRing = renderBadge({
         color: 'emerald',
@@ -2114,7 +2139,7 @@ describe('cross-renderer regressions', () => {
         value: `${incompletePct}%`,
         variant: '1',
       });
-      const dashMatch = /stroke-dasharray="(?<dash>[\d.]+) (?<circ>[\d.]+)"/.exec(incompleteRing);
+      const dashMatch = RING_DASHARRAY_RX.exec(incompleteRing);
       expect(dashMatch, String(incompletePct)).not.toBeNull();
       const dashLength = Number(dashMatch?.groups?.dash);
       const circumference = Number(dashMatch?.groups?.circ);
@@ -2155,11 +2180,7 @@ describe('cross-renderer regressions', () => {
         value: `${incompleteBarPct}%`,
         variant: '1',
       });
-      const activeWidth = Number(
-        /width="(?<fill>[\d.]+)" height="6" rx="3" fill="rgba\(255,255,255,0\.85\)"/.exec(
-          incompleteBar
-        )?.groups?.fill
-      );
+      const activeWidth = Number(PRIMARY_BAR_WIDTH_RX.exec(incompleteBar)?.groups?.fill);
       expect(activeWidth, String(incompleteBarPct)).toBe(29.6);
     }
 
@@ -2172,5 +2193,140 @@ describe('cross-renderer regressions', () => {
       variant: '1',
     });
     expect(completeBar).toContain(`width="32" height="6" rx="3" ${primaryBarActiveFill}`);
+  });
+
+  it('deduplicates shared typing/badge brand icons, bounds narrow browser/prompt chrome, suppresses zero-ink emoji fields, and skips auto motion on unknown icon slugs (regressions: duplicate ceylon-wordmark XML IDs, unshared elsevier badge defs, narrow browser/prompt overflow, blank emoji pill/author, fallback auto-motion leak)', () => {
+    // [1] Shared `icon` + `hint` (`icon:<slug> …`) in `renderTyping` deduplicates into `<defs>` + `<use>` with unique XML `id`s:
+    const sharedTypingSvg = renderTyping({
+      color: 'indigo',
+      hint: 'icon:ceylon-wordmark Ready',
+      icon: 'ceylon-wordmark',
+      lines: ['Build complete'],
+    });
+    expect(collectUseIds(sharedTypingSvg).size).toBeGreaterThanOrEqual(1);
+    const typingIds: string[] = [];
+    for (const match of sharedTypingSvg.matchAll(SVG_ID_ATTR_RX)) {
+      typingIds.push(match.groups?.id ?? '');
+    }
+    expect(new Set(typingIds).size).toBe(typingIds.length);
+
+    // [2] Dual large brand icons on a capsule badge (`elsevier,elsevier`) deduplicate into `<defs>` + `<use>`:
+    const sharedBadgeSvg = renderBadge({
+      color: 'indigo',
+      icon: 'elsevier,elsevier',
+      label: 'Docs',
+      value: 'Read',
+      variant: '2',
+    });
+    expect(collectUseIds(sharedBadgeSvg).size).toBe(1);
+
+    // [3] Narrow `browser` (`size: 32, width: 200`) keeps every `<rect>` inside `width` and drops colliding body hints cleanly:
+    const narrowBrowserSvg = renderTyping({
+      color: 'sky',
+      hint: 'icon:terminal Enter',
+      layout: 'browser',
+      lines: ['https://svg.xul.is'],
+      size: 32,
+      width: 200,
+    });
+    for (const match of narrowBrowserSvg.matchAll(RECT_BOUNDS_RX)) {
+      const rightEdge = Number(match.groups?.x) + Number(match.groups?.width);
+      expect(rightEdge).toBeLessThanOrEqual(200);
+    }
+
+    // Cramped `prompt` (`size: 32, width: 200`) drops colliding hints/prefixes, keeps crisp `+0.5` avatar inset ring, and stays inside `width`:
+    const crampedPromptSvg = renderTyping({
+      color: 'violet',
+      hint: 'Enter',
+      icon: 'terminal',
+      layout: 'prompt',
+      lines: ['deploy'],
+      prefix: 'workspace/production $',
+      size: 32,
+      width: 200,
+    });
+    expect(crampedPromptSvg).toContain('<rect x="20.5" y="20.5" width="55" height="55" rx="15.5"');
+    for (const match of crampedPromptSvg.matchAll(RECT_BOUNDS_RX)) {
+      const rightEdge = Number(match.groups?.x) + Number(match.groups?.width);
+      expect(rightEdge).toBeLessThanOrEqual(200);
+    }
+
+    // [4] Zero-ink emoji-only quote text/author and badge segments collapse cleanly instead of leaving blank shells or orphaned dashes:
+    const emojiQuoteSvg = renderQuote({ author: '😀', color: 'indigo', text: '😀' });
+    expect(extractAriaLabel(emojiQuoteSvg)).toBe('Always creating more cool stuff for you.');
+
+    const emojiLabelBadgeSvg = renderBadge({
+      color: 'emerald',
+      label: '😀',
+      value: 'ok',
+      variant: '2',
+    });
+    expect(extractAriaLabel(emojiLabelBadgeSvg)).toBe('ok');
+
+    // [5] Unknown icon slugs in `renderIcon({ anim: 'auto' })` render static fallback geometry without `<animateTransform>`:
+    const fallbackAutoIconSvg = renderIcon({
+      anim: 'auto',
+      color: 'indigo',
+      icon: 'not-a-registered-icon-slug',
+    });
+    expect(fallbackAutoIconSvg).not.toContain('<animateTransform');
+
+    // [6] Wide `file-icons` glyphs (`coordOffsetY > 0`) translate their standalone `anim=sheen` gradient by `-coordOffsetY`:
+    let wideSlug = '';
+    let wideOffsetY = 0;
+    for (const slug of getIconPickerIndex().sets.brands) {
+      const resolved = resolveIcon(slug, true);
+      if (resolved !== undefined && (resolved.coordOffsetY ?? 0) > 0) {
+        wideSlug = slug;
+        wideOffsetY = resolved.coordOffsetY ?? 0;
+        break;
+      }
+    }
+    expect(wideSlug).not.toBe('');
+    const wideSheenSvg = renderIcon({ anim: 'sheen', color: 'sky', icon: wideSlug });
+    expect(wideSheenSvg).toContain(`translate(0, ${-wideOffsetY})`);
+
+    // [7] Narrow `/typing` that drops one of two shared icons inlines the surviving icon instead of emitting a single-use `<defs><g>` + `<use>`:
+    const droppedSharedHintSvg = renderTyping({
+      color: 'sky',
+      hint: 'icon:ceylon-wordmark Ready',
+      icon: 'ceylon-wordmark',
+      layout: 'prompt',
+      lines: ['deploy'],
+      size: 32,
+      width: 200,
+    });
+    expect(sharedTypingSvg).toContain('id="typing-icon-');
+    expect(droppedSharedHintSvg).not.toContain('id="typing-icon-');
+
+    // [8] Typing user chrome (`title`, `hint`, `prefix`) renders uncached without polluting `OUTLINE_CACHE`,
+    // and `radius <= 1` surfaces emit no negative `rx` or empty crescents:
+    renderTyping({
+      color: 'indigo',
+      hint: 'unique-chrome-hint-987654',
+      layout: 'ide',
+      lines: ['ok'],
+      prefix: 'unique-prefix-987654>',
+      title: 'unique-chrome-title-987654.ts',
+    });
+    for (const cachedKey of inspectOutlineCache().entries.keys()) {
+      expect(cachedKey).not.toContain('987654');
+    }
+
+    expect(renderInsetRingRect(0, 0, 40, 20, 0, 'stroke="#fff"')).toContain('rx="0"');
+    expect(buildBottomCrescentPath(0, 40, 0, 20)).toBe('');
+    expect(buildBottomCrescentPath(0, 40, 1, 20)).toBe('');
+    for (const variant of ['1', '2', '3'] as const) {
+      const zeroRadiusSurface = renderKumoBoxSurface({
+        color: 'indigo',
+        height: 20,
+        radius: 0,
+        rightCapsuleStartX: 20,
+        variant,
+        width: 40,
+      });
+      expect(zeroRadiusSurface).not.toContain('rx="-');
+      expect(zeroRadiusSurface).not.toContain('d=""');
+    }
   });
 });

@@ -1,13 +1,22 @@
 /**
- * Liberapay service preset – Live upstream metrics and redirect transformations.
+ * Liberapay Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Liberapay.
  */
 
-import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';
+import {
+  createEndpoint,
+  createMetric,
+  defineService,
+  pickFields,
+  readJsonObject,
+} from '@/services/endpoint';
 import {
   RATIO_STEPS_SPECIALS,
   buildRatioSpecials,
   createCommunityMetric,
   formatCurrency,
+  readText,
 } from '@/services/metrics';
 import type { MetricResult } from '@/types';
 
@@ -46,12 +55,22 @@ const LIBERAPAY_ENDPOINT = createEndpoint({
 function transformLiberapayReceiving(
   profile: Partial<LiberapayPublicPayload>
 ): Partial<MetricResult> {
-  const { goal, receiving } = profile;
+  const receiving = readJsonObject(profile.receiving);
   if (!receiving) {
     return { value: 'hidden' };
   }
+  const goal = readJsonObject(profile.goal);
+  const receivingCurrency = readText(receiving.currency)?.toUpperCase();
+  const goalCurrency = readText(goal?.currency)?.toUpperCase();
+  const hasMatchingGoalCurrency =
+    goal !== undefined &&
+    (receivingCurrency === goalCurrency ||
+      receivingCurrency === undefined ||
+      goalCurrency === undefined);
   return {
-    specials: buildRatioSpecials(receiving.amount, goal?.amount, true),
+    specials: hasMatchingGoalCurrency
+      ? buildRatioSpecials(receiving.amount, goal.amount, true)
+      : undefined,
     value: formatCurrency(receiving.amount, receiving.currency, '/wk'),
   };
 }

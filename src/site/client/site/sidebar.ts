@@ -1,5 +1,7 @@
 /**
- * Mobile sidebar drawer controller – Converts `#sidebar-drawer` into a modal-like popover on narrow screens and keeps it an inline sticky column on wide screens.
+ * Mobile Sidebar Drawer Controller
+ *
+ * Converts `#sidebar-drawer` into a modal-like popover on narrow screens and keeps it an inline sticky column on wide screens.
  */
 
 // -------------------------------------- PUBLIC API -------------------------------------
@@ -25,10 +27,7 @@ export function initSidebarDrawer(
     '.skip-link, .site-header, .page-main, .site-footer'
   );
 
-  /**
-   * Toggle `inert` on the page regions behind the mobile sidebar drawer so the background cannot be
-   * interacted with while the drawer is open.
-   */
+  /** Toggle `inert` on the page regions behind the mobile sidebar drawer so the background cannot be interacted with while the drawer is open. */
   function setSidebarBgInert(isInert: boolean): void {
     for (const element of sidebarBgElements) {
       element.toggleAttribute('inert', isInert);

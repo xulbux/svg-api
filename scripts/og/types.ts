@@ -1,5 +1,7 @@
 /**
- * OpenGraph rasterizer types – Shared color, gradient, geometry, and module shapes for build-time SVG-to-PNG rendering.
+ * OpenGraph Rasterizer Types
+ *
+ * Shared color, gradient, geometry, and module shapes for build-time SVG-to-PNG rendering.
  */
 
 import type { RgbTuple } from '@/types';

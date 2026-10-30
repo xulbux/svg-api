@@ -1,13 +1,15 @@
 /**
- * Minecraft plugin service presets – Live upstream metrics and redirect transformations.
+ * Minecraft Plugin Service Presets
+ *
+ * Live upstream metrics and redirect transformations for SpigotMC and Hangar.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
   pickFields,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   STARS,
@@ -82,7 +84,7 @@ const RESOURCE_ID_RX = /^\d{1,10}$/;
 
 /** Read the Hangar license name, falling back to its type (`GPL`, `MIT`, …). */
 function readHangarLicense(settings: unknown): string | undefined {
-  const license = asJsonObject(asJsonObject(settings)?.license);
+  const license = readJsonObject(readJsonObject(settings)?.license);
   if (!license) {
     return undefined;
   }
@@ -94,7 +96,7 @@ function projectHangarProject(data: unknown): HangarProjectProjection | undefine
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const stats = asJsonObject(data.stats);
+  const stats = readJsonObject(data.stats);
   return {
     downloads: readFiniteNumber(stats?.downloads),
     license: readHangarLicense(data.settings),
@@ -106,6 +108,7 @@ function projectHangarProject(data: unknown): HangarProjectProjection | undefine
 /** Hangar project endpoint with Hangar project page redirect. */
 const HANGAR_PROJECT_ENDPOINT = createEndpoint({
   api: 'https://hangar.papermc.io/api/v1/projects/{owner}/{target}',
+  extractKeys: ['settings', 'stats'],
   page: 'https://hangar.papermc.io/{owner}/{target}',
   project: projectHangarProject,
 });

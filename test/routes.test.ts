@@ -1,5 +1,8 @@
 /**
- * Route tests – Worker routes, readable query DSL, special element parser, documentation pages, edge cache, and route regressions (`src/index.ts`, `src/routes/`, `src/site/`, `src/config/`).
+ * Route Tests
+ *
+ * Worker routes, readable query DSL, special element parser, documentation pages,
+ * edge cache, and route regressions (`src/index.ts`, `src/routes/`, `src/site/`, `src/config/`).
  */
 
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
@@ -35,11 +38,13 @@ import { resetUpstreamCaches } from '@/services/fetcher';
 import { BUILDER_PAGES } from '@/site/navigation';
 import { FAVICON_PNG_SIZE, getOgImageVersion, OG_IMAGE_HEIGHT, OG_IMAGE_WIDTH } from '@/site/seo';
 import {
+  ICON_SIZE_RANGE,
   MAX_BARS_POINTS,
   MAX_SPARKLINE_POINTS,
   MAX_STEPS_COUNT,
   MAX_STRIP_TICKS,
 } from '@/svg/renderer';
+import { STACK_PER_LINE_RANGE } from '@/svg/stack';
 import type { BadgeSpecialElement, BadgeSpecialMap, Env, ThemeColorName } from '@/types';
 import { extractAriaLabel, installEdgeCacheStub, requireDefined, TEST_ENV } from './helpers';
 
@@ -947,6 +952,7 @@ describe('route parsing regressions', () => {
     const goMatch = resolveSvgRoute(new URL('/badge/go/github.com/spf13/cobra/v', SITE_ORIGIN));
     expect(goMatch).toEqual({
       kind: 'service',
+      render: expect.any(Function) as unknown as (result: never) => string,
       request: { metric: 'v', service: 'go', target: 'github.com/spf13/cobra' },
     });
     expect(resolveSvgRoute(new URL('/badge/npm/a/b/c/v', SITE_ORIGIN))).toBeUndefined();
@@ -1439,6 +1445,67 @@ describe('route & query parameter regressions', () => {
       'capped badge cache key'
     );
     expect(new URL(cappedKey).searchParams.get('label')?.length).toBe(1024);
+
+    // `?icon=`, `?special=`, and service pathnames canonicalize deterministically without losing `,right` shorthand or `%2F` target encoding:
+    expect(
+      resolveSvgRequest(new URL('/badge/build/pass?icon=ROCKET&special=BAR:80%', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/build/pass?icon=rocket&special=bar%3A80`);
+    expect(
+      resolveSvgRequest(new URL('/badge/build/pass?icon=none,none', SITE_ORIGIN))?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/build/pass`);
+    expect(
+      resolveSvgRequest(new URL('/badge/build/pass?icon=,ARROW-RIGHT', SITE_ORIGIN))?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/build/pass?icon=none%2Carrow-right`);
+    expect(
+      resolveSvgRequest(
+        new URL('/badge/npm/hono/v?icon=,ARROW-RIGHT&special=ring:80:static', SITE_ORIGIN)
+      )?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/npm/hono/v?icon=%2Carrow-right&special=ring%3A80`);
+    expect(
+      resolveSvgRequest(new URL('/badge/npm/hono/v?icon=none&special=ring:80:pulse', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/npm/hono/v?icon=none&special=ring%3A80%3Apulse`);
+    expect(
+      resolveSvgRequest(new URL('/badge/NPM/%40hono%2Fhono/version', SITE_ORIGIN))?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/npm/%40hono%2Fhono/v`);
+  });
+
+  it('omits canonical, og:url, and JSON-LD on noindex prefilled builder URLs without polluting the bare /builder/:kind cache (regression: conflicting canonical + noindex signals)', async () => {
+    const prefillDeepRes = await app.request(
+      '/builder/badge/Build/Pass?color=emerald',
+      {},
+      TEST_ENV
+    );
+    const prefillQueryRes = await app.request('/builder/badge?color=emerald', {}, TEST_ENV);
+    const bareBuilderRes = await app.request('/builder/badge', {}, TEST_ENV);
+
+    const [prefillDeepHtml, prefillQueryHtml, bareHtml] = await Promise.all([
+      prefillDeepRes.text(),
+      prefillQueryRes.text(),
+      bareBuilderRes.text(),
+    ]);
+
+    for (const [label, res, html] of [
+      ['deep prefill', prefillDeepRes, prefillDeepHtml],
+      ['query prefill', prefillQueryRes, prefillQueryHtml],
+    ] as const) {
+      expect(res.status, label).toBe(200);
+      expect(res.headers.get('X-Robots-Tag'), label).toBe('noindex');
+      expect(html, label).toContain('<meta name="robots" content="noindex" />');
+      expect(html, label).not.toContain('rel="canonical"');
+      expect(html, label).not.toContain('property="og:url"');
+      expect(html, label).not.toContain('application/ld+json');
+    }
+
+    expect(bareBuilderRes.status).toBe(200);
+    expect(bareBuilderRes.headers.get('X-Robots-Tag')).toBeNull();
+    expect(bareHtml).not.toContain('<meta name="robots" content="noindex" />');
+    expect(bareHtml).toContain('<link rel="canonical" href="https://svg.xul.is/builder/badge" />');
+    expect(bareHtml).toContain(
+      '<meta property="og:url" content="https://svg.xul.is/builder/badge" />'
+    );
+    expect(bareHtml).toContain('application/ld+json');
   });
 
   it('coalesces concurrent static SVG cache misses and attaches hardened Permissions-Policy, CORP, X-Robots-Tag, nosniff, ETag, and Vary headers across HTML, asset, redirect, and error responses (regressions: uncoalesced cold-cache SVG stampede, missing security/noindex/Vary headers)', async () => {
@@ -1486,5 +1553,71 @@ describe('route & query parameter regressions', () => {
     const serviceErrorSvgRes = await app.request('/badge/npm/hono/v', {}, TEST_ENV);
     expect(serviceErrorSvgRes.headers.get('Vary')).toBe('Sec-Fetch-Dest, Accept');
     expect(serviceErrorSvgRes.headers.get('X-Robots-Tag')).toBe('noindex');
+  });
+
+  it('clamps numeric bounds, strips per-route defaults, emits canonical Link headers on /btn/* and /type/*, and marks /og.svg and non-200 service badges with noindex (regressions: cache-key fragmentation, missing alias canonical Link, indexable error badges)', async () => {
+    // [1] Clamped numerics, per-route defaults, and `/typing?icon=,slug` canonicalize without fragmenting cache keys:
+    expect(resolveSvgRequest(new URL('/icon/rocket?size=999', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/icon/rocket?size=${ICON_SIZE_RANGE.max}`
+    );
+    expect(resolveSvgRequest(new URL('/stack/ts?perline=99', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/stack/ts?perline=${STACK_PER_LINE_RANGE.max}`
+    );
+    expect(
+      resolveSvgRequest(new URL('/typing/Hi?variant=3&pause=1200&align=left', SITE_ORIGIN))
+        ?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/typing/Hi`);
+    expect(
+      resolveSvgRequest(new URL('/typing/Hi?layout=none&align=center', SITE_ORIGIN))?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/typing/Hi?layout=none`);
+    expect(resolveSvgRequest(new URL('/quote/Hi?size=xl&width=747', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/quote/Hi?size=xl`
+    );
+    expect(
+      resolveSvgRequest(new URL('/badge/a/b?dot=none&special=sparkline', SITE_ORIGIN))?.cacheKey
+    ).toBe(`${SITE_ORIGIN}/badge/a/b`);
+    expect(resolveSvgRequest(new URL('/typing/Hi?icon=,terminal', SITE_ORIGIN))?.cacheKey).toBe(
+      `${SITE_ORIGIN}/typing/Hi?icon=%2Cterminal`
+    );
+
+    // [2] Alias routes `/btn/*` and `/type/*` attach canonical `Link` headers without mutating shared cached `/button/*` and `/typing/*` responses:
+    installEdgeCacheStub();
+    const [canonicalButtonRes, aliasButtonRes, aliasTypingRes, canonicalTypingRes] =
+      await Promise.all([
+        app.request('/button/Try/Now?color=sky', {}, TEST_ENV),
+        app.request('/btn/Try/Now?color=sky', {}, TEST_ENV),
+        app.request('/type/Hello?color=sky', {}, TEST_ENV),
+        app.request('/typing/Hello?color=sky', {}, TEST_ENV),
+      ]);
+    expect(canonicalButtonRes.headers.get('Link')).toBeNull();
+    expect(aliasButtonRes.headers.get('Link')).toBe(
+      `<${SITE_ORIGIN}/button/Try/Now?color=sky>; rel="canonical"`
+    );
+    expect(aliasTypingRes.headers.get('Link')).toBe(
+      `<${SITE_ORIGIN}/typing/Hello?color=sky>; rel="canonical"`
+    );
+    expect(canonicalTypingRes.headers.get('Link')).toBeNull();
+
+    // [3] `/og.svg` and non-`200` `/badge/:service/*` responses carry `X-Robots-Tag: noindex`, while `200` service badges do not:
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes('/hono/latest')) {
+          return Promise.resolve(Response.json({ version: '4.0.0' }));
+        }
+        return Promise.resolve(new Response('missing', { status: 404 }));
+      });
+    const [ogSvgRes, okServiceRes, missingServiceRes] = await Promise.all([
+      app.request('/og.svg', {}, TEST_ENV),
+      app.request('/badge/npm/hono/v', {}, TEST_ENV),
+      app.request('/badge/npm/missing-pkg/v', {}, TEST_ENV),
+    ]);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(ogSvgRes.headers.get('X-Robots-Tag')).toBe('noindex');
+    expect(okServiceRes.status).toBe(200);
+    expect(okServiceRes.headers.get('X-Robots-Tag')).toBeNull();
+    expect(missingServiceRes.status).toBe(200);
+    expect(missingServiceRes.headers.get('X-Robots-Tag')).toBe('noindex');
   });
 });

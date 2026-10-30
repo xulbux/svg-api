@@ -1,5 +1,8 @@
 /**
- * Header navigation component – Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, top-level navigation tabs, preview background switch, theme switch, and GitHub link.
+ * Header Navigation Component
+ *
+ * Sticky top navbar (`<HeaderNav />`) with brand link, narrow-screen sidebar toggle, top-level navigation tabs,
+ * preview background switch, theme switch, and GitHub link.
  */
 
 import { REPO_GITHUB_URL, SITE_NAME } from '@/config/site';
@@ -39,7 +42,7 @@ const NAV_TABS: readonly NavTab[] = [
 ];
 
 /** Memoized header HTML keyed by active navigation tab and active sidebar path. */
-const HEADER_HTML_CACHE = new Map<string, string>();
+const HEADER_HTML_CACHE: Record<string, string> = Object.create(null) as Record<string, string>;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -56,8 +59,8 @@ function findActiveSidebarLabel(sidebar: PageSidebar): string {
 }
 
 /**
- * Render the narrow-screen sidebar drawer toggle shown in the header nav row: A panel icon followed by the
- * current page title (hidden on wide screens, where the sidebar is a sticky column).
+ * Render the narrow-screen sidebar drawer toggle shown in the header nav row:
+ * A panel icon followed by the current page title (hidden on wide screens, where the sidebar is a sticky column).
  */
 function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
   const openLabel = `Open ${sidebar.label}`;
@@ -80,13 +83,13 @@ function renderSidebarToggle(sidebar: PageSidebar): HtmlFragment {
 }
 
 /**
- * Render (once per active tab and sidebar page) the sticky top navigation bar matching the VitePress text-link
- * navbar style; On narrow screens, the nav row wraps below the brand and holds the sidebar drawer toggle.
+ * Render (once per active tab and sidebar page) the sticky top navigation bar matching the VitePress text-link navbar style;
+ * On narrow screens, the nav row wraps below the brand and holds the sidebar drawer toggle.
  */
 function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined): string {
   // Sidebar pages are a fixed set, so the cache stays bounded by the number of pages:
   const cacheKey = `${activeNav}|${sidebar?.activeHref ?? ''}`;
-  const cached = HEADER_HTML_CACHE.get(cacheKey);
+  const cached = HEADER_HTML_CACHE[cacheKey];
   if (cached !== undefined) {
     return cached;
   }
@@ -158,7 +161,7 @@ function renderHeaderNav(activeNav: NavPageId, sidebar: PageSidebar | undefined)
       </div>
     </header>
   );
-  HEADER_HTML_CACHE.set(cacheKey, headerHtml);
+  HEADER_HTML_CACHE[cacheKey] = headerHtml;
   return headerHtml;
 }
 

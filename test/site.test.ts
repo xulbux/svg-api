@@ -1,5 +1,8 @@
 /**
- * Documentation website tests – HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards, and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/site/`).
+ * Documentation Website Tests
+ *
+ * HTML validity, accessibility, head metadata, navigation, static assets, client behavior guards,
+ * and docs drift guards for the homepage, `/docs`, `/docs/:section`, and `/builder/:kind` pages (`src/site/`).
  */
 
 import { createHash } from 'node:crypto';
@@ -10,6 +13,7 @@ import siteScript from '@bundles/site.client.js';
 import { decodePngToRgba, encodeRgbaPng } from '@scripts/og/png';
 import { rasterizeOgSvgToPng, rasterizeSvgToRgbaPng } from '@scripts/og/rasterizer';
 import { evaluatePaint, flattenSvgPath, parseGradientDefs } from '@scripts/og/svgParser';
+import { transform as transformWithEsbuild } from 'esbuild';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ISOLUX_GRAY, ISOLUX_SYNTAX, ISOLUX_UI } from '@/config/palette';
 import { SERVICES_CONFIG } from '@/config/services';
@@ -67,6 +71,7 @@ import {
   renderOgImageSvg,
   SITE_HEADLINE,
 } from '@/site/seo';
+import { ROUTE_PREFIX_ALIASES } from '@/site/shared';
 import { DARK_BG, getSiteStylesheet, LIGHT_BG } from '@/site/styles';
 import {
   ALL_ICON_SOURCE_NAMES,
@@ -259,7 +264,7 @@ const SIDEBAR_TOGGLE_RX =
 
 /** Matches class names that were removed from the markup because no stylesheet or script uses them. */
 const DEAD_CLASS_RX =
-  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text|stack-chip-label|feature-icon|builder-panel-inner)[\s"]/;
+  /class="(?:[^"]*\s)?(?:nav-text|brand-name|brand-sparkle|brand-tag|theme-icon|gh-icon|footer-from|btn-label|btn-icon-left|btn-icon-right|drawer-summary-text|route-path|sidebar-group-label|subhead-text|sidebar-nav|card-grid-3|hero-gradient-text|stack-chip-label|feature-icon|builder-panel-inner)[\s"]/;
 
 /** Matches every `var(--c-…)` custom property reference. */
 const COLOR_TOKEN_USAGE_RX = /var\((?<name>--c-[\w-]+)/g;
@@ -1189,6 +1194,10 @@ describe('documentation pages – head metadata & client script', () => {
       expect(page.html, page.path).toContain(
         `<link rel="preload" href="${getSiteAssetUrl('Geist-Regular.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
+      expect(
+        page.html.indexOf('<link rel="stylesheet"'),
+        `${page.path} stylesheet precedes font preloads`
+      ).toBeLessThan(page.html.indexOf('<link rel="preload"'));
       expect(page.html, page.path).toContain(
         `<link rel="preload" href="${getSiteAssetUrl('Geist-Bold.ttf')}" as="font" type="font/ttf" crossorigin="anonymous" />`
       );
@@ -1438,11 +1447,16 @@ describe('documentation pages – navigation & static assets', () => {
     }
   });
 
-  it('references the versioned stylesheet and site script and keeps template placeholders out of the assets', () => {
+  it('references the versioned minified stylesheet and site script and keeps template placeholders out of the assets', async () => {
     const css = getSiteAsset('site.css');
     const script = getSiteAsset('site.js');
     const builderBundle = getSiteAsset('builder.js');
-    expect(css?.body.replaceAll(/\?v=[\da-z]+/g, '')).toBe(getSiteStylesheet());
+    const minifiedResult = await transformWithEsbuild(getSiteStylesheet(), {
+      loader: 'css',
+      minify: true,
+    });
+    expect(css?.body.replaceAll(/\?v=[\da-z]+/g, '')).toBe(minifiedResult.code);
+    expect(css?.body).not.toContain('/*');
     expect(script?.body).not.toContain('/**');
     expect(builderBundle?.body).not.toContain('/**');
     for (const page of renderAllPages()) {
@@ -1456,7 +1470,7 @@ describe('documentation pages – navigation & static assets', () => {
       expect(page.html, page.path).not.toContain('<style>');
     }
     expect(css?.body).not.toContain('${');
-    expect(css?.body).toContain('.brand-mark {');
+    expect(css?.body).toContain('.brand-mark{');
     expect(css?.body).not.toContain('--brand-gradient-start');
     expect(getSiteAsset('__proto__')).toBeUndefined();
   });
@@ -1649,6 +1663,24 @@ describe('documentation drift guards', () => {
       );
     }
   });
+
+  it('keeps isomorphic ROUTE_PREFIX_ALIASES synchronized with SVG_ROUTES and pairs every popovertarget button with aria-controls', () => {
+    const expectedAliases: Record<string, string> = {};
+    for (const route of SVG_ROUTES) {
+      if (route.aliasOf !== undefined) {
+        expectedAliases[route.prefix] = route.aliasOf;
+      }
+    }
+    expect(ROUTE_PREFIX_ALIASES).toEqual(expectedAliases);
+
+    for (const page of renderAllPages()) {
+      for (const match of page.html.matchAll(
+        /<button\b[^>]*popovertarget="(?<target>[^"]+)"[^>]*>/g
+      )) {
+        expect(match[0], page.path).toContain(`aria-controls="${match.groups?.target}"`);
+      }
+    }
+  });
 });
 
 /********************************* Website regressions **********************************/
@@ -1708,7 +1740,7 @@ describe('website client scripts & markup regressions', () => {
     const html = renderDocsHtml('badges');
     const drawerHtml = html.slice(html.indexOf('<aside class="sidebar" id="sidebar-drawer">'));
     expect(drawerHtml).toMatch(
-      /^<aside class="sidebar" id="sidebar-drawer">\s*<button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-label="Close /
+      /^<aside class="sidebar" id="sidebar-drawer">\s*<button type="button" class="sidebar-close" popovertarget="sidebar-drawer" popovertargetaction="hide" aria-controls="sidebar-drawer" aria-label="Close /
     );
     expect(html).toContain(
       'class="sidebar-toggle" popovertarget="sidebar-drawer" aria-expanded="false"'
@@ -1807,22 +1839,22 @@ describe('website client scripts & markup regressions', () => {
     }
 
     expect(docsBySlug.get('badges')).toContain(
-      '<code class="card-title-code">variant=1</code><span class="card-title-text">Primary Badge</span><span class="card-title-pill">Default</span>'
+      '<code class="card-title-code">variant=1</code>Primary Badge<span class="card-title-pill">Default</span>'
     );
     expect(docsBySlug.get('buttons')).toContain(
-      '<code class="card-title-code">variant=3</code><span class="card-title-text">Tertiary Button</span>'
+      '<code class="card-title-code">variant=3</code>Tertiary Button'
     );
     expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">PyPI &amp; ClickPy</span><code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
+      'PyPI &amp; ClickPy<code class="card-title-meta">/badge/pypi/:pkg/:metric</code>'
     );
     expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">npm Registry</span><code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
+      'npm Registry<code class="card-title-meta">/badge/npm/:pkg/:metric</code>'
     );
     expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">Open VSX Registry</span><code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
+      'Open VSX Registry<code class="card-title-meta">/badge/ovsx/:namespace/:ext/:metric</code>'
     );
     expect(docsBySlug.get('services')).toContain(
-      '<span class="card-title-text">Crates.io, docs.rs &amp; Docker Hub</span><code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docsrs/*</code><code class="card-title-meta">/badge/docker/*</code>'
+      'Crates.io, docs.rs &amp; Docker Hub<code class="card-title-meta">/badge/crates/*</code><code class="card-title-meta">/badge/docsrs/*</code><code class="card-title-meta">/badge/docker/*</code>'
     );
     expect(docsBySlug.get('icons')).toContain(
       '<span class="route-method">GET</span>/icon/:icon</code>'
@@ -1880,6 +1912,7 @@ describe('site stylesheet', () => {
     for (const removed of [
       '--c-bg-alt',
       '--c-brand-3',
+      '--c-on-brand',
       '--base-brand',
       '--c-border-subtle',
       '--brand-gradient-start',
@@ -1929,17 +1962,19 @@ describe('site stylesheet', () => {
     const css = getSiteStylesheet();
     expect(css).toContain('--ease-out: cubic-bezier(0.22, 1, 0.36, 1);');
     expect(css).toMatch(
-      /\.builder-tabs::before,\s*\.icon-picker-tabs::before \{[^}]*inline-size: var\(--tab-pill-w, 0px\);\s*block-size: var\(--tab-pill-h, 0px\);[^}]*translate: var\(--tab-pill-x, 0px\) var\(--tab-pill-y, 0px\);/
+      /\.builder-tabs::before \{[^}]*inline-size: var\(--tab-pill-w, 0px\);\s*block-size: var\(--tab-pill-h, 0px\);[^}]*translate: var\(--tab-pill-x, 0px\) var\(--tab-pill-y, 0px\);/
     );
     expect(css).toMatch(
-      /\.builder-tabs\.is-animated::before,\s*\.icon-picker-tabs\.is-animated::before \{\s*transition:\s*translate 0\.22s var\(--ease-out\),\s*inline-size 0\.22s var\(--ease-out\),\s*block-size 0\.22s var\(--ease-out\);\s*\}/
+      /\.builder-tabs\.is-animated::before \{\s*transition:\s*translate 0\.22s var\(--ease-out\),\s*inline-size 0\.22s var\(--ease-out\),\s*block-size 0\.22s var\(--ease-out\);\s*\}/
     );
     expect(css).toMatch(
-      /\.builder-tabs\.has-pill > \.is-active,\s*\.icon-picker-tabs\.has-pill \.icon-picker-tab input:checked \+ span \{\s*background: transparent;\s*\}/
+      /\.builder-tabs\.has-pill > \.is-active \{\s*background: transparent;\s*\}/
     );
+    expect(css).toMatch(/\.builder-tab:hover \{\s*color: var\(--c-text-1\);\s*\}/);
     expect(css).toMatch(
-      /\.builder-tab:hover,\s*\.stack-mode-tab:hover,\s*\.icon-picker-tab:hover span \{\s*color: var\(--c-text-1\);\s*\}/
+      /@media \(max-width: 420px\) \{[\s\S]*?\.header-inner \{[\s\S]*?\.header-actions \{/
     );
+    expect(css).not.toContain('.brand-tag');
     expect(css).toMatch(
       /\.copy-btn :is\(\.icon-copy, \.icon-check\) \{\s*transition:\s*opacity var\(--duration-base\) var\(--ease-out\),\s*rotate var\(--duration-base\) var\(--ease-out\),\s*scale var\(--duration-base\) var\(--ease-out\);\s*\}/
     );
@@ -2092,13 +2127,13 @@ describe('site stylesheet', () => {
 
     const typingDocsHtml = renderDocsHtml('typing');
     expect(typingDocsHtml).toContain(
-      '<span class="card-title-text">Tertiary Neutral + Underscore Cursor</span><span class="card-title-pill">Default</span>'
+      'Tertiary Neutral + Underscore Cursor<span class="card-title-pill">Default</span>'
     );
     expect(typingDocsHtml).not.toContain(
-      '<span class="card-title-text">Secondary Tinted + Block Cursor</span><span class="card-title-pill">Default</span>'
+      'Secondary Tinted + Block Cursor<span class="card-title-pill">Default</span>'
     );
     expect(typingDocsHtml).not.toContain(
-      '<span class="card-title-text">Primary Brand Gradient</span><span class="card-title-pill">Default</span>'
+      'Primary Brand Gradient<span class="card-title-pill">Default</span>'
     );
 
     // `<circle>` inside `<g>` must paint onto the OG canvas instead of being ignored:
@@ -2574,7 +2609,8 @@ describe('site stylesheet', () => {
   });
 
   it('switches fallback shared-popover triggers cleanly without closing and emits enriched SEO JSON-LD, /llms.txt alternate link, 2-step builder breadcrumbs, and nofollow preview links (regressions: fallback shared-popover trigger switch closed popover, /builder breadcrumb pointed at 301 redirect, missing llms.txt alternate link and preview rel=nofollow)', () => {
-    // [1] Non-Popover-API fallback: switching from `triggerA` to `triggerB` targeting the same `#icon-picker` keeps `.is-open` active and transfers `aria-expanded`:
+    // [1] Non-Popover-API fallback; switching from `triggerA` to `triggerB` targeting the same `#icon-picker`
+    // keeps `.is-open` active and transfers `aria-expanded`:
     const documentListeners = new Map<string, ((event: Record<string, unknown>) => void)[]>();
     const openClasses = new Set<string>();
     const fakePopover = Object.assign(Object.create(FakeHtmlElement.prototype) as object, {
@@ -2707,6 +2743,35 @@ describe('site stylesheet', () => {
         position: 2,
       },
     ]);
+
+    // [3] OG SVG hex alpha parsing, premultiplied gradient stop alpha interpolation, and PNG chunk CRC-32 validation:
+    const emptyGradients = new Map();
+    const shortAlphaPaint = requireDefined(
+      evaluatePaint('#f088', emptyGradients, 0, 0),
+      'shortAlphaPaint'
+    );
+    expect(shortAlphaPaint[0]).toBe(255);
+    expect(shortAlphaPaint[2]).toBe(136);
+    expect(shortAlphaPaint[3]).toBeCloseTo(0x88 / 255, 3);
+
+    const gradientMap = parseGradientDefs(
+      '<svg><defs><linearGradient id="fade" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#ffffff" stop-opacity="1" /><stop offset="100%" stop-color="#000000" stop-opacity="0" /></linearGradient></defs></svg>'
+    );
+    const midpointPaint = requireDefined(
+      evaluatePaint('url(#fade)', gradientMap, 0.5, 0),
+      'midpointPaint'
+    );
+    expect(midpointPaint[3]).toBeCloseTo(0.5, 2);
+    expect(midpointPaint[0]).toBeGreaterThan(250);
+    expect(midpointPaint[1]).toBeGreaterThan(250);
+    expect(midpointPaint[2]).toBeGreaterThan(250);
+
+    const validPng = new Uint8Array(
+      encodeRgbaPng(2, 2, new Uint8Array(16).fill(255), 'test-digest')
+    );
+    expect(decodePngToRgba(validPng).width).toBe(2);
+    validPng[validPng.length - 13] = 255 - (validPng[validPng.length - 13] ?? 0);
+    expect(() => decodePngToRgba(validPng)).toThrow(/CRC/);
   });
 });
 
@@ -2832,6 +2897,20 @@ describe('repository & OSS Markdown drift guards', () => {
     expect(llmsTxt.startsWith(`# ${SITE_NAME}\n`)).toBe(true);
     expect(llmsTxt).toContain(`> ${SITE_DESCRIPTION}`);
     expect(llmsTxt).toContain(`- Source repository: ${REPO_GITHUB_URL}`);
+    expect(llmsTxt).toContain('## Per-Endpoint Query Parameters');
+    expect(llmsTxt).toContain('## Path Segment Encoding');
+    expect(jsx('svg', { rawAttrs: ['fill="none"', 'stroke="currentColor"'] }).rawHtml).toBe(
+      '<svg fill="none" stroke="currentColor"></svg>'
+    );
+    expect(getSiteAsset('icons-lucide-0.json')).toBe(getSiteAsset('icons-lucide-0.json'));
+    expect(getIconSetCounts()).toBe(getIconSetCounts());
+    const badgeBuilderHtml = renderBuilderHtml('badge');
+    expect(badgeBuilderHtml).toContain(
+      '<span class="icon-picker-status" id="icon-picker-status" aria-live="polite">'
+    );
+    expect(badgeBuilderHtml).toContain(
+      '<span class="icon-picker-slug" id="icon-picker-slug" aria-hidden="true"></span>'
+    );
     expect(contributingMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
     expect(codeOfConductMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);
     expect(securityMd).toContain(`[**${SITE_NAME}**](${SITE_ORIGIN})`);

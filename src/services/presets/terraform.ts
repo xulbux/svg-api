@@ -1,8 +1,10 @@
 /**
- * Terraform Registry service presets – Live upstream metrics and redirect transformations.
+ * Terraform Registry Service Presets
+ *
+ * Live upstream metrics and redirect transformations for Terraform Registry modules and providers.
  */
 
-import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, readJsonObject } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
   SERIES_DELTA_SPECIALS,
@@ -59,7 +61,7 @@ const TERRAFORM_VERSION: MetricPresentation = {
 
 /** Read the `attributes` object of a JSON:API resource. */
 function readAttributes(resource: unknown): Record<string, unknown> | undefined {
-  return asJsonObject(asJsonObject(resource)?.attributes);
+  return readJsonObject(readJsonObject(resource)?.attributes);
 }
 
 /** Read the first `version` attribute of the JSON:API `included` resources (`?include=latest-version`). */
@@ -108,11 +110,11 @@ function projectTerraformResource(data: unknown): TerraformResourceProjection | 
   if (!attributes) {
     return undefined;
   }
-  const version = attributes.version ?? readIncludedVersion(data.included);
+  const version = readText(attributes.version) ?? readText(readIncludedVersion(data.included));
   return {
     downloads: readFiniteNumber(attributes.downloads) ?? readFiniteNumber(attributes.total),
     month: readFiniteNumber(attributes.month),
-    version: typeof version === 'string' ? version : undefined,
+    version,
     versionDownloads: readIncludedVersionDownloads(data.included),
     year: readFiniteNumber(attributes.year),
   };
@@ -122,11 +124,13 @@ function projectTerraformResource(data: unknown): TerraformResourceProjection | 
 function createModuleService(): ServiceDefinition {
   const moduleEndpoint = createEndpoint({
     api: 'https://registry.terraform.io/v2/modules/{target}?include=latest-version',
+    extractKeys: ['data', 'included'],
     page: 'https://registry.terraform.io/modules/{target}',
     project: projectTerraformResource,
   });
   const moduleDownloadsEndpoint = createEndpoint({
     api: 'https://registry.terraform.io/v2/modules/{target}/downloads/summary',
+    extractKeys: ['data'],
     page: 'https://registry.terraform.io/modules/{target}',
     project: projectTerraformResource,
   });
@@ -159,11 +163,13 @@ function createModuleService(): ServiceDefinition {
 function createProviderService(): ServiceDefinition {
   const providerEndpoint = createEndpoint({
     api: 'https://registry.terraform.io/v2/providers/{owner}/{target}?include=provider-versions',
+    extractKeys: ['data', 'included'],
     page: 'https://registry.terraform.io/providers/{owner}/{target}/latest',
     project: projectTerraformResource,
   });
   const latestVersionEndpoint = createEndpoint({
     api: 'https://registry.terraform.io/v2/providers/{owner}/{target}/provider-versions/latest',
+    extractKeys: ['data'],
     page: 'https://registry.terraform.io/providers/{owner}/{target}/latest',
     project: projectTerraformResource,
   });

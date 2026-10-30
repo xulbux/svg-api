@@ -1,12 +1,14 @@
 /**
- * Quotes documentation page – Renders the Styled README Quote Cards (`/docs/quotes`) section (`<QuotesSection />`).
+ * Quotes Documentation Page
+ *
+ * Renders the Styled README Quote Cards (`/docs/quotes`) section (`<QuotesSection />`).
  */
 
 import { QUOTE_LAYOUT_TOKENS } from '@/routes/params';
 import {
+  buildHorizontalQuoteCards,
   buildQuoteParamRows,
-  HORIZONTAL_QUOTE_CARDS,
-  VERTICAL_QUOTE_CARDS,
+  buildVerticalQuoteCards,
 } from '@/site/catalog/quotes';
 import { ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
@@ -33,12 +35,12 @@ export function QuotesSection(): HtmlFragment {
         label="Quote card route segments and query parameters"
       />
       <SectionSubhead iconSlug="rectangle-vertical" text="Vertical Layout (`?layout=vertical`)" />
-      <CardGrid cards={VERTICAL_QUOTE_CARDS} isThreeColumn={true} />
+      <CardGrid cards={buildVerticalQuoteCards()} isThreeColumn={true} />
       <SectionSubhead
         iconSlug="rectangle-horizontal"
         text="Horizontal Layout (`?layout=horizontal`)"
       />
-      <CardGrid cards={HORIZONTAL_QUOTE_CARDS} />
+      <CardGrid cards={buildHorizontalQuoteCards()} />
     </section>
   );
 }

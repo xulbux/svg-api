@@ -1,5 +1,7 @@
 /**
- * Website styles – Design tokens and composite stylesheet assembly for `/assets/site.css`.
+ * Website Styles
+ *
+ * Design tokens and composite stylesheet assembly for `/assets/site.css`.
  *
  * Scheme-dependent `--c-*` color tokens are built from the color palette and emitted as light,
  * dark, explicit override, and `light-dark()` bindings ahead of the static `.css` modules.
@@ -114,7 +116,6 @@ function getThemeTokens(): readonly ThemeToken[] {
       dark: `color-mix(in srgb, ${DARK_BG} 64%, transparent)`,
       light: `color-mix(in srgb, ${LIGHT_BG} 75%, transparent)`,
     }),
-    buildColorToken('on-brand', { dark: WHITE, light: WHITE }),
     // Neutral interactive states (Isolux keeps buttons, selections, and focus rings free of the accent):
     buildColorToken('btn-bg', ISOLUX_UI.button),
     buildColorToken('btn-hover-bg', ISOLUX_UI.buttonHover),

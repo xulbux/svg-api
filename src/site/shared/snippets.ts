@@ -1,5 +1,7 @@
 /**
- * Shared snippet builders & importer – URL syntax highlighting tokenizer, snippet generators across output formats, and pasted URL/embed parser.
+ * Shared Snippet Builders & Importer
+ *
+ * URL syntax highlighting tokenizer, snippet generators across output formats, and pasted URL/embed parser.
  */
 
 import { getOwnValue } from '@/site/shared/encoding';
@@ -65,11 +67,10 @@ const MARKDOWN_ENCODED_CHAR_RX = /%(?:20|28|29|3[cCeE])/g;
 const MARKDOWN_TITLE_SUFFIX_RX = /\s+(?:"[^"]*"|'[^']*')$/;
 
 /** Matches `"`, `<`, `>`, and `&` starting an HTML character reference inside double-quoted attributes. */
-const HTML_ATTR_RX = /&(?=(?:#\d+|#x[\da-fA-F]+|[a-zA-Z][\da-zA-Z]*);)|["<>]/g;
+const HTML_ATTR_RX = /&(?=#\d|#x[\da-fA-F]|[a-zA-Z][\da-zA-Z]*(?:;|(?![=\da-zA-Z])))|["<>]/g;
 
-/** Matches named and numeric HTML character references for `"`, `'`, `<`, `>`, and `&`. */
-const HTML_UNESCAPE_RX =
-  /&(?:(?<named>amp|apos|gt|lt|quot)|#(?<dec>34|38|39|60|62)|#x0*(?<hex>22|26|27|3[cCeE]));/gi;
+/** Matches named (`&amp;`, `&apos;`, `&gt;`, `&lt;`, `&quot;`) and numeric (`&#…;`, `&#x…;`) HTML character references. */
+const HTML_UNESCAPE_RX = /&(?:(?<named>amp|apos|gt|lt|quot)|#(?<dec>\d+)|#x(?<hex>[\da-fA-F]+));/gi;
 
 /** Matches an HTML `<img` tag opening token. */
 const HTML_IMG_TAG_RX = /<img\b/i;
@@ -101,10 +102,21 @@ function unescapeHtmlAttribute(value: string): string {
     if (named) {
       return getOwnValue(HTML_NAMED_UNESCAPES, named.toLowerCase()) ?? match;
     }
+    let codePoint = Number.NaN;
     if (dec) {
-      return String.fromCharCode(Number.parseInt(dec, 10));
+      codePoint = Number.parseInt(dec, 10);
+    } else if (hex) {
+      codePoint = Number.parseInt(hex, 16);
     }
-    return hex ? String.fromCharCode(Number.parseInt(hex, 16)) : match;
+    if (
+      Number.isInteger(codePoint) &&
+      codePoint >= 1 &&
+      codePoint <= 0x10_ff_ff &&
+      (codePoint < 0xd8_00 || codePoint > 0xdf_ff)
+    ) {
+      return String.fromCodePoint(codePoint);
+    }
+    return match;
   });
 }
 
@@ -150,7 +162,7 @@ function decodeMarkdownDestination(rawDestination: string): string {
   );
 }
 
-/** Read the content inside balanced `(...)` starting at `openIndex` (`text[openIndex] === '('`). */
+/** Read the content inside balanced `(…)` starting at `openIndex` (`text[openIndex] === '('`). */
 function readParenthesized(
   text: string,
   openIndex: number

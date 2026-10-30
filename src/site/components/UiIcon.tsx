@@ -1,5 +1,7 @@
 /**
- * UI icon & inline primitive components – Inline UI icons, per-page SVG sprite, copy buttons, permalink anchors, and inline markup helpers.
+ * UI Icon & Inline Primitive Components
+ *
+ * Inline UI icons, per-page SVG sprite, copy buttons, permalink anchors, and inline markup helpers.
  */
 
 import { raw, renderHtml } from '@/site/jsx';
@@ -70,7 +72,7 @@ const UI_SPRITE_ICON_SLUGS: readonly string[] = [
 ];
 
 /** Memoized inline UI icon HTML keyed by `slug|size|extraClass`. */
-const UI_ICON_HTML_CACHE = new Map<string, string>();
+const UI_ICON_HTML_CACHE: Record<string, string> = Object.create(null) as Record<string, string>;
 
 /** Lazily populated lookup set for `UI_SPRITE_ICON_SLUGS`. */
 let uiSpriteIconSetCache: ReadonlySet<string> | undefined = undefined;
@@ -133,7 +135,7 @@ function renderUiSprite(): string {
  */
 function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
   const cacheKey = `${slug}|${size}|${extraClass}`;
-  const cached = UI_ICON_HTML_CACHE.get(cacheKey);
+  const cached = UI_ICON_HTML_CACHE[cacheKey];
   if (cached !== undefined) {
     return cached;
   }
@@ -149,15 +151,14 @@ function renderUiIcon(slug: string, size = 16, extraClass = ''): string {
     ? renderHtml(
         <svg
           class={classAttr}
-          rawAttrs={UI_ICON_SVG_ATTRS}
+          rawAttrs={[UI_ICON_SVG_ATTRS, paintAttrs]}
           width={size}
-          height={size}
-          rawAttrs2={paintAttrs}>
+          height={size}>
           {bodyFragment}
         </svg>
       )
     : '';
-  UI_ICON_HTML_CACHE.set(cacheKey, iconHtml);
+  UI_ICON_HTML_CACHE[cacheKey] = iconHtml;
   return iconHtml;
 }
 
@@ -244,6 +245,30 @@ export function UiSprite(): HtmlFragment {
  */
 export function UiIcon(props: UiIconProps): HtmlFragment {
   return raw(renderUiIcon(props.slug, props.size ?? 16, props.extraClass ?? ''));
+}
+
+/**
+ * Render the cropped question-mark glyph used inside circular syntax-help buttons.
+ * @returns Inline `<svg class="ui-icon">` fragment.
+ */
+export function HelpMarkIcon(): HtmlFragment {
+  return (
+    <svg
+      class="ui-icon"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="3 3 18 18"
+      width="13"
+      height="13"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.25"
+      stroke-linecap="round"
+      stroke-linejoin="round">
+      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <path d="M12 17h.01" />
+    </svg>
+  );
 }
 
 /**

@@ -1,5 +1,7 @@
 /**
- * Text measurement & vector path rendering – Exact OpenType glyph outline measurement and `<path>` generation from bundled `.ttf` fonts.
+ * Text Measurement & Vector Path Rendering
+ *
+ * Exact OpenType glyph outline measurement and `<path>` generation from bundled `.ttf` fonts.
  *
  * Each distinct text and typography combination is laid out once at the `(0, 0)` baseline;
  * Its ink bounds and serialized outline are cached (LRU) and positioned with `transform="translate(…)"`.
@@ -21,27 +23,16 @@ import {
   roundCoord,
   writeLruCache,
 } from '@/svg/shared';
-import type { GlyphLineLayout, PositionedCharGlyph, TypingFont } from '@/types';
+import type {
+  GlyphLineLayout,
+  InkMetrics,
+  LruCache,
+  PositionedCharGlyph,
+  TextOutline,
+  TypingFont,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
-
-/** Ink bounding box metrics of a text string laid out at the `(0, 0)` baseline. */
-interface InkMetrics {
-  /** Whether the path contains zero visible contours (e.g., empty or whitespace-only text). */
-  isEmpty: boolean;
-  /** Visible ink width (`x2 - x1`) or advance width for whitespace-only strings, in pixels. */
-  width: number;
-  /** Leftmost visible ink X coordinate relative to the `x = 0` origin. */
-  x1: number;
-  /** Rightmost visible ink X coordinate relative to the `x = 0` origin. */
-  x2: number;
-}
-
-/** Cached ink metrics and serialized outline of a text string at the `(0, 0)` baseline. */
-interface TextOutline extends InkMetrics {
-  /** Serialized SVG path data at the `(0, 0)` baseline. */
-  pathData: string;
-}
 
 /** Composite OpenType path and ink metrics built per character with cross-font glyph fallback. */
 interface FallbackPathLayout {
@@ -81,7 +72,10 @@ interface ResolvedFontGlyph {
 interface TextPathOptions {
   /** Horizontal alignment mode. */
   align?: 'center' | 'left' | 'origin';
-  /** Target horizontal X coordinate (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`, baseline `originX` when `align === 'origin'`). */
+  /**
+   * Target horizontal X coordinate
+   * (`centerX` when `align === 'center'`, `visualStartX` when `align === 'left'`, baseline `originX` when `align === 'origin'`).
+   */
   anchorX: number;
   /** Target vertical baseline Y coordinate in pixels. */
   baselineY: number;
@@ -95,7 +89,10 @@ interface TextPathOptions {
   isBold?: boolean;
   /** Whether to use the bold italic font style. */
   isItalic?: boolean;
-  /** Whether to lay the text out without reading or writing the shared outline cache (used for one-off wrapped text so it never evicts hot entries). */
+  /**
+   * Whether to lay the text out without reading or writing the shared outline cache
+   * (used for one-off wrapped text so it never evicts hot entries).
+   */
   isUncached?: boolean;
 }
 
@@ -258,7 +255,8 @@ function getGlyphPathData(
   if (resolved.glyph.index === 0) {
     return '';
   }
-  const cacheKey = `${resolved.fontKey}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}|${fontSize}|${resolved.glyph.index}`;
+  const effectiveItalic = resolved.fontKey === 'mono' ? false : isItalic;
+  const cacheKey = `${resolved.fontKey}|${isBold ? 1 : 0}|${effectiveItalic ? 1 : 0}|${fontSize}|${resolved.glyph.index}`;
   const cached = readLruCache(GLYPH_OUTLINE_CACHE, cacheKey);
   if (cached !== undefined) {
     return cached;
@@ -276,12 +274,21 @@ function computeInkMetrics(
   fontSize: number,
   options: RenderOptions = PATH_OPTIONS
 ): InkMetrics {
-  const isEmpty = path.commands.length === 0;
+  if (path.commands.length === 0) {
+    return {
+      isEmpty: true,
+      width: roundCoord(font.getAdvanceWidth(text, fontSize, options)),
+      x1: 0,
+      x2: 0,
+    };
+  }
   const bbox = path.getBoundingBox();
-  const rawWidth = isEmpty
-    ? font.getAdvanceWidth(text, fontSize, options)
-    : Math.max(0, bbox.x2 - bbox.x1);
-  return { isEmpty, width: roundCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 };
+  return {
+    isEmpty: false,
+    width: roundCoord(Math.max(0, bbox.x2 - bbox.x1)),
+    x1: bbox.x1,
+    x2: bbox.x2,
+  };
 }
 
 /** Compute the horizontal advance in pixels of `resolved` (including `sans` tracking and pair kerning to `nextResolved`). */
@@ -330,22 +337,31 @@ function layoutFallbackPath(
   const resolvedList = resolveFontGlyphs(text, fontFamily, isBold, isItalic);
 
   let cursorX = 0;
-  for (const [i, resolved] of resolvedList.entries()) {
-    if (resolved.glyph.index !== 0) {
-      const charPath = resolved.glyph.getPath(cursorX, 0, fontSize);
-      for (const command of charPath.commands) {
-        combinedPath.commands.push(command);
+  for (let i = 0; i < resolvedList.length; i += 1) {
+    const resolved = resolvedList[i];
+    if (resolved) {
+      if (resolved.glyph.index !== 0) {
+        const charPath = resolved.glyph.getPath(cursorX, 0, fontSize);
+        for (const command of charPath.commands) {
+          combinedPath.commands.push(command);
+        }
       }
+      cursorX += computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
     }
-    cursorX += computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
   }
 
-  const isEmpty = combinedPath.commands.length === 0;
+  if (combinedPath.commands.length === 0) {
+    return { combinedPath, metrics: { isEmpty: true, width: roundCoord(cursorX), x1: 0, x2: 0 } };
+  }
   const bbox = combinedPath.getBoundingBox();
-  const rawWidth = isEmpty ? cursorX : Math.max(0, bbox.x2 - bbox.x1);
   return {
     combinedPath,
-    metrics: { isEmpty, width: roundCoord(rawWidth), x1: bbox.x1, x2: bbox.x2 },
+    metrics: {
+      isEmpty: false,
+      width: roundCoord(Math.max(0, bbox.x2 - bbox.x1)),
+      x1: bbox.x1,
+      x2: bbox.x2,
+    },
   };
 }
 
@@ -400,17 +416,26 @@ function getTextOutline(
   if (text.length > MAX_CACHED_TEXT_LENGTH) {
     return buildTextOutline(text, fontSize, isBold, isItalic, fontFamily);
   }
-  const cacheKey = `${fontFamily === 'mono' ? 1 : 0}|${fontSize}|${isBold ? 1 : 0}|${isItalic ? 1 : 0}|${text}`;
+  const effectiveItalic = fontFamily === 'mono' ? false : isItalic;
+  const cacheKey = `${fontFamily === 'mono' ? 1 : 0}|${fontSize}|${isBold ? 1 : 0}|${effectiveItalic ? 1 : 0}|${text}`;
   const cached = readLruCache(OUTLINE_CACHE, cacheKey);
   if (cached) {
     return cached;
   }
-  const outline = buildTextOutline(text, fontSize, isBold, isItalic, fontFamily);
+  const outline = buildTextOutline(text, fontSize, isBold, effectiveItalic, fontFamily);
   writeLruCache(OUTLINE_CACHE, cacheKey, outline);
   return outline;
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Inspect the bounded text outline cache (entry count, summed path size, and its limits) without mutating it.
+ * @returns Read-only cache state.
+ */
+export function inspectOutlineCache(): Readonly<LruCache<TextOutline>> {
+  return OUTLINE_CACHE;
+}
 
 /**
  * Calculate the exact visible pixel ink width (`bbox.x2 - bbox.x1`) of a text string (cached).
@@ -437,33 +462,41 @@ export function measureTextWidth(
 /**
  * Calculate the exact visible pixel ink width of a text string without touching the outline cache.
  * Used for throwaway probe strings (e.g., binary-search truncation candidates) that are never rendered.
- * @param text       Text string to measure.
- * @param fontSize   Font size in pixels.
- * @param isBold     Whether the text is rendered with the bold font weight.
- * @param isItalic   Whether the text is rendered with the italic font style.
+ * @param text         Text string to measure.
+ * @param fontSize     Font size in pixels.
+ * @param isBold       Whether the text is rendered with the bold font weight.
+ * @param isItalic     Whether the text is rendered with the italic font style.
+ * @param fontFamily   Font family preset.
  * @returns Exact visible ink width in pixels (rounded to 2 decimal places).
  */
 export function measureTextWidthUncached(
   text: string,
   fontSize: number,
   isBold = false,
-  isItalic = false
+  isItalic = false,
+  fontFamily: TypingFont = 'sans'
 ): number {
   if (text.length === 0) {
     return 0;
   }
-  const font = resolveGeistFont(isBold, isItalic);
+  const font = resolveFontFamily(fontFamily, isBold, isItalic);
   if (hasMissingGlyphInFont(font, text)) {
-    return layoutFallbackPath(text, font, fontSize, isBold, isItalic, 'sans').metrics.width;
+    return layoutFallbackPath(text, font, fontSize, isBold, isItalic, fontFamily).metrics.width;
   }
-  return computeInkMetrics(font.getPath(text, 0, 0, fontSize, PATH_OPTIONS), font, text, fontSize)
-    .width;
+  const options = fontFamily === 'mono' ? MONO_PATH_OPTIONS : PATH_OPTIONS;
+  return computeInkMetrics(
+    font.getPath(text, 0, 0, fontSize, options),
+    font,
+    text,
+    fontSize,
+    options
+  ).width;
 }
 
 /**
  * Calculate the typographic advance width (including side bearings and tracking) of a text string.
- * Much cheaper than an ink measurement because no glyph outlines are built; Advances of adjacent
- * words and spaces add up, which makes it suitable for incremental line wrapping estimates.
+ * Much cheaper than an ink measurement because no glyph outlines are built;
+ * Advances of adjacent words and spaces add up, which makes it suitable for incremental line wrapping estimates.
  * @param text       Text string to measure.
  * @param fontSize   Font size in pixels.
  * @param isBold     Whether the text is rendered with the bold font weight.
@@ -479,13 +512,25 @@ export function measureTextAdvance(
   if (text.length === 0) {
     return 0;
   }
-  return resolveGeistFont(isBold, isItalic).getAdvanceWidth(text, fontSize, PATH_OPTIONS);
+  const font = resolveGeistFont(isBold, isItalic);
+  if (!hasMissingGlyphInFont(font, text)) {
+    return font.getAdvanceWidth(text, fontSize, PATH_OPTIONS);
+  }
+  const resolvedList = resolveFontGlyphs(text, 'sans', isBold, isItalic);
+  let advance = 0;
+  for (let i = 0; i < resolvedList.length; i += 1) {
+    const resolved = resolvedList[i];
+    if (resolved) {
+      advance += computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
+    }
+  }
+  return advance;
 }
 
 /**
  * Render a text string directly as an SVG `<path>` vector outline.
- * Aligns the path using its exact analytical Bezier bounding box (`x1`–`x2`) so horizontal centering or
- * left-alignment has `0.00px` sidebearing error on every operating system and browser.
+ * Aligns the path using its exact analytical Bezier bounding box (`x1`–`x2`)
+ * so horizontal centering or left-alignment has `0.00px` sidebearing error on every operating system and browser.
  * @param text      Raw unescaped text string to convert to an SVG `<path>`.
  * @param options   Anchor position, baseline, font size, fill, weight/style, and alignment.
  * @returns `<path transform="…" d="…" fill="…" />` SVG string, or `''` if `text` has no visible contours.
@@ -537,8 +582,8 @@ export function resolveCharGlyph(
 }
 
 /**
- * Lay out a string character-by-character with pair kerning, returning each character's baseline `glyphX`
- * offset, advance width, and cached `(0, 0)` outline `<path>` data.
+ * Lay out a string character-by-character with pair kerning,
+ * returning each character's baseline `glyphX` offset, advance width, and cached `(0, 0)` outline `<path>` data.
  * @param text         Text string to lay out.
  * @param fontSize     Font size in pixels.
  * @param isBold       Whether to use the bold font weight.
@@ -558,15 +603,18 @@ export function layoutTextGlyphs(
   const glyphs: PositionedCharGlyph[] = [];
   let cursorX = 0;
 
-  for (const [i, resolved] of resolvedList.entries()) {
-    const clampedAdvance = computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
-    glyphs.push({
-      advance: roundCoord(clampedAdvance),
-      char: resolved.char,
-      glyphX: roundCoord(cursorX),
-      pathData: getGlyphPathData(resolved, fontSize, isBold),
-    });
-    cursorX += clampedAdvance;
+  for (let i = 0; i < resolvedList.length; i += 1) {
+    const resolved = resolvedList[i];
+    if (resolved) {
+      const clampedAdvance = computeGlyphStepAdvance(resolved, resolvedList[i + 1], fontSize);
+      glyphs.push({
+        advance: roundCoord(clampedAdvance),
+        char: resolved.char,
+        glyphX: roundCoord(cursorX),
+        pathData: getGlyphPathData(resolved, fontSize, isBold),
+      });
+      cursorX += clampedAdvance;
+    }
   }
 
   return { glyphs, totalAdvance: roundCoord(Math.max(0, cursorX)) };

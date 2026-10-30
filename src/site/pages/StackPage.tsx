@@ -1,5 +1,7 @@
 /**
- * Tech stack documentation page – Renders the Grouped Tech Stack Icon Grids (`/docs/stack`) section (`<StackSection />`).
+ * Tech Stack Documentation Page
+ *
+ * Renders the Grouped Tech Stack Icon Grids (`/docs/stack`) section (`<StackSection />`).
  */
 
 import { ACTIVE_STACK_MOTION_TOKENS } from '@/routes/params';

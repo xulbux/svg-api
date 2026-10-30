@@ -1,5 +1,7 @@
 /**
- * Getting Started overview catalog – URL anatomy parts, segment encoding rules, shared query parameters, embedding examples, and edge cache TTL rows for `/docs`.
+ * Getting Started Overview Catalog
+ *
+ * URL anatomy parts, segment encoding rules, shared query parameters, embedding examples, and edge cache TTL rows for `/docs`.
  */
 
 import { SITE_ORIGIN } from '@/config/site';
@@ -98,23 +100,6 @@ export const CACHING_COLUMNS: ParamTableRow = {
   values: 'Edge TTL',
 };
 
-/** Showcase cards of the embedding section on the Getting Started page. */
-export const EMBEDDING_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      { alt: 'Build Status', path: '/badge/Build+Status/Passing?color=emerald&icon=circle-check' },
-    ],
-    subtitle: 'Paste the Markdown snippet into any README or docs page.',
-    title: 'Static Badge (Markdown Image)',
-  },
-  {
-    items: [{ alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' }],
-    subtitle:
-      'Wraps the badge in a link to its upstream page; Visiting the badge URL directly also redirects there (302).',
-    title: 'Live Service Badge (Linked Image)',
-  },
-];
-
 // -------------------------------------- INTERNALS --------------------------------------
 
 /** Format a TTL in seconds as a compact duration (`3600` -> `'1 h'`, `300` -> `'5 min'`, `45` -> `'45 s'`). */
@@ -142,12 +127,42 @@ function formatSupportingEndpoints(paramName?: string): string {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
+ * Build the showcase cards of the embedding section on the Getting Started page.
+ * @returns Showcase card configurations.
+ */
+export function buildEmbeddingCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Build Status',
+          path: '/badge/Build+Status/Passing?color=emerald&icon=circle-check',
+        },
+      ],
+      subtitle: 'Paste the Markdown snippet into any README or docs page.',
+      title: 'Static Badge (Markdown Image)',
+    },
+    {
+      items: [{ alt: 'PyPI Downloads', path: '/badge/pypi/xulbux/dt', sample: '86.8k' }],
+      subtitle:
+        'Wraps the badge in a link to its upstream page; Visiting the badge URL directly also redirects there (302).',
+      title: 'Live Service Badge (Linked Image)',
+    },
+  ];
+}
+
+/**
  * Build the shared query parameter rows (values and endpoints read from the route table, parser, and theme).
  * @returns Parameter table rows.
  */
 export function buildSharedParamRows(): ParamTableRow[] {
   const iconMotionSet = new Set<string>(ICON_MOTION_TOKENS);
-  const extraStackMotions = ACTIVE_STACK_MOTION_TOKENS.filter((token) => !iconMotionSet.has(token));
+  const extraStackMotions: string[] = [];
+  for (const token of ACTIVE_STACK_MOTION_TOKENS) {
+    if (!iconMotionSet.has(token)) {
+      extraStackMotions.push(token);
+    }
+  }
   return [
     {
       defaultVal: formatSupportingEndpoints('variant'),
@@ -189,12 +204,13 @@ export function buildSharedParamRows(): ParamTableRow[] {
  * @returns Parameter table rows.
  */
 export function buildCachingRows(): ParamTableRow[] {
-  const staticRouteNames = [
-    '/badge/:label/:value',
-    ...SVG_ROUTES.filter((route) => route.aliasOf === undefined && route.prefix !== 'badge').map(
-      (route) => `/${route.prefix}`
-    ),
-  ].join(', ');
+  const staticRouteList: string[] = ['/badge/:label/:value'];
+  for (const route of SVG_ROUTES) {
+    if (route.aliasOf === undefined && route.prefix !== 'badge') {
+      staticRouteList.push(`/${route.prefix}`);
+    }
+  }
+  const staticRouteNames = staticRouteList.join(', ');
   return [
     {
       defaultVal: '~–',

@@ -1,5 +1,7 @@
 /**
- * Services documentation page – Renders the Live Service Badges (`/docs/services`) section (`<ServicesSection />`).
+ * Services Documentation Page
+ *
+ * Renders the Live Service Badges (`/docs/services`) section (`<ServicesSection />`).
  */
 
 import { SERVICES_CONFIG } from '@/config/services';

@@ -1,5 +1,7 @@
 /**
- * Clipboard controller – Async Clipboard API with selection-based `execCommand('copy')` fallback and accessible polite live-region feedback.
+ * Clipboard Controller
+ *
+ * Async Clipboard API with selection-based `execCommand('copy')` fallback and accessible polite live-region feedback.
  */
 
 // ---------------------------------------- CONSTS ---------------------------------------
@@ -14,11 +16,7 @@ const NBSP_RX = /\u00A0/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
-/**
- * Copy text by selecting a temporary off-screen element and running the legacy `copy` command.
- * @param text   Text to copy.
- * @returns Whether the copy command succeeded.
- */
+/** Copy text by selecting a temporary off-screen element and running the legacy `copy` command. */
 function copyWithSelection(text: string): boolean {
   const selection = globalThis.getSelection();
   if (!selection) {
@@ -85,9 +83,7 @@ export function createClipboardController(): (text: string, button: Element) => 
     );
   }
 
-  /**
-   * Copy text with the async Clipboard API (falling back to a selection copy) and show feedback on a button.
-   */
+  /** Copy text with the async Clipboard API (falling back to a selection copy) and show feedback on a button. */
   function copyText(text: string, button: Element): void {
     if (navigator.clipboard && globalThis.isSecureContext) {
       navigator.clipboard.writeText(text).then(
@@ -115,9 +111,7 @@ export function resolveCopySource(copyButton: Element): Element | undefined {
   return copyButton.closest('.code-drawer-body')?.querySelector('.code-pre') ?? undefined;
 }
 
-/**
- * Bind the document `copy` listener so copying from `.code-pre` blocks replaces non-breaking spaces with regular spaces.
- */
+/** Bind the document `copy` listener so copying from `.code-pre` blocks replaces non-breaking spaces with regular spaces. */
 export function bindCodeCopySanitizer(): void {
   document.addEventListener('copy', (event) => {
     const selection = globalThis.getSelection();

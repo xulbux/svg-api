@@ -1,8 +1,10 @@
 /**
- * WordPress service presets – Live upstream metrics and redirect transformations.
+ * WordPress Service Presets
+ *
+ * Live upstream metrics and redirect transformations for WordPress plugins and themes.
  */
 
-import { createEndpoint, defineService, pickFields } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, pickFields } from '@/services/endpoint';
 import {
   createCountMetric,
   createDownloadsMetric,
@@ -73,8 +75,8 @@ const TRIMMED_PLUGIN_FIELDS: readonly string[] = [
 /** Fields disabled for theme requests. */
 const TRIMMED_THEME_FIELDS: readonly string[] = ['sections', 'tags'];
 
-/** Projection of the info payload (only the badge fields). */
-const INFO_PROJECTION = pickFields<WordPressInfoPayload>([
+/** Picked fields of the WordPress.org info payload. */
+const WORDPRESS_FIELDS: readonly (keyof WordPressInfoPayload)[] = [
   'active_installs',
   'downloaded',
   'rating',
@@ -82,9 +84,21 @@ const INFO_PROJECTION = pickFields<WordPressInfoPayload>([
   'requires',
   'requires_php',
   'version',
-]);
+];
+
+/** Underlying field picker for non-error WordPress.org info payloads. */
+const pickWordPressFields = pickFields<WordPressInfoPayload>(WORDPRESS_FIELDS);
 
 // -------------------------------------- INTERNALS --------------------------------------
+
+/** Project a WordPress.org info payload, reporting `{ error }` or empty HTTP `200` responses as not found. */
+function projectWordPressInfo(data: unknown): Partial<WordPressInfoPayload> | undefined {
+  if (!isJsonObject(data) || Boolean(data.error)) {
+    return undefined;
+  }
+  const picked = pickWordPressFields(data);
+  return picked && Object.keys(picked).length > 0 ? picked : undefined;
+}
 
 /** Build the `request[fields]` query of a directory (enables installs/downloads, disables bulky fields). */
 function buildFieldsQuery(directory: WordPressDirectory): string {
@@ -99,8 +113,9 @@ function buildFieldsQuery(directory: WordPressDirectory): string {
 function createWordPressService(directory: WordPressDirectory): ServiceDefinition {
   const endpoint = createEndpoint({
     api: `https://api.wordpress.org/${directory.path}/info/1.2/?action=${directory.action}&request%5Bslug%5D={target}${buildFieldsQuery(directory)}`,
+    extractKeys: WORDPRESS_FIELDS,
     page: `https://wordpress.org/${directory.path}/{target}/`,
-    project: INFO_PROJECTION,
+    project: projectWordPressInfo,
   });
   return defineService({
     docs: { description: directory.description, title: directory.title },

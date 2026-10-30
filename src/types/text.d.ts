@@ -1,5 +1,7 @@
 /**
- * Text module declarations – Website stylesheets (`*.css`) and browser scripts (`*.client.js`) are bundled as plain text.
+ * Text Module Declarations
+ *
+ * Website stylesheets (`*.css`), browser scripts (`*.client.js`), and pre-packed icon datasets (`*.iconpack`) are bundled as plain text.
  */
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -12,6 +14,12 @@ declare module '*.css' {
 
 declare module '*.client.js' {
   /** Raw browser script source. */
+  const content: string;
+  export default content;
+}
+
+declare module '*.iconpack' {
+  /** Pre-packed JSON text payload lazily parsed on first lookup. */
   const content: string;
   export default content;
 }

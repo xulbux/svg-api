@@ -1,6 +1,7 @@
 /**
- * Buttons documentation catalog – Variant descriptors, size scale / dual-icon / animation / split-button showcase cards,
- * and parameter reference rows for `/docs/buttons`.
+ * Buttons Documentation Catalog
+ *
+ * Variant descriptors, showcase cards, and parameter reference rows for `/docs/buttons`.
  */
 
 import { AUTHOR_WEBSITE_URL, SITE_ORIGIN } from '@/config/site';
@@ -24,108 +25,6 @@ import type {
   ShowcaseItem,
   VariantDescriptor,
 } from '@/types';
-
-// ---------------------------------------- CONSTS ---------------------------------------
-
-/** Showcase definitions for the CTA button hierarchy variants. */
-const BUTTON_VARIANT_DESCRIPTORS: readonly VariantDescriptor[] = [
-  {
-    description: 'Gradient surface with an upper-edge highlight.',
-    id: '1',
-    title: appendDefaultLabel('variant=1 · Primary Button', DEFAULT_BUTTON_VARIANT === '1'),
-  },
-  {
-    description: 'Tinted dark surface with a colored border.',
-    id: '2',
-    title: appendDefaultLabel('variant=2 · Secondary Button', DEFAULT_BUTTON_VARIANT === '2'),
-  },
-  {
-    description: 'Neutral dark surface with a subtle border and colored icon.',
-    id: '3',
-    title: appendDefaultLabel('variant=3 · Tertiary Button', DEFAULT_BUTTON_VARIANT === '3'),
-  },
-];
-
-/** Showcase cards for the dedicated `/docs/buttons` page. */
-export const BUTTON_USE_CASE_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [
-      {
-        alt: 'Small Button',
-        path: `/button/Small+${BUTTON_SIZE_PRESETS.sm.height}px?size=sm&icon=sparkles`,
-      },
-      {
-        alt: 'Medium Button',
-        path: `/button/Medium+${BUTTON_SIZE_PRESETS.md.height}px?color=emerald&size=md&icon=rocket`,
-      },
-      {
-        alt: 'Large Button',
-        path: `/button/Large+${BUTTON_SIZE_PRESETS.lg.height}px?color=cyan&size=lg&icon=zap`,
-      },
-      {
-        alt: 'XL Hero Button',
-        path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?color=rose&size=xl&icon=flame`,
-      },
-    ],
-    subtitle: `Scale button height, padding, font size, and icons with ?size=${SIZE_TOKENS.join('|')} or a pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
-    title: `Button Size Scale (?size=${SIZE_TOKENS.join('|')})`,
-  },
-  {
-    items: [
-      {
-        alt: 'Explore Docs',
-        href: `${SITE_ORIGIN}/docs`,
-        path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=nudge',
-      },
-      {
-        alt: 'Open Website',
-        href: AUTHOR_WEBSITE_URL,
-        path: '/button/Open+Website?variant=2&color=sky&icon=globe,external-link',
-      },
-      { alt: 'Continue', path: '/btn/Continue?color=emerald&icon=none,chevron-right' },
-    ],
-    subtitle:
-      'Leading icon (?icon=name), leading and trailing icons (?icon=left,right), or trailing icon only (?icon=none,right).',
-    title: 'Leading & Trailing Icons (?icon=left,right)',
-  },
-  {
-    items: [
-      {
-        alt: 'Get Started',
-        href: `${SITE_ORIGIN}/docs`,
-        path: '/button/Get+Started?icon=sparkles,arrow-right&anim=sheen',
-      },
-      {
-        alt: 'Launch App',
-        path: '/button/Launch+App?variant=2&color=emerald&icon=rocket&anim=auto',
-      },
-      { alt: 'Sponsor', path: '/button/Sponsor?variant=2&color=rose&icon=heart&anim=pulse' },
-      {
-        alt: 'Next Step',
-        path: '/button/Next?color=violet&icon=sparkles,arrow-right&anim=shake,nudge',
-      },
-    ],
-    subtitle:
-      'Combine surface sheen (?anim=sheen), icon motions (?anim=pulse|auto|…), and per-icon pairs (?anim=shake,nudge).',
-    title: 'Surface Sheen & Icon Motion (?anim=)',
-  },
-  {
-    items: [
-      { alt: 'Deploy Production', path: '/button/Deploy/Production?icon=rocket' },
-      {
-        alt: 'Download v1.4.0',
-        path: '/button/Download/v1.4.0?variant=2&color=emerald&icon=download,arrow-right',
-      },
-      {
-        alt: 'Discussions Join',
-        path: '/btn/Discussions/Join?variant=3&color=violet&icon=message-square',
-      },
-    ],
-    subtitle:
-      'Add a second path segment (/button/:label/:value or /btn/:label/:value) for a split button.',
-    title: 'Split Action Buttons (/button/:label/:value)',
-  },
-];
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -156,7 +55,110 @@ function buildButtonVariantItems(variant: BadgeVariant): ShowcaseItem[] {
  * @returns Showcase card configurations for the button variants.
  */
 export function buildButtonVariantCards(): ShowcaseCardConfig[] {
-  return buildVariantCards(BUTTON_VARIANT_DESCRIPTORS, buildButtonVariantItems);
+  const descriptors: readonly VariantDescriptor[] = [
+    {
+      description: 'Gradient surface with an upper-edge highlight.',
+      id: '1',
+      title: appendDefaultLabel('variant=1 · Primary Button', DEFAULT_BUTTON_VARIANT === '1'),
+    },
+    {
+      description: 'Tinted dark surface with a colored border.',
+      id: '2',
+      title: appendDefaultLabel('variant=2 · Secondary Button', DEFAULT_BUTTON_VARIANT === '2'),
+    },
+    {
+      description: 'Neutral dark surface with a subtle border and colored icon.',
+      id: '3',
+      title: appendDefaultLabel('variant=3 · Tertiary Button', DEFAULT_BUTTON_VARIANT === '3'),
+    },
+  ];
+  return buildVariantCards(descriptors, buildButtonVariantItems);
+}
+
+/**
+ * Build the use-case showcase cards for `/docs/buttons`.
+ * @returns Showcase card configurations for button sizes, icons, motions, and split compartments.
+ */
+export function buildButtonUseCaseCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [
+        {
+          alt: 'Small Button',
+          path: `/button/Small+${BUTTON_SIZE_PRESETS.sm.height}px?size=sm&icon=sparkles`,
+        },
+        {
+          alt: 'Medium Button',
+          path: `/button/Medium+${BUTTON_SIZE_PRESETS.md.height}px?color=emerald&size=md&icon=rocket`,
+        },
+        {
+          alt: 'Large Button',
+          path: `/button/Large+${BUTTON_SIZE_PRESETS.lg.height}px?color=cyan&size=lg&icon=zap`,
+        },
+        {
+          alt: 'XL Hero Button',
+          path: `/button/XL+Hero+${BUTTON_SIZE_PRESETS.xl.height}px?color=rose&size=xl&icon=flame`,
+        },
+      ],
+      subtitle: `Scale button height, padding, font size, and icons with ?size=${SIZE_TOKENS.join('|')} or a pixel height (${BUTTON_HEIGHT_RANGE.min} to ${BUTTON_HEIGHT_RANGE.max}).`,
+      title: `Button Size Scale (?size=${SIZE_TOKENS.join('|')})`,
+    },
+    {
+      items: [
+        {
+          alt: 'Explore Docs',
+          href: `${SITE_ORIGIN}/docs`,
+          path: '/button/Explore+Docs?icon=book-open,arrow-right&anim=nudge',
+        },
+        {
+          alt: 'Open Website',
+          href: AUTHOR_WEBSITE_URL,
+          path: '/button/Open+Website?variant=2&color=sky&icon=globe,external-link',
+        },
+        { alt: 'Continue', path: '/btn/Continue?color=emerald&icon=none,chevron-right' },
+      ],
+      subtitle:
+        'Leading icon (?icon=name), leading and trailing icons (?icon=left,right), or trailing icon only (?icon=none,right).',
+      title: 'Leading & Trailing Icons (?icon=left,right)',
+    },
+    {
+      items: [
+        {
+          alt: 'Get Started',
+          href: `${SITE_ORIGIN}/docs`,
+          path: '/button/Get+Started?icon=sparkles,arrow-right&anim=sheen',
+        },
+        {
+          alt: 'Launch App',
+          path: '/button/Launch+App?variant=2&color=emerald&icon=rocket&anim=auto',
+        },
+        { alt: 'Sponsor', path: '/button/Sponsor?variant=2&color=rose&icon=heart&anim=pulse' },
+        {
+          alt: 'Next Step',
+          path: '/button/Next?color=violet&icon=sparkles,arrow-right&anim=shake,nudge',
+        },
+      ],
+      subtitle:
+        'Combine surface sheen (?anim=sheen), icon motions (?anim=pulse|auto|…), and per-icon pairs (?anim=shake,nudge).',
+      title: 'Surface Sheen & Icon Motion (?anim=)',
+    },
+    {
+      items: [
+        { alt: 'Deploy Production', path: '/button/Deploy/Production?icon=rocket' },
+        {
+          alt: 'Download v1.4.0',
+          path: '/button/Download/v1.4.0?variant=2&color=emerald&icon=download,arrow-right',
+        },
+        {
+          alt: 'Discussions Join',
+          path: '/btn/Discussions/Join?variant=3&color=violet&icon=message-square',
+        },
+      ],
+      subtitle:
+        'Add a second path segment (/button/:label/:value or /btn/:label/:value) for a split button.',
+      title: 'Split Action Buttons (/button/:label/:value)',
+    },
+  ];
 }
 
 /**

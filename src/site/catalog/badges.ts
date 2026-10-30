@@ -1,5 +1,7 @@
 /**
- * Badges documentation catalog – Variant descriptors, inline widget/status-dot/layout/animation showcase cards, and parameter reference rows for `/docs/badges`.
+ * Badges Documentation Catalog
+ *
+ * Variant descriptors, inline widget/status-dot/layout/animation showcase cards, and parameter reference rows for `/docs/badges`.
  */
 
 import { DEFAULT_THEME_COLOR, THEME_COLOR_NAMES } from '@/config/theme';

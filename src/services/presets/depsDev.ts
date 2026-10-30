@@ -1,5 +1,7 @@
 /**
- * deps.dev service preset – Live upstream metrics and redirect transformations.
+ * deps.dev Service Preset
+ *
+ * Live upstream metrics and redirect transformations for deps.dev.
  *
  * deps.dev mirrors GitHub project metadata roughly once a day, so values may lag behind GitHub.
  */
@@ -7,10 +9,10 @@
 import {
   CACHE_TTL,
   OWNER_REPO_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   FORKS,
@@ -51,7 +53,7 @@ function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefi
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const scorecard = asJsonObject(data.scorecard);
+  const scorecard = readJsonObject(data.scorecard);
   const checks = readScorecardCheckScores(scorecard?.checks);
   return {
     ...(checks ? { checks } : {}),
@@ -66,6 +68,7 @@ function projectDepsDevProject(data: unknown): DepsDevProjectProjection | undefi
 /** deps.dev GitHub project endpoint (refreshed daily). */
 const PROJECT_ENDPOINT = createEndpoint({
   api: 'https://api.deps.dev/v3/projects/github.com%2F{id}',
+  extractKeys: ['forksCount', 'license', 'openIssuesCount', 'scorecard', 'starsCount'],
   page: 'https://deps.dev/project/github/{id}',
   project: projectDepsDevProject,
   ttl: CACHE_TTL.daily,
@@ -83,7 +86,7 @@ export const DEPS_DEV_SERVICE = defineService({
   metrics: {
     forks: createCountMetric(
       PROJECT_ENDPOINT,
-      { ...FORKS, autoSpecials: RATIO_SPECIALS },
+      FORKS,
       (project) => project.forks,
       '',
       (project) => buildRatioSpecials(project.forks, project.stars)

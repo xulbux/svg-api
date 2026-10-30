@@ -1,8 +1,10 @@
 /**
- * Icons documentation page – Renders the Standalone Icons (`/docs/icons`) section (`<IconsSection />`).
+ * Icons Documentation Page
+ *
+ * Renders the Standalone Icons (`/docs/icons`) section (`<IconsSection />`).
  */
 
-import { buildIconParamRows, ICON_CARDS } from '@/site/catalog/icons';
+import { buildIconCards, buildIconParamRows } from '@/site/catalog/icons';
 import { formatCountLowerBound, getIconSetCounts } from '@/site/catalog/shared';
 import { AliasList, ParamTable } from '@/site/components/ParamTable';
 import { SectionHeader, SectionSubhead } from '@/site/components/SectionHeader';
@@ -27,7 +29,7 @@ export function IconsSection(): HtmlFragment {
       />
       <ParamTable rows={buildIconParamRows()} label="Icon route segment and query parameters" />
       <SectionSubhead iconSlug="shapes" text="Icon Examples" />
-      <CardGrid cards={ICON_CARDS} />
+      <CardGrid cards={buildIconCards()} />
       <SectionSubhead iconSlug="link" text="Slug Aliases" />
       <AliasList aliases={ICON_SLUG_ALIASES} label="Icon slug aliases" />
     </section>

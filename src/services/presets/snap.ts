@@ -1,11 +1,13 @@
 /**
- * Snapcraft service preset – Live upstream metrics and redirect transformations.
+ * Snapcraft Service Preset
  *
- * The Snap Store info API requires a `Snap-Device-Series` header (`SNAP_HEADERS`). The version is
- * read from the stable channel of the snap's default track, preferring `PREFERRED_SNAP_ARCHITECTURE`.
+ * Live upstream metrics and redirect transformations for Snapcraft.
+ *
+ * The Snap Store info API requires a `Snap-Device-Series` header (`SNAP_HEADERS`).
+ * The version is read from the stable channel of the snap's default track, preferring `PREFERRED_SNAP_ARCHITECTURE`.
  */
 
-import { asJsonObject, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createEndpoint, defineService, isJsonObject, readJsonObject } from '@/services/endpoint';
 import { createLicenseMetric, createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -41,15 +43,19 @@ const PREFERRED_SNAP_ARCHITECTURE = 'amd64';
 
 /** Read the version of a channel map entry released to the stable channel of `track` (malformed entries are skipped). */
 function readStableRelease(entry: unknown, track: string): StableSnapRelease | undefined {
-  if (!isJsonObject(entry) || typeof entry.version !== 'string') {
+  if (!isJsonObject(entry)) {
     return undefined;
   }
-  const channel = asJsonObject(entry.channel);
+  const version = readText(entry.version);
+  if (version === undefined) {
+    return undefined;
+  }
+  const channel = readJsonObject(entry.channel);
   if (!channel) {
     return undefined;
   }
   return channel.track === track && channel.risk === 'stable'
-    ? { architecture: channel.architecture, version: entry.version }
+    ? { architecture: channel.architecture, version }
     : undefined;
 }
 
@@ -76,14 +82,15 @@ function projectSnapInfo(data: unknown): SnapInfoProjection | undefined {
     return undefined;
   }
   return {
-    license: readText(asJsonObject(data.snap)?.license),
+    license: readText(readJsonObject(data.snap)?.license),
     version: readStableSnapVersion(data['channel-map'], data['default-track']),
   };
 }
 
-/** Snap Store info endpoint with snapcraft.io store page redirect. */
+/** Snap Store info endpoint with `snapcraft.io` store page redirect. */
 const SNAP_ENDPOINT = createEndpoint({
   api: 'https://api.snapcraft.io/v2/snaps/info/{target}?fields=license,version',
+  extractKeys: ['channel-map', 'default-track', 'snap'],
   page: 'https://snapcraft.io/{target}',
   project: projectSnapInfo,
 });

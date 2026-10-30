@@ -1,5 +1,7 @@
 /**
- * Services documentation catalog – Live service preset showcase cards and generated route/metric reference rows for `/docs/services`.
+ * Services Documentation Catalog
+ *
+ * Live service preset showcase cards and generated route/metric reference rows for `/docs/services`.
  */
 
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
@@ -82,19 +84,19 @@ export function formatServiceMetrics(
   service: ServiceDefinition,
   aliasStyle: 'brackets' | 'parens' = 'brackets'
 ): string {
-  const aliasesByMetric = new Map<string, string[]>();
+  const aliasesByMetric: Record<string, string[]> = Object.create(null) as Record<string, string[]>;
   for (const [alias, metric] of listServiceMetricAliases(service)) {
-    const aliases = aliasesByMetric.get(metric);
+    const aliases = aliasesByMetric[metric];
     if (aliases) {
       aliases.push(alias);
     } else {
-      aliasesByMetric.set(metric, [alias]);
+      aliasesByMetric[metric] = [alias];
     }
   }
   const [openBracket, closeBracket] = aliasStyle === 'parens' ? ['(', ')'] : ['[', ']'];
   const metricValues: string[] = [];
   for (const metric of Object.keys(service.metrics)) {
-    const aliases = aliasesByMetric.get(metric);
+    const aliases = aliasesByMetric[metric];
     metricValues.push(
       aliases ? `${metric} ${openBracket}${aliases.join(', ')}${closeBracket}` : metric
     );

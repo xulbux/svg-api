@@ -1,16 +1,11 @@
 /**
- * OpenGraph SVG parser – Parses XML attributes, linear/radial gradients, paint specs, and SVG `<path>` commands into flattened polylines.
+ * OpenGraph SVG Parser
+ *
+ * Parses XML attributes, linear/radial gradients, paint specs, and SVG `<path>` commands into flattened polylines.
  */
 
 import { clampRange } from './png.ts';
-import type {
-  FlattenedSubpath,
-  GradientDef,
-  GradientStop,
-  Point2D,
-  RgbaTuple,
-  RgbTuple,
-} from './types.ts';
+import type { FlattenedSubpath, GradientDef, GradientStop, Point2D, RgbaTuple } from './types.ts';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -79,17 +74,18 @@ function parseXmlAttrs(attrSource: string): Record<string, string> {
   return attrs;
 }
 
-/** Parse a `#RGB` or `#RRGGBB` hex color into `[red, green, blue]` floats in `[0, 255]`. */
-function parseHexColor(hexColor: string): RgbTuple {
+/** Parse a `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` hex color into `[red, green, blue, alpha]` (`rgb` in `[0, 255]`, `alpha` in `[0, 1]`). */
+function parseHexRgba(hexColor: string): RgbaTuple {
   const raw = hexColor.replace('#', '').trim();
   const cleaned =
-    raw.length === 3
-      ? `${raw.charAt(0)}${raw.charAt(0)}${raw.charAt(1)}${raw.charAt(1)}${raw.charAt(2)}${raw.charAt(2)}`
+    raw.length === 3 || raw.length === 4
+      ? `${raw.charAt(0)}${raw.charAt(0)}${raw.charAt(1)}${raw.charAt(1)}${raw.charAt(2)}${raw.charAt(2)}${raw.length === 4 ? `${raw.charAt(3)}${raw.charAt(3)}` : ''}`
       : raw;
   const red = Number.parseInt(cleaned.slice(0, 2), 16) || 0;
   const green = Number.parseInt(cleaned.slice(2, 4), 16) || 0;
   const blue = Number.parseInt(cleaned.slice(4, 6), 16) || 0;
-  return [red, green, blue];
+  const alphaByte = cleaned.length >= 8 ? Number.parseInt(cleaned.slice(6, 8), 16) : 255;
+  return [red, green, blue, Number.isNaN(alphaByte) ? 1 : clampRange(alphaByte / 255, 0, 1)];
 }
 
 /** Parse a percentage or fraction string (e.g., `'85%'` or `'0.85'`) into `[0, 1]`. */
@@ -105,16 +101,17 @@ function parseGradientStops(bodyMarkup: string): GradientStop[] {
   const stops: GradientStop[] = [];
   for (const stopMatch of bodyMarkup.matchAll(GRADIENT_STOP_RX)) {
     const stopAttrs = parseXmlAttrs(stopMatch.groups?.attrs ?? '');
+    const [red, green, blue, hexAlpha] = parseHexRgba(stopAttrs['stop-color'] ?? '#000000');
     stops.push({
-      color: parseHexColor(stopAttrs['stop-color'] ?? '#000000'),
+      color: [red, green, blue],
       offset: parseUnitFraction(stopAttrs.offset, 0),
-      opacity: Number.parseFloat(stopAttrs['stop-opacity'] ?? '1'),
+      opacity: clampRange(hexAlpha * Number.parseFloat(stopAttrs['stop-opacity'] ?? '1'), 0, 1),
     });
   }
   return stops;
 }
 
-/** Interpolate `[red, green, blue, alpha]` along a gradient stop list at `position` in `[0, 1]`. */
+/** Interpolate `[red, green, blue, alpha]` in premultiplied-alpha space along `stops` at `position` in `[0, 1]`. */
 function sampleGradientStops(stops: readonly GradientStop[], position: number): RgbaTuple {
   const clamped = clampRange(position, 0, 1);
   const [first] = stops;
@@ -141,11 +138,17 @@ function sampleGradientStops(stops: readonly GradientStop[], position: number): 
   }
   const span = Math.max(1e-6, stopB.offset - stopA.offset);
   const ratio = clampRange((clamped - stopA.offset) / span, 0, 1);
+  const outAlpha = stopA.opacity + (stopB.opacity - stopA.opacity) * ratio;
+  if (outAlpha <= 0) {
+    return [0, 0, 0, 0];
+  }
+  const weightA = stopA.opacity * (1 - ratio);
+  const weightB = stopB.opacity * ratio;
   return [
-    stopA.color[0] + (stopB.color[0] - stopA.color[0]) * ratio,
-    stopA.color[1] + (stopB.color[1] - stopA.color[1]) * ratio,
-    stopA.color[2] + (stopB.color[2] - stopA.color[2]) * ratio,
-    stopA.opacity + (stopB.opacity - stopA.opacity) * ratio,
+    (stopA.color[0] * weightA + stopB.color[0] * weightB) / outAlpha,
+    (stopA.color[1] * weightA + stopB.color[1] * weightB) / outAlpha,
+    (stopA.color[2] * weightA + stopB.color[2] * weightB) / outAlpha,
+    outAlpha,
   ];
 }
 
@@ -528,8 +531,10 @@ export function evaluatePaint(
     const deltaY = (unitY - grad.cy) / Math.max(1e-6, grad.radius);
     return sampleGradientStops(grad.stops, Math.hypot(deltaX, deltaY));
   }
-  const rgb = parseHexColor(paintSpec);
-  return [rgb[0], rgb[1], rgb[2], 1];
+  if (!paintSpec.startsWith('#')) {
+    return undefined;
+  }
+  return parseHexRgba(paintSpec);
 }
 
 /**

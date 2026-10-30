@@ -1,5 +1,7 @@
 /**
- * Bluesky service preset – Live upstream metrics and redirect transformations.
+ * Bluesky Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Bluesky.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

@@ -1,5 +1,7 @@
 /**
- * Tech stack documentation catalog – Variant descriptors, showcase cards, and parameter reference rows for `/docs/stack`.
+ * Tech Stack Documentation Catalog
+ *
+ * Variant descriptors, showcase cards, and parameter reference rows for `/docs/stack`.
  */
 
 import {

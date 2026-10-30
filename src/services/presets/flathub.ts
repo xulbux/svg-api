@@ -1,5 +1,7 @@
 /**
- * Flathub service preset – Live upstream metrics and redirect transformations.
+ * Flathub Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Flathub.
  */
 
 import {
@@ -23,6 +25,7 @@ import {
   sumSeries,
 } from '@/services/metrics';
 import { MAX_BARS_POINTS, MIN_SERIES_POINTS } from '@/svg/renderer';
+import type { BadgeSpecialMap } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -88,6 +91,16 @@ function projectFlathubStats(data: unknown): FlathubStatsProjection | undefined 
   };
 }
 
+/** Build automatic 30-day series and delta widgets for Flathub monthly and total install badges. */
+function buildMonthlyInstallSpecials(stats: FlathubStatsProjection): BadgeSpecialMap | undefined {
+  return buildSeriesSpecials({
+    barsValues: stats.bars30d,
+    current: stats.installs_last_month,
+    previous: stats.prev30d,
+    sparklineValues: stats.series30d,
+  });
+}
+
 /** Flathub AppStream metadata endpoint. */
 const APPSTREAM_ENDPOINT = createEndpoint({
   api: 'https://flathub.org/api/v2/appstream/{target}',
@@ -124,26 +137,14 @@ export const FLATHUB_SERVICE = defineService({
       'dl',
       (stats) => stats.installs_last_month,
       { ...INSTALLS_LABEL, autoSpecials: SERIES_DELTA_SPECIALS },
-      (stats) =>
-        buildSeriesSpecials({
-          barsValues: stats.bars30d,
-          current: stats.installs_last_month,
-          previous: stats.prev30d,
-          sparklineValues: stats.series30d,
-        })
+      buildMonthlyInstallSpecials
     ),
     dt: createDownloadsMetric(
       STATS_ENDPOINT,
       'dt',
       (stats) => stats.installs_total,
       { ...INSTALLS_LABEL, autoSpecials: SERIES_DELTA_SPECIALS },
-      (stats) =>
-        buildSeriesSpecials({
-          barsValues: stats.bars30d,
-          current: stats.installs_last_month,
-          previous: stats.prev30d,
-          sparklineValues: stats.series30d,
-        })
+      buildMonthlyInstallSpecials
     ),
     dw: createDownloadsMetric(
       STATS_ENDPOINT,

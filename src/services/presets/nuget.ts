@@ -1,13 +1,15 @@
 /**
- * NuGet service preset – Live upstream metrics and redirect transformations.
+ * NuGet Service Preset
+ *
+ * Live upstream metrics and redirect transformations for NuGet.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   SERIES_DELTA_SPECIALS,
@@ -45,7 +47,7 @@ const NUGET_PACKAGE_ID_RX = /^(?=.{1,100}$)\w+(?:[.-]\w+)*$/;
 
 /** Project the first NuGet search entry to its version, total downloads, and recent per-version series. */
 function projectNuGetEntry(data: unknown): NuGetSearchProjection | undefined {
-  const entry = readFirstObjectEntry(asJsonObject(data)?.data);
+  const entry = readFirstObjectEntry(readJsonObject(data)?.data);
   if (!entry) {
     return undefined;
   }
@@ -72,6 +74,7 @@ function projectNuGetEntry(data: unknown): NuGetSearchProjection | undefined {
 /** NuGet search API endpoint filtered to a single exact package ID (first match; None is not found). */
 const NUGET_ENDPOINT = createEndpoint({
   api: 'https://azuresearch-usnc.nuget.org/query?q=packageid:{target}&prerelease=false&semVerLevel=2.0.0&take=1',
+  extractKeys: ['data'],
   page: 'https://www.nuget.org/packages/{target}',
   project: projectNuGetEntry,
 });

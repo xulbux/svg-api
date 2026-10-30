@@ -1,5 +1,7 @@
 /**
- * Icon picker search & display helpers – Pure search ranking, trigger display state, cursor slug insertion, and `<template>` SVG glyph instantiation.
+ * Icon Picker Search & Display Helpers
+ *
+ * Pure search ranking, trigger display state, cursor slug insertion, and `<template>` SVG glyph instantiation.
  */
 
 import {
@@ -35,6 +37,16 @@ function hasAllQueryTokens(haystack: string, tokens: readonly string[]): boolean
   return true;
 }
 
+/** Check whether every token of `tokens` appears in either `slug` or `tags` without concatenating strings. */
+function hasAllTokensInSlugOrTags(slug: string, tags: string, tokens: readonly string[]): boolean {
+  for (const token of tokens) {
+    if (!slug.includes(token) && !tags.includes(token)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /** Build `[-_.]`-cleaned search tokens (`undefined` when no token contains brand punctuation) so `next.js` or `github-actions` match brand slugs. */
 function buildCleanBrandTokens(tokens: readonly string[]): string[] | undefined {
   let cleanTokens: string[] | undefined = undefined;
@@ -52,7 +64,7 @@ function buildCleanBrandTokens(tokens: readonly string[]): string[] | undefined 
 }
 
 /** Check whether `haystack` matches either `tokens` or optional `cleanTokens`. */
-function matchesQueryOrCleanTokens(
+function hasMatchingQueryToken(
   haystack: string,
   tokens: readonly string[],
   cleanTokens: readonly string[] | undefined
@@ -71,7 +83,7 @@ function collectMatchingAliasTargets(
   cleanTokens?: readonly string[]
 ): void {
   for (const [alias, primary] of Object.entries(aliasMap)) {
-    if (matchesQueryOrCleanTokens(alias, queryTokens, cleanTokens)) {
+    if (hasMatchingQueryToken(alias, queryTokens, cleanTokens)) {
       targetSet.add(primary);
     }
   }
@@ -96,14 +108,11 @@ function computeSetMatches(
   for (const slug of catalog[set]) {
     if (slug.startsWith(query)) {
       prefixMatches.push({ set, slug });
-    } else if (
-      matchesQueryOrCleanTokens(slug, queryTokens, cleanTokens) ||
-      setAliasHits.has(slug)
-    ) {
+    } else if (hasMatchingQueryToken(slug, queryTokens, cleanTokens) || setAliasHits.has(slug)) {
       substringMatches.push({ set, slug });
     } else if (set === 'lucide') {
       const tags = getOwnValue(index.lucideTags, slug);
-      if (tags && hasAllQueryTokens(`${slug} ${tags}`, queryTokens)) {
+      if (tags && hasAllTokensInSlugOrTags(slug, tags, queryTokens)) {
         tagMatches.push({ set, slug });
       }
     }

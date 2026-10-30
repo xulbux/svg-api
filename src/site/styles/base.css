@@ -58,7 +58,7 @@
   navigation: auto;
 }
 
-/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated at Runtime): */
+/* Static Root Settings (Scheme-Dependent `--c-*` Color Tokens Are Generated from `src/config/theme.ts`): */
 
 :root {
   /* Layout Dimensions */
@@ -216,7 +216,7 @@ input[type='search']::-webkit-search-decoration {
   translate: 0 calc(-100% - 20px);
 }
 
-.skip-link:focus-visible {
+.skip-link:focus {
   translate: 0 0;
 }
 
@@ -258,6 +258,9 @@ img,
 }
 
 .text-btn {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 24px;
   padding: 0;
   border: none;
   font: inherit;
@@ -326,8 +329,7 @@ img,
 /* Shared Hidden Input Overlays; the native input covers its custom-styled label for clicks and keyboard focus: */
 
 .swatch-input,
-.check-input,
-.icon-picker-tab input {
+.check-input {
   position: absolute;
   inset: 0;
   margin: 0;

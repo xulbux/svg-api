@@ -1,5 +1,7 @@
 /**
- * Effective builder defaults & query normalization – Resolves context-dependent field defaults and omits redundant query parameters.
+ * Effective Builder Defaults & Query Normalization
+ *
+ * Resolves context-dependent field defaults and omits redundant query parameters.
  */
 
 import {
@@ -13,12 +15,15 @@ import {
   composeAnim,
   composeHint,
   composeIconPair,
+  composeSpecial,
   splitAnim,
   splitHint,
   splitIconPair,
+  splitSpecial,
 } from '@/site/shared/fields';
 import type {
   ActiveServiceMetric,
+  BadgeSpecialKind,
   BuilderField,
   BuilderOption,
   BuilderSchema,
@@ -175,7 +180,10 @@ function isValueEqualToEffectiveDefault(
   return lowerValue === lowerDefault;
 }
 
-/** Normalize typing-specific query edge cases (`anim` on `layout=none` and `title=none` on `layout=window`), or `undefined` when standard normalization applies. */
+/**
+ * Normalize typing-specific query edge cases (`anim` on `layout=none` and `title=none` on `layout=window`),
+ * or `undefined` when standard normalization applies.
+ */
 function normalizeTypingQueryOverride(
   state: BuilderState,
   field: BuilderField,
@@ -265,6 +273,38 @@ export function resolveEffectiveFieldDefault(
 }
 
 /**
+ * Normalize a `?special=` field value against `schema` and `state` (validating payloads and service metric `autoSpecials`),
+ * without stripping values equal to `effectiveDefault`.
+ * @param schema     Builder schema.
+ * @param state      Current builder state.
+ * @param field      `special` builder field.
+ * @param rawValue   Raw `?special=` value.
+ * @returns Canonicalized `?special=` value (`''` when invalid or unsupported).
+ */
+export function normalizeSpecialFieldValue(
+  schema: BuilderSchema,
+  state: BuilderState,
+  field: BuilderField,
+  rawValue: string
+): string {
+  const special = splitSpecial(rawValue, field.options ?? []);
+  if (!special.kind) {
+    return '';
+  }
+  if (special.kind === 'none') {
+    return field.hasPresetValue ? 'none' : '';
+  }
+  let isAutoAllowed = false;
+  if (schema.kind === 'service') {
+    const { metric } = resolveServiceMetricSelection(schema, state);
+    isAutoAllowed =
+      metric?.defaultSpecial === special.kind ||
+      Boolean(metric?.autoSpecials?.includes(special.kind as BadgeSpecialKind));
+  }
+  return composeSpecial(special.kind, special.payload, special.modifier, isAutoAllowed);
+}
+
+/**
  * Normalize a query parameter field value and return `''` when it is redundant with the effective default.
  * @param schema     Builder schema.
  * @param state      Current builder state.
@@ -289,8 +329,15 @@ export function normalizeQueryFieldValue(
     const parsedHint = splitHint(rawValue);
     return composeHint(parsedHint.icon, parsedHint.text);
   }
-  if (field.control === 'special' && !field.hasPresetValue && lowerValue === 'none') {
-    return '';
+  if (field.control === 'special') {
+    const normalizedSpecial = normalizeSpecialFieldValue(schema, state, field, rawValue);
+    if (!normalizedSpecial) {
+      return '';
+    }
+    const effectiveSpecialDefault = resolveEffectiveFieldDefault(schema, state, field);
+    return isValueEqualToEffectiveDefault(field, normalizedSpecial, effectiveSpecialDefault)
+      ? ''
+      : normalizedSpecial;
   }
   if (
     field.control === 'anim' &&
@@ -332,6 +379,15 @@ export function normalizeOptionValue(field: BuilderField, raw: string): string {
       return '';
     }
     return composeAnim(anim.hasSheen, anim.left, field.animScope === 'pair' ? anim.right : '');
+  }
+  if (field.control === 'special') {
+    const special = splitSpecial(raw, field.options ?? []);
+    return composeSpecial(
+      special.kind,
+      special.payload,
+      special.modifier,
+      Boolean(field.hasPresetValue)
+    );
   }
   if (field.control !== 'select' && field.control !== 'color') {
     return raw;

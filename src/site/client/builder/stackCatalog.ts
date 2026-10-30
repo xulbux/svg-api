@@ -1,5 +1,7 @@
 /**
- * Stack catalog controller – Interactive `/builder/stack` category chip picker, mode tabs (`Categories` / `Raw DSL`), filter search, and lazy chip glyph rendering.
+ * Stack Catalog Controller
+ *
+ * Interactive `/builder/stack` category chip picker, mode tabs (`Categories` / `Raw DSL`), filter search, and lazy chip glyph rendering.
  */
 
 import {
@@ -19,6 +21,7 @@ import type {
   IconLocation,
   IconPickerSetId,
   IconResolver,
+  StackCatalogController,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -57,21 +60,7 @@ interface StackCatalogOptions {
   stackRawPanel: HTMLElement | null;
 }
 
-/** Public controller interface returned by `createStackCatalogController`. */
-export interface StackCatalogController {
-  /** Bind the `/builder/stack` interactive category picker, mode tabs, and filter search. */
-  bind: () => void;
-  /** Filter the category chips and category sections by the search query. */
-  filterCatalog: () => void;
-  /** Fill any category chips that became visible before the icon index finished loading. */
-  flushPendingChips: () => void;
-  /** Sync the `aria-pressed` state of every category chip and custom token list from a `/stack` DSL string. */
-  syncFromDsl: (dslValue: string) => void;
-  /** Select `Categories` or `Raw DSL` based on whether `dslValue` is losslessly representable by the category chips. */
-  syncModeForPrefill: (dslValue: string, rawPerLine: string, shouldAnimate?: boolean) => void;
-  /** Sync the category chips or recompute `#field-groups` when a stack field changes. */
-  syncStackFieldChange: (field: BuilderField) => void;
-}
+export type { StackCatalogController } from '@/types';
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -291,23 +280,23 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     stackCatalogEmpty?.toggleAttribute('hidden', visibleCategories > 0);
   }
 
-  function selectStackModeTab(tab: HTMLElement, shouldAnimate = true): void {
+  function selectStackModeTab(tab: HTMLElement, isAnimated = true): void {
     const isCategories = tab.dataset.stackMode !== 'raw';
-    activateRovingTab(form.querySelectorAll('.stack-mode-tab'), tab, shouldAnimate);
+    activateRovingTab(form.querySelectorAll('.stack-mode-tab'), tab, isAnimated);
     stackCategoriesPanel?.toggleAttribute('hidden', !isCategories);
     stackRawPanel?.toggleAttribute('hidden', isCategories);
     stackRawActions?.toggleAttribute('hidden', isCategories);
     stackGroupToggleLabel?.toggleAttribute('hidden', !isCategories);
   }
 
-  function setStackMode(mode: 'categories' | 'raw', shouldAnimate = false): void {
+  function setStackMode(mode: 'categories' | 'raw', isAnimated = false): void {
     const targetTab = form.querySelector(`.stack-mode-tab[data-stack-mode="${mode}"]`);
     if (targetTab instanceof HTMLElement) {
-      selectStackModeTab(targetTab, shouldAnimate);
+      selectStackModeTab(targetTab, isAnimated);
     }
   }
 
-  function syncModeForPrefill(dslValue: string, rawPerLine: string, shouldAnimate = false): void {
+  function syncModeForPrefill(dslValue: string, rawPerLine: string, isAnimated = false): void {
     indexStackCatalog();
     if (stackChips.length === 0) {
       return;
@@ -321,7 +310,7 @@ export function createStackCatalogController(options: StackCatalogOptions): Stac
     if (stackGroupToggle && isGroupedByCategory !== undefined) {
       stackGroupToggle.checked = isGroupedByCategory;
     }
-    setStackMode(mode, shouldAnimate);
+    setStackMode(mode, isAnimated);
   }
 
   function bindStackCatalog(): void {

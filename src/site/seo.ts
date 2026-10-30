@@ -1,6 +1,7 @@
 /**
- * SEO, crawler & AI discoverability – Generates `/robots.txt`, `/sitemap.xml`,
- * `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
+ * SEO, Crawler & AI Discoverability
+ *
+ * Generates `/robots.txt`, `/sitemap.xml`, `/llms.txt`, Schema.org JSON-LD metadata, and the vector OpenGraph card (`/og.svg`).
  */
 
 import faviconPngBuffer from '@bundles/favicon.png';
@@ -24,6 +25,7 @@ import {
   VARIANT_TOKENS,
 } from '@/routes/params';
 import { SVG_ROUTES } from '@/routes/svg';
+import { SEGMENT_ENCODING_ROWS } from '@/site/catalog/overview';
 import { buildServiceRoutePattern, formatServiceMetrics } from '@/site/catalog/services';
 import { getEndpointRoutes } from '@/site/catalog/shared';
 import { formatBacktickTokens, formatVariantTierSummary } from '@/site/glossary';
@@ -40,8 +42,6 @@ import { renderTextPathMarkup, resolveCharGlyph } from '@/svg/measure';
 import { escapeXml, hashText } from '@/svg/shared';
 
 // ---------------------------------------- CONSTS ---------------------------------------
-
-export { FAVICON_PNG_SIZE } from '@/config/site';
 
 /** Intrinsic width in pixels of the shared OpenGraph social preview card (`/og.png` and `/og.svg`). */
 export const OG_IMAGE_WIDTH = 1280;
@@ -63,6 +63,28 @@ export const OG_IMAGE_ALT = `${SITE_NAME} – ${SITE_HEADLINE}`;
 
 /** Canonical Schema.org `@id` of the root `WebSite` entity. */
 const WEBSITE_JSON_LD_ID = `${SITE_ORIGIN}/#website`;
+
+/** Shared Schema.org `Person` entity for the project author. */
+const AUTHOR_PERSON_JSON_LD: Readonly<Record<string, string>> = {
+  '@type': 'Person',
+  name: AUTHOR_NAME,
+  url: AUTHOR_WEBSITE_URL,
+};
+
+/** Shared Schema.org free `Offer` entity for public API and builder surfaces. */
+const FREE_OFFER_JSON_LD: Readonly<Record<string, string>> = {
+  '@type': 'Offer',
+  price: '0',
+  priceCurrency: 'USD',
+};
+
+/** Shared Schema.org `isPartOf` reference linking child pages back to the root `WebSite`. */
+const WEBSITE_PART_OF_JSON_LD: Readonly<Record<string, string>> = {
+  '@id': WEBSITE_JSON_LD_ID,
+  '@type': 'WebSite',
+  name: SITE_NAME,
+  url: SITE_ORIGIN,
+};
 
 /** Byte slice size used when converting binary buffers into Base64 strings. */
 const BASE64_CHUNK_SIZE = 8192;
@@ -116,18 +138,23 @@ function buildBreadcrumbListJsonLd(
   items: readonly (readonly [name: string, path: string])[]
 ): Readonly<Record<string, unknown>> {
   const itemListElement: Record<string, unknown>[] = [];
-  for (const [i, [name, path]] of items.entries()) {
-    itemListElement.push({
-      '@type': 'ListItem',
-      item: `${SITE_ORIGIN}${path}`,
-      name,
-      position: i + 1,
-    });
+  for (let i = 0; i < items.length; i += 1) {
+    const entry = items[i];
+    if (entry) {
+      itemListElement.push({
+        '@type': 'ListItem',
+        item: `${SITE_ORIGIN}${entry[1]}`,
+        name: entry[0],
+        position: i + 1,
+      });
+    }
   }
   return { '@type': 'BreadcrumbList', itemListElement };
 }
 
 // -------------------------------------- PUBLIC API -------------------------------------
+
+export { FAVICON_PNG_SIZE } from '@/config/site';
 
 /**
  * Render (once per isolate) the vector OpenGraph social preview image served at `/og.svg`.
@@ -270,20 +297,20 @@ export function buildHomeJsonLd(description: string): Readonly<Record<string, un
         image: ogImageUrl,
         inLanguage: 'en',
         name: SITE_NAME,
-        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-        provider: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
+        offers: FREE_OFFER_JSON_LD,
+        provider: AUTHOR_PERSON_JSON_LD,
         url: SITE_ORIGIN,
       },
       {
         '@type': 'WebApplication',
         applicationCategory: 'DeveloperApplication',
-        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
+        author: AUTHOR_PERSON_JSON_LD,
         description,
         image: ogImageUrl,
         inLanguage: 'en',
         isPartOf: { '@id': WEBSITE_JSON_LD_ID },
         name: `${SITE_NAME} URL Builder`,
-        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        offers: FREE_OFFER_JSON_LD,
         operatingSystem: 'Any',
         url: `${SITE_ORIGIN}${buildBuilderPath(DEFAULT_BUILDER_KIND)}`,
       },
@@ -321,17 +348,12 @@ export function buildDocsJsonLd(
     '@graph': [
       {
         '@type': 'TechArticle',
-        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
+        author: AUTHOR_PERSON_JSON_LD,
         description,
         headline,
         image: getOgImagePngUrl(),
         inLanguage: 'en',
-        isPartOf: {
-          '@id': WEBSITE_JSON_LD_ID,
-          '@type': 'WebSite',
-          name: SITE_NAME,
-          url: SITE_ORIGIN,
-        },
+        isPartOf: WEBSITE_PART_OF_JSON_LD,
         url: `${SITE_ORIGIN}${canonicalPath}`,
       },
       buildBreadcrumbListJsonLd(breadcrumbs),
@@ -359,18 +381,13 @@ export function buildBuilderJsonLd(
       {
         '@type': 'WebApplication',
         applicationCategory: 'DeveloperApplication',
-        author: { '@type': 'Person', name: AUTHOR_NAME, url: AUTHOR_WEBSITE_URL },
+        author: AUTHOR_PERSON_JSON_LD,
         description,
         image: getOgImagePngUrl(),
         inLanguage: 'en',
-        isPartOf: {
-          '@id': WEBSITE_JSON_LD_ID,
-          '@type': 'WebSite',
-          name: SITE_NAME,
-          url: SITE_ORIGIN,
-        },
+        isPartOf: WEBSITE_PART_OF_JSON_LD,
         name,
-        offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+        offers: FREE_OFFER_JSON_LD,
         operatingSystem: 'Any',
         url: `${SITE_ORIGIN}${canonicalPath}`,
       },
@@ -420,8 +437,7 @@ export function renderSitemapXml(): string {
 }
 
 /**
- * Render (once per isolate) `/llms.txt` documenting endpoints, query parameters,
- * theme colors, and all live service presets for AI assistants.
+ * Render (once per isolate) `/llms.txt` documenting endpoints, query parameters, theme colors, and all live service presets for AI assistants.
  * @returns Plain-text Markdown `llms.txt` body.
  */
 export function renderLlmsTxt(): string {
@@ -445,10 +461,25 @@ export function renderLlmsTxt(): string {
       );
     }
     const aliasRoutes: string[] = [];
+    const endpointParamItems: string[] = [];
     for (const route of SVG_ROUTES) {
       if (route.aliasOf !== undefined) {
         aliasRoutes.push(`\`/${route.prefix}/*\``);
+      } else {
+        const queryTokens: string[] = [];
+        for (const param of route.queryParams) {
+          queryTokens.push(`?${param}=`);
+        }
+        endpointParamItems.push(
+          `- \`/${route.prefix}/*\`: ${formatBacktickTokens(queryTokens, ', ')}`
+        );
       }
+    }
+    const encodingItems: string[] = [];
+    for (const row of SEGMENT_ENCODING_ROWS) {
+      encodingItems.push(
+        `- ${row.name}: write as \`${row.values}\` (e.g., \`${row.defaultVal}\`) – ${row.description}`
+      );
     }
     const iconSetNames = ALL_ICON_SOURCE_NAMES.join(', ');
     const iconMotions = [...ACTIVE_ICON_MOTION_TOKENS, 'none'];
@@ -478,6 +509,14 @@ export function renderLlmsTxt(): string {
       '- `?dot=`: `none` | any theme color (pulsing status dot on badges)',
       `- \`?special=\`: ${formatBacktickTokens(SPECIAL_ELEMENT_KINDS)} (\`<kind>:<payload>\`, or bare \`<kind>\` on supported live service metrics)`,
       `- \`?anim=\`: \`${ANIM_SHEEN_TOKEN}\` | ${formatBacktickTokens(iconMotions)} (stacks also support ${formatBacktickTokens(stackOnlyMotions)})`,
+      '',
+      '## Per-Endpoint Query Parameters',
+      '',
+      ...endpointParamItems,
+      '',
+      '## Path Segment Encoding',
+      '',
+      ...encodingItems,
       '',
       '## Documentation',
       '',

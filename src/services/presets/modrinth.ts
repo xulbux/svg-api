@@ -1,8 +1,9 @@
 /**
- * Modrinth service preset – Live upstream metrics and redirect transformations.
+ * Modrinth Service Preset
  *
- * Every metric reads the compact project document; The multi-megabyte version list endpoint is
- * deliberately avoided.
+ * Live upstream metrics and redirect transformations for Modrinth.
+ *
+ * Every metric reads the compact project document; The multi-megabyte version list endpoint is deliberately avoided.
  */
 
 import { createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
@@ -13,6 +14,7 @@ import {
   createTextMetric,
   readFiniteNumber,
   readLicenseName,
+  readText,
 } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -43,8 +45,8 @@ function readNewestModrinthGameVersion(rawVersions: unknown): string | undefined
   }
   let newestVersion: string | undefined = undefined;
   for (let i = rawVersions.length - 1; i >= 0; i -= 1) {
-    const version: unknown = rawVersions[i];
-    if (typeof version === 'string') {
+    const version = readText(rawVersions[i]);
+    if (version !== undefined) {
       if (RELEASE_GAME_VERSION_RX.test(version)) {
         return version;
       }
@@ -70,6 +72,7 @@ function projectModrinthProject(data: unknown): ModrinthProjectProjection | unde
 /** Modrinth project endpoint with project page redirect (`/project/` redirects to the typed page). */
 const MODRINTH_ENDPOINT = createEndpoint({
   api: 'https://api.modrinth.com/v2/project/{target}',
+  extractKeys: ['downloads', 'followers', 'game_versions', 'license'],
   page: 'https://modrinth.com/project/{target}',
   project: projectModrinthProject,
 });

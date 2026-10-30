@@ -1,5 +1,9 @@
 /**
- * URL builder tests – Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution), icon picker assets, and "Open in Builder" links, verified against the Worker's route parser (`src/routes/schema.ts`, `src/site/pages/BuilderPage.tsx`, `dist/client/builder.client.js`).
+ * URL Builder Tests
+ *
+ * Builder schemas, the builder client core (encoding, path building, prefill parsing, snippets, icon slug resolution),
+ * icon picker assets, and "Open in Builder" links, verified against the Worker's route parser
+ * (`src/routes/schema.ts`, `src/site/pages/BuilderPage.tsx`, `dist/client/builder.client.js`).
  */
 
 import builderScript from '@bundles/builder.client.js';
@@ -21,6 +25,7 @@ import {
   resolveTypingFont,
   resolveTypingLayout,
   resolveVariant,
+  SIZE_TOKENS,
   SPECIAL_ELEMENT_KINDS,
   STACK_MOTION_TOKENS,
   TYPING_ALIGN_TOKENS,
@@ -41,7 +46,15 @@ import {
 import { getSiteAsset } from '@/site/assets';
 import { BUILDER_PAGES, DOCS_PAGES } from '@/site/navigation';
 import { renderBuilderHtml, renderDocsHtml, renderHomeHtml } from '@/site/pages';
-import { buildMarkdownSnippetTokens, resolvePathBuilderKind } from '@/site/shared';
+import {
+  buildMarkdownSnippetTokens,
+  isValidSpecialPayload,
+  MAX_ANIMATION_INPUT_LENGTH,
+  normalizeStackGroups,
+  resolvePathBuilderKind,
+  sliceCodeUnitSafe,
+  splitAnim,
+} from '@/site/shared';
 import {
   DEFAULT_ICON_STROKE_WIDTH,
   getIconPickerIndex,
@@ -1130,7 +1143,8 @@ describe('builder schemas', () => {
       }
     }
 
-    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`; `align` is omitted on `browser` and `ide`; redundant defaults are omitted:
+    // `title` is only emitted for titled layouts (`window` and `ide`); `hint` is omitted on `none`;
+    // `align` is omitted on `browser` and `ide`; redundant defaults are omitted:
     expect(
       core.buildPath(typing, {
         align: 'center',
@@ -1444,7 +1458,7 @@ describe('builder client core', () => {
       ],
       [
         { metric: 'dt', owner: 'types', service: 'npm', target: 'node' },
-        { metric: 'dt', owner: 'types', service: 'npm', target: 'node' },
+        { metric: 'dy', owner: 'types', service: 'npm', target: 'node' },
       ],
       [
         { metric: 'v', owner: 'ignored', service: 'go', target: 'github.com/spf13/cobra' },
@@ -2368,7 +2382,7 @@ describe('builder pages & "Open in Builder" links', () => {
       '<input class="check-input" type="checkbox" id="field-anim-sheen" data-part="sheen" /><span class="check-box" aria-hidden="true">'
     );
     expect(html).toMatch(
-      /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><div class="section-actions"><button type="button" class="section-action" id="builder-import-trigger" popovertarget="builder-import-popover" aria-expanded="false" aria-controls="builder-import-popover">[\s\S]*?Import<\/button><a class="section-action" href="\/docs\/badges" tabindex="0">/
+      /<div class="section-title-row"><h1 class="section-title">Badge Builder<\/h1><div class="section-actions"><button type="button" class="section-action" id="builder-import-trigger" popovertarget="builder-import-popover" aria-expanded="false" aria-haspopup="dialog" aria-controls="builder-import-popover">[\s\S]*?Import<\/button><a class="section-action" href="\/docs\/badges" tabindex="0">/
     );
     expect(html).toContain(
       'class="popover-panel builder-import-popover" id="builder-import-popover" popover role="dialog" aria-labelledby="builder-import-title"'
@@ -2419,12 +2433,16 @@ describe('builder pages & "Open in Builder" links', () => {
       '<svg data-set="brands" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"></svg>'
     );
     expect(html).toContain(
-      '<span data-picker-tab-label="lucide" data-label="Lucide">Lucide</span>'
+      '<div class="builder-tabs icon-picker-tabs" role="tablist" aria-label="Icon set">'
     );
     expect(html).toContain(
-      '<span data-picker-tab-label="brands" data-label="Brands">Brands</span>'
+      '<button type="button" class="builder-tab icon-picker-tab is-active" role="tab" aria-selected="true" aria-controls="icon-picker-grid" tabindex="0" data-picker-set="lucide" data-picker-tab-label="lucide" data-label="Lucide">Lucide</button>'
     );
-    expect(html).not.toContain('name="icon-picker-set" value="all"');
+    expect(html).toContain(
+      '<button type="button" class="builder-tab icon-picker-tab" role="tab" aria-selected="false" aria-controls="icon-picker-grid" tabindex="-1" data-picker-set="brands" data-picker-tab-label="brands" data-label="Brands">Brands</button>'
+    );
+    expect(html).not.toContain('name="icon-picker-set"');
+    expect(html).not.toContain('icon-picker-sentinel');
     expect(builderClientSource).toContain('updatePickerTabLabels(');
     expect(builderClientSource).toContain('syncPickerTabForTarget(');
     expect(builderClientSource).not.toContain("'stroke-linecap'");
@@ -3608,7 +3626,8 @@ describe('builder pages & "Open in Builder" links', () => {
   });
 
   it('keeps /builder/:kind URLs clean on initial load and Clear, syncs ?path= after user edits, copies full share links, rejects dot-segment service links, and keeps typing aria-invalid on row 0 (regressions: initial load dirtied /builder/:kind URL bar, Clear left stale ?path=, REDIRECT_SAFE_VALUE_RX accepted ./.., typingLines marked added rows aria-invalid)', () => {
-    // [1] `resolveBuilderTarget` and `core.buildDefaultLinkTarget` reject invalid segments, empty explicit owners, and non-matching `targetPattern` targets:
+    // [1] `resolveBuilderTarget` and `core.buildDefaultLinkTarget` reject invalid segments,
+    // empty explicit owners, and non-matching `targetPattern` targets:
     expect(resolveBuilderTarget('/badge/gh/.../repo/stars')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/gh//repo/stars')).toBeUndefined();
     expect(resolveBuilderTarget('/badge/steam/not-numeric/players')).toBeUndefined();
@@ -3880,7 +3899,7 @@ describe('builder pages & "Open in Builder" links', () => {
       history: { replaceState: noopDomAction, state: undefined },
     });
 
-    // Native Popover API flow: `beforetoggle` fires synchronously, `:popover-open` turns true, and the microtask places before paint:
+    // Native Popover API flow; `beforetoggle` fires synchronously, `:popover-open` turns true, and the microtask places before paint:
     for (const listener of popoverListeners.get('beforetoggle') ?? []) {
       listener({ newState: 'open' });
     }
@@ -3982,9 +4001,18 @@ describe('builder pages & "Open in Builder" links', () => {
     markdownTab.parentElement = tabList;
     htmlTab.parentElement = tabList;
 
+    const pickerTab = createTabStub('lucide', true, 3, 180);
+    const pickerTabList = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
+      classList: { add: noopDomAction, contains: () => false, remove: noopDomAction },
+      querySelector: (selector: string) => (selector === '.is-active' ? pickerTab : undefined),
+      style: { setProperty: noopDomAction },
+    });
+    pickerTab.parentElement = pickerTabList;
+
     const outputStub = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
       classList: { toggle: noopDomAction },
       querySelector: (selector: string) => (selector === '.builder-tabs' ? tabList : undefined),
+      querySelectorAll: (selector: string) => (selector === '.builder-tab' ? tabs : []),
     });
     const formStub = Object.assign(Object.create(FakeHTMLFormElement.prototype) as object, {
       addEventListener: noopDomAction,
@@ -4024,14 +4052,11 @@ describe('builder pages & "Open in Builder" links', () => {
         querySelector: (selector: string) =>
           selector === '.builder-output' ? outputStub : undefined,
         querySelectorAll(selector: string) {
-          if (selector === '.builder-tabs, .icon-picker-tabs') {
-            return [tabList];
+          if (selector === '.builder-tabs') {
+            return [tabList, pickerTabList];
           }
-          if (
-            selector === '.builder-tab' ||
-            selector === '.builder-tab, .stack-mode-tab, .icon-picker-tab'
-          ) {
-            return tabs;
+          if (selector === '.builder-tab') {
+            return [...tabs, pickerTab];
           }
           return [];
         },
@@ -4061,13 +4086,14 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(tabListProps.get('--tab-pill-w')).toBe('88px');
     expect(tabListProps.get('--tab-pill-h')).toBe('28px');
 
-    // Clicking the HTML tab enables transitions and glides the pill to the new tab:
+    // Clicking the HTML tab enables transitions and glides the pill to the new tab without mutating sibling tablists:
     for (const listener of tabListListeners.get('click') ?? []) {
       listener({ target: htmlTab });
     }
     expect(tabListClasses.has('is-animated')).toBe(true);
     expect(tabListProps.get('--tab-pill-x')).toBe('93px');
     expect(tabListProps.get('--tab-pill-w')).toBe('62px');
+    expect(pickerTab.classList.contains('is-active')).toBe(true);
 
     // Viewport or webfont resize updates pill geometry cleanly without rubber-banding:
     expect(resizeCallbacks).toHaveLength(1);
@@ -4602,10 +4628,99 @@ describe('builder pages & "Open in Builder" links', () => {
     valid.clickReset();
     expect(valid.replacedUrls.at(-1)).toBe('/builder/service');
 
-    // [2] Unknown service preset `/builder/badge/not-a-service/pkg/v` falls back to example state, surfaces warning, and cleans URL to `/builder/service`:
+    // [2] Unknown service preset `/builder/badge/not-a-service/pkg/v` falls back to example state,
+    // surfaces warning, and cleans URL to `/builder/service`:
     const invalid = mountServiceBuilderAt('https://svg.xul.is/builder/badge/not-a-service/pkg/v');
     expect(invalid.targetValue()).toBe('react');
     expect(invalid.statusText()).toContain('does not match a valid preset or route');
     expect(invalid.replacedUrls).toEqual(['/builder/service']);
+  });
+
+  it('truncates UTF-16 code units without splitting surrogates, bounds splitAnim length, preserves typing sheen,none, and strips invalid or payload-less static specials (regressions: lone high surrogate slice, unbounded splitAnim, dropped typing sheen,none, unnormalized special)', () => {
+    // [1] `sliceCodeUnitSafe` never leaves a trailing high surrogate (`0xd800–0xdbff`) when slicing astrals:
+    expect(sliceCodeUnitSafe('ab🚀cd', 3)).toBe('ab');
+    expect(sliceCodeUnitSafe('ab🚀cd', 4)).toBe('ab🚀');
+    expect(sliceCodeUnitSafe('hello', 5)).toBe('hello');
+
+    // [2] `splitAnim` rejects inputs exceeding `MAX_ANIMATION_INPUT_LENGTH` before splitting:
+    const typingSchema = getBuilderSchema('typing');
+    const badgeSchema = getBuilderSchema('badge');
+    const serviceSchema = getBuilderSchema('service');
+    const badgeAnimOptions = badgeSchema.fields.find((field) => field.id === 'anim')?.options;
+    const typingAnimOptions = typingSchema.fields.find((field) => field.id === 'anim')?.options;
+    expect(splitAnim('a'.repeat(MAX_ANIMATION_INPUT_LENGTH + 1), badgeAnimOptions)).toEqual({
+      hasSheen: false,
+      left: '',
+      right: '',
+    });
+    expect(splitAnim('sheen,none', typingAnimOptions)).toEqual({
+      hasSheen: true,
+      left: 'none',
+      right: '',
+    });
+
+    // [3] `buildPath` preserves `sheen,none` on `/builder/typing` and `parsePath` normalizes `special` on static and service badges:
+    expect(core.buildPath(typingSchema, { anim: 'sheen,none', lines: 'Hello' }).path).toBe(
+      '/typing/Hello?anim=sheen,none'
+    );
+    expect(core.parsePath(badgeSchema, '/badge/build/pass?special=bogus')?.special).toBe('');
+    expect(core.parsePath(badgeSchema, '/badge/build/pass?special=sparkline')?.special).toBe('');
+    expect(core.parsePath(badgeSchema, '/badge/build/pass?special=ring:80%:static')?.special).toBe(
+      'ring:80%'
+    );
+    expect(core.parsePath(serviceSchema, '/badge/npm/hono/dw?special=sparkline')?.special).toBe(
+      'sparkline'
+    );
+  });
+
+  it('derives size options from SIZE_TOKENS, validates splitAnim and special payloads, normalizes stack whitespace, and round-trips HTML entity snippets', () => {
+    const buttonSchema = getBuilderSchema('button');
+    const badgeSchema = getBuilderSchema('badge');
+    const serviceSchema = getBuilderSchema('service');
+    const stackSchema = getBuilderSchema('stack');
+    const badgeAnimOptions = badgeSchema.fields.find((field) => field.id === 'anim')?.options;
+    const buttonSizeOptions = buttonSchema.fields.find((field) => field.id === 'size')?.options;
+    expect(buttonSizeOptions?.map((option) => option.value)).toEqual([...SIZE_TOKENS]);
+
+    // [1] `splitAnim` preserves explicit `default` right slot tokens while rejecting duplicate `sheen` or >2 motion tokens:
+    expect(splitAnim('nudge,default', badgeAnimOptions)).toEqual({
+      hasSheen: false,
+      left: 'nudge',
+      right: 'none',
+    });
+    expect(splitAnim('sheen,sheen', badgeAnimOptions)).toEqual({
+      hasSheen: false,
+      left: '',
+      right: '',
+    });
+    expect(splitAnim('nudge,spin,pulse', badgeAnimOptions)).toEqual({
+      hasSheen: false,
+      left: '',
+      right: '',
+    });
+
+    // [2] Malformed manual `?special=` payloads and unsupported bare service `?special=` values are stripped:
+    expect(isValidSpecialPayload('bar', 'abc')).toBe(false);
+    expect(isValidSpecialPayload('bar', '75%')).toBe(true);
+    expect(isValidSpecialPayload('sparkline', '1,2,3')).toBe(true);
+    expect(isValidSpecialPayload('sparkline', '1')).toBe(false);
+    expect(core.parsePath(badgeSchema, '/badge/build/pass?special=bar:abc')?.special).toBe('');
+    expect(
+      core.buildPath(badgeSchema, { label: 'build', special: 'bar:abc', value: 'pass' }).path
+    ).toBe('/badge/build/pass');
+    expect(core.parsePath(serviceSchema, '/badge/npm/hono/dw?special=steps')?.special).toBe('');
+
+    // [3] Space-separated `/stack` icon lists normalize to comma-separated tokens:
+    expect(normalizeStackGroups('ts js')).toBe('ts,js');
+    expect(core.buildPath(stackSchema, { groups: 'ts js' }).path).toBe('/stack/ts,js');
+
+    // [4] Ambiguous semicolonless HTML entities escape cleanly, and numeric character references unescape without double-escaping:
+    const copySnippets = core.buildSnippets('/badge/legal/ok', '&copy 2026', 'https://svg.xul.is');
+    expect(copySnippets.html).toContain('alt="&amp;copy 2026"');
+    const importedNumeric = core.parseImportedSnippet(
+      '<img src="https://svg.xul.is/badge/test/ok" alt="&#169; &#x1F680;" />',
+      ['https://svg.xul.is']
+    );
+    expect(importedNumeric?.alt).toBe('© 🚀');
   });
 });

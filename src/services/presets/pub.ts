@@ -1,13 +1,15 @@
 /**
- * pub.dev service preset – Live upstream metrics and redirect transformations.
+ * pub.dev Service Preset
+ *
+ * Live upstream metrics and redirect transformations for pub.dev.
  */
 
 import {
   PACKAGE_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   SCORE,
@@ -61,7 +63,7 @@ function projectPubPackage(data: unknown): PubPackageProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  return { version: readText(asJsonObject(data.latest)?.version) };
+  return { version: readText(readJsonObject(data.latest)?.version) };
 }
 
 /** Project a pub.dev `/metrics` (or flat `/score`) payload to its score counters and weekly series. */
@@ -69,8 +71,8 @@ function projectPubScore(data: unknown): PubScoreProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const score = asJsonObject(data.score) ?? data;
-  const weeklyDownloads = asJsonObject(asJsonObject(data.scorecard)?.weeklyVersionDownloads);
+  const score = readJsonObject(data.score) ?? data;
+  const weeklyDownloads = readJsonObject(readJsonObject(data.scorecard)?.weeklyVersionDownloads);
   const rawWeekly = Array.isArray(weeklyDownloads?.totalWeeklyDownloads)
     ? weeklyDownloads.totalWeeklyDownloads
     : undefined;
@@ -115,6 +117,7 @@ const PUB_PACKAGE_ENDPOINT = createEndpoint({
 /** pub.dev package metrics endpoint with score page redirect. */
 const PUB_SCORE_ENDPOINT = createEndpoint({
   api: 'https://pub.dev/api/packages/{target}/metrics',
+  extractKeys: ['score', 'scorecard'],
   page: 'https://pub.dev/packages/{target}/score',
   project: projectPubScore,
 });

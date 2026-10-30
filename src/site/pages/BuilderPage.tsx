@@ -1,5 +1,7 @@
 /**
- * Builder page – Renders the `/builder/:kind` URL builder pages.
+ * Builder Page
+ *
+ * Renders the `/builder/:kind` URL builder pages.
  */
 
 import { SITE_NAME, SITE_ORIGIN } from '@/config/site';
@@ -26,14 +28,16 @@ import type { BuilderKind } from '@/types';
 
 /** Props for the `<BuilderPage />` component. */
 interface BuilderPageProps {
+  /** Whether the response is a prefilled builder URL that must omit canonical/JSON-LD tags and emit `noindex`. */
+  readonly isNoIndex?: boolean | undefined;
   /** Builder element kind. */
   readonly kind: BuilderKind;
 }
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
-/** Memoized builder pages keyed by element kind. */
-const BUILDER_HTML_CACHE = new Map<BuilderKind, string>();
+/** Memoized builder pages keyed by element kind and indexability mode. */
+const BUILDER_HTML_CACHE: Record<string, string> = Object.create(null) as Record<string, string>;
 
 /** Memoized import URL/snippet dialog popover HTML (`undefined` until first rendered). */
 let importPopoverHtmlCache: string | undefined = undefined;
@@ -108,6 +112,7 @@ function BuilderPage(props: BuilderPageProps): HtmlFragment {
         id="builder-import-trigger"
         popovertarget="builder-import-popover"
         aria-expanded="false"
+        aria-haspopup="dialog"
         aria-controls="builder-import-popover">
         <UiIcon slug="import" size={14} />
         Import
@@ -134,7 +139,12 @@ function BuilderPage(props: BuilderPageProps): HtmlFragment {
       canonicalPath={canonicalPath}
       description={meta.description}
       extraBody={extraBody}
-      jsonLd={buildBuilderJsonLd(meta.title, meta.description, canonicalPath)}
+      isNoIndex={props.isNoIndex}
+      jsonLd={
+        props.isNoIndex
+          ? undefined
+          : buildBuilderJsonLd(meta.title, meta.description, canonicalPath)
+      }
       sidebar={buildBuilderSidebar(kind)}
       title={pageTitle}>
       <section class="doc-section builder" id="builder" data-builder-kind={kind}>
@@ -155,16 +165,18 @@ function BuilderPage(props: BuilderPageProps): HtmlFragment {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Render (once per isolate) the URL builder page of an element kind.
- * @param kind   Builder element kind.
+ * Render (once per isolate and indexability mode) the URL builder page of an element kind.
+ * @param kind        Builder element kind.
+ * @param isNoIndex   Whether to emit a prefilled `noindex` document without `<link rel="canonical">`.
  * @returns Complete HTML document string.
  */
-export function renderBuilderHtml(kind: BuilderKind): string {
-  const cached = BUILDER_HTML_CACHE.get(kind);
+export function renderBuilderHtml(kind: BuilderKind, isNoIndex = false): string {
+  const cacheKey = isNoIndex ? `${kind}:noindex` : kind;
+  const cached = BUILDER_HTML_CACHE[cacheKey];
   if (cached !== undefined) {
     return cached;
   }
-  const html = renderHtml(<BuilderPage kind={kind} />);
-  BUILDER_HTML_CACHE.set(kind, html);
+  const html = renderHtml(<BuilderPage isNoIndex={isNoIndex} kind={kind} />);
+  BUILDER_HTML_CACHE[cacheKey] = html;
   return html;
 }

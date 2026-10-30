@@ -1,9 +1,11 @@
 /**
- * Icon types – Standalone SVG icon rendering options and resolved icon data.
+ * Icon Types
+ *
+ * Standalone SVG icon rendering options and resolved icon data.
  */
 
-import type { AnimationMode } from './badge';
-import type { ThemeColorName } from './theme';
+import type { AnimationMode } from '@/types/badge';
+import type { ThemeColorName } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -17,6 +19,8 @@ export type IconPickerSetId = 'brands' | 'lucide';
 export interface IconBody {
   /** Horizontal offset in `24x24` icon units applied before `coordScale` (`0` when omitted). */
   coordOffsetX?: number;
+  /** Vertical offset in `24x24` icon units applied before `coordScale` (`0` when omitted). */
+  coordOffsetY?: number;
   /** Scale factor normalizing the icon body's native coordinate space to `24x24`. */
   coordScale: number;
   /** Inner SVG elements (without the outer `<svg>` wrapper). */
@@ -65,6 +69,17 @@ export interface IconPickerIndex {
   pageSize: number;
   /** Slugs per set in page order. */
   sets: Record<IconPickerSetId, string[]>;
+}
+
+/** Pre-packed File Icons entry: sanitized inner SVG body, or `[body, width, height]` when dimensions differ from `FILE_ICONS_DEFAULT_SIZE`. */
+export type PackedFileIconEntry = string | readonly [body: string, width: number, height: number];
+
+/** Pre-packed Simple Icons dataset with flat parent-alias strings and sanitized `24x24` icon bodies. */
+export interface PackedSimpleIconSet {
+  /** Alias slugs mapped directly to their canonical parent slug. */
+  aliases: Record<string, string>;
+  /** Canonical slugs mapped to sanitized inner SVG bodies. */
+  icons: Record<string, string>;
 }
 
 /** Options for rendering a standalone SVG icon via `renderIcon`. */

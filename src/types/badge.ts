@@ -1,8 +1,10 @@
 /**
- * Badge types – Badge and button rendering options, micro-animation modes, and special element shapes.
+ * Badge Types
+ *
+ * Badge and button rendering options, micro-animation modes, and special element shapes.
  */
 
-import type { BadgeVariant, DotState, SizePreset, ThemeColorName } from './theme';
+import type { BadgeVariant, DotState, SizePreset, ThemeColorName } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -21,13 +23,8 @@ export type IconMotionMode =
   | 'whirl';
 
 /**
- * Micro-animation mode for icons, status dots, and specular sheen.
- * - `'default'`: Status dots and progress bars animate; Icons and surfaces remain static (default when `?anim=` is omitted).
- * - `'sheen'`: Enables periodic diagonal specular glint sweep across the surface without animating the icon.
- * - Any active `IconMotionMode`: Enables contextual or explicit icon micro-animation.
- * - `'<left>,<right>'` (e.g., `'none,nudge'`, `'shake,nudge'`): Animates left and right icons independently.
- * - `'sheen,<mode>'` or `'sheen,<left>,<right>'`: Combines surface sheen with single or per-icon animations.
- * - `'none'`: Disables all SVG animations (including status dots and progress bars) for a completely static image.
+ * Micro-animation control expression (`?anim=`) combining optional surface sheen with single or
+ * paired left/right `IconMotionMode` tokens, or disabling all motion for static output.
  */
 export type AnimationMode =
   | IconMotionMode

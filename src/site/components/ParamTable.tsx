@@ -1,5 +1,7 @@
 /**
- * Parameter table & alias list components – Responsive reference tables (`<ParamTable />`) with dimmed separator/alias micro-syntax and sorted alias lists (`<AliasList />`).
+ * Parameter Table & Alias List Components
+ *
+ * Responsive reference tables (`<ParamTable />`) with dimmed separator/alias micro-syntax and sorted alias lists (`<AliasList />`).
  */
 
 import { splitTrailingParenthetical } from '@/site/components/ShowcaseCard';

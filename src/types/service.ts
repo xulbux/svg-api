@@ -1,9 +1,11 @@
 /**
- * Service types – Service preset configuration, Cloudflare Worker environment, and metric result types.
+ * Service Types
+ *
+ * Service preset configuration, Cloudflare Worker environment, and metric result types.
  */
 
-import type { BadgeSpecialElement, BadgeSpecialKind, BadgeSpecialMap } from './badge';
-import type { DotState, ThemeColorName } from './theme';
+import type { BadgeSpecialElement, BadgeSpecialKind, BadgeSpecialMap } from '@/types/badge';
+import type { DotState, ThemeColorName } from '@/types/theme';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
@@ -33,10 +35,7 @@ export interface DownloadPeriodSpec {
   suffix: string;
 }
 
-/**
- * Community count kinds sharing one label and color across services (the service brand icon
- * identifies the platform, e.g., Discord `members`, Bluesky `followers`, Hugging Face `likes`).
- */
+/** Community count kinds sharing one label and color across services (the service brand icon identifies the platform). */
 export type CommunityMetricKind =
   | 'backers'
   | 'followers'
@@ -79,11 +78,20 @@ export interface ServiceRouteParams {
 /** Builds an upstream API or browser page URL from validated route params. */
 export type ServiceUrlBuilder = (params: ServiceRouteParams) => string;
 
+/** Pre-parsed upstream transport result that skips `Response` stream serialization and re-parsing. */
+export interface PreparsedUpstreamResponse {
+  /** Pre-parsed JSON payload (present on `200` responses). */
+  readonly data?: unknown;
+  /** Optional response headers (lowercase header names, e.g., rate-limit headers). */
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Upstream or synthetic HTTP status code. */
+  readonly status: number;
+}
+
 /** Custom upstream HTTP transport invoked instead of a direct `fetch()` call. */
 export type UpstreamTransport = (
-  headers: Readonly<Record<string, string>>,
-  signal: AbortSignal
-) => Promise<Response>;
+  headers: Readonly<Record<string, string>>
+) => Promise<Response | PreparsedUpstreamResponse>;
 
 /** Custom upstream HTTP request descriptor (e.g., an authenticated GraphQL `POST` query). */
 export interface UpstreamRequestInit {
@@ -94,10 +102,7 @@ export interface UpstreamRequestInit {
    * Allows several metrics sharing one `POST` query to coalesce under one deterministic key.
    */
   cacheKey?: string;
-  /**
-   * Top-level JSON object keys to extract while streaming (overrides `MetricEndpoint.extractKeys`;
-   * `undefined` reads the full response body).
-   */
+  /** Top-level JSON object keys to extract while streaming (overrides `MetricEndpoint.extractKeys`; `undefined` reads the full response body). */
   extractKeys?: readonly string[];
   /** Additional request headers merged on top of the service headers. */
   headers?: Readonly<Record<string, string>>;
@@ -123,15 +128,17 @@ export type ServiceRequestBuilder = (
 ) => UpstreamRequestInit | undefined;
 
 /**
- * Projects a raw upstream JSON payload into the small value kept in the in-isolate memory cache
- * and the Tier-1 edge cache. Returning `undefined` marks the package or repository as not found.
+ * Projects a raw upstream JSON payload into the small value kept in the in-isolate memory cache and the Tier-1 edge cache.
+ * Returning `undefined` marks the package or repository as not found.
  */
-export type PayloadProjection<P> = (data: unknown) => P | undefined;
+export interface PayloadProjection<P> {
+  /** Project a raw parsed JSON value into `P` (`undefined` when missing). */
+  (data: unknown): P | undefined;
+  /** Optional top-level JSON object keys read by the projection (inferred automatically by `pickFields` and `projectFirstEntry`). */
+  readonly extractKeys?: readonly string[];
+}
 
-/**
- * Transforms projected upstream data into badge properties.
- * Returning `undefined` marks the requested package or repository as not found.
- */
+/** Transforms projected upstream data into badge properties. Returning `undefined` marks the requested package or repository as not found. */
 export type MetricTransform<P = unknown> = (
   data: P,
   params: ServiceRouteParams
@@ -146,15 +153,11 @@ export interface MetricEndpoint<P = unknown> {
   /** Optional custom HTTP request builder (e.g., an authenticated GraphQL `POST` query). */
   buildRequest?: ServiceRequestBuilder;
   /**
-   * Top-level keys of the upstream JSON object whose values are the only parts needed; Unneeded
-   * keys are skipped in `O(1)` memory while streaming, and the body stream is cancelled as soon
-   * as all listed keys are read.
+   * Top-level keys of the upstream JSON object whose values are the only parts needed;
+   * Unneeded keys are skipped in `O(1)` memory while streaming, and the body stream is cancelled as soon as all listed keys are read.
    */
   extractKeys?: readonly string[];
-  /**
-   * Additional upstream HTTP error statuses that mean the target does not exist; They are
-   * reported and cached like a `404`.
-   */
+  /** Additional upstream HTTP error statuses that mean the target does not exist; They are reported and cached like a `404`. */
   missingStatuses?: readonly number[];
   /** Optional projection of the raw payload (defaults to the raw JSON object). */
   project?: PayloadProjection<P>;
@@ -208,8 +211,8 @@ export interface ServiceOwnerSegment {
   /** Whether the owner segment must be present. */
   isRequired: boolean;
   /**
-   * Stricter pattern the owner segment must also match on top of the shared safe segment rule
-   * (e.g., Maven group coordinates); Mismatches are rejected as `invalid name` before any fetch.
+   * Stricter pattern the owner segment must also match on top of the shared safe segment rule (e.g., Maven group coordinates);
+   * Mismatches are rejected as `invalid name` before any fetch.
    */
   pattern?: RegExp;
   /** Docs placeholder of the owner segment (e.g., `':scope'`, `':vendor'`). */
@@ -219,16 +222,16 @@ export interface ServiceOwnerSegment {
 /** Target path segment(s) of a service preset route. */
 export interface ServiceTargetSegment {
   /**
-   * Maximum number of `/`-separated path segments the target may span; Each segment is validated
-   * individually (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`). Multi-segment targets
-   * combined with an owner require `isRequired: true`, so the owner stays unambiguous.
+   * Maximum number of `/`-separated path segments the target may span;
+   * Each segment is validated individually (e.g., Go modules: `/badge/go/github.com/spf13/cobra/v`).
+   * Multi-segment targets combined with an owner require `isRequired: true`, so the owner stays unambiguous.
    */
   maxSegments?: number;
   /** Minimum number of `/`-separated path segments the target must span. */
   minSegments?: number;
   /**
-   * Stricter pattern every target segment must also match on top of the shared safe segment rule
-   * (e.g., numeric Steam app ids); Mismatches are rejected as `invalid name` before any fetch.
+   * Stricter pattern every target segment must also match on top of the shared safe segment rule (e.g., numeric Steam app ids);
+   * Mismatches are rejected as `invalid name` before any fetch.
    */
   pattern?: RegExp;
   /** Docs placeholder of the target segment (e.g., `':pkg'`, `':repo'`). */
@@ -247,13 +250,13 @@ export interface ServiceRoute {
 export interface ServiceDocs {
   /** Short explanation of the available metrics. */
   description: string;
-  /** Human-readable service name (e.g., `'PyPI'`, `'crates.io'`). */
+  /** Human-readable service name. */
   title: string;
 }
 
 /**
- * Declarative definition for an external service (e.g., `gh`, `pypi`); `M` is the union of
- * canonical metric keys, so alias targets are checked at compile time.
+ * Declarative definition for an external service preset;
+ * `M` is the union of canonical metric keys, so alias targets are checked at compile time.
  */
 export interface ServiceDefinition<M extends string = string> {
   /** Returns additional dynamic upstream request headers (e.g., an `Authorization` token). */
@@ -262,10 +265,7 @@ export interface ServiceDefinition<M extends string = string> {
   docs: ServiceDocs;
   /** Additional static upstream request headers merged on top of default headers. */
   headers?: Readonly<Record<string, string>>;
-  /**
-   * Service-specific alternative metric slugs mapped to their canonical metric slug; They extend
-   * and override the global default metric aliases (e.g., `l` -> `license`).
-   */
+  /** Service-specific alternative metric slugs mapped to their canonical metric slug; They extend and override `DEFAULT_METRIC_ALIASES`. */
   metricAliases?: Readonly<Record<string, NoInfer<M>>>;
   /** Map of canonical metric slugs to their endpoint and transformer definitions. */
   metrics: Readonly<Record<M, ServiceMetricConfig>>;
@@ -287,20 +287,17 @@ export interface SeriesSpecialsOptions {
 
 /** Parsed service preset route (`/badge/:service/[:owner/]:target/:metric`). */
 export interface ServiceRequest {
-  /** Requested metric slug (e.g., `'stars'`, `'v'`, `'dl'`). */
+  /** Requested metric slug. */
   metric: string;
   /** Explicit owner segment, or `undefined` when omitted. */
   owner?: string;
-  /** Service identifier (e.g., `'gh'`, `'npm'`). */
+  /** Service identifier in `SERVICES_CONFIG`. */
   service: string;
   /** Repository, package, or extension name (multi-segment targets are joined with `/`). */
   target: string;
 }
 
-/**
- * Sample right-hand value text or sample upstream JSON payload (object or array) for network-free
- * service badge previews.
- */
+/** Sample right-hand value text or sample upstream JSON payload (object or array) for network-free service badge previews. */
 export type ServicePreviewSample =
   | string
   | Readonly<Record<string, unknown>>

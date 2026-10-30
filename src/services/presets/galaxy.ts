@@ -1,5 +1,7 @@
 /**
- * Ansible Galaxy service preset – Live upstream metrics and redirect transformations.
+ * Ansible Galaxy Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Ansible Galaxy.
  */
 
 import { createEndpoint, defineService, pickFields } from '@/services/endpoint';

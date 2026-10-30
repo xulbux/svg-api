@@ -1,17 +1,18 @@
 /**
- * Homebrew service presets – Live upstream metrics and redirect transformations.
+ * Homebrew Service Presets
  *
- * Install counts sum every analytics key of a period, so option variants (e.g., `wget --HEAD`)
- * count towards the formula total. Names containing `+` must be percent-encoded in the badge path
- * (`gtk%2B3`), because a literal `+` in a path segment decodes to a space.
+ * Live upstream metrics and redirect transformations for Homebrew formulae and casks.
+ *
+ * Install counts sum every analytics key of a period, so option variants (e.g., `wget --HEAD`) count towards the formula total.
+ * Names containing `+` must be percent-encoded in the badge path (`gtk%2B3`), because a literal `+` in a path segment decodes to a space.
  */
 
 import {
   CACHE_TTL,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
@@ -55,8 +56,11 @@ const HOMEBREW_VERSION: MetricPresentation = {
 /** Docs note on the install metric keys. */
 const INSTALLS_DOCS = '30/90/365-day installs (dl/dq/dy)';
 
-/** Top-level Homebrew JSON keys needed for version, license, and install analytics. */
-const HOMEBREW_EXTRACT_KEYS = ['analytics', 'license', 'version', 'versions'] as const;
+/** Top-level Homebrew formula JSON keys needed for version, license, and install analytics. */
+const FORMULA_EXTRACT_KEYS = ['analytics', 'license', 'versions'] as const;
+
+/** Top-level Homebrew cask JSON keys needed for version and install analytics. */
+const CASK_EXTRACT_KEYS = ['analytics', 'version'] as const;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -65,7 +69,7 @@ function sumInstalls(
   install: Record<string, unknown> | undefined,
   period: HomebrewAnalyticsPeriod
 ): number | undefined {
-  const counts = asJsonObject(install?.[period]);
+  const counts = readJsonObject(install?.[period]);
   if (!counts) {
     return undefined;
   }
@@ -73,7 +77,7 @@ function sumInstalls(
   for (const key in counts) {
     if (Object.hasOwn(counts, key)) {
       const count = counts[key];
-      total += typeof count === 'number' && Number.isFinite(count) ? count : 0;
+      total += typeof count === 'number' && Number.isFinite(count) && count > 0 ? count : 0;
     }
   }
   return total;
@@ -84,8 +88,8 @@ function projectHomebrewPayload(data: unknown): HomebrewProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const install = asJsonObject(asJsonObject(data.analytics)?.install);
-  const versions = asJsonObject(data.versions);
+  const install = readJsonObject(readJsonObject(data.analytics)?.install);
+  const versions = readJsonObject(data.versions);
   return {
     dl: sumInstalls(install, '30d'),
     dq: sumInstalls(install, '90d'),
@@ -98,7 +102,7 @@ function projectHomebrewPayload(data: unknown): HomebrewProjection | undefined {
 /** Homebrew formula endpoint (analytics refresh daily). */
 const FORMULA_ENDPOINT = createEndpoint({
   api: 'https://formulae.brew.sh/api/formula/{target}.json',
-  extractKeys: HOMEBREW_EXTRACT_KEYS,
+  extractKeys: FORMULA_EXTRACT_KEYS,
   page: 'https://formulae.brew.sh/formula/{target}',
   project: projectHomebrewPayload,
   ttl: CACHE_TTL.daily,
@@ -107,7 +111,7 @@ const FORMULA_ENDPOINT = createEndpoint({
 /** Homebrew cask endpoint (analytics refresh daily). */
 const CASK_ENDPOINT = createEndpoint({
   api: 'https://formulae.brew.sh/api/cask/{target}.json',
-  extractKeys: HOMEBREW_EXTRACT_KEYS,
+  extractKeys: CASK_EXTRACT_KEYS,
   page: 'https://formulae.brew.sh/cask/{target}',
   project: projectHomebrewPayload,
   ttl: CACHE_TTL.daily,

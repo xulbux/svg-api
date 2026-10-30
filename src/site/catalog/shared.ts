@@ -1,5 +1,7 @@
 /**
- * Shared documentation catalog helpers – Shared constants, parameter row factories, variant card builders, and icon count helpers.
+ * Shared Documentation Catalog Helpers
+ *
+ * Shared constants, parameter row factories, variant card builders, and icon count helpers.
  */
 
 import { DEFAULT_THEME_COLOR, THEME_COLOR_NAMES } from '@/config/theme';
@@ -39,6 +41,9 @@ export const ENCODED_CHAOS_QUOTE =
 
 /** Memoized canonical non-alias endpoint patterns (`undefined` until first requested). */
 let endpointRoutesCache: readonly string[] | undefined = undefined;
+
+/** Memoized distinct icon set counts (`undefined` until first requested). */
+let iconSetCountsCache: IconSetCounts | undefined = undefined;
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
@@ -207,8 +212,11 @@ export function buildVariantCards(
  * @returns Distinct stroke and brand icon counts.
  */
 export function getIconSetCounts(): IconSetCounts {
-  const { sets } = getIconPickerIndex();
-  return { brand: sets.brands.length, lucide: sets.lucide.length };
+  if (iconSetCountsCache === undefined) {
+    const { sets } = getIconPickerIndex();
+    iconSetCountsCache = { brand: sets.brands.length, lucide: sets.lucide.length };
+  }
+  return iconSetCountsCache;
 }
 
 /**

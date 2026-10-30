@@ -1,13 +1,15 @@
 /**
- * Hex.pm service preset – Live upstream metrics and redirect transformations.
+ * Hex.pm Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Hex.pm.
  */
 
 import {
   PACKAGE_ROUTE,
-  asJsonObject,
   createEndpoint,
   defineService,
   isJsonObject,
+  readJsonObject,
 } from '@/services/endpoint';
 import {
   DELTA_SPECIALS,
@@ -43,8 +45,8 @@ function projectHexPackage(data: unknown): HexPackageProjection | undefined {
   if (!isJsonObject(data)) {
     return undefined;
   }
-  const downloads = asJsonObject(data.downloads);
-  const meta = asJsonObject(data.meta);
+  const downloads = readJsonObject(data.downloads);
+  const meta = readJsonObject(data.meta);
   return {
     all: readFiniteNumber(downloads?.all),
     license: readLicenseName(meta?.licenses),

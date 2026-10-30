@@ -51,7 +51,9 @@ Presets serve `/badge/:service/[:owner/]:target/:metric` from public upstream AP
 
     ```typescript
     /**
-     * Example registry preset – Live metrics and redirect configuration.
+     * Example Service Preset
+     *
+     * Live upstream metrics and redirect transformations for Example.
      */
 
     import { CACHE_TTL, PACKAGE_ROUTE, createEndpoint, defineService, pickFields } from '@/services/endpoint';
@@ -90,7 +92,7 @@ Presets serve `/badge/:service/[:owner/]:target/:metric` from public upstream AP
 ### Preset Rules
 
 -   **Public `GET` JSON Only:** Documented, token-free registry/platform APIs only (no HTML scraping); Hardcode hosts via `createEndpoint()` (`PACKAGE_ROUTE`, `OWNER_REPO_ROUTE`, `NPM_PACKAGE_ROUTE`) – never user-controlled hosts.
--   **Small Payloads:** Bodies above `2 MB` are rejected; Project needed fields via `pickFields()` or `projectFirstEntry()` (plus `extractKeys` on large objects).
+-   **Small Payloads:** Bodies above `2 MB` are rejected; Project needed fields via `pickFields()` or `projectFirstEntry()` (which infer `extractKeys` automatically; pass `extractKeys` explicitly on custom projections of large objects).
 -   **Defensive Transforms:** Keep payload types permissive and sanitize values with `readText()`, `readFiniteNumber()`, `formatVersion()`, `formatCount()`, and `formatLicense()` (`src/services/metrics.ts`) so bad data never renders `undefined`, `null`, `NaN`, or `[object Object]`.
 -   **Standard Metric Keys:** `v` (`version`), `license` (`l`), `coverage` (`cov`), `prs` (`pr`/`pulls`/`pull-requests`), `commit` (`last-commit`), `stars`, `forks`, `issues`, `release`, `updated`, `rating`, `score`, `size` – `DEFAULT_METRIC_ALIASES` (`src/services/fetcher.ts`) wires global aliases automatically.
 -   **Download Metric Keys:** `dd` (`/day`), `dw` (`/wk`), `dl` (`/mo`, alias `dm`), `dq` (`/90d`), `dy` (`/yr`), `dt` (total, fallback alias `dl`).

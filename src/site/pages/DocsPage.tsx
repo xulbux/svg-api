@@ -1,5 +1,7 @@
 /**
- * Documentation pages – Renders the Getting Started overview (`/docs`) and the dedicated element documentation pages (`/docs/:section`).
+ * Documentation Pages
+ *
+ * Renders the Getting Started overview (`/docs`) and the dedicated element documentation pages (`/docs/:section`).
  *
  * Every page is deterministic, so each one is rendered once per Worker isolate and then served from memory.
  */
@@ -46,7 +48,7 @@ const PAGE_SECTIONS: Readonly<Record<DocsPageSlug, () => HtmlFragment>> = {
 };
 
 /** Memoized documentation pages keyed by slug. */
-const DOCS_HTML_CACHE = new Map<DocsPageSlug, string>();
+const DOCS_HTML_CACHE: Partial<Record<DocsPageSlug, string>> = {};
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -88,12 +90,12 @@ export function isDocsSectionSlug(slug: string): slug is DocsSectionSlug {
  * @returns Complete HTML document string.
  */
 export function renderDocsHtml(slug: DocsPageSlug = 'overview'): string {
-  const cached = DOCS_HTML_CACHE.get(slug);
+  const cached = DOCS_HTML_CACHE[slug];
   if (cached !== undefined) {
     return cached;
   }
 
   const html = renderHtml(<DocsPage slug={slug} />);
-  DOCS_HTML_CACHE.set(slug, html);
+  DOCS_HTML_CACHE[slug] = html;
   return html;
 }

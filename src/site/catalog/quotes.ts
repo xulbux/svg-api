@@ -1,5 +1,7 @@
 /**
- * Quotes documentation catalog – Vertical and horizontal quote card showcase configs and parameter reference rows for `/docs/quotes`.
+ * Quotes Documentation Catalog
+ *
+ * Vertical and horizontal quote card showcase configs and parameter reference rows for `/docs/quotes`.
  */
 
 import { DEFAULT_THEME_COLOR } from '@/config/theme';
@@ -36,88 +38,101 @@ import type { ParamTableRow, ShowcaseCardConfig } from '@/types';
 const ENCODED_EDGE_QUOTE =
   'Always+creating+more+cool+stuff+for+you%2C+with+crisp+colors+and+zero+cold+starts+at+the+edge.';
 
-/** Vertical layout showcase cards for the dedicated `/docs/quotes` page. */
-export const VERTICAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: "XulbuX's Quote",
-        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=1&color=blue`,
-      },
-    ],
-    subtitle: 'Primary gradient card with centered quote watermarks.',
-    title: appendDefaultLabel(
-      'variant=1 · Vertical Primary Brand Quote',
-      DEFAULT_QUOTE_VARIANT === '1'
-    ),
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: "XulbuX's Quote",
-        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=2`,
-      },
-    ],
-    subtitle: 'Tinted dark card with an indigo border.',
-    title: appendDefaultLabel(
-      'variant=2 · Vertical Secondary Tinted Quote',
-      DEFAULT_QUOTE_VARIANT === '2'
-    ),
-  },
-  {
-    isCentered: true,
-    items: [
-      {
-        alt: "XulbuX's Quote",
-        path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=3&color=cyan`,
-      },
-    ],
-    subtitle: 'Neutral dark card with subtle border and cyan watermarks.',
-    title: appendDefaultLabel(
-      'variant=3 · Vertical Tertiary Neutral Quote',
-      DEFAULT_QUOTE_VARIANT === '3'
-    ),
-  },
-];
-
-/** Horizontal layout showcase cards for the dedicated `/docs/quotes` page. */
-export const HORIZONTAL_QUOTE_CARDS: readonly ShowcaseCardConfig[] = [
-  {
-    items: [{ alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=1` }],
-    subtitle: 'Horizontal card with a left accent bar and gradient fill.',
-    title: appendDefaultLabel(
-      'variant=1 · Horizontal Primary Brand Quote',
-      DEFAULT_QUOTE_VARIANT === '1'
-    ),
-  },
-  {
-    items: [
-      { alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=2&color=cyan` },
-    ],
-    subtitle: 'Horizontal card with a cyan border and left accent bar.',
-    title: appendDefaultLabel(
-      'variant=2 · Horizontal Secondary Tinted Quote',
-      DEFAULT_QUOTE_VARIANT === '2'
-    ),
-  },
-  {
-    items: [
-      {
-        alt: "XulbuX's Quote",
-        path: `/quote/${ENCODED_EDGE_QUOTE}?author=XulbuX&variant=3&anim=sheen`,
-      },
-    ],
-    subtitle: 'Single-segment /quote/:text form with ?author= and diagonal sheen (?anim=sheen).',
-    title: appendDefaultLabel(
-      'variant=3 · Horizontal Tertiary Neutral Quote',
-      DEFAULT_QUOTE_VARIANT === '3'
-    ),
-  },
-];
-
 // -------------------------------------- PUBLIC API -------------------------------------
+
+/**
+ * Build the vertical layout showcase cards for the dedicated `/docs/quotes` page.
+ * @returns Showcase card configurations.
+ */
+export function buildVerticalQuoteCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: "XulbuX's Quote",
+          path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=1&color=blue`,
+        },
+      ],
+      subtitle: 'Primary gradient card with centered quote watermarks.',
+      title: appendDefaultLabel(
+        'variant=1 · Vertical Primary Brand Quote',
+        DEFAULT_QUOTE_VARIANT === '1'
+      ),
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: "XulbuX's Quote",
+          path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=2`,
+        },
+      ],
+      subtitle: 'Tinted dark card with an indigo border.',
+      title: appendDefaultLabel(
+        'variant=2 · Vertical Secondary Tinted Quote',
+        DEFAULT_QUOTE_VARIANT === '2'
+      ),
+    },
+    {
+      isCentered: true,
+      items: [
+        {
+          alt: "XulbuX's Quote",
+          path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?layout=vertical&variant=3&color=cyan`,
+        },
+      ],
+      subtitle: 'Neutral dark card with subtle border and cyan watermarks.',
+      title: appendDefaultLabel(
+        'variant=3 · Vertical Tertiary Neutral Quote',
+        DEFAULT_QUOTE_VARIANT === '3'
+      ),
+    },
+  ];
+}
+
+/**
+ * Build the horizontal layout showcase cards for the dedicated `/docs/quotes` page.
+ * @returns Showcase card configurations.
+ */
+export function buildHorizontalQuoteCards(): ShowcaseCardConfig[] {
+  return [
+    {
+      items: [{ alt: "XulbuX's Quote", path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=1` }],
+      subtitle: 'Horizontal card with a left accent bar and gradient fill.',
+      title: appendDefaultLabel(
+        'variant=1 · Horizontal Primary Brand Quote',
+        DEFAULT_QUOTE_VARIANT === '1'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: "XulbuX's Quote",
+          path: `/quote/XulbuX/${ENCODED_CHAOS_QUOTE}?variant=2&color=cyan`,
+        },
+      ],
+      subtitle: 'Horizontal card with a cyan border and left accent bar.',
+      title: appendDefaultLabel(
+        'variant=2 · Horizontal Secondary Tinted Quote',
+        DEFAULT_QUOTE_VARIANT === '2'
+      ),
+    },
+    {
+      items: [
+        {
+          alt: "XulbuX's Quote",
+          path: `/quote/${ENCODED_EDGE_QUOTE}?author=XulbuX&variant=3&anim=sheen`,
+        },
+      ],
+      subtitle: 'Single-segment /quote/:text form with ?author= and diagonal sheen (?anim=sheen).',
+      title: appendDefaultLabel(
+        'variant=3 · Horizontal Tertiary Neutral Quote',
+        DEFAULT_QUOTE_VARIANT === '3'
+      ),
+    },
+  ];
+}
 
 /**
  * Build the parameter reference rows for `/quote/*` routes.

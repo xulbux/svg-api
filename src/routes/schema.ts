@@ -1,8 +1,10 @@
 /**
- * Builder schema – Declarative URL builder schemas for every element kind, generated from the constants the route parser and renderers use.
+ * Builder Schema
  *
- * Every option list, numeric range, and service preset is read directly from the code that parses or
- * renders it, so the builder cannot offer a value the API rejects.
+ * Declarative URL builder schemas for every element kind, generated from the constants the route parser and renderers use.
+ *
+ * Every option list, numeric range, and service preset is read directly from the code
+ * that parses or renders it, so the builder cannot offer a value the API rejects.
  */
 
 import { resolveServiceOwnerMode, SERVICES_CONFIG } from '@/config/services';
@@ -14,6 +16,7 @@ import {
   ICON_MOTION_ALIASES,
   ICON_MOTION_TOKENS,
   QUOTE_LAYOUT_TOKENS,
+  SIZE_TOKENS,
   SPECIAL_ELEMENT_KINDS,
   STACK_MOTION_ALIASES,
   TRUTHY_FLAG_LIST,
@@ -104,6 +107,7 @@ import type {
   NumericRange,
   ServiceDefinition,
   ServiceMetricConfig,
+  SizePreset,
 } from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
@@ -158,7 +162,7 @@ const REDIRECT_VERIFY_TARGET = 'Pkg.Name_2';
 const REDIRECT_VERIFY_PATH_TARGET = 'Host.example/a-B/c_d';
 
 /** Memoized builder schemas keyed by element kind. */
-const BUILDER_SCHEMA_CACHE = new Map<BuilderKind, BuilderSchema>();
+const BUILDER_SCHEMA_CACHE: Partial<Record<BuilderKind, BuilderSchema>> = {};
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
@@ -379,15 +383,15 @@ function buildNumberField(
 
 /** Build a `?size=` field with named presets plus a custom value in `range`. */
 function buildSizePresetField(
-  presets: Readonly<Record<string, number>>,
+  presets: Readonly<Record<SizePreset, number>>,
   range: NumericRange,
   defaultValue: string,
   description: string,
   layoutDefaults?: Readonly<Record<string, string>>
 ): BuilderField {
   const options: BuilderOption[] = [];
-  for (const [presetName, presetValue] of Object.entries(presets)) {
-    options.push({ label: `${presetName} (${presetValue}px)`, value: presetName });
+  for (const presetName of SIZE_TOKENS) {
+    options.push({ label: `${presetName} (${presets[presetName]}px)`, value: presetName });
   }
   return {
     control: 'size',
@@ -459,8 +463,8 @@ function collectRedirectProbes(
 }
 
 /**
- * Derive the upstream page URL template of a metric by substituting unique probe values, then verify it
- * against every probe (conditional or transforming URL builders yield no template).
+ * Derive the upstream page URL template of a metric by substituting unique probe values,
+ * then verify it against every probe (conditional or transforming URL builders yield no template).
  */
 function deriveRedirectTemplate(
   metric: ServiceMetricConfig,
@@ -602,9 +606,9 @@ function buildServiceFields(): BuilderField[] {
 
 /** Build the button builder fields. */
 function buildButtonFields(): BuilderField[] {
-  const presetHeights: Record<string, number> = {};
-  for (const [presetName, preset] of Object.entries(BUTTON_SIZE_PRESETS)) {
-    presetHeights[presetName] = preset.height;
+  const presetHeights = {} as Record<SizePreset, number>;
+  for (const presetName of SIZE_TOKENS) {
+    presetHeights[presetName] = BUTTON_SIZE_PRESETS[presetName].height;
   }
   return [
     {
@@ -950,10 +954,10 @@ function buildBuilderSchema(kind: BuilderKind): BuilderSchema {
  * @returns Builder schema (fields, example state, and service presets).
  */
 export function getBuilderSchema(kind: BuilderKind): BuilderSchema {
-  let schema = BUILDER_SCHEMA_CACHE.get(kind);
+  let schema = BUILDER_SCHEMA_CACHE[kind];
   if (!schema) {
     schema = buildBuilderSchema(kind);
-    BUILDER_SCHEMA_CACHE.set(kind, schema);
+    BUILDER_SCHEMA_CACHE[kind] = schema;
   }
   return schema;
 }

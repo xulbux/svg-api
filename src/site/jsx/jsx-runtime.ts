@@ -1,45 +1,27 @@
 /**
- * Server JSX runtime – Zero-overhead synchronous JSX serializer for server-rendered HTML pages.
+ * Server JSX Runtime
  *
- * Evaluates JSX trees directly into escaped HTML strings without VDOM allocations,
- * async promises, or client hydration payloads.
+ * Zero-overhead synchronous JSX serializer for server-rendered HTML pages.
+ *
+ * Evaluates JSX trees directly into escaped HTML strings without VDOM allocations, async promises, or client hydration payloads.
  */
 
 import { escapeXml, getOwnValue } from '@/svg/shared';
-import type { HtmlFragment, JsxChild } from '@/types';
+import type {
+  FunctionComponent,
+  HtmlFragment,
+  IntrinsicElementAttributes,
+  JsxChild,
+} from '@/types';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-export type { HtmlFragment, JsxChild } from '@/types';
-
-/** Base props accepted by every intrinsic HTML and SVG element. */
-export interface IntrinsicElementAttributes {
-  /** Children passed to the element. */
-  children?: JsxChild;
-  /** CSS class name(s). */
-  class?: string | undefined;
-  /** React-style alias for `class`. */
-  className?: string | undefined;
-  /** Label target ID (`<label for="…">`). */
-  for?: string | undefined;
-  /** React-style alias for `for`. */
-  htmlFor?: string | undefined;
-  /** Element ID. */
-  id?: string | undefined;
-  /** Inline CSS style string. */
-  style?: string | undefined;
-  /** Keyboard tab order index. */
-  tabindex?: number | string | undefined;
-  /** React-style alias for `tabindex`. */
-  tabIndex?: number | string | undefined;
-  /** Tooltip title text. */
-  title?: string | undefined;
-  /** Arbitrary HTML, SVG, `aria-*`, and `data-*` attributes. */
-  [attribute: string]: unknown;
-}
-
-/** Synchronous functional component type. */
-export type FunctionComponent<TProps = Record<string, unknown>> = (props: TProps) => HtmlFragment;
+export type {
+  FunctionComponent,
+  HtmlFragment,
+  IntrinsicElementAttributes,
+  JsxChild,
+} from '@/types';
 
 // oxlint-disable-next-line typescript/no-namespace -- TypeScript's `react-jsx` transform requires the `JSX` namespace on the runtime module.
 export namespace JSX {
@@ -177,11 +159,26 @@ function serializeChildren(child: JsxChild): string {
   return '';
 }
 
+/** Serialize a pre-escaped `rawAttrs` prop (single string or string array) with a leading space (`''` when empty). */
+function serializeRawAttrs(rawValue: unknown): string {
+  if (Array.isArray(rawValue)) {
+    const parts: string[] = [];
+    for (const item of rawValue) {
+      const trimmedItem = String(item ?? '').trim();
+      if (trimmedItem) {
+        parts.push(trimmedItem);
+      }
+    }
+    return parts.length > 0 ? ` ${parts.join(' ')}` : '';
+  }
+  const rawAttrs = String(rawValue).trim();
+  return rawAttrs ? ` ${rawAttrs}` : '';
+}
+
 /** Serialize a single non-null, non-`children` attribute pair (`''` when omitted). */
 function serializeSingleAttribute(rawName: string, rawValue: unknown): string {
-  if (rawName.startsWith('rawAttrs')) {
-    const rawAttrs = String(rawValue).trim();
-    return rawAttrs ? ` ${rawAttrs}` : '';
+  if (rawName === 'rawAttrs') {
+    return serializeRawAttrs(rawValue);
   }
   const name = getOwnValue(ATTRIBUTE_ALIASES, rawName) ?? rawName;
   if (name === 'popover') {
@@ -271,10 +268,5 @@ export function jsx(
   return createHtmlFragment(`<${tag}${attrsHtml}>${childrenHtml}</${tag}>`);
 }
 
-/**
- * Render a JSX element with static multiple children (identical to `jsx` for synchronous SSR).
- * @param tag     Intrinsic tag name or functional component.
- * @param props   Element attributes and `children`.
- * @returns Pre-escaped `HtmlFragment`.
- */
+/** Render a JSX element with static multiple children (identical to `jsx` for synchronous SSR). */
 export const jsxs = jsx;

@@ -1,5 +1,7 @@
 /**
- * Kind-specific builder form sync – Updates dependent fields, placeholders, and defaults for builder kinds with interdependent controls.
+ * Kind-Specific Builder Form Sync
+ *
+ * Updates dependent fields, placeholders, and defaults for builder kinds with interdependent controls.
  */
 
 import {
@@ -220,8 +222,14 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
       return;
     }
     const sizeField = fieldsById.get('size');
-    if (sizeField && !getState().size) {
-      writeFieldValue(sizeField, '');
+    if (sizeField) {
+      const state = getState();
+      const rawSize = (state.size ?? '').trim();
+      const isCustomSize = Boolean(
+        rawSize && !findOption(sizeField.options, rawSize.toLowerCase())
+      );
+      state.size = normalizeDefaultSelection(sizeField, rawSize, isCustomSize);
+      writeFieldValue(sizeField, state.size);
     }
   }
 
@@ -248,21 +256,29 @@ export function createKindSyncController(options: KindSyncOptions): KindSyncCont
   }
 
   function syncTypingPlaceholders(effectiveLayout: string, defaultLayout: string): void {
+    const titleField = fieldsById.get('title');
     const titleControl = getControl('title');
     if (titleControl instanceof HTMLInputElement) {
+      const ideTitleDefault = titleField?.layoutDefaults?.ide;
       titleControl.placeholder =
-        effectiveLayout === 'ide' ? 'index.ts (ide default)' : 'optional (e.g., zsh)';
+        effectiveLayout === 'ide' && ideTitleDefault
+          ? `${ideTitleDefault} (ide default)`
+          : (titleField?.placeholder ?? 'optional (e.g., zsh)');
     }
+    const prefixField = fieldsById.get('prefix');
     const prefixControl = getControl('prefix');
     if (prefixControl instanceof HTMLInputElement) {
       prefixControl.placeholder =
-        effectiveLayout === defaultLayout ? `❯ (${defaultLayout} default)` : 'optional';
+        effectiveLayout === defaultLayout ? (prefixField?.placeholder ?? 'optional') : 'optional';
     }
+    const hintField = fieldsById.get('hint');
     const hintElement = fieldElements.get('hint');
     const hintTextControl = hintElement ? getPart(hintElement, 'text') : undefined;
     if (hintTextControl instanceof HTMLInputElement) {
       hintTextControl.placeholder =
-        effectiveLayout === 'prompt' ? 'optional (e.g., K)' : 'optional (e.g., UTF-8)';
+        effectiveLayout === 'prompt'
+          ? 'optional (e.g., K)'
+          : (hintField?.placeholder ?? 'optional (e.g., UTF-8)');
     }
   }
 

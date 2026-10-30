@@ -1,9 +1,3 @@
-/**
- * Shared isomorphic utilities barrel – Pure snippet tokenizer, parameter codecs, stack DSL helpers, and URL builder core shared by Worker SSR and browser client bundles.
- */
-
-// -------------------------------------- PUBLIC API -------------------------------------
-
 export {
   isTypingFieldActiveForLayout,
   resolveActiveServiceMetric,
@@ -23,9 +17,11 @@ export {
   HINT_ICON_REST_RX,
   isTruthyFlagToken,
   LIST_SEPARATOR_RX,
+  MAX_ANIMATION_INPUT_LENGTH,
   MAX_TYPING_LINE_LENGTH,
   MAX_TYPING_LINES,
   readState,
+  sliceCodeUnitSafe,
   TRUTHY_FLAG_LIST,
 } from '@/site/shared/encoding';
 export {
@@ -33,12 +29,15 @@ export {
   composeHint,
   composeIconPair,
   composeSpecial,
+  isValidSpecialPayload,
   resolveIconSelectDisplay,
   splitAnim,
   splitHint,
   splitIconPair,
   splitSize,
   splitSpecial,
+  splitTypingLines,
+  TYPING_LINE_SPLIT_RX,
 } from '@/site/shared/fields';
 export {
   buildMarkdownSnippetTokens,
@@ -64,5 +63,6 @@ export {
   extractBuilderPrefillPath,
   parsePath,
   resolvePathBuilderKind,
+  ROUTE_PREFIX_ALIASES,
   stripBuilderMetaQuery,
 } from '@/site/shared/url';

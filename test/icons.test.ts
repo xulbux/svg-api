@@ -1,5 +1,7 @@
 /**
- * Icon resolution tests – Bundled stroke and brand icon resolution, aliases, bounded caching, and ink bounds (`src/svg/icons.ts`).
+ * Icon Resolution Tests
+ *
+ * Bundled stroke and brand icon resolution, aliases, bounded caching, and ink bounds (`src/svg/icons.ts`).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -181,7 +183,7 @@ describe('resolveIcon', () => {
     }
   });
 
-  it('caches misses and rejects implausibly long slugs', () => {
+  it('returns undefined for unknown slugs and rejects implausibly long slugs', () => {
     expect(resolveIcon('still-not-a-real-icon')).toBeUndefined();
     expect(resolveIcon('still-not-a-real-icon')).toBeUndefined();
     expect(resolveIcon('star'.repeat(40))).toBeUndefined();
@@ -271,7 +273,8 @@ describe('resolveIcon', () => {
       expect(index.brandAliases[duplicate], duplicate).toBe(ICON_SLUG_ALIASES[duplicate]);
     }
 
-    // Dotted and hyphenated spellings of brand aliases (`next.js`, `socket.io`, `draw.io`, `premiere-pro`) resolve to their canonical Simple Icons glyphs and titles:
+    // Dotted and hyphenated spellings of brand aliases (`next.js`, `socket.io`, `draw.io`, `premiere-pro`)
+    // resolve to their canonical Simple Icons glyphs and titles:
     expect(resolveIconLookup('next.js', true)).toEqual(resolveIconLookup('nextdotjs', true));
     expect(resolveIconLookup('next-js', true)).toEqual(resolveIconLookup('nextdotjs', true));
     expect(resolveIconLookup('socket.io', true)).toEqual(resolveIconLookup('socketdotio', true));
@@ -284,6 +287,20 @@ describe('resolveIcon', () => {
         renderStack({ icons: ['next.js', 'socket.io', 'discordjs', 'docsrs', 'chrome', 'hn'] })
       )
     ).toBe('tech stack: Next.js, Socket.io, discord.js, docs.rs, Google Chrome, Y Combinator');
+  });
+
+  it('resolves hyphenated Simple Icons clean slugs, canonicalizes hyphenated brand inputs, and indexes secondary-set aliases (regressions: hiveblockchain/springcreators missed Simple Icons, type-script kept raw hyphen)', () => {
+    const index = getIconPickerIndex();
+    expect(resolveIconLookup('hiveblockchain', true).key).toBe('hive-blockchain');
+    expect(resolveIconLookup('springcreators', true).key).toBe('spring-creators');
+    expect(index.brandAliases.hiveblockchain).toBe('hive-blockchain');
+    expect(index.brandAliases.springcreators).toBe('spring-creators');
+
+    expect(resolveIconLookup('type-script', true).key).toBe('typescript');
+    expect(resolveStackIconColor('type-script')).toBe(resolveStackIconColor('typescript'));
+    expect(extractAriaLabel(renderStack({ icons: ['type-script'] }))).toBe(
+      'tech stack: TypeScript'
+    );
   });
 });
 
@@ -398,6 +415,12 @@ describe('computeIconXBounds', () => {
     expect(normalizeIconSlug(overlongUppercase)).toBe('x'.repeat(MAX_ICON_SLUG_LENGTH));
     expect(resolveIcon(overlongUppercase, true)).toBeUndefined();
     expect(resolveIconLookup(overlongUppercase, true).data).toBeUndefined();
+
+    for (const leakedClassSlug of ['brunch', 'thealgorithms', 'weblate']) {
+      const brand = requireDefined(resolveIcon(leakedClassSlug, true), leakedClassSlug);
+      expect(brand.innerSvg, leakedClassSlug).not.toContain('class=');
+    }
+    expect(keyRound.innerSvg).toContain('fill="currentColor"');
   });
 
   it('keeps STACK_CATEGORIES canonicals and curated titles aligned with primary brand resolution (drift guard)', () => {

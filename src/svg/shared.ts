@@ -1,9 +1,13 @@
 /**
- * Shared SVG primitives – Escaping, display text normalization, numeric clamping, bounded LRU caches, content hashing, Kumo 3D surfaces, sheen overlays, and the root `<svg>` document template.
+ * Shared SVG Primitives
+ *
+ * Escaping, display text normalization, numeric clamping, bounded LRU caches, content hashing,
+ * Kumo 3D surfaces, sheen overlays, and the root `<svg>` document template.
  */
 
 import { STRIP_DARK_COLORS, WHITE } from '@/config/palette';
 import { BASE_DARK, THEMES } from '@/config/theme';
+import { sliceCodeUnitSafe } from '@/site/shared/encoding';
 import type {
   ActiveStackMotion,
   AnimationMode,
@@ -69,8 +73,8 @@ interface KumoSurfaceOptions {
   /** Outer corner radius in pixels. */
   radius: number;
   /**
-   * Optional X coordinate in pixels where the accented right capsule of a split badge starts; The
-   * secondary tint and 3D top crescent then cover only that capsule (defaults to the full box).
+   * Optional X coordinate in pixels where the accented right capsule of a split badge starts;
+   * The secondary tint and 3D top crescent then cover only that capsule (defaults to the full box).
    */
   rightCapsuleStartX?: number;
   /** Optional X coordinate in pixels of an internal vertical divider (split micro-buttons and badges). */
@@ -131,17 +135,17 @@ const BG_DARK_ID = 'bg-dark';
 /** Default font size in pixels for standard badge labels and values. */
 export const BADGE_FONT_SIZE = 11;
 
-/**
- * Opacity of white foreground accents and secondary text drawn on vivid primary (`variant = '1'`) surfaces;
- * Primary display text stays fully white.
- */
+/** Opacity of white foreground accents and secondary text drawn on vivid primary surfaces; Primary display text stays fully white. */
 export const PRIMARY_FOREGROUND_OPACITY = 0.85;
 
-/** Opacity of the white split divider line on vivid primary (`variant=1`) surfaces. */
+/** Opacity of the white split divider line on vivid primary surfaces. */
 const PRIMARY_DIVIDER_OPACITY = 0.28;
 
 /** Ellipsis appended to truncated text. */
 export const ELLIPSIS = '…';
+
+/** Maximum badge/button label, value, delta, and quote author length in UTF-16 code units before ellipsis truncation. */
+export const MAX_LABEL_LENGTH = 128;
 
 /** Valid per-icon motion tokens inside an `AnimationMode`, sorted alphabetically (everything except the `'sheen'` surface token). */
 export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
@@ -159,17 +163,23 @@ export const ICON_MOTION_TOKENS: readonly IconMotionMode[] = [
 ];
 
 /** Active per-icon motion tokens excluding static and default sentinel modes. */
-export const ACTIVE_ICON_MOTION_TOKENS: readonly IconMotionMode[] = ICON_MOTION_TOKENS.filter(
-  (token) => token !== 'default' && token !== 'none'
-);
+export const ACTIVE_ICON_MOTION_TOKENS: readonly Exclude<IconMotionMode, 'default' | 'none'>[] = [
+  'auto',
+  'breathe',
+  'float',
+  'nudge',
+  'pulse',
+  'shake',
+  'spin',
+  'turn',
+  'whirl',
+];
 
 /** Valid per-tile stack motion tokens in display order. */
 export const STACK_MOTION_TOKENS: readonly StackTileMotion[] = ['wave', 'float', 'pulse', 'none'];
 
 /** Active per-tile stack motion tokens excluding static and default sentinel modes. */
-export const ACTIVE_STACK_MOTION_TOKENS: readonly ActiveStackMotion[] = STACK_MOTION_TOKENS.filter(
-  (token): token is ActiveStackMotion => token !== 'default' && token !== 'none'
-);
+export const ACTIVE_STACK_MOTION_TOKENS: readonly ActiveStackMotion[] = ['wave', 'float', 'pulse'];
 
 /** Timing of the diagonal surface sheen sweep. */
 export const SHEEN_SWEEP_TIMING: Readonly<SweepTiming> = {
@@ -223,6 +233,9 @@ const HASH_MULTIPLIER = 33;
 /** Modulus of the polynomial content hash (largest prime below `2^32`). */
 const HASH_MODULUS = 4_294_967_291;
 
+/** Minimum `innerSvg` character length above which duplicate icon slots share a `<defs>` entry even without internal `id` attributes. */
+const SHARED_ICON_DEF_MIN_LENGTH = 128;
+
 /** Lazily built constant markup strings. */
 const LAZY_MARKUP: LazyMarkupCache = {};
 
@@ -234,7 +247,10 @@ const ICON_BODY_HASH_CACHE = new WeakMap<ResolvedIcon, string>();
 
 // ------------------------------------ REGEX PATTERNS -----------------------------------
 
-/** Matches XML markup characters (`&`, `<`, `>`, `"`, `'`), control characters, lone surrogates, and the noncharacters `U+FFFE`/`U+FFFF` in a single pass. */
+/**
+ * Matches XML markup characters (`&`, `<`, `>`, `"`, `'`), control characters, lone surrogates,
+ * and the noncharacters `U+FFFE`/`U+FFFF` in a single pass.
+ */
 const XML_ESCAPE_RX = /[&<>"'\p{Cc}\p{Cs}\uFFFE\uFFFF]/gu;
 
 /** Matches runs of control and invisible format characters (Geist draws them as visible `.notdef` boxes). */
@@ -333,7 +349,10 @@ function buildTopCrescentPath(
   topY = 0
 ): string {
   const innerRadius = roundCoord(radius - 1);
-  const innerRadiusY = roundCoord(innerRadius - 1);
+  if (innerRadius <= 0) {
+    return '';
+  }
+  const innerRadiusY = Math.max(0, roundCoord(innerRadius - 1));
   const rightArcStart = roundCoord(endX - 1 - innerRadius);
   const rightTangentX = roundCoord(endX - 1);
   const outerTopY = roundCoord(topY + 1);
@@ -391,13 +410,14 @@ function buildRightCapsulePath(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
-export { buildThemeGradientId, roundCoord, roundScale, roundTenths };
 export {
   BRAND_SLUG_CLEAN_RX,
   capitalizeSlugParts,
   getOwnValue,
   HINT_ICON_REST_RX,
+  sliceCodeUnitSafe as sliceAtCodePoint,
 } from '@/site/shared/encoding';
+export { buildThemeGradientId, roundCoord, roundScale, roundTenths };
 
 /**
  * Build the SVG `<path>` `d` attribute for a lower-edge 3D keycap crescent.
@@ -408,7 +428,7 @@ export {
  * @param endX      Right X coordinate of the box in pixels.
  * @param radius    Outer corner radius in pixels.
  * @param bottomY   Bottom Y coordinate of the box in pixels.
- * @returns SVG `<path>` `d` string.
+ * @returns SVG `<path>` `d` string (`''` when `radius <= 1`).
  */
 export function buildBottomCrescentPath(
   startX: number,
@@ -417,7 +437,10 @@ export function buildBottomCrescentPath(
   bottomY: number
 ): string {
   const innerRadius = roundCoord(radius - 1);
-  const innerRadiusY = roundCoord(innerRadius - 1);
+  if (innerRadius <= 0) {
+    return '';
+  }
+  const innerRadiusY = Math.max(0, roundCoord(innerRadius - 1));
   const leftTangentX = roundCoord(startX + 1);
   const leftArcEnd = roundCoord(startX + 1 + innerRadius);
   const rightArcStart = roundCoord(endX - 1 - innerRadius);
@@ -506,10 +529,17 @@ export function isAnimationDisabled(animMode: AnimationMode): boolean {
  */
 export function resolveIconMotionTokens(animMode: AnimationMode): IconMotionMode[] {
   const tokens: IconMotionMode[] = [];
-  for (const token of animMode.split(',')) {
+  let start = 0;
+  while (start <= animMode.length) {
+    const commaIndex = animMode.indexOf(',', start);
+    const token = commaIndex === -1 ? animMode.slice(start) : animMode.slice(start, commaIndex);
     if (isIconMotionMode(token)) {
       tokens.push(token);
     }
+    if (commaIndex === -1) {
+      break;
+    }
+    start = commaIndex + 1;
   }
   return tokens;
 }
@@ -611,9 +641,8 @@ export function escapeXml(unsafe: string): string {
 }
 
 /**
- * Hash text into a short, deterministic base-36 token (polynomial rolling hash over UTF-16 code units
- * modulo a 32-bit prime). Used for content-addressed SVG IDs, cache-busting asset versions, and ETags;
- * Not a cryptographic hash.
+ * Hash text into a short, deterministic base-36 token (polynomial rolling hash over UTF-16 code units modulo a 32-bit prime).
+ * Used for content-addressed SVG IDs, cache-busting asset versions, and ETags; Not a cryptographic hash.
  * @param text   Text to hash.
  * @returns Base-36 hash token (e.g., `'1x2k9f'`).
  */
@@ -640,8 +669,8 @@ export function hashBytes(buffer: ArrayBuffer): string {
 }
 
 /**
- * Build a content-addressed `<defs>` ID for an icon body (`<prefix>-<hash of innerSvg>`), hashing each
- * resolved icon only once; Equal IDs always carry identical bodies, even across inlined SVGs.
+ * Build a content-addressed `<defs>` ID for an icon body (`<prefix>-<hash of innerSvg>`), hashing each resolved icon only once;
+ * Equal IDs always carry identical bodies, even across inlined SVGs.
  * @param icon     Resolved icon whose body is referenced via `<use>`.
  * @param prefix   ID prefix (e.g., `'stack-icon'`, `'icon-body'`).
  * @returns Element ID (e.g., `'stack-icon-1x2k9f'`).
@@ -656,34 +685,34 @@ export function buildIconBodyId(icon: ResolvedIcon, prefix: string): string {
 }
 
 /**
- * Return the first `end` UTF-16 code units of `text`, backing off by one unit so a surrogate pair is never split.
- * @param text   Source string.
- * @param end    Desired exclusive end index in UTF-16 code units (`<= 0` yields `''`).
- * @returns Prefix of `text` that ends on a code point boundary.
+ * Check whether an icon body repeated across multiple slots in the same SVG should be deduplicated
+ * into `<defs>` + `<use>` (required whenever the body carries internal `id` attributes, and worthwhile
+ * for non-trivial bodies longer than `SHARED_ICON_DEF_MIN_LENGTH`).
+ * @param icon         Resolved icon candidate.
+ * @param isFallback   Whether the slot fell back to the placeholder icon.
+ * @returns `true` when deduplicating into `<defs>` + `<use>` avoids duplicate XML IDs or saves bytes.
  */
-export function sliceAtCodePoint(text: string, end: number): string {
-  if (end <= 0) {
-    return '';
-  }
-  const lastCode = text.charCodeAt(end - 1);
-  const isHighSurrogate = lastCode >= 0xd8_00 && lastCode <= 0xdb_ff;
-  return text.slice(0, isHighSurrogate ? end - 1 : end);
+export function isSharedIconDefNeeded(icon: ResolvedIcon, isFallback = false): boolean {
+  return (
+    !isFallback &&
+    (icon.innerSvg.includes('id="') || icon.innerSvg.length > SHARED_ICON_DEF_MIN_LENGTH)
+  );
 }
 
 /**
- * Prepare user-supplied text for outline rendering: Replace runs of control and invisible format
- * characters (e.g., `\n`, `\t`, `U+200B`) with one space, then cap it at `maxLength` with an ellipsis.
+ * Prepare user-supplied text for outline rendering:
+ * Replace runs of control and invisible format characters (e.g., `\n`, `\t`, `U+200B`) with one space, then cap it at `maxLength` with an ellipsis.
  * @param text        Raw text.
  * @param maxLength   Maximum length in UTF-16 code units, including the ellipsis.
  * @returns Renderable display text.
  */
 export function prepareDisplayText(text: string, maxLength: number): string {
   const scanLimit = Math.max(256, maxLength * 8);
-  const bounded = text.length > scanLimit ? sliceAtCodePoint(text, scanLimit) : text;
+  const bounded = text.length > scanLimit ? sliceCodeUnitSafe(text, scanLimit) : text;
   const cleaned = bounded.replace(INVISIBLE_CHARS_RX, ' ');
   return cleaned.length <= maxLength
     ? cleaned
-    : `${sliceAtCodePoint(cleaned, maxLength - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
+    : `${sliceCodeUnitSafe(cleaned, maxLength - ELLIPSIS.length).trimEnd()}${ELLIPSIS}`;
 }
 
 /**
@@ -730,8 +759,8 @@ export function deleteLruEntry<V>(cache: LruCache<V>, key: string): void {
 }
 
 /**
- * Store a value as most recently used, evicting least recently used entries until both the entry count
- * and the summed weight fit; Values heavier than `maxWeight` on their own are never cached.
+ * Store a value as most recently used, evicting least recently used entries until both the entry count and the summed weight fit;
+ * Values heavier than `maxWeight` on their own are never cached.
  * @param cache   LRU cache state.
  * @param key     Cache key.
  * @param value   Value to store (never `undefined`).
@@ -762,8 +791,8 @@ export function clearLruCache<V>(cache: LruCache<V>): void {
 }
 
 /**
- * Resolve the primary text color on a surface tier: White on vivid primary surfaces, muted on tertiary
- * (`variant=3`) surfaces, and bright otherwise (e.g., the dark left compartment of a split primary badge).
+ * Resolve the primary text color on a surface tier:
+ * White on vivid primary surfaces, muted on tertiary surfaces, and bright otherwise (e.g., the dark left compartment of a split primary badge).
  * @param variant       Surface hierarchy tier.
  * @param isOnPrimary   Whether the text sits on a vivid primary surface (defaults to `variant === '1'`).
  * @returns Text color.
@@ -779,8 +808,8 @@ export function resolveSurfaceTextColor(
 }
 
 /**
- * Resolve the paint of a foreground element drawn as a group: White at `PRIMARY_FOREGROUND_OPACITY`
- * on vivid primary surfaces, the opaque accent color otherwise.
+ * Resolve the paint of a foreground element drawn as a group:
+ * White at `PRIMARY_FOREGROUND_OPACITY` on vivid primary surfaces, the opaque accent color otherwise.
  * @param isOnPrimary   Whether the element sits on a vivid primary surface.
  * @param accentColor   Color used on dark surfaces (e.g., `palette.iconColor`).
  * @returns Color and optional group opacity.
@@ -792,8 +821,8 @@ export function resolveForegroundPaint(isOnPrimary: boolean, accentColor: string
 }
 
 /**
- * Resolve the single paint color of a foreground element without a group opacity: White with
- * `PRIMARY_FOREGROUND_OPACITY` baked in on vivid primary surfaces, the accent color otherwise.
+ * Resolve the single paint color of a foreground element without a group opacity:
+ * White with `PRIMARY_FOREGROUND_OPACITY` baked in on vivid primary surfaces, the accent color otherwise.
  * @param isOnPrimary   Whether the element sits on a vivid primary surface.
  * @param accentColor   Color used on dark surfaces (e.g., `palette.accentText`).
  * @returns Paint color.
@@ -803,8 +832,7 @@ export function resolveForegroundColor(isOnPrimary: boolean, accentColor: string
 }
 
 /**
- * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme
- * gradient per active primary color.
+ * Render the `<defs>` gradients referenced by Kumo surfaces: The dark-slate fill and one vivid theme gradient per active primary color.
  * @param hasDarkBg     Whether any surface uses the dark-slate fill (`url(#bg-dark)`).
  * @param themeColors   Theme colors whose `grad-<color>` gradient is referenced (defaults to none).
  * @returns Concatenated `<linearGradient>` SVG strings.
@@ -871,7 +899,7 @@ export function renderInsetRingRect(
   radius: number,
   strokeAttrs: string
 ): string {
-  return `<rect x="${roundCoord(boxX + 0.5)}" y="${roundCoord(boxY + 0.5)}" width="${roundCoord(width - 1)}" height="${roundCoord(height - 1)}" rx="${roundCoord(radius - 0.5)}" ${strokeAttrs} stroke-width="1" />`;
+  return `<rect x="${roundCoord(boxX + 0.5)}" y="${roundCoord(boxY + 0.5)}" width="${roundCoord(width - 1)}" height="${roundCoord(height - 1)}" rx="${Math.max(0, roundCoord(radius - 0.5))}" ${strokeAttrs} stroke-width="1" />`;
 }
 
 /**
@@ -922,8 +950,8 @@ export function renderIconGroup(options: IconGroupOptions): string {
 /**
  * Render the unified Cloudflare Kumo 3D rectangular/pill/tile surface, upper-edge crescent,
  * optional split divider, and outer border ring across primary, secondary, and tertiary surface tiers.
- * With `rightCapsuleStartX` (split secondary badges), the tint and the 3D top crescent only cover the
- * right capsule, like split primary badges; Tertiary dividers stop short of the edges, so their crescent spans both halves.
+ * With `rightCapsuleStartX` (split secondary badges), the tint and the 3D top crescent only cover the right capsule, like split primary badges;
+ * Tertiary dividers stop short of the edges, so their crescent spans both halves.
  * @param options   Surface geometry, variant, color, and optional split/right capsule positions.
  * @returns Concatenated SVG surface, crescent, divider, and border `<rect>`/`<path>`/`<line>` elements.
  */
@@ -939,7 +967,7 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
   const isRightCapsuleOnly = rightCapsuleStartX !== undefined;
 
   if (variant === '1' && isRightCapsuleOnly) {
-    const innerRadius = roundCoord(radius - 0.5);
+    const innerRadius = Math.max(0, roundCoord(radius - 0.5));
     const leftFillPath = buildLeftCapsulePath(boxX, rightCapsuleStartX, height, radius, boxY);
     const leftBorderPath = buildLeftCapsulePath(
       boxX + 0.5,
@@ -970,12 +998,15 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
       innerRadius,
       boxY + 0.5
     );
+    const rightCrescent = rightCrescentPath
+      ? `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />`
+      : '';
     return (
       `<path d="${leftFillPath}" fill="url(#${BG_DARK_ID})" />` +
       `<path d="${leftBorderPath}" stroke="${BASE_DARK.borderNeutral}" stroke-width="1" />` +
-      `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(options.color)})" />` +
-      `<path d="${rightCrescentPath}" fill="${palette.emphasisBg}" />` +
-      `<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
+      `<path d="${rightFillPath}" fill="url(#${buildThemeGradientId(options.color)})" />${
+        rightCrescent
+      }<path d="${rightRingPath}" stroke="${palette.emphasisRing}" stroke-width="1" />`
     );
   }
 
@@ -985,7 +1016,9 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
 
   if (variant === '1') {
     const gradientBody = `<rect ${positionAttrs}width="${width}" height="${height}" rx="${radius}" fill="url(#${buildThemeGradientId(options.color)})" />`;
-    const topCrescent = `<path d="${crescentPath}" fill="${palette.emphasisBg}" />`;
+    const topCrescent = crescentPath
+      ? `<path d="${crescentPath}" fill="${palette.emphasisBg}" />`
+      : '';
     const splitDivider =
       splitLineX === undefined
         ? ''
@@ -1010,7 +1043,9 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     const secondaryCrescentPath = isRightCapsuleOnly
       ? buildTopCrescentPath(rightCapsuleStartX, rightEdgeX, radius, false, boxY)
       : crescentPath;
-    const topCrescent = `<path d="${secondaryCrescentPath}" fill="${palette.borderColor}" fill-opacity="0.45" />`;
+    const topCrescent = secondaryCrescentPath
+      ? `<path d="${secondaryCrescentPath}" fill="${palette.borderColor}" fill-opacity="0.45" />`
+      : '';
     const splitDivider =
       splitLineX === undefined
         ? ''
@@ -1026,7 +1061,9 @@ export function renderKumoBoxSurface(options: KumoSurfaceOptions): string {
     return `${darkBody}${tintBody}${topCrescent}${splitDivider}${outerRing}`;
   }
 
-  const topCrescent = `<path d="${crescentPath}" fill="${WHITE}" fill-opacity="0.045" />`;
+  const topCrescent = crescentPath
+    ? `<path d="${crescentPath}" fill="${WHITE}" fill-opacity="0.045" />`
+    : '';
   const splitDivider =
     splitLineX === undefined
       ? ''

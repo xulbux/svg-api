@@ -1,5 +1,7 @@
 /**
- * docs.rs service preset – Live upstream metrics and redirect transformations.
+ * docs.rs Service Preset
+ *
+ * Live upstream metrics and redirect transformations for docs.rs.
  */
 
 import { createEndpoint, createMetric, defineService, isJsonObject } from '@/services/endpoint';
@@ -49,6 +51,7 @@ function transformDocsRsStatus(payload: DocsRsStatusProjection): Partial<MetricR
 /** docs.rs crate status endpoint with crate documentation page redirect. */
 const DOCSRS_ENDPOINT = createEndpoint({
   api: 'https://docs.rs/crate/{target}/latest/status.json',
+  extractKeys: ['doc_status', 'version'],
   page: 'https://docs.rs/{target}',
   project: projectDocsRsStatus,
 });

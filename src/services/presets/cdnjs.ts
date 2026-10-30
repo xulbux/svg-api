@@ -1,27 +1,40 @@
 /**
- * cdnjs service preset – Live upstream metrics and redirect transformations.
+ * cdnjs Service Preset
+ *
+ * Live upstream metrics and redirect transformations for cdnjs.
  */
 
-import { PACKAGE_ROUTE, createEndpoint, defineService, pickFields } from '@/services/endpoint';
-import { createLicenseMetric, createVersionMetric } from '@/services/metrics';
+import { PACKAGE_ROUTE, createEndpoint, defineService, isJsonObject } from '@/services/endpoint';
+import { createLicenseMetric, createVersionMetric, readText } from '@/services/metrics';
 
 // ---------------------------------------- TYPES ----------------------------------------
 
-/** Partial cdnjs library metadata payload (`api.cdnjs.com/libraries/:pkg?fields=version,license`). */
-interface CdnjsLibraryPayload {
+/** Projected cdnjs library metadata (`api.cdnjs.com/libraries/:pkg?fields=version,license`). */
+interface CdnjsLibraryProjection {
   /** SPDX license identifier or short license name. */
-  license: string | null;
+  license?: string;
   /** Latest hosted library version. */
-  version: string | null;
+  version?: string;
 }
 
-// ---------------------------------------- CONSTS ---------------------------------------
+// -------------------------------------- INTERNALS --------------------------------------
+
+/** Project cdnjs library metadata, reporting empty `{}` HTTP `200` responses as not found. */
+function projectCdnjsLibrary(data: unknown): CdnjsLibraryProjection | undefined {
+  if (!isJsonObject(data)) {
+    return undefined;
+  }
+  const license = readText(data.license);
+  const version = readText(data.version);
+  return license !== undefined || version !== undefined ? { license, version } : undefined;
+}
 
 /** cdnjs library endpoint (`fields=version,license` trims the response to ~35 bytes). */
 const CDNJS_ENDPOINT = createEndpoint({
   api: 'https://api.cdnjs.com/libraries/{target}?fields=version,license',
+  extractKeys: ['license', 'version'],
   page: 'https://cdnjs.com/libraries/{target}',
-  project: pickFields<CdnjsLibraryPayload>(['license', 'version']),
+  project: projectCdnjsLibrary,
 });
 
 // -------------------------------------- PUBLIC API -------------------------------------

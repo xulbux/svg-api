@@ -1,5 +1,7 @@
 /**
- * HTTP helpers – Request classification, entity tags, redirect validation, and shared response headers of the Worker router.
+ * HTTP Helpers
+ *
+ * Request classification, entity tags, redirect validation, and shared response headers of the Worker router.
  */
 
 import { hashBytes, hashText } from '@/svg/shared';
@@ -89,8 +91,7 @@ function isEtagMatch(ifNoneMatch: string | undefined, etag: string): boolean {
 // -------------------------------------- PUBLIC API -------------------------------------
 
 /**
- * Determine whether an incoming HTTP request is a top-level browser
- * document navigation rather than an embedded `<img src="…">` request.
+ * Determine whether an incoming HTTP request is a top-level browser document navigation rather than an embedded `<img src="…">` request.
  * @param request   Incoming Fetch API `Request`.
  * @returns `true` when the request should trigger a `302` redirect if a destination URL exists.
  */
@@ -215,7 +216,7 @@ export function buildConditionalBodyResponse(
  * @param ifNoneMatch   Incoming `If-None-Match` request header value.
  * @returns `304` `Response` without a body when current, otherwise `response` unchanged.
  */
-export function toConditionalResponse(
+export function matchConditionalResponse(
   response: Response,
   ifNoneMatch: string | undefined
 ): Response {

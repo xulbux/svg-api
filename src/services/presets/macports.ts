@@ -1,8 +1,10 @@
 /**
- * MacPorts service preset – Live upstream metrics and redirect transformations.
+ * MacPorts Service Preset
  *
- * The port API has no field filter (popular ports list their dependents, `~10–35 KB`) and cold
- * lookups are slow, so projected fields use an extended cache TTL.
+ * Live upstream metrics and redirect transformations for MacPorts.
+ *
+ * The port API has no field filter (popular ports list their dependents, `~10–35 KB`) and cold lookups are slow,
+ * so projected fields use an extended cache TTL.
  */
 
 import { CACHE_TTL, createEndpoint, defineService, pickFields } from '@/services/endpoint';

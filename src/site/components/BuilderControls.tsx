@@ -1,10 +1,13 @@
 /**
- * Builder form control components – Schema-driven form fields (`<BuilderFieldView />`), custom searchable dropdowns, icon selectors, color swatch radiogroups, composite animation/widget/size controls, and the interactive tech stack category composer.
+ * Builder Form Control Components
+ *
+ * Schema-driven form fields (`<BuilderFieldView />`), custom searchable dropdowns, icon selectors, color swatch radiogroups,
+ * composite animation/widget/size controls, and the interactive tech stack category composer.
  */
 
 import { STACK_CATEGORIES } from '@/config/stack';
 import { SPECIAL_ELEMENT_KINDS } from '@/routes/params';
-import { UiIcon } from '@/site/components/UiIcon';
+import { HelpMarkIcon, UiIcon } from '@/site/components/UiIcon';
 import { SPECIAL_KIND_DETAILS } from '@/site/glossary';
 import type { HtmlFragment } from '@/site/jsx';
 import {
@@ -21,6 +24,7 @@ import {
   splitIconPair,
   splitSize,
   splitSpecial,
+  splitTypingLines,
 } from '@/site/shared';
 import type {
   BuilderControl,
@@ -120,6 +124,11 @@ function isSelfLabeledControlType(control: BuilderControl): boolean {
   return control === 'color' || control === 'icon' || control === 'select';
 }
 
+/** Resolve the mobile virtual keyboard mode for a numeric field (`'decimal'` only for fractional steps). */
+function resolveNumberInputMode(step: number | undefined): 'decimal' | 'numeric' {
+  return step !== undefined && !Number.isInteger(step) ? 'decimal' : 'numeric';
+}
+
 /** Build the DOM ID of a field control or one of its parts (e.g., `'field-icon-left'`). */
 function buildFieldId(field: BuilderField, part?: string): string {
   return part ? `field-${field.id}-${part}` : `field-${field.id}`;
@@ -150,8 +159,8 @@ function renderOptions(
 }
 
 /**
- * Render a custom dropdown: A visually hidden native `<select>` (the form state read by the builder
- * script) and a trigger that opens an anchored listbox popover (filled by the builder script).
+ * Render a custom dropdown: A visually hidden native `<select>` (the form state read by the builder script)
+ * and a trigger that opens an anchored listbox popover (filled by the builder script).
  * Dropdowns with more than `SEARCHABLE_OPTION_COUNT` options get a search field.
  */
 function renderCustomSelect(
@@ -195,6 +204,7 @@ function renderCustomSelect(
         class="builder-input select-trigger"
         id={`${selectId}-trigger`}
         popovertarget={`${selectId}-menu`}
+        aria-controls={`${selectId}-menu`}
         aria-expanded="false"
         aria-haspopup="listbox"
         aria-labelledby={`${labelId} ${selectId}-value`}
@@ -273,8 +283,8 @@ function resolveSelectOptions(
 
 /**
  * Render an icon selector: A trigger showing the current glyph and slug that opens the icon picker
- * (the slug is stored in a hidden input), plus a clear button. Icon pair parts get a sublabel; A single icon
- * selector is labeled by its field label.
+ * (the slug is stored in a hidden input), plus a clear button.
+ * Icon pair parts get a sublabel; A single icon selector is labeled by its field label.
  */
 function renderIconSelect(options: IconSelectOptions): HtmlFragment {
   const { field, hintId, initialValue, isPresetDynamic, part, presetIcon, sublabel } = options;
@@ -308,6 +318,7 @@ function renderIconSelect(options: IconSelectOptions): HtmlFragment {
           data-preset-icon={presetIcon}
           data-preset-dynamic={isPresetDynamic ? 'true' : undefined}
           popovertarget="icon-picker"
+          aria-controls="icon-picker"
           aria-expanded="false"
           aria-haspopup="dialog"
           aria-labelledby={`${labelId} ${inputId}-value`}
@@ -476,25 +487,12 @@ function renderHelpButton(
       data-help-popover={popoverId}
       data-help-align={align}
       popovertarget={popoverId}
+      aria-controls={popoverId}
       aria-expanded="false"
       aria-haspopup="dialog"
       aria-label={label}
       title="Syntax help">
-      <svg
-        class="ui-icon"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="3 3 18 18"
-        width="13"
-        height="13"
-        aria-hidden="true"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2.25"
-        stroke-linecap="round"
-        stroke-linejoin="round">
-        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-        <path d="M12 17h.01" />
-      </svg>
+      <HelpMarkIcon />
     </button>
   );
 }
@@ -643,7 +641,7 @@ function renderSizeControl(field: BuilderField, selectedValue: string): HtmlFrag
           max={field.max}
           step={field.step ?? 1}
           placeholder={field.placeholder ?? ''}
-          inputmode="decimal"
+          inputmode={resolveNumberInputMode(field.step)}
         />
       </div>
     </div>
@@ -688,7 +686,7 @@ function renderStackGroupsControl(
         <div class="builder-tabs" role="tablist" aria-label="Stack input mode">
           <button
             type="button"
-            class="stack-mode-tab is-active"
+            class="builder-tab stack-mode-tab is-active"
             role="tab"
             id="stack-tab-categories"
             data-stack-mode="categories"
@@ -699,7 +697,7 @@ function renderStackGroupsControl(
           </button>
           <button
             type="button"
-            class="stack-mode-tab"
+            class="builder-tab stack-mode-tab"
             role="tab"
             id="stack-tab-raw"
             data-stack-mode="raw"
@@ -805,6 +803,7 @@ function renderStackGroupsControl(
           data-icon-target={controlId}
           data-icon-insert="true"
           popovertarget="icon-picker"
+          aria-controls="icon-picker"
           aria-expanded="false"
           aria-haspopup="dialog">
           <UiIcon slug="layout-grid" size={14} />
@@ -823,16 +822,7 @@ function renderTypingLinesControl(
 ): HtmlFragment {
   const maxLines = field.max ?? MAX_TYPING_LINES;
   const maxLength = field.maxLength ?? MAX_TYPING_LINE_LENGTH;
-  const initialLines: string[] = [];
-  for (const rawLine of initialValue.split(';')) {
-    const trimmedLine = rawLine.trim();
-    if (trimmedLine && initialLines.length < maxLines) {
-      initialLines.push(trimmedLine);
-    }
-  }
-  if (initialLines.length === 0) {
-    initialLines.push('');
-  }
+  const initialLines = splitTypingLines(initialValue, maxLines);
   const isSingleLine = initialLines.length <= 1;
   const rows: HtmlFragment[] = [];
 
@@ -980,7 +970,8 @@ function renderScalarInputControl(
         value={initialValue}
         placeholder={field.placeholder}
         aria-describedby={hintId}
-        inputmode="decimal"
+        aria-required={field.isRequired ? 'true' : undefined}
+        inputmode={resolveNumberInputMode(field.step)}
       />
     );
   }

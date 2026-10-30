@@ -1,5 +1,7 @@
 /**
- * Codecov service preset – Live upstream metrics and redirect transformations.
+ * Codecov Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Codecov.
  */
 
 import { createCoverageService } from '@/services/metrics';
@@ -24,6 +26,7 @@ interface CodecovRepoPayload {
 export const CODECOV_SERVICE = createCoverageService<CodecovRepoPayload>({
   api: 'https://api.codecov.io/api/v2/github/{owner}/repos/{target}/',
   description: 'Default-branch test coverage of a GitHub repository (ring gauge, colored by %).',
+  extractKeys: ['totals'],
   icon: 'codecov',
   page: 'https://app.codecov.io/gh/{owner}/{target}',
   readPercent: (repo) => repo.totals?.coverage,

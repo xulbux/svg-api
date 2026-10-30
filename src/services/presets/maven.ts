@@ -1,12 +1,14 @@
 /**
- * Maven Central service preset – Live upstream metrics and redirect transformations.
+ * Maven Central Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Maven Central.
  */
 
 import {
-  asJsonObject,
   createEndpoint,
   defineService,
   readFirstObjectEntry,
+  readJsonObject,
 } from '@/services/endpoint';
 import { createVersionMetric, readText } from '@/services/metrics';
 
@@ -27,13 +29,14 @@ const MAVEN_COORD_RX = /^(?!(?:AND|OR|NOT)$)[A-Za-z\d][A-Za-z\d._-]{0,127}$/;
 
 /** Project a Maven Central Solr search response to the first artifact's `latestVersion` (empty `docs` is not found). */
 function projectMavenArtifact(data: unknown): MavenArtifactProjection | undefined {
-  const firstDoc = readFirstObjectEntry(asJsonObject(asJsonObject(data)?.response)?.docs);
+  const firstDoc = readFirstObjectEntry(readJsonObject(readJsonObject(data)?.response)?.docs);
   return firstDoc ? { version: readText(firstDoc.latestVersion) } : undefined;
 }
 
 /** Maven Central Solr search endpoint (1 row) with Sonatype Central artifact page redirect. */
 const MAVEN_ENDPOINT = createEndpoint({
   api: 'https://search.maven.org/solrsearch/select?q=g:{owner}+AND+a:{target}&rows=1&wt=json',
+  extractKeys: ['response'],
   page: 'https://central.sonatype.com/artifact/{owner}/{target}',
   project: projectMavenArtifact,
 });

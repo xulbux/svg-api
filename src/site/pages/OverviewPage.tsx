@@ -1,12 +1,14 @@
 /**
- * Getting Started overview page – Renders the `/docs` overview section (`<OverviewSection />`).
+ * Getting Started Overview Page
+ *
+ * Renders the `/docs` overview section (`<OverviewSection />`).
  */
 
 import {
   buildCachingRows,
+  buildEmbeddingCards,
   buildSharedParamRows,
   CACHING_COLUMNS,
-  EMBEDDING_CARDS,
   SEGMENT_ENCODING_COLUMNS,
   SEGMENT_ENCODING_ROWS,
   SHARED_PARAM_COLUMNS,
@@ -48,7 +50,7 @@ export function OverviewSection(): HtmlFragment {
         columns={SHARED_PARAM_COLUMNS}
       />
       <SectionSubhead iconSlug="code" text="Embedding in READMEs & Docs" />
-      <CardGrid cards={EMBEDDING_CARDS} />
+      <CardGrid cards={buildEmbeddingCards()} />
       <SectionSubhead iconSlug="timer" text="Edge Caching" />
       <ParamTable
         rows={buildCachingRows()}

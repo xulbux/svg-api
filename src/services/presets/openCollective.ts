@@ -1,5 +1,7 @@
 /**
- * Open Collective service preset – Live upstream metrics and redirect transformations.
+ * Open Collective Service Preset
+ *
+ * Live upstream metrics and redirect transformations for Open Collective.
  */
 
 import { createEndpoint, createMetric, defineService, pickFields } from '@/services/endpoint';

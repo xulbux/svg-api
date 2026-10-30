@@ -1,9 +1,11 @@
 /**
- * Stack DSL parser & band composer – Parses `/stack` tile tokens and packs categorized icon selections into balanced multi-band DSL strings.
+ * Stack DSL Parser & Band Composer
+ *
+ * Parses `/stack` tile tokens and packs categorized icon selections into balanced multi-band DSL strings.
  */
 
 import { LINE_BREAK_RX, LIST_SEPARATOR_RX } from '@/site/shared/encoding';
-import type { NumericRange, StackPrefillModeResult } from '@/types';
+import type { NumericRange, StackPrefillModeResult, StackTileColorParts } from '@/types';
 
 // ---------------------------------------- CONSTS ---------------------------------------
 
@@ -18,8 +20,14 @@ const STACK_GROUP_SEPARATOR_RX = /[;|]+/;
 /** Matches a trailing `:N` column suffix at the end of a non-empty stack group. */
 const COLUMN_SUFFIX_RX = /(?<=.):\d+$/;
 
-/** Matches remaining whitespace in the stack groups textarea. */
-const WHITESPACE_RX = /\s+/g;
+/** Matches horizontal whitespace surrounding `,`, `;`, or `|` delimiters in the stack DSL. */
+const DSL_DELIMITER_SPACE_RX = /[ \t]*(?<delimiter>[,;|])[ \t]*/g;
+
+/** Matches horizontal whitespace preceding a `:N` group column suffix. */
+const COLUMN_PREFIX_SPACE_RX = /[ \t]+(?=:\d)/g;
+
+/** Matches remaining horizontal whitespace runs separating icon tokens in the stack groups textarea. */
+const HORIZONTAL_SPACE_RX = /[ \t\r]+/g;
 
 // -------------------------------------- INTERNALS --------------------------------------
 
@@ -146,13 +154,33 @@ function composeStackWithExplicitPerLine(
 
 // -------------------------------------- PUBLIC API -------------------------------------
 
+export { parsePerLineValues };
+
 /**
- * Normalize the stack groups textarea into the `/stack` DSL (line breaks start new row bands).
+ * Normalize the stack groups textarea into the `/stack` DSL (line breaks start new row bands, horizontal whitespace separates tokens).
  * @param value   Raw textarea value.
  * @returns Normalized `/stack` DSL string.
  */
 export function normalizeStackGroups(value: string): string {
-  return value.trim().replace(LINE_BREAK_RX, ';').replace(WHITESPACE_RX, '');
+  return value
+    .trim()
+    .replace(LINE_BREAK_RX, ';')
+    .replace(DSL_DELIMITER_SPACE_RX, '$<delimiter>')
+    .replace(COLUMN_PREFIX_SPACE_RX, '')
+    .replace(HORIZONTAL_SPACE_RX, ',');
+}
+
+/**
+ * Split an optional `@<color>` suffix off a `/stack` tile token.
+ * @param token   Tile token (e.g., `'rust@amber'` or `'ts'`).
+ * @returns Base icon slug and optional raw color suffix.
+ */
+export function splitStackTileColor(token: string): StackTileColorParts {
+  const atIndex = token.lastIndexOf('@');
+  if (atIndex <= 0) {
+    return { colorSuffix: undefined, slug: token };
+  }
+  return { colorSuffix: token.slice(atIndex + 1), slug: token.slice(0, atIndex) };
 }
 
 /**
@@ -180,8 +208,7 @@ export function collectStackTileTokens(groups: string): string[] {
  * @returns Base icon slug without `@<color>`.
  */
 export function stripStackTileColor(token: string): string {
-  const atIndex = token.lastIndexOf('@');
-  return atIndex > 0 ? token.slice(0, atIndex) : token;
+  return splitStackTileColor(token).slug;
 }
 
 /**
