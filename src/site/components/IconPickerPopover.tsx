@@ -101,8 +101,14 @@ function renderIconPickerHtml(): string {
           id="icon-picker-grid"
           role="listbox"
           aria-label="Icons"
-          tabindex="-1"></div>
-        <div class="icon-picker-empty" id="icon-picker-empty" hidden={true}></div>
+          tabindex="-1"
+          hidden={true}></div>
+        <div class="icon-picker-empty" id="icon-picker-empty">
+          <span class="icon-picker-loading">
+            <UiIcon slug="loader" size={16} extraClass="builder-spinner" />
+            Loading icons…
+          </span>
+        </div>
         <div class="icon-picker-foot">
           <span class="icon-picker-status" id="icon-picker-status" aria-live="polite">
             Loading icons…

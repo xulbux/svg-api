@@ -127,6 +127,7 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
   } = options;
 
   const pickerTabs = picker?.querySelector('.icon-picker-tabs');
+  const pickerLoadingTemplate = pickerEmpty?.firstElementChild?.cloneNode?.(true);
   const iconIndexUrl = picker?.dataset.indexUrl ?? '/assets/icons.json';
   const iconVersion = new URL(iconIndexUrl, globalThis.location.href).searchParams.get('v') ?? '';
 
@@ -553,14 +554,28 @@ export function createIconPickerController(options: IconPickerOptions): IconPick
       renderPicker(true);
       return;
     }
+    if (pickerGrid) {
+      pickerGrid.hidden = true;
+    }
+    if (pickerEmpty) {
+      if (pickerLoadingTemplate) {
+        pickerEmpty.replaceChildren(pickerLoadingTemplate.cloneNode(true));
+      }
+      pickerEmpty.hidden = false;
+    }
     if (pickerStatus) {
       pickerStatus.textContent = 'Loading icons…';
     }
     loadIconIndex().then(
       () => handleIndexReady(true),
       () => {
+        const retryMessage = 'Icons could not be loaded; Reopen the picker to retry.';
+        if (pickerEmpty) {
+          pickerEmpty.textContent = retryMessage;
+          pickerEmpty.hidden = false;
+        }
         if (pickerStatus) {
-          pickerStatus.textContent = 'Icons could not be loaded; Reopen the picker to retry.';
+          pickerStatus.textContent = retryMessage;
         }
       }
     );

@@ -530,7 +530,7 @@ function createLineInputStub(): {
 }
 
 /** Build a minimal attribute- and class-tracking box for builder preview stage DOM tests. */
-function createAttributeBox(initialHidden = false): {
+function createAttributeBox(isInitiallyVisible = false): {
   attributes: Map<string, string>;
   classList: {
     contains: (token: string) => boolean;
@@ -543,10 +543,12 @@ function createAttributeBox(initialHidden = false): {
   toggleAttribute: (name: string, force?: boolean) => boolean;
 } {
   const attributes = new Map<string, string>();
-  if (initialHidden) {
-    attributes.set('hidden', '');
-  }
   const classSet = new Set<string>();
+  if (isInitiallyVisible) {
+    classSet.add('is-visible');
+  } else {
+    attributes.set('aria-hidden', 'true');
+  }
   return {
     attributes,
     classList: {
@@ -563,7 +565,7 @@ function createAttributeBox(initialHidden = false): {
     },
     getAttribute: (name: string) => attributes.get(name),
     get isHidden() {
-      return attributes.has('hidden');
+      return !classSet.has('is-visible') && attributes.get('aria-hidden') === 'true';
     },
     removeAttribute(name: string) {
       attributes.delete(name);
@@ -3348,9 +3350,9 @@ describe('builder pages & "Open in Builder" links', () => {
     expect(activeTracker.activeElement).toBe(searchInput);
   });
 
-  it('shows the empty-stage loading indicator until load when no previous preview is visible, dims existing previews on update, and hides broken images on error (regression: blank builder stage while loading after Clear)', () => {
+  it('crossfades the empty-stage loading indicator into the preview on load, dims existing previews in place on update, and hides broken images on error (regressions: blank builder stage while loading after Clear, instant hard cut from loading spinner to first SVG)', () => {
     const previewStage = createAttributeBox();
-    const previewImageBox = createAttributeBox(true);
+    const previewImageBox = createAttributeBox(false);
     const previewListeners = new Map<string, (() => void)[]>();
     const previewImage = Object.assign(Object.create(FakeHTMLElement.prototype) as object, {
       addEventListener(type: string, listener: () => void) {
@@ -3368,6 +3370,7 @@ describe('builder pages & "Open in Builder" links', () => {
       },
       getAttribute: previewImageBox.getAttribute,
       removeAttribute: previewImageBox.removeAttribute,
+      setAttribute: previewImageBox.setAttribute,
       toggleAttribute: previewImageBox.toggleAttribute,
     }) as {
       addEventListener: (type: string, listener: () => void) => void;
@@ -3380,6 +3383,7 @@ describe('builder pages & "Open in Builder" links', () => {
       dispatch: (type: 'error' | 'load') => void;
       getAttribute: (name: string) => string | undefined;
       removeAttribute: (name: string) => void;
+      setAttribute: (name: string, val: string) => void;
       src: string;
       toggleAttribute: (name: string, force?: boolean) => boolean;
     };
@@ -3393,7 +3397,10 @@ describe('builder pages & "Open in Builder" links', () => {
     const previewLoading = createAttributeBox(true);
     const previewPlaceholderBox = createAttributeBox(false);
     const previewPlaceholder = {
+      classList: previewPlaceholderBox.classList,
       closest: (selector: string) => (selector === '.builder-stage' ? previewStage : undefined),
+      removeAttribute: previewPlaceholderBox.removeAttribute,
+      setAttribute: previewPlaceholderBox.setAttribute,
       textContent: 'Fill in the required fields to see a preview.',
       toggleAttribute: previewPlaceholderBox.toggleAttribute,
     };

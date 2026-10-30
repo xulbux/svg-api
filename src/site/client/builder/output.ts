@@ -108,6 +108,19 @@ const PREVIEW_ERROR_STATUS = 'The preview could not be loaded; Check the route v
 
 // -------------------------------------- INTERNALS --------------------------------------
 
+/** Synchronize `.is-visible` and `aria-hidden` on a builder preview stage element. */
+function syncStageElementVisibility(element: Element | null, isVisible: boolean): void {
+  if (!element) {
+    return;
+  }
+  element.classList.toggle('is-visible', isVisible);
+  if (isVisible) {
+    element.removeAttribute('aria-hidden');
+  } else {
+    element.setAttribute('aria-hidden', 'true');
+  }
+}
+
 /** Synchronize `.is-missing` and `aria-invalid` across a field wrapper and its interactive inputs. */
 function syncFieldMissingState(
   fieldElement: Element,
@@ -197,16 +210,16 @@ export function createBuilderOutputController(
   function syncPreviewStage(isLoading: boolean): void {
     const isShowingLoadingIndicator = !hasVisiblePreview && isLoading;
     const isShowingTextPlaceholder = !hasVisiblePreview && !isLoading;
-    previewImage?.toggleAttribute('hidden', !hasVisiblePreview);
+    syncStageElementVisibility(previewImage, hasVisiblePreview);
     previewImage?.classList.toggle('is-loading', hasVisiblePreview && isLoading);
-    previewLoading?.toggleAttribute('hidden', !isShowingLoadingIndicator);
+    syncStageElementVisibility(previewLoading, isShowingLoadingIndicator);
     if (previewPlaceholder) {
       if (isShowingTextPlaceholder) {
         previewPlaceholder.textContent = hasPreviewError
           ? ERROR_PLACEHOLDER_TEXT
           : emptyPlaceholderText;
       }
-      previewPlaceholder.toggleAttribute('hidden', !isShowingTextPlaceholder);
+      syncStageElementVisibility(previewPlaceholder, isShowingTextPlaceholder);
     }
     if (isLoading) {
       previewStage?.setAttribute('aria-busy', 'true');

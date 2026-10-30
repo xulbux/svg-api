@@ -572,42 +572,78 @@
 }
 
 .builder-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  gap: 0;
   min-block-size: 168px;
   padding: 28px 20px;
+}
+
+.builder-preview,
+.builder-loading,
+.builder-placeholder {
+  grid-area: 1 / 1;
+  opacity: 0;
+  scale: 0.97;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    scale var(--duration-base) var(--ease-out),
+    display var(--duration-base) ease allow-discrete;
 }
 
 .builder-preview {
   display: block;
   max-inline-size: 100%;
   block-size: auto;
-  transition: opacity var(--duration-fast) ease;
-}
-
-.builder-preview.is-loading {
-  opacity: 0.55;
 }
 
 .builder-loading,
 .builder-placeholder {
   margin: 0;
   font-size: 0.84rem;
+  text-align: center;
   color: var(--c-text-3);
 }
 
-.builder-loading {
+.builder-loading,
+.icon-picker-loading {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
 
+:is(.builder-preview, .builder-loading, .builder-placeholder).is-visible {
+  z-index: 1;
+  opacity: 1;
+  scale: 1;
+
+  @starting-style {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+.builder-preview.is-visible:where(.is-loading) {
+  opacity: 0.55;
+
+  @starting-style {
+    opacity: 0;
+  }
+}
+
+:is(.builder-preview, .builder-loading, .builder-placeholder):not(.is-visible) {
+  display: none;
+  pointer-events: none;
+}
+
+.builder-preview:not([src]) {
+  display: none;
+  transition: none;
+}
+
 .builder-spinner {
-  flex-shrink: 0;
-  inline-size: 14px;
-  block-size: 14px;
-  border: 1.75px solid color-mix(in srgb, currentColor 28%, transparent);
-  border-block-start-color: currentColor;
-  border-radius: 50%;
-  animation: builder-spin 0.75s linear infinite;
+  animation: builder-spin 2.4s linear infinite;
 }
 
 @keyframes builder-spin {
@@ -946,10 +982,16 @@
   background: var(--c-border);
 }
 
-/* Empty search results (replaces the grid area inside the flex popover, with a `Clear search` button): */
+/* Loading, error, and empty search states (replaces the grid area inside the flex popover): */
 
 .icon-picker-empty {
+  display: flex;
   flex: 1;
+  flex-wrap: wrap;
+  align-content: center;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 24px 12px;
   font-size: 0.8rem;
   text-align: center;

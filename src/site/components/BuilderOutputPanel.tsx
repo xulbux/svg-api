@@ -55,24 +55,23 @@ export function BuilderOutputPanel(): HtmlFragment {
     <aside class="builder-panel" aria-label="Preview and snippets">
       <div class="builder-preview-dock">
         <div class="builder-preview-card">
-          <div class="preview-stage builder-stage is-centered">
+          <div class="preview-stage builder-stage" aria-busy="true">
             <img
               class="builder-preview"
               id="builder-preview"
               alt="Live preview"
               decoding="async"
-              hidden={true}
+              aria-hidden="true"
             />
             <p
-              class="builder-loading"
+              class="builder-loading is-visible"
               id="builder-loading"
               role="status"
-              aria-live="polite"
-              hidden={true}>
-              <span class="builder-spinner" aria-hidden="true"></span>
+              aria-live="polite">
+              <UiIcon slug="loader" size={16} extraClass="builder-spinner" />
               Loading preview…
             </p>
-            <p class="builder-placeholder" id="builder-placeholder">
+            <p class="builder-placeholder" id="builder-placeholder" aria-hidden="true">
               Fill in the required fields to see a preview.
             </p>
           </div>

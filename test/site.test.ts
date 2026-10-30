@@ -1998,6 +1998,21 @@ describe('site stylesheet', () => {
     );
     expect(css).toMatch(/\.typing-line-row\.is-settling \{\s*z-index: 1;\s*\}/);
     expect(css).toMatch(/\.typing-line-row\.is-dragging \{[^}]*transition: none;\s*\}/);
+    expect(css).toMatch(
+      /\.builder-stage \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\);\s*place-items: center;/
+    );
+    expect(css).toMatch(
+      /\.builder-preview,\s*\.builder-loading,\s*\.builder-placeholder \{\s*grid-area: 1 \/ 1;[^}]*display var\(--duration-base\) ease allow-discrete;/
+    );
+    expect(css).toMatch(
+      /:is\(\.builder-preview, \.builder-loading, \.builder-placeholder\)\.is-visible \{[^}]*@starting-style \{\s*opacity: 0;\s*scale: 0\.97;\s*\}/
+    );
+    expect(css).toMatch(
+      /\.builder-preview:not\(\[src\]\) \{\s*display: none;\s*transition: none;\s*\}/
+    );
+    expect(css).toMatch(
+      /\.builder-spinner \{\s*animation: builder-spin 2\.4s linear infinite;\s*\}/
+    );
   });
 
   it('colors errors, validation messages, and invalid input borders with --c-danger and keeps --c-hl-path for syntax highlighting', () => {
@@ -2109,7 +2124,10 @@ describe('site stylesheet', () => {
       const dockHtml = requireDefined(dockMatch?.groups?.dock, `${page.kind} preview dock`);
       expect(dockHtml, page.kind).toContain('id="builder-preview"');
       expect(dockHtml, page.kind).toContain('id="builder-loading"');
-      expect(dockHtml, page.kind).toContain('class="builder-spinner"');
+      expect(dockHtml, page.kind).toContain('class="ui-icon builder-spinner"');
+      expect(html, page.kind).toContain(
+        '<span class="icon-picker-loading"><svg class="ui-icon builder-spinner"'
+      );
       expect(dockHtml, page.kind).toContain('id="builder-status"');
       // Keep the visually reordered preview dock free of focusable elements so Tab order stays top-to-bottom:
       expect(dockHtml, page.kind).not.toMatch(/<(?:a|button|input|select|textarea)\b|tabindex=/);
