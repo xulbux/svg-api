@@ -205,7 +205,7 @@ function HomePage(): HtmlFragment {
           </p>
           <div class="hero-cta-row">
             <a href={builderPath} class="btn-primary" tabindex="0">
-              <UiIcon slug="wand-sparkles" size={16} />
+              <UiIcon slug="blocks" size={16} />
               Start Building
               <UiIcon slug="arrow-right" size={16} extraClass="btn-arrow-right" />
             </a>
@@ -237,7 +237,7 @@ function HomePage(): HtmlFragment {
           Explore Docs
         </a>
         <a href={builderPath} class="btn-primary" tabindex="0">
-          <UiIcon slug="wand-sparkles" size={16} />
+          <UiIcon slug="blocks" size={16} />
           Start Building
           <UiIcon slug="arrow-right" size={16} extraClass="btn-arrow-right" />
         </a>
