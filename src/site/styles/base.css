@@ -88,7 +88,6 @@
   scroll-padding-block-start: calc(var(--header-height) + 32px);
   color-scheme: light dark;
   accent-color: var(--c-btn-bg);
-  scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--c-text-1) 24%, transparent) transparent;
 }
 
@@ -106,6 +105,7 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  scrollbar-width: thin;
 }
 
 /* The `hidden` attribute always wins over component `display` values: */

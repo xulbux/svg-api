@@ -330,7 +330,6 @@
   background: transparent;
   user-select: none;
   -webkit-user-select: none;
-  scrollbar-width: thin;
   view-transition-name: site-sidebar;
 }
 

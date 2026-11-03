@@ -1342,6 +1342,8 @@ describe('documentation pages – navigation & static assets', () => {
       expect(links).toContain(`btn-primary ${buildBuilderPath('badge')}`);
       expect(links).toContain(`btn-secondary ${buildDocsPath('overview')}`);
       expect(links.filter((link) => link.startsWith('btn-primary'))).toHaveLength(1);
+      expect(ctaHtml).toContain('</svg>Start Building</a>');
+      expect(ctaHtml).not.toContain('btn-arrow-right');
     }
   });
 
@@ -1922,10 +1924,15 @@ describe('site stylesheet', () => {
     }
   });
 
-  it('hides [hidden] elements with exactly one global rule', () => {
+  it('hides [hidden] elements with exactly one global rule and applies thin scrollbars universally (regression: non-inherited scrollbar-width on :root)', () => {
     const css = getSiteStylesheet();
     expect(countOccurrences(css, '[hidden]')).toBe(1);
     expect(css).toMatch(/\[hidden\] \{\s*display: none !important;\s*\}/);
+    expect(countOccurrences(css, 'scrollbar-width: thin;')).toBe(1);
+    expect(css).toMatch(
+      /\*,\s*\*::before,\s*\*::after \{\s*box-sizing: border-box;\s*scrollbar-width: thin;\s*\}/
+    );
+    expect(css).toMatch(/\.code-pre \{[^}]*scrollbar-width: none;/);
   });
 
   it('offsets in-page anchors below the sticky header with root scroll padding instead of per-element scroll margins', () => {
