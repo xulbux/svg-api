@@ -883,7 +883,7 @@ function inflateIdatScanlines(pngBuffer: Buffer): Buffer {
   return inflateSync(Buffer.concat(idatChunks));
 }
 
-/** Verify `assets/icon.png` is the single SSOT brand asset across `LICENSE`, font licenses, `README.md`, `/favicon.*`, and `/og.*`. */
+/** Verify `assets/icon.png` is the single SSOT brand asset across `README.md`, `/favicon.*`, and `/og.*`, plus `LICENSE` notices. */
 function assertBrandAssetsAndLicenseParity(
   repoRoot: string,
   readmeMd: string,
@@ -931,7 +931,8 @@ function assertBrandAssetsAndLicenseParity(
 
   expect(licenseTxt).toContain('MIT License');
   expect(licenseTxt).toContain('Artwork & Branding Notice:');
-  expect(licenseTxt).toContain('`assets/`');
+  expect(licenseTxt).toContain('The project logo, icons, and visual branding');
+  expect(licenseTxt).toContain('NOT licensed under the MIT License');
 
   const fontLicenseTxt = readRepoFile(repoRoot, 'src/assets/fonts/LICENSE');
   expect(fontLicenseTxt).toContain('SIL OPEN FONT LICENSE Version 1.1');
